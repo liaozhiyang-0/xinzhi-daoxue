@@ -49,11 +49,81 @@ deploy/            Docker Compose 与 Nginx 部署模板
 assets/            图片、截图和演示素材目录
 ```
 
-## 7. 当前开发阶段
+## 7. 快速开始
+
+### 7.1 克隆仓库
+
+```bash
+git clone https://github.com/liaozhiyang-0/xinzhi-daoxue.git
+cd xinzhi-daoxue
+```
+
+### 7.2 准备环境变量
+
+```bash
+cp .env.example .env
+```
+
+请只在本地 `.env` 中填写数据库、Redis、MinIO、星辰 Agent 和星火 MaaS 的真实配置，不要将 `.env` 提交到 Git。
+
+### 7.3 查看项目文档
+
+```bash
+# 项目定位与范围
+docs/01_project_positioning.md
+docs/02_first_version_scope.md
+
+# 系统架构与技术路线
+docs/03_system_architecture.md
+docs/04_technical_route.md
+
+# Agent、接口和数据库设计
+agent_design/
+backend/api_design.md
+database/database_schema.md
+```
+
+### 7.4 初始化数据库结构
+
+第一版优先使用 MySQL。数据库建表语句位于：
+
+```bash
+database/init.sql
+```
+
+示例执行方式：
+
+```bash
+mysql -h localhost -P 3306 -u root -p xinzhi_daoxue < database/init.sql
+```
+
+### 7.5 部署模板
+
+部署模板位于 `deploy/docker-compose.yml`。当前前后端工程仍是设计阶段，Compose 文件主要用于描述服务关系，真实镜像和启动命令需在代码实现后补齐。
+
+## 8. 第一版演示链路
+
+第一版演示围绕“学生学习闭环 + 教师学情反馈”展开：
+
+1. 学生选择课程和知识点，例如“模拟电子技术 / MOS 管工作区”。
+2. 学生在智能问答区输入问题，系统调用课程问答 Agent 返回概念、公式、步骤和易错点。
+3. 学生提交错题，包括题目、学生答案和参考答案，系统调用错题诊断 Agent 识别错误类型。
+4. 系统根据问答记录和错题记录生成学习建议，给出优先知识点、每日任务和掌握检查标准。
+5. 教师进入看板查看高频问题、错题类型分布、薄弱知识点和学生活跃度。
+6. 教师调用教学建议生成接口，获得课堂讲解、作业补充和后续观察指标建议。
+
+对应文档：
+
+- 学生端原型：`frontend/prototype/student_page.md`
+- 教师端原型：`frontend/prototype/teacher_dashboard.md`
+- 演示计划：`docs/05_demo_plan.md`
+- 后端接口：`backend/api_design.md`
+
+## 9. 当前开发阶段
 
 当前处于项目初始化与方案设计阶段，已完成基础仓库结构、项目文档、课程资料模板、Agent 设计、接口设计、数据库设计和部署模板。后续开发应以第一版闭环为边界，优先完成可演示的端到端流程。
 
-## 8. 后续计划
+## 10. 后续计划
 
 1. 完成课程资料和题库的结构化整理。
 2. 接入星辰 Agent 并验证问答、诊断、规划和分析链路。
