@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  frontend:
+    image: xinzhi-daoxue-frontend:placeholder
+    container_name: xinzhi-daoxue-frontend
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    # 第一版前端工程创建后补充真实 Dockerfile 和构建命令。
+
+  backend:
+    image: xinzhi-daoxue-backend:placeholder
+    container_name: xinzhi-daoxue-backend
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: your_password_here
+      DB_NAME: xinzhi_daoxue
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio:9000
+      XF_AGENT_API_KEY: your_xf_agent_api_key_here
+      XF_AGENT_BASE_URL: your_xf_agent_base_url_here
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql
+      - redis
+      - minio
+    # 第一版后端工程创建后补充真实启动命令。
+
+  mysql:
+    image: mysql:8.0
+    container_name: xinzhi-daoxue-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: your_password_here
+      MYSQL_DATABASE: xinzhi_daoxue
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis:
+    image: redis:7
+    container_name: xinzhi-daoxue-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: xinzhi-daoxue-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: your_access_key_here
+      MINIO_ROOT_PASSWORD: your_secret_key_here
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  nginx:
+    image: nginx:1.25
+    container_name: xinzhi-daoxue-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
