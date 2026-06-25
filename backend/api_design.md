@@ -22,7 +22,49 @@
 }
 ```
 
-## 1. 学生智能问答接口
+## 1. 学生识图解题接口
+
+| 项目 | 内容 |
+| --- | --- |
+| 接口路径 | `/api/v1/student/vision-solve` |
+| 请求方式 | POST |
+| 说明 | 调用识图解题 Agent，识别题图结构并返回分步解题结果。 |
+
+### 请求参数
+
+```json
+{
+  "user_id": "10001",
+  "course_id": "01_circuit_theory",
+  "chapter_hint": "第8章 一阶电路的暂态分析",
+  "image_ids": ["file-vision-001"],
+  "text_hint": "求 t>=0 时电容电压",
+  "answer_style": "detailed"
+}
+```
+
+### 返回参数
+
+```json
+{
+  "solve_record_id": "vs-90001",
+  "recognized_question": "RC 换路电路求电容电压。",
+  "circuit_structure": {
+    "nodes": ["A", "0"],
+    "branches": ["R1 A-0", "C A-0"],
+    "uncertain_items": []
+  },
+  "chapter": "第8章 一阶电路的暂态分析",
+  "method": "三要素法",
+  "key_equations": ["uC(t)=uC(inf)+[uC(0+)-uC(inf)]e^{-t/tau}"],
+  "steps": ["识别换路前后状态", "求初值、终值和时间常数", "代入三要素公式"],
+  "final_answer": "按题图参数得到的最终表达式",
+  "mistake_warnings": ["注意电容电压连续", "时间常数中的 R 需要从电容端口看入"],
+  "recommended_review": ["chapters/08_first_order_transient_analysis.md"]
+}
+```
+
+## 2. 学生智能问答接口
 
 | 项目 | 内容 |
 | --- | --- |
@@ -61,24 +103,23 @@
 }
 ```
 
-## 2. 错题诊断接口
+## 3. 简单纠错接口
 
 | 项目 | 内容 |
 | --- | --- |
-| 接口路径 | `/api/v1/student/wrong-question/diagnose` |
+| 接口路径 | `/api/v1/student/qa/error-hint` |
 | 请求方式 | POST |
-| 说明 | 调用错题诊断 Agent，保存错题记录并更新学习画像。 |
+| 说明 | 调用课程问答 Agent 的简易纠错模块，返回轻量错因提示和复习建议。 |
 
 ### 请求参数
 
 ```json
 {
   "user_id": "10001",
-  "course_id": "1",
-  "knowledge_point_id": "AE-001",
-  "question_text": "判断 NMOS 是否工作在饱和区。",
-  "student_answer": "VGS 大于 Vth，所以饱和。",
-  "reference_answer": "需同时满足 VGS > Vth 且 VDS >= VGS - Vth。"
+  "course_id": "01_circuit_theory",
+  "chapter_hint": "第8章 一阶电路的暂态分析",
+  "student_step": "我求时间常数时把受控源也置零。",
+  "question_context": "含受控源的一阶 RC 电路求时间常数。"
 }
 ```
 
@@ -86,32 +127,27 @@
 
 ```json
 {
-  "wrong_record_id": "80001",
-  "diagnosis_summary": "该答案遗漏了 VDS 判断条件。",
-  "is_correct": false,
-  "error_types": [
+  "hint_record_id": "eh-80001",
+  "summary": "这一步主要问题是把受控源当成独立源置零。",
+  "possible_reason_tags": [
     {
-      "code": "condition_missing",
-      "name": "判断条件遗漏",
-      "evidence": "学生只写出 VGS > Vth"
+      "code": "dependent_source_zeroed_error",
+      "evidence": "学生在求等效电阻时关闭了受控源。"
     }
   ],
-  "related_knowledge_points": [{"id": "AE-001", "name": "MOS 管工作区"}],
-  "missing_steps": ["未比较 VDS 与 VGS - Vth"],
-  "correct_solution_outline": ["先判断导通", "再判断饱和区条件", "给出工作区结论"],
-  "student_friendly_explanation": "VGS > Vth 只能说明 MOS 管导通，不能直接说明处于饱和区。",
-  "review_suggestions": ["完成 3 道 MOS 工作区判断题"],
-  "priority": "high"
+  "student_friendly_explanation": "求含受控源电路的等效电阻时，独立源置零，受控源必须保留。",
+  "next_step_hint": "请从电容端口加测试源，再列 KCL 求 Req。",
+  "recommended_review": ["chapters/08_first_order_transient_analysis.md"]
 }
 ```
 
-## 3. 学习建议接口
+## 4. 学习建议接口
 
 | 项目 | 内容 |
 | --- | --- |
 | 接口路径 | `/api/v1/student/study-suggestion` |
 | 请求方式 | POST |
-| 说明 | 聚合问答、错题和学习画像，调用学习规划 Agent 生成建议。 |
+| 说明 | 聚合问答、题图解题、简单纠错和学习画像，调用学习规划 Agent 生成建议。 |
 
 ### 请求参数
 
@@ -153,7 +189,7 @@
 }
 ```
 
-## 4. 教师端高频问题统计接口
+## 5. 教师端高频问题统计接口
 
 | 项目 | 内容 |
 | --- | --- |
@@ -178,33 +214,33 @@
 }
 ```
 
-## 5. 教师端错题类型统计接口
+## 6. 教师端错因标签统计接口
 
 | 项目 | 内容 |
 | --- | --- |
-| 接口路径 | `/api/v1/teacher/stats/error-types` |
+| 接口路径 | `/api/v1/teacher/stats/error-reason-tags` |
 | 请求方式 | GET |
 | 请求参数 | `course_id`、`class_id`、`start_date`、`end_date` |
-| 说明 | 返回错题类型分布，用于饼图或柱状图展示。 |
+| 说明 | 返回简单纠错和识图解题易错提醒中的错因标签分布，用于饼图或柱状图展示。 |
 
 ### 返回参数
 
 ```json
 {
   "items": [
-    {"error_type": "condition_missing", "error_type_name": "判断条件遗漏", "count": 12, "ratio": 0.32}
+    {"reason_tag": "time_constant_error", "tag_name": "时间常数错误", "count": 12, "ratio": 0.32}
   ]
 }
 ```
 
-## 6. 教师端薄弱知识点统计接口
+## 7. 教师端薄弱知识点统计接口
 
 | 项目 | 内容 |
 | --- | --- |
 | 接口路径 | `/api/v1/teacher/stats/weak-knowledge-points` |
 | 请求方式 | GET |
 | 请求参数 | `course_id`、`class_id`、`start_date`、`end_date`、`limit` |
-| 说明 | 综合错题次数、问答次数和学习画像，返回薄弱知识点排名。 |
+| 说明 | 综合问答次数、识图解题记录、错因提示和学习画像，返回薄弱知识点排名。 |
 
 ### 返回参数
 
@@ -214,7 +250,7 @@
     {
       "knowledge_point_id": "DE-004",
       "knowledge_point_name": "建立时间与保持时间",
-      "wrong_count": 15,
+      "reason_tag_count": 15,
       "qa_count": 22,
       "score": 86.5
     }
@@ -222,14 +258,14 @@
 }
 ```
 
-## 7. 学生活跃度统计接口
+## 8. 学生活跃度统计接口
 
 | 项目 | 内容 |
 | --- | --- |
 | 接口路径 | `/api/v1/teacher/stats/activity` |
 | 请求方式 | GET |
 | 请求参数 | `course_id`、`class_id`、`start_date`、`end_date` |
-| 说明 | 返回问答次数、错题提交次数和活跃学生数趋势。 |
+| 说明 | 返回问答次数、识图解题次数、简单纠错次数和活跃学生数趋势。 |
 
 ### 返回参数
 
@@ -239,14 +275,15 @@
     {
       "date": "2026-06-24",
       "qa_count": 45,
-      "wrong_submit_count": 20,
+      "vision_solve_count": 20,
+      "error_hint_count": 12,
       "active_student_count": 18
     }
   ]
 }
 ```
 
-## 8. 教师教学建议生成接口
+## 9. 教师教学建议生成接口
 
 | 项目 | 内容 |
 | --- | --- |
@@ -279,8 +316,9 @@
 
 ## 第一版实现顺序建议
 
-1. 先实现学生智能问答接口，打通课程问答 Agent。
-2. 实现错题诊断接口，并写入 `wrong_record`。
-3. 基于 `qa_record` 和 `wrong_record` 实现学习建议接口。
-4. 使用聚合 SQL 实现教师端三个统计接口。
-5. 最后接入教师分析 Agent 生成教学建议。
+1. 先实现学生识图解题接口，打通识图解题 Agent。
+2. 实现学生智能问答接口，打通课程问答 Agent。
+3. 实现简单纠错接口，并写入错因提示记录。
+4. 基于问答、识图解题和错因提示记录实现学习建议接口。
+5. 使用聚合 SQL 实现教师端统计接口。
+6. 最后接入教师分析 Agent 生成教学建议。

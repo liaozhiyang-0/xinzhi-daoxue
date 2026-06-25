@@ -55,7 +55,8 @@ class AgentApiClient:
 
 | 业务能力 | Agent | 后端接口 |
 | --- | --- | --- |
+| 识图解题 | 识图解题 Agent | `/api/v1/student/vision-solve` |
 | 智能问答 | 课程问答 Agent | `/api/v1/student/qa` |
-| 错题诊断 | 错题诊断 Agent | `/api/v1/student/wrong-question/diagnose` |
+| 简单纠错 | 课程问答 Agent 简易纠错模块 | `/api/v1/student/qa/error-hint` |
 | 学习建议 | 学习规划 Agent | `/api/v1/student/study-suggestion` |
 | 教师分析 | 教师分析 Agent | `/api/v1/teacher/teaching-suggestion` |
