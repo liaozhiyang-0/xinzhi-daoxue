@@ -5,6 +5,8 @@ from app.contracts import AgentRequest, AgentResult
 
 
 class AgentProvider(ABC):
+    provider_name: str
+
     @abstractmethod
     async def run(
         self,

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "xinzhi-daoxue-api"
-    app_env: str = "development"
+    app_env: Literal["development", "test", "production"] = "development"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
 
@@ -35,20 +36,35 @@ class Settings(BaseSettings):
     minio_bucket: str = "xzd-files"
     minio_secure: bool = False
 
-    default_agent_provider: str = "mock"
+    default_agent_provider: Literal["mock", "xingchen"] = "mock"
+    allow_mock_fallback: bool = True
     xingchen_enabled: bool = False
+    xingchen_publication_status: Literal["not_published"] = "not_published"
     xingchen_base_url: str = ""
     xingchen_api_key: str = ""
     xingchen_solver_ct_workflow_id: str = ""
-    xingchen_timeout_seconds: float = 120
+    xingchen_timeout_seconds: float = Field(default=120, gt=0)
 
     max_upload_size_mb: int = Field(default=20, gt=0)
     local_storage_fallback: bool = True
     local_storage_path: Path = PROJECT_ROOT / "local_storage"
+    sse_heartbeat_seconds: float = Field(default=10.0, gt=0)
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL 必须是标准 Python 日志级别")
+        return normalized
 
     @property
     def active_database_url(self) -> str:
         return self.test_database_url if self.app_env == "test" else self.database_url
+
+    @property
+    def xingchen_runtime_available(self) -> bool:
+        return False
 
 
 @lru_cache

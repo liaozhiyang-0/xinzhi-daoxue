@@ -10,6 +10,8 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
+evaluation/circuit_theory/results/*
+!evaluation/circuit_theory/results/.gitkeep
 node_modules/
 dist/
 build/
@@ -21,3 +23,7 @@ target/
 *.db
 local_storage/
 .minio/
+.local_inputs/
+.local_outputs/
+*.xingchen.raw.yml
+*.xingchen.raw.yaml

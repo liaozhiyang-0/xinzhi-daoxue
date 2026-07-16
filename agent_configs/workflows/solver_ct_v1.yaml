@@ -2,10 +2,12 @@ workflow_id: SOLVER_CT_V1
 display_name: SOLVER_CT_电路理论专业解题_v1.0
 version: 1.0.0
 provider: xingchen
+publication_status: not_published
 course_pack: course_ct_v1
-enabled: true
-streaming: true
+enabled: false
+streaming: false
 timeout_seconds: 120
 cloud_workflow_id_env: XINGCHEN_SOLVER_CT_WORKFLOW_ID
 notes:
-  - "TODO：待从讯飞星辰平台导出或人工补录节点配置、提示词和正式 API 字段。"
+  - "DEFERRED：等待工作流正式发布外部 API 后实施真实调用。"
+  - "原始星辰 YAML 不进入公共仓库。"

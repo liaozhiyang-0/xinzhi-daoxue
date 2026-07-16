@@ -28,8 +28,10 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+")
 
 
 def sanitize_filename(filename: str) -> str:
-    name = Path(filename).name.strip()
-    clean = SAFE_NAME.sub("_", name)
+    raw = filename.strip()
+    if "/" in raw or "\\" in raw or raw in {".", ".."}:
+        raise ValidationAppError("文件名不得包含路径")
+    clean = SAFE_NAME.sub("_", raw)
     if not clean or clean in {".", ".."}:
         raise ValidationAppError("文件名无效")
     return clean[:200]
@@ -44,6 +46,8 @@ class StorageService:
     ) -> str:
         safe = sanitize_filename(filename)
         extension = Path(safe).suffix.lower()
+        if size <= 0:
+            raise ValidationAppError("不允许上传空文件")
         if extension not in ALLOWED_EXTENSIONS:
             raise ValidationAppError("不支持的文件类型")
         if content_type and content_type not in ALLOWED_CONTENT_TYPES[extension]:
@@ -63,13 +67,29 @@ class StorageService:
         except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
             if not self.settings.local_storage_fallback:
                 raise StorageError("MinIO 上传失败") from exc
-            target = self.settings.local_storage_path / storage_key
+            target = (self.settings.local_storage_path / storage_key).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root not in target.parents:
+                raise StorageError("本地存储路径越界") from exc
             target.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(target.write_bytes, data)
             return f"local:{storage_key}"
 
-    def _save_minio(self, key: str, content_type: str, data: bytes) -> None:
-        client = Minio(
+    async def delete(self, storage_key: str) -> None:
+        if storage_key.startswith("local:"):
+            relative = storage_key.removeprefix("local:")
+            target = (self.settings.local_storage_path / relative).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root in target.parents and target.exists():
+                await asyncio.to_thread(target.unlink)
+            return
+        try:
+            await asyncio.to_thread(self._remove_minio, storage_key)
+        except (OSError, S3Error, Urllib3HTTPError, ValueError):
+            return
+
+    def _client(self) -> Minio:
+        return Minio(
             self.settings.minio_endpoint,
             access_key=self.settings.minio_access_key,
             secret_key=self.settings.minio_secret_key,
@@ -79,6 +99,9 @@ class StorageService:
                 retries=Retry(total=0),
             ),
         )
+
+    def _save_minio(self, key: str, content_type: str, data: bytes) -> None:
+        client = self._client()
         if not client.bucket_exists(self.settings.minio_bucket):
             client.make_bucket(self.settings.minio_bucket)
         client.put_object(
@@ -88,3 +111,6 @@ class StorageService:
             length=len(data),
             content_type=content_type,
         )
+
+    def _remove_minio(self, key: str) -> None:
+        self._client().remove_object(self.settings.minio_bucket, key)

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.contracts.api import HealthRead
 from app.core.config import Settings
@@ -14,5 +14,7 @@ async def health(
     request: Request,
     settings: Settings = Depends(get_settings_from_app),
 ) -> HealthRead:
-    session_factory: async_sessionmaker = request.app.state.session_factory
-    return await build_health(settings, session_factory)
+    session_factory: async_sessionmaker[AsyncSession] = (
+        request.app.state.session_factory
+    )
+    return await build_health(settings, session_factory, request.app.state.provider)

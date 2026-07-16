@@ -46,11 +46,17 @@ class AgentResultStatus(StrEnum):
 
 class AgentEventType(StrEnum):
     TASK_CREATED = "task.created"
+    TASK_QUEUED = "task.queued"
+    TASK_RUNNING = "task.running"
     AGENT_STARTED = "agent.started"
+    AGENT_PROGRESS = "agent.progress"
     AGENT_OUTPUT = "agent.output"
+    ARTIFACT_CREATED = "artifact.created"
+    CANCEL_REQUESTED = "cancel.requested"
+    TASK_CANCELLED = "task.cancelled"
     TASK_COMPLETED = "task.completed"
     TASK_FAILED = "task.failed"
-    TASK_CANCELLED = "task.cancelled"
+    TASK_RETRY_CREATED = "task.retry_created"
 
 
 class ArtifactType(StrEnum):
@@ -58,6 +64,31 @@ class ArtifactType(StrEnum):
     REPORT = "report"
     FILE = "file"
     STRUCTURED_RESULT = "structured_result"
+
+
+class AttachmentRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str
+    filename: str
+    content_type: str
+    size_bytes: int = Field(ge=0)
+    storage_key: str
+    provider_file_id: str | None = None
+    checksum_sha256: str | None = None
+
+
+class RunMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latency_ms: int | None = Field(default=None, ge=0)
+    queue_latency_ms: int | None = Field(default=None, ge=0)
+    provider_latency_ms: int | None = Field(default=None, ge=0)
+    model_calls: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    retrieval_calls: int = Field(default=0, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
 
 
 class Artifact(BaseModel):
@@ -86,7 +117,7 @@ class AgentRequest(BaseModel):
     course_id: str = "CT"
     intent: Intent = Intent.SOLVE_PROBLEM
     canonical_input: dict[str, Any] = Field(default_factory=dict)
-    attachments: list[str] = Field(default_factory=list)
+    attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)
     options: dict[str, Any] = Field(default_factory=dict)
 
@@ -103,7 +134,7 @@ class AgentResult(BaseModel):
     citations: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, ge=0, le=1)
-    metrics: dict[str, Any] = Field(default_factory=dict)
+    metrics: RunMetrics = Field(default_factory=RunMetrics)
 
 
 class AgentEvent(BaseModel):
@@ -111,6 +142,7 @@ class AgentEvent(BaseModel):
 
     event_id: str = Field(default_factory=lambda: new_id("event"))
     task_id: str
+    sequence: int = Field(ge=1)
     type: AgentEventType
     agent_id: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
@@ -128,3 +160,12 @@ class CoursePack(BaseModel):
     agents: dict[str, str] = Field(default_factory=dict)
     tools: dict[str, bool] = Field(default_factory=dict)
     evaluation: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_name: str
+    available: bool
+    reason: str | None = None
+    publication_status: str

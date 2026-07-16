@@ -8,13 +8,16 @@ from uuid import uuid4
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +70,9 @@ class SessionModel(Base):
 
 class TaskModel(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        Index("ix_tasks_status_created_at", "status", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"), index=True)
@@ -81,8 +87,16 @@ class TaskModel(Base):
     input_content: Mapped[dict[str, Any]] = mapped_column(JSON)
     result_content: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parent_task_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id"), nullable=True, index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    cancellation_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -103,6 +117,7 @@ class FileModel(Base):
     content_type: Mapped[str] = mapped_column(String(128))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -141,13 +156,20 @@ class AgentRunModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TaskEventModel(Base):
     __tablename__ = "task_events"
+    __table_args__ = (
+        UniqueConstraint("task_id", "sequence", name="uq_task_events_sequence"),
+        Index("ix_task_events_task_sequence", "task_id", "sequence"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     event_data: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(

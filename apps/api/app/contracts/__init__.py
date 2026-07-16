@@ -6,10 +6,14 @@ from app.contracts.agent import (
     AgentResultStatus,
     Artifact,
     ArtifactType,
+    AttachmentRef,
     CoursePack,
     Intent,
+    ProviderAvailability,
+    RunMetrics,
     Scene,
     UserRole,
+    new_id,
 )
 
 __all__ = [
@@ -20,8 +24,12 @@ __all__ = [
     "AgentResultStatus",
     "Artifact",
     "ArtifactType",
+    "AttachmentRef",
     "CoursePack",
     "Intent",
+    "ProviderAvailability",
+    "RunMetrics",
     "Scene",
     "UserRole",
+    "new_id",
 ]
