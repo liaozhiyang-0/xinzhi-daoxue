@@ -31,7 +31,7 @@
 - [x] Docker Compose config
 - [x] Docker runtime / Mock E2E
 - [x] 架构、安全、可靠性三轮审查
-- [ ] 新 Draft PR 与 CI
+- [x] 新 Draft PR #3 与 push / pull_request CI
 
 ## 本轮真实结果
 
