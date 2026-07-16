@@ -1,36 +1,49 @@
-# 阶段 0—1 发布检查清单
+# 本地阶段 0—1.5 发布检查清单
 
-## 阶段 0
+## Git 与资料安全
 
-- [x] 建立 SOLVER_CT v1.0 基线文档。
-- [x] 记录当前性能观测。
-- [x] 建立节点清单模板。
-- [x] 建立已知问题清单。
-- [x] 建立电路理论 benchmark manifest。
-- [ ] TODO：导出星辰工作流节点、提示词和配置。
-- [ ] TODO：补充第一批冻结测试案例与标准答案。
+- [x] 新分支直接基于 `origin/main`。
+- [x] 未大规模迁移、删除或重命名课程资料。
+- [x] `.local_inputs/`、`.local_outputs/` 与原始星辰 YAML 已忽略。
+- [ ] BLOCKED：完整总体架构原文尚未提供。
+- [ ] BLOCKED：原始星辰 YAML 尚未提供，无法生成真实脱敏清单。
 
-## 阶段 1
+## 本地工程
 
-- [x] 建立 FastAPI API 壳层。
-- [x] 建立统一 Agent 协议。
-- [x] 建立 Mock 与 Xingchen Provider 隔离层。
-- [x] 建立 SQLAlchemy 模型与首个 Alembic migration。
-- [x] 建立会话、任务、事件、文件和产物 API。
-- [x] 建立 SSE 事件流。
-- [x] 建立 Docker Compose、本地脚本和 CI。
-- [x] 建立自动化测试。
-- [ ] TODO：补充星辰正式接口信息并完成真实联调。
+- [x] 星辰状态明确为 `not_published`。
+- [x] `XingchenCloudProvider` 不执行 HTTP 请求。
+- [x] Mock 结果显式标记。
+- [x] 任务创建返回 HTTP 202 并由 TaskRunner 后台执行。
+- [x] 事件使用递增 sequence。
+- [x] SSE 支持 `Last-Event-ID` 与 `after`。
+- [x] 已增加重试、取消、文件元数据和本地调试页面。
+- [x] 已增加增量数据库 migration。
 
-## 发布前
+## 最终质量门
 
-- [x] `ruff check .`
-- [x] `pytest`
-- [x] `docker compose config`
-- [x] 本地 health check
-- [x] Mock 端到端任务
-- [x] 确认 `.env` 未跟踪。
-- [x] 确认无真实 API Key、生产数据库密码或私密数据。
-- [x] 创建 Draft Pull Request，不自动合并。
+- [x] Ruff
+- [x] Mypy
+- [x] Pytest / Coverage
+- [x] Migration upgrade / downgrade / upgrade
+- [x] OpenAPI export
+- [x] Config validation
+- [x] Sensitive file scan
+- [x] Docker Compose config
+- [x] Docker runtime / Mock E2E
+- [x] 架构、安全、可靠性三轮审查
+- [ ] 新 Draft PR 与 CI
 
-> 已在 Windows 11 + Docker Desktop 4.82.0 + WSL 2 环境完成真实容器验收：PostgreSQL、Redis、MinIO、API 均为 healthy，PostgreSQL Alembic migration、MinIO 文件上传和 Mock 端到端任务均通过。
+## 本轮真实结果
+
+- Ruff：通过。
+- Mypy：45 个应用源文件通过。
+- Pytest：40 passed，覆盖率 86%，1 个上游 TestClient 弃用警告。
+- SQLite migration：upgrade / downgrade / upgrade 通过。
+- PostgreSQL migration：`20260717_0002` downgrade / upgrade 通过。
+- Docker：PostgreSQL、Redis、MinIO、API 均 healthy。
+- 非阻塞任务：POST 约 97 ms 返回 queued；Mock 后台完成。
+- SSE：sequence 连续 1—7；`Last-Event-ID=2` 从 3 恢复。
+- 文件：真实保存至 MinIO，SHA-256 与元数据入库。
+- 调试页与 Swagger：HTTP 200。
+- 取消、失败和重试：Docker 端到端验证通过。
+- Docker 日志：保存在被忽略的 `.local_outputs/docker-compose.log`，验收后容器已关闭。

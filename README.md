@@ -189,15 +189,16 @@ mysql -h localhost -P 3306 -u root -p xinzhi_daoxue < database/init.sql
 
 ---
 
-## 12. 本地阶段 0—1 工程基线
+## 12. 本地阶段 0—1.5 工程基线
 
 本仓库用于建设“芯智导学”电子信息课程群多智能体平台。原有轻量 MVP 所积累的课程知识库、Prompt、测试案例、演示资料和只读历史资料继续保留；当前新增阶段 0—1 的本地工程基线，不推翻已经在讯飞星辰平台跑通的 `SOLVER_CT_电路理论专业解题_v1.0`。
 
 ## 当前完成阶段
 
 - 阶段 0：冻结 SOLVER_CT v1.0 基线、性能观测、节点清单模板、已知问题、发布清单与回归评测结构。
-- 阶段 1：建立 FastAPI API 壳层、统一 Agent 协议、Mock Provider、星辰 Adapter 边界、数据库模型、SSE、文件存储、Docker Compose、脚本、测试与 CI。
-- 真实讯飞星辰 API 尚未接入，因为正式地址、鉴权与字段定义尚未提供。未配置时系统明确使用 Mock Provider。
+- 阶段 1：建立 FastAPI API 壳层、统一 Agent 协议、Mock Provider、星辰未发布边界、数据库模型、文件存储、Docker Compose、脚本、测试与 CI。
+- 阶段 1.5：任务创建改为 HTTP 202 非阻塞模式，增加 TaskRunner、递增事件 sequence、SSE 重连、取消、重试、调试页、评测脚手架、请求 ID 和敏感文件扫描。
+- `SOLVER_CT` 尚未发布外部 API。本阶段不会发起真实星辰 HTTP 请求，也不要求填写星辰 API 配置。
 
 总体架构见 `docs/architecture/02_xinzhi_multi_agent_platform_plan_v1.0.md`。
 
@@ -218,6 +219,8 @@ docs/
 evaluation/circuit_theory/   电路理论回归评测结构
 scripts/                     Windows 与 Linux/macOS 脚本
 archive_legacy/              原有历史资料，只读保留
+.local_inputs/               本地原始输入，Git/Docker 忽略
+.local_outputs/              本地日志与验证输出，Git/Docker 忽略
 ```
 
 仓库中已有的课程资料、知识库、题库和用户新增中文资料目录不属于阶段 0—1 的重写范围。
@@ -286,13 +289,14 @@ Set-Location ../..
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m mypy apps/api/app
 .\.venv\Scripts\python.exe -m pytest
 ```
 
 或运行：
 
 ```powershell
-.\scripts\test.ps1
+.\scripts\check.ps1
 ```
 
 CI 使用 Python 3.12、SQLite 与 Mock Provider，不读取真实星辰秘密。
@@ -302,6 +306,7 @@ CI 使用 Python 3.12、SQLite 与 Mock Provider，不读取真实星辰秘密�
 - 健康检查：`http://localhost:8000/health`
 - v1 健康检查：`http://localhost:8000/api/v1/health`
 - Swagger：`http://localhost:8000/docs`
+- 本地调试台：`http://localhost:8000/debug`
 - OpenAPI：`http://localhost:8000/openapi.json`
 
 主要接口：
@@ -313,8 +318,12 @@ POST /api/v1/tasks
 GET  /api/v1/tasks/{task_id}
 GET  /api/v1/tasks/{task_id}/events
 GET  /api/v1/tasks/{task_id}/stream
+POST /api/v1/tasks/{task_id}/retry
+POST /api/v1/tasks/{task_id}/cancel
 POST /api/v1/files
+GET  /api/v1/files/{file_id}
 GET  /api/v1/artifacts/{artifact_id}
+GET  /debug
 ```
 
 ## Mock Provider
@@ -323,25 +332,22 @@ GET  /api/v1/artifacts/{artifact_id}
 
 ```env
 DEFAULT_AGENT_PROVIDER=mock
+ALLOW_MOCK_FALLBACK=true
 XINGCHEN_ENABLED=false
 ```
 
 Mock 结果始终包含 `provider=mock` 和 `mock_result` 警告，不代表真实星辰输出，适用于本地开发、测试和演示。
 
-## 星辰 Provider 配置
+## 星辰 Provider 状态
 
-预留环境变量：
+当前统一状态：
 
-```env
-DEFAULT_AGENT_PROVIDER=xingchen
-XINGCHEN_ENABLED=true
-XINGCHEN_BASE_URL=
-XINGCHEN_API_KEY=
-XINGCHEN_SOLVER_CT_WORKFLOW_ID=
-XINGCHEN_TIMEOUT_SECONDS=120
+```text
+publication_status: not_published
+runtime_available: false
 ```
 
-当前 Adapter 不猜测正式请求路径和字段。即使配置变量，仍需补充官方 API 文档后实现请求与响应转换。密钥不得提交到 Git。
+`XingchenCloudProvider` 当前只保留接口边界并抛出 `NotPublishedError`，代码不会构造或发送真实 HTTP 请求。`.env.example` 中的星辰字段只是未来占位，本阶段无需填写。
 
 ## 数据库迁移
 
@@ -362,11 +368,15 @@ Set-Location apps/api
 - 不在代码和 Compose 文件中保存真实 API Key 或生产密码。
 - 日志不输出完整 API Key、数据库密码或默认完整学生隐私数据。
 - 上传文件只允许 png、jpg、jpeg、pdf、md、txt，不执行上传内容。
+- 上传同时校验扩展名、MIME、空文件、大小、路径穿越和 SHA-256。
+- 原始星辰 YAML 只允许放入 `.local_inputs/`，不得提交。
 - 本地默认密码必须在共享部署前修改。
 
 ## 当前未实现
 
 - 真实讯飞星辰协议和 SOLVER_CT 云端调用。
+- 原始 YAML 的真实 SHA-256、节点数和连线数（本轮附件未提供 YAML）。
+- 用户所述完整总体架构原文恢复（本轮附件未提供原文）。
 - 完整 LangGraph、多智能体编排和 RAGFlow。
 - Celery/分布式 Worker。
 - 完整学生端、教师端、科研端。
@@ -374,7 +384,7 @@ Set-Location apps/api
 
 ## 后续阶段
 
-1. 接入真实 `SOLVER_CT`。
-2. 完成本地到星辰的端到端调用与回归测试。
-3. 建立最小调试页面。
+1. 工作流发布后接入真实 `SOLVER_CT`。
+2. 完成本地到星辰的端到端调用与真实回归测试。
+3. 在现有 `/debug` 基础上迭代最小调试页面。
 4. 开始 `LEARN_01` 课程知识问答。

@@ -1,5 +1,8 @@
 # 本地开发指南
 
+> 当前 `SOLVER_CT` 尚未发布外部 API。本地默认并仅验证 Mock Provider，
+> 不要求填写任何星辰 API 字段。
+
 ## 1. 安装 Python
 
 推荐安装 Python 3.11 或 3.12，并在安装器中启用 Python Launcher。PowerShell 验证：
@@ -193,6 +196,32 @@ docker compose logs postgres
 docker compose logs minio
 ```
 
-### 星辰 Provider 回退到 Mock
+### 为什么始终显示 Mock
 
-确认 `DEFAULT_AGENT_PROVIDER=xingchen`、`XINGCHEN_ENABLED=true`，以及 Base URL、API Key、工作流 ID 均已填写。当前仍需正式 API 字段文档才能完成真实调用；系统不会编造接口。
+这是当前阶段的安全设计。`SOLVER_CT` 尚未发布外部 API，健康检查应显示：
+
+```text
+active_provider=mock
+provider_mode=only_mock
+xingchen_publication_status=not_published
+```
+
+不要填写星辰 API Key。工作流发布和真实接入属于后续独立阶段。
+
+## 12. 调试页与完整检查
+
+启动 API 后访问：
+
+```text
+http://localhost:8000/debug
+```
+
+页面支持创建会话、上传附件、提交非阻塞任务、读取 SSE、取消、重试和查看产物。它是本地开发工具，不是正式学生端。
+
+提交前运行：
+
+```powershell
+.\scripts\check.ps1
+```
+
+该脚本依次执行配置检查、敏感文件扫描、Ruff、Mypy、Pytest、OpenAPI 导出、Docker Compose 配置检查和 `git diff --check`。
