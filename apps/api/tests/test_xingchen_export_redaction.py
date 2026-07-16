@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from tests.test_xingchen_export_parser import write_fixture
-
 from scripts.inspect_xingchen_workflow import inspect_workflow
+
+from .test_xingchen_export_parser import write_fixture
 
 
 def test_export_parser_does_not_publish_private_values(tmp_path: Path) -> None:
