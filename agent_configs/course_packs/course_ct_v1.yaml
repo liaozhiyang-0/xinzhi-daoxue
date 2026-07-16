@@ -1,0 +1,27 @@
+course_id: CT
+course_name: 电路理论
+domain_id: DOMAIN_CIRCUIT
+version: 1.0.0
+
+knowledge_spaces:
+  chapter_kb: ct_chapters
+  method_kb: ct_methods
+  question_kb: ct_questions
+  wrong_case_kb: ct_wrong_cases
+  teaching_kb: ct_teaching
+  grading_kb: ct_grading
+
+agents:
+  solver_agent: SOLVER_CT_V1
+  verifier_agent: VERIFY_CT_V1
+  tutor_profile: TUTOR_CT_V1
+
+tools:
+  symbolic_math: true
+  python_compute: true
+  code_execution: false
+  spice_simulation: false
+  waveform_plot: true
+
+evaluation:
+  benchmark_set: BENCHMARK_CT_V1
