@@ -64,9 +64,28 @@ Compose 容器使用 `DATABASE_URL`、`REDIS_URL`、`MINIO_ENDPOINT` 中的服�
 
 ## 6. Docker Compose 启动完整服务
 
+Windows 一键安装、启动和健康检查：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\docker_dev.ps1
+```
+
+该脚本会：
+
+1. 从 PATH 或 Docker Desktop 默认安装目录定位 `docker.exe`。
+2. 缺少 Docker Desktop 时使用 winget 安装。
+3. 自动启动 Docker Desktop，并等待 Engine 就绪。
+4. 从 `.env.example` 创建未跟踪的 `.env`。
+5. 执行 `docker compose config --quiet`。
+6. 构建并启动全部服务，等待四个容器健康。
+7. 验证 API、PostgreSQL、Redis 和 MinIO 状态。
+
+手动命令：
+
 ```powershell
 docker compose config
-docker compose up -d --build
+docker compose up -d --build --wait
 docker compose ps
 ```
 
@@ -80,6 +99,12 @@ docker compose ps
 | Redis | localhost:6379 |
 | MinIO API | http://localhost:9000 |
 | MinIO Console | http://localhost:9001 |
+
+停止服务但保留数据库和对象存储卷：
+
+```powershell
+.\scripts\docker_down.ps1
+```
 
 ## 7. 数据库迁移
 

@@ -24,3 +24,7 @@ jobs:
         run: ruff check .
       - name: Pytest
         run: pytest
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh
+      - name: Validate Docker Compose
+        run: docker compose config --quiet

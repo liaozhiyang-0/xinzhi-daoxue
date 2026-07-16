@@ -51,12 +51,27 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Docker Compose 启动
 
-首次使用先复制并修改开发密码：
+Windows 可直接使用自动适配脚本。它会在缺少 Docker Desktop 时通过
+winget 安装、启动 Docker Engine、创建 `.env`、校验 Compose、构建镜像并等待
+全部服务健康：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\docker_dev.ps1
+```
+
+停止服务但保留数据卷：
+
+```powershell
+.\scripts\docker_down.ps1
+```
+
+也可以手动执行：
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d --build
-docker compose ps
+docker compose config
+docker compose up -d --build --wait
 ```
 
 开发默认密码只用于本机，部署到共享环境前必须修改。

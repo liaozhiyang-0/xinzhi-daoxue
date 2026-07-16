@@ -26,11 +26,11 @@
 
 - [x] `ruff check .`
 - [x] `pytest`
-- [ ] `docker compose config`
+- [x] `docker compose config`
 - [x] 本地 health check
 - [x] Mock 端到端任务
 - [x] 确认 `.env` 未跟踪。
 - [x] 确认无真实 API Key、生产数据库密码或私密数据。
-- [ ] 创建 Draft Pull Request，不自动合并。
+- [x] 创建 Draft Pull Request，不自动合并。
 
-> 当前机器未安装 Docker，因此 `docker compose config` 与容器启动验收待在具备 Docker Desktop 的环境补跑；Compose YAML 已完成独立解析校验。
+> 已在 Windows 11 + Docker Desktop 4.82.0 + WSL 2 环境完成真实容器验收：PostgreSQL、Redis、MinIO、API 均为 healthy，PostgreSQL Alembic migration、MinIO 文件上传和 Mock 端到端任务均通过。
