@@ -1,0 +1,15 @@
+agents:
+  SOLVER_CT_V1:
+    provider: xingchen
+    workflow_version: "1.0.0"
+    course_pack: course_ct_v1
+    enabled: false
+    publication_status: not_published
+    supports_streaming: false
+    default_timeout_seconds: 120
+    fallback:
+      provider: mock
+      when:
+        - xingchen_disabled
+        - xingchen_not_configured
+        - xingchen_not_published

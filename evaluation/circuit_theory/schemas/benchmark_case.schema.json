@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Circuit theory benchmark case",
+  "type": "object",
+  "required": [
+    "case_id",
+    "difficulty",
+    "input_type",
+    "question",
+    "attachments",
+    "expected",
+    "tags",
+    "source_type",
+    "review_status"
+  ],
+  "properties": {
+    "case_id": {"type": "string"},
+    "difficulty": {"enum": ["easy", "medium", "hard", "image"]},
+    "input_type": {"enum": ["text", "image"]},
+    "question": {"type": "string"},
+    "attachments": {"type": "array", "items": {"type": "string"}},
+    "expected": {
+      "type": "object",
+      "required": [
+        "final_answer",
+        "required_points",
+        "units",
+        "reference_directions"
+      ],
+      "properties": {
+        "final_answer": {"type": "string"},
+        "required_points": {"type": "array", "items": {"type": "string"}},
+        "units": {"type": "array", "items": {"type": "string"}},
+        "reference_directions": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "source_type": {"type": "string"},
+    "review_status": {"type": "string"}
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "case_id": "CT_EASY_001",
+  "difficulty": "easy",
+  "input_type": "text",
+  "question": "示例：已知电阻与电流，说明如何按参考方向计算电压。",
+  "attachments": [],
+  "expected": {
+    "final_answer": "",
+    "required_points": ["欧姆定律", "参考方向说明"],
+    "units": ["V"],
+    "reference_directions": ["draft"]
+  },
+  "tags": ["sample", "draft"],
+  "source_type": "original",
+  "review_status": "draft_not_reviewed"
+}
