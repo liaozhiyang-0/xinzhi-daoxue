@@ -112,7 +112,9 @@ mysql -h localhost -P 3306 -u root -p xinzhi_daoxue < database/init.sql
 
 ### 7.5 部署模板
 
-部署模板位于 `deploy/docker-compose.yml`。当前前后端工程仍是设计阶段，Compose 文件主要用于描述服务关系，真实镜像和启动命令需在代码实现后补齐。
+`deploy/docker-compose.yml` 是早期方案留档；阶段 0—1.5 的可运行环境以根目录
+`docker-compose.yml`、`apps/api/Dockerfile` 和 `scripts/docker_dev.*` 为准，
+已覆盖 PostgreSQL、Redis、MinIO 与 FastAPI 的构建、健康检查和依赖启动顺序。
 
 ## 8. 第一版演示链路
 
