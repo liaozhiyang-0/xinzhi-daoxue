@@ -390,3 +390,20 @@ Set-Location apps/api
 2. 完成本地到星辰的端到端调用与真实回归测试。
 3. 在现有 `/debug` 基础上迭代最小调试页面。
 4. 开始 `LEARN_01` 课程知识问答。
+
+## 本地知识库接入
+
+阶段 1.5 已支持以只读方式使用同目录下的 `电路理论`、`模电`、`数电` 教材目录。
+原始 PDF、图片和 Markdown 不进入 Git 或 Docker 镜像；Docker 启动脚本会自动发现目录，
+API 对 Markdown 建立进程内中文词项索引。
+
+```http
+GET  /api/v1/knowledge/sources
+POST /api/v1/knowledge/search
+POST /api/v1/knowledge/reload
+```
+
+调试页 `http://localhost:8000/debug` 已增加知识库检索入口。详细的数据审计与接入边界见：
+
+- `docs/knowledge/local_knowledge_base_assessment.md`
+- `docs/knowledge/local_knowledge_base_integration.md`

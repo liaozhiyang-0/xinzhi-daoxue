@@ -47,6 +47,16 @@ def validate(settings: Settings) -> dict[str, object]:
             "local_fallback": settings.local_storage_fallback,
             "local_path": str(settings.local_storage_path),
         },
+        "knowledge": {
+            "enabled": settings.knowledge_enabled,
+            "sources": {
+                course_id: "available" if path.is_dir() else "unavailable"
+                for course_id, path in settings.knowledge_paths.items()
+            },
+            "chunk_size_chars": settings.knowledge_chunk_size_chars,
+            "chunk_overlap_chars": settings.knowledge_chunk_overlap_chars,
+            "default_top_k": settings.knowledge_default_top_k,
+        },
     }
 
 

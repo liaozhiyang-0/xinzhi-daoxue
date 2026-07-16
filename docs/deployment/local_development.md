@@ -225,3 +225,17 @@ http://localhost:8000/debug
 ```
 
 该脚本依次执行配置检查、敏感文件扫描、Ruff、Mypy、Pytest、OpenAPI 导出、Docker Compose 配置检查和 `git diff --check`。
+
+## 13. 本地知识库
+
+仓库根目录存在 `电路理论`、`模电`、`数电` 时，`docker_dev.ps1` 会自动将其只读挂载
+到 API 容器。若资料位于其他位置，在 `.env` 中配置：
+
+```env
+KNOWLEDGE_CT_HOST_PATH=C:/absolute/path/to/电路理论
+KNOWLEDGE_AE_HOST_PATH=C:/absolute/path/to/模电
+KNOWLEDGE_DE_HOST_PATH=C:/absolute/path/to/数电
+```
+
+启动后访问 `GET /api/v1/knowledge/sources` 检查文档和分块数量，并在 `/debug` 页面执行
+课程内检索。不要把教材复制到 Git 跟踪目录。

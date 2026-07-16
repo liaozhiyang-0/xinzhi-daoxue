@@ -7,12 +7,13 @@ from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.contracts import AgentEventType, AgentRequest
+from app.contracts import AgentEventType, AgentRequest, KnowledgeHit
 from app.core.errors import AppError, ProviderCancelledError
 from app.models import AgentRunModel, ArtifactModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
 from app.services.event_service import append_task_event
+from app.services.knowledge_base import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +37,11 @@ class TaskRunner:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         provider: AgentProvider,
+        knowledge_base: KnowledgeBaseService,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
+        self.knowledge_base = knowledge_base
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def submit(self, task_id: str) -> bool:
@@ -91,6 +94,25 @@ class TaskRunner:
                 request = AgentRequest.model_validate(task.input_content)
                 await db.commit()
 
+            knowledge_hits, retrieval_attempted = await self._retrieve_knowledge(
+                request
+            )
+            if retrieval_attempted:
+                async with self.session_factory() as db:
+                    task = await TaskRepository(db).get(task_id)
+                    if task is not None:
+                        await append_task_event(
+                            db,
+                            task_id,
+                            AgentEventType.KNOWLEDGE_RETRIEVED,
+                            agent_id=task.agent_id,
+                            data={
+                                "course_id": request.course_id,
+                                "hit_count": len(knowledge_hits),
+                            },
+                        )
+                        await db.commit()
+
             provider_started = perf_counter()
             result = await self.provider.run(
                 "SOLVER_CT_V1",
@@ -98,6 +120,29 @@ class TaskRunner:
                 stream=True,
             )
             provider_latency_ms = int((perf_counter() - provider_started) * 1000)
+            if retrieval_attempted:
+                result.metrics.retrieval_calls += 1
+            if knowledge_hits:
+                hit_payloads = [hit.model_dump(mode="json") for hit in knowledge_hits]
+                result.structured_result["knowledge"] = {
+                    "mode": "local_lexical",
+                    "hits": hit_payloads,
+                }
+                result.citations = list(
+                    dict.fromkeys(
+                        [*result.citations, *(hit.source_ref for hit in knowledge_hits)]
+                    )
+                )
+                for artifact in result.artifacts:
+                    artifact.source_refs = list(
+                        dict.fromkeys(
+                            [
+                                *artifact.source_refs,
+                                *(hit.source_ref for hit in knowledge_hits),
+                            ]
+                        )
+                    )
+                    artifact.content["knowledge_sources"] = artifact.source_refs
 
             async with self.session_factory() as db:
                 repository = TaskRepository(db)
@@ -188,6 +233,41 @@ class TaskRunner:
             message = exc.message if isinstance(exc, AppError) else "后台任务执行失败"
             code = exc.code if isinstance(exc, AppError) else "background_task_error"
             await self._fail_after_exception(task_id, message, code)
+
+    async def _retrieve_knowledge(
+        self, request: AgentRequest
+    ) -> tuple[list[KnowledgeHit], bool]:
+        if not self.knowledge_base.settings.knowledge_enabled:
+            return [], False
+        query = self._knowledge_query(request)
+        if not query:
+            return [], False
+        try:
+            hits = await asyncio.to_thread(
+                self.knowledge_base.search,
+                query,
+                [request.course_id],
+                self.knowledge_base.settings.knowledge_default_top_k,
+            )
+            return hits, True
+        except Exception as exc:
+            logger.warning(
+                "knowledge_retrieval_failed task_id=%s session_id=%s "
+                "course_id=%s error=%s",
+                request.task_id,
+                request.session_id,
+                request.course_id,
+                type(exc).__name__,
+            )
+            return [], True
+
+    @staticmethod
+    def _knowledge_query(request: AgentRequest) -> str:
+        for key in ("text", "question", "problem", "query", "prompt"):
+            value = request.canonical_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
 
     async def _mark_cancelled(
         self, db: AsyncSession, task_id: str, reason: str

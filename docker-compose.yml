@@ -76,6 +76,28 @@ services:
       XINGCHEN_SOLVER_CT_WORKFLOW_ID: ${XINGCHEN_SOLVER_CT_WORKFLOW_ID:-}
       LOCAL_STORAGE_FALLBACK: ${LOCAL_STORAGE_FALLBACK:-true}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/local_storage}
+      KNOWLEDGE_ENABLED: ${KNOWLEDGE_ENABLED:-true}
+      KNOWLEDGE_CT_PATH: /knowledge/CT
+      KNOWLEDGE_AE_PATH: /knowledge/AE
+      KNOWLEDGE_DE_PATH: /knowledge/DE
+      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-1200}
+      KNOWLEDGE_CHUNK_OVERLAP_CHARS: ${KNOWLEDGE_CHUNK_OVERLAP_CHARS:-150}
+      KNOWLEDGE_DEFAULT_TOP_K: ${KNOWLEDGE_DEFAULT_TOP_K:-5}
+      KNOWLEDGE_MAX_FILES_PER_COURSE: ${KNOWLEDGE_MAX_FILES_PER_COURSE:-1000}
+      KNOWLEDGE_MAX_FILE_SIZE_MB: ${KNOWLEDGE_MAX_FILE_SIZE_MB:-5}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
+        target: /knowledge/CT
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_AE_HOST_PATH:-./local_knowledge/AE}
+        target: /knowledge/AE
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_DE_HOST_PATH:-./local_knowledge/DE}
+        target: /knowledge/DE
+        read_only: true
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

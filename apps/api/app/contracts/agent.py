@@ -50,6 +50,7 @@ class AgentEventType(StrEnum):
     TASK_RUNNING = "task.running"
     AGENT_STARTED = "agent.started"
     AGENT_PROGRESS = "agent.progress"
+    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
     AGENT_OUTPUT = "agent.output"
     ARTIFACT_CREATED = "artifact.created"
     CANCEL_REQUESTED = "cancel.requested"

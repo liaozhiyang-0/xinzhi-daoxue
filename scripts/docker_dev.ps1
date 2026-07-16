@@ -105,6 +105,37 @@ function Wait-ComposeHealth([string]$DockerCommand) {
     throw "Docker services did not become healthy within 3 minutes."
 }
 
+function Set-KnowledgeHostPath([string]$VariableName, [string]$FolderName) {
+    if (Test-Path "Env:$VariableName") { return }
+    $ConfiguredLine = Get-Content ".env" -Encoding UTF8 | Where-Object {
+        $_ -match "^\s*$([regex]::Escape($VariableName))="
+    } | Select-Object -First 1
+    if ($ConfiguredLine) {
+        $ConfiguredPath = ($ConfiguredLine -split "=", 2)[1].Trim().Trim('"').Trim("'")
+        if (-not [IO.Path]::IsPathRooted($ConfiguredPath)) {
+            $ConfiguredPath = Join-Path $RepoRoot $ConfiguredPath
+        }
+        if (-not (Test-Path -LiteralPath $ConfiguredPath -PathType Container)) {
+            throw "Configured knowledge path does not exist: $ConfiguredPath"
+        }
+        Set-Item "Env:$VariableName" (Resolve-Path -LiteralPath $ConfiguredPath).Path
+        Write-Host "[xzd] Knowledge source from .env -> $ConfiguredPath"
+        return
+    }
+    $Candidates = @(
+        (Join-Path $RepoRoot $FolderName),
+        (Join-Path (Split-Path -Parent $RepoRoot) "xinzhi-daoxue\$FolderName")
+    )
+    foreach ($Candidate in $Candidates) {
+        if (Test-Path -LiteralPath $Candidate -PathType Container) {
+            Set-Item "Env:$VariableName" (Resolve-Path -LiteralPath $Candidate).Path
+            Write-Host "[xzd] Knowledge source $FolderName -> $Candidate"
+            return
+        }
+    }
+    Write-Warning "Knowledge source '$FolderName' was not found; using empty fallback."
+}
+
 $Docker = Resolve-DockerCommand
 Wait-DockerEngine $Docker
 
@@ -112,6 +143,15 @@ if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-Warning "Created .env from .env.example. Change development passwords."
 }
+
+$CircuitTheoryFolder = -join @(
+    [char]0x7535, [char]0x8DEF, [char]0x7406, [char]0x8BBA
+)
+$AnalogElectronicsFolder = -join @([char]0x6A21, [char]0x7535)
+$DigitalElectronicsFolder = -join @([char]0x6570, [char]0x7535)
+Set-KnowledgeHostPath "KNOWLEDGE_CT_HOST_PATH" $CircuitTheoryFolder
+Set-KnowledgeHostPath "KNOWLEDGE_AE_HOST_PATH" $AnalogElectronicsFolder
+Set-KnowledgeHostPath "KNOWLEDGE_DE_HOST_PATH" $DigitalElectronicsFolder
 
 Write-Host "[xzd] Validating Docker Compose..."
 & $Docker compose config --quiet

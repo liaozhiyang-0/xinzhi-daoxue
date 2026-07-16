@@ -21,6 +21,7 @@ from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.database.base import Base
 from app.database.session import create_engine_and_session
 from app.providers.factory import get_agent_provider
+from app.services.knowledge_base import KnowledgeBaseService
 from app.services.task_runner import TaskRunner
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings.active_database_url
     )
     provider = get_agent_provider(app_settings)
-    task_runner = TaskRunner(session_factory, provider)
+    knowledge_base = KnowledgeBaseService(app_settings)
+    task_runner = TaskRunner(session_factory, provider, knowledge_base)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -46,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.provider = provider
+        app.state.knowledge_base = knowledge_base
         app.state.task_runner = task_runner
         if app_settings.app_env == "test":
             async with engine.begin() as connection:

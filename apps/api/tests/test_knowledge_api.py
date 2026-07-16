@@ -1,0 +1,76 @@
+from pathlib import Path
+
+from app.core.config import Settings
+from app.main import create_app
+from fastapi.testclient import TestClient
+
+
+def make_client(tmp_path: Path) -> TestClient:
+    ct = tmp_path / "ct"
+    ae = tmp_path / "ae"
+    de = tmp_path / "de"
+    for path in (ct, ae, de):
+        path.mkdir()
+    (ct / "chapter.md").write_text(
+        "## 节点电压法\n节点电压法以独立节点电压作为未知量列写方程。",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        app_env="test",
+        test_database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        redis_url="redis://127.0.0.1:1/0",
+        minio_endpoint="127.0.0.1:1",
+        local_storage_path=tmp_path / "storage",
+        knowledge_ct_path=ct,
+        knowledge_ae_path=ae,
+        knowledge_de_path=de,
+        knowledge_chunk_size_chars=300,
+        knowledge_chunk_overlap_chars=20,
+    )
+    return TestClient(create_app(settings))
+
+
+def test_knowledge_sources_and_search_api(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        sources = client.get("/api/v1/knowledge/sources")
+        assert sources.status_code == 200
+        assert sources.json()[0]["document_count"] == 1
+
+        response = client.post(
+            "/api/v1/knowledge/search",
+            json={"query": "节点电压法", "course_ids": ["CT"], "top_k": 3},
+        )
+        assert response.status_code == 200
+        assert response.json()["hits"][0]["title"] == "节点电压法"
+
+
+def test_mock_task_records_local_knowledge_hits(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        session = client.post(
+            "/api/v1/sessions",
+            json={"user_id": "kb-user", "course_id": "CT", "title": "知识库"},
+        ).json()
+        task = client.post(
+            "/api/v1/tasks",
+            json={
+                "session_id": session["id"],
+                "user_id": "kb-user",
+                "course_id": "CT",
+                "canonical_input": {"text": "节点电压法如何列方程"},
+            },
+        ).json()
+        for _ in range(100):
+            current = client.get(f"/api/v1/tasks/{task['id']}").json()
+            if current["status"] == "completed":
+                break
+        assert current["status"] == "completed"
+        result = current["result_content"]
+        assert result["metrics"]["retrieval_calls"] == 1
+        assert result["citations"][0].startswith("kb://CT/")
+        assert result["structured_result"]["knowledge"]["hits"]
+        artifact = client.get(
+            f"/api/v1/artifacts/{current['artifact_ids'][0]}"
+        ).json()
+        assert artifact["content"]["knowledge_sources"][0].startswith("kb://CT/")
+        events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
+        assert "knowledge.retrieved" in [event["event_type"] for event in events]

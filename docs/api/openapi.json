@@ -526,6 +526,97 @@
         }
       }
     },
+    "/api/v1/knowledge/sources": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "List Sources",
+        "operationId": "list_sources_api_v1_knowledge_sources_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeSourceStatus"
+                  },
+                  "type": "array",
+                  "title": "Response List Sources Api V1 Knowledge Sources Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/search": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Search Knowledge",
+        "operationId": "search_knowledge_api_v1_knowledge_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/reload": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Reload Knowledge",
+        "operationId": "reload_knowledge_api_v1_knowledge_reload_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeSourceStatus"
+                  },
+                  "type": "array",
+                  "title": "Response Reload Knowledge Api V1 Knowledge Reload Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -948,6 +1039,175 @@
           "general_qa"
         ],
         "title": "Intent"
+      },
+      "KnowledgeCourseId": {
+        "type": "string",
+        "enum": [
+          "CT",
+          "AE",
+          "DE"
+        ],
+        "title": "KnowledgeCourseId"
+      },
+      "KnowledgeHit": {
+        "properties": {
+          "course_id": {
+            "$ref": "#/components/schemas/KnowledgeCourseId"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "document_path": {
+            "type": "string",
+            "title": "Document Path"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "course_name",
+          "document_path",
+          "title",
+          "content",
+          "score",
+          "source_ref"
+        ],
+        "title": "KnowledgeHit"
+      },
+      "KnowledgeSearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "course_ids": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeCourseId"
+            },
+            "type": "array",
+            "title": "Course Ids"
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "KnowledgeSearchRequest"
+      },
+      "KnowledgeSearchResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSourceStatus"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "KnowledgeSearchResponse"
+      },
+      "KnowledgeSourceStatus": {
+        "properties": {
+          "course_id": {
+            "$ref": "#/components/schemas/KnowledgeCourseId"
+          },
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "document_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Document Count"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Count"
+          },
+          "indexed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "course_name",
+          "available",
+          "document_count",
+          "chunk_count"
+        ],
+        "title": "KnowledgeSourceStatus"
       },
       "Scene": {
         "type": "string",

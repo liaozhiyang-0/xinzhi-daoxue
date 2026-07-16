@@ -17,3 +17,7 @@ def test_missing_xingchen_fields_are_not_required() -> None:
     assert provider["publication_status"] == "not_published"
     assert provider["runtime_configuration_required"] is False
     assert provider["xingchen_api_key"] == "not_required"
+    knowledge = result["knowledge"]
+    assert isinstance(knowledge, dict)
+    assert knowledge["enabled"] is True
+    assert set(knowledge["sources"]) == {"CT", "AE", "DE"}

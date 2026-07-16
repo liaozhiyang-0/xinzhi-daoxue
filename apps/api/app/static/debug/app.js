@@ -5,6 +5,8 @@ const resultBox = document.querySelector("#result");
 const summary = document.querySelector("#task-summary");
 const cancelButton = document.querySelector("#cancel");
 const retryButton = document.querySelector("#retry");
+const knowledgeForm = document.querySelector("#knowledge-form");
+const knowledgeResult = document.querySelector("#knowledge-result");
 
 let sessionId = null;
 let taskId = null;
@@ -69,7 +71,7 @@ function connectEvents(id) {
   eventSource = new EventSource(`/api/v1/tasks/${id}/stream`);
   const eventNames = [
     "task.created", "task.queued", "task.running", "agent.started",
-    "agent.progress", "agent.output", "artifact.created", "cancel.requested",
+    "agent.progress", "knowledge.retrieved", "agent.output", "artifact.created", "cancel.requested",
     "task.cancelled", "task.completed", "task.failed", "task.retry_created"
   ];
   for (const name of eventNames) {
@@ -137,5 +139,24 @@ retryButton.addEventListener("click", async () => {
     connectEvents(task.id);
   } catch (error) {
     errorBox.textContent = error.message;
+  }
+});
+
+knowledgeForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  knowledgeResult.textContent = "正在检索…";
+  try {
+    const response = await api("/api/v1/knowledge/search", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        query: document.querySelector("#knowledge-query").value,
+        course_ids: [document.querySelector("#knowledge-course").value],
+        top_k: 5
+      })
+    });
+    knowledgeResult.textContent = JSON.stringify(response, null, 2);
+  } catch (error) {
+    knowledgeResult.textContent = error.message;
   }
 });

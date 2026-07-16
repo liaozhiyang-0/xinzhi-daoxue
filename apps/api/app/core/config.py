@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     local_storage_path: Path = PROJECT_ROOT / "local_storage"
     sse_heartbeat_seconds: float = Field(default=10.0, gt=0)
 
+    knowledge_enabled: bool = True
+    knowledge_ct_path: Path = PROJECT_ROOT / "电路理论"
+    knowledge_ae_path: Path = PROJECT_ROOT / "模电"
+    knowledge_de_path: Path = PROJECT_ROOT / "数电"
+    knowledge_chunk_size_chars: int = Field(default=1200, ge=300, le=4000)
+    knowledge_chunk_overlap_chars: int = Field(default=150, ge=0, le=500)
+    knowledge_default_top_k: int = Field(default=5, ge=1, le=20)
+    knowledge_max_files_per_course: int = Field(default=1000, ge=1, le=10000)
+    knowledge_max_file_size_mb: int = Field(default=5, ge=1, le=100)
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:
@@ -65,6 +75,14 @@ class Settings(BaseSettings):
     @property
     def xingchen_runtime_available(self) -> bool:
         return False
+
+    @property
+    def knowledge_paths(self) -> dict[str, Path]:
+        return {
+            "CT": self.knowledge_ct_path,
+            "AE": self.knowledge_ae_path,
+            "DE": self.knowledge_de_path,
+        }
 
 
 @lru_cache

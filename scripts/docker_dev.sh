@@ -18,6 +18,27 @@ if [[ ! -f .env ]]; then
   echo "Created .env from .env.example; change development passwords."
 fi
 
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
+
+resolve_knowledge_path() {
+  local folder="$1"
+  local fallback="$2"
+  for candidate in "$repo_root/$folder" "$repo_root/../xinzhi-daoxue/$folder"; do
+    if [[ -d "$candidate" ]]; then
+      (cd "$candidate" && pwd)
+      return
+    fi
+  done
+  echo "$fallback"
+}
+
+export KNOWLEDGE_CT_HOST_PATH="${KNOWLEDGE_CT_HOST_PATH:-$(resolve_knowledge_path "电路理论" "$repo_root/local_knowledge/CT")}"
+export KNOWLEDGE_AE_HOST_PATH="${KNOWLEDGE_AE_HOST_PATH:-$(resolve_knowledge_path "模电" "$repo_root/local_knowledge/AE")}"
+export KNOWLEDGE_DE_HOST_PATH="${KNOWLEDGE_DE_HOST_PATH:-$(resolve_knowledge_path "数电" "$repo_root/local_knowledge/DE")}"
+
 docker compose config --quiet
 docker compose up -d --build --wait
 

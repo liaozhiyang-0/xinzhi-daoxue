@@ -19,7 +19,11 @@
       <form id="task-form">
         <label>用户 ID <input id="user-id" value="debug-user" required></label>
         <label>课程
-          <select id="course-id"><option value="CT">电路理论（CT）</option></select>
+          <select id="course-id">
+            <option value="CT">电路理论（CT）</option>
+            <option value="AE">模拟电子技术（AE）</option>
+            <option value="DE">数字电子技术（DE）</option>
+          </select>
         </label>
         <label class="wide">问题
           <textarea id="question" rows="5" required>请演示本地任务链路。</textarea>
@@ -37,6 +41,24 @@
         </div>
       </form>
       <p id="error" class="error" role="alert"></p>
+    </section>
+
+    <section class="panel">
+      <h2>本地知识库检索</h2>
+      <form id="knowledge-form">
+        <label>课程
+          <select id="knowledge-course">
+            <option value="CT">电路理论（CT）</option>
+            <option value="AE">模拟电子技术（AE）</option>
+            <option value="DE">数字电子技术（DE）</option>
+          </select>
+        </label>
+        <label class="wide">检索词
+          <input id="knowledge-query" value="戴维南等效电路" required>
+        </label>
+        <div class="actions wide"><button type="submit">检索 Markdown</button></div>
+      </form>
+      <pre id="knowledge-result">等待检索…</pre>
     </section>
 
     <section class="grid">

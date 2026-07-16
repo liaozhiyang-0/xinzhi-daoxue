@@ -15,6 +15,13 @@ from app.contracts.agent import (
     UserRole,
     new_id,
 )
+from app.contracts.knowledge import (
+    KnowledgeCourseId,
+    KnowledgeHit,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
+    KnowledgeSourceStatus,
+)
 
 __all__ = [
     "AgentEvent",
@@ -27,6 +34,11 @@ __all__ = [
     "AttachmentRef",
     "CoursePack",
     "Intent",
+    "KnowledgeCourseId",
+    "KnowledgeHit",
+    "KnowledgeSearchRequest",
+    "KnowledgeSearchResponse",
+    "KnowledgeSourceStatus",
     "ProviderAvailability",
     "RunMetrics",
     "Scene",
