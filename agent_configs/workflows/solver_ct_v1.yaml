@@ -1,0 +1,11 @@
+workflow_id: SOLVER_CT_V1
+display_name: SOLVER_CT_电路理论专业解题_v1.0
+version: 1.0.0
+provider: xingchen
+course_pack: course_ct_v1
+enabled: true
+streaming: true
+timeout_seconds: 120
+cloud_workflow_id_env: XINGCHEN_SOLVER_CT_WORKFLOW_ID
+notes:
+  - "TODO：待从讯飞星辰平台导出或人工补录节点配置、提示词和正式 API 字段。"

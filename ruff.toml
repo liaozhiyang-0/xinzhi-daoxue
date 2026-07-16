@@ -1,0 +1,19 @@
+line-length = 88
+target-version = "py311"
+exclude = [
+  ".git",
+  ".venv",
+  "archive_legacy",
+  "数电",
+  "模电",
+  "电路理论",
+  "知识库",
+]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
+ignore = ["B008"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

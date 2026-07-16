@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+**/__pycache__
+**/*.pyc
+*.db
+local_storage
+archive_legacy
+数电
+模电
+电路理论
+知识库
