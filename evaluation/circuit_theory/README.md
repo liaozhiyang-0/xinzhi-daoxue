@@ -1,5 +1,13 @@
-# 电路理论回归评测
+# 电路理论回归评测脚手架
 
-本目录冻结 `SOLVER_CT_V1` 的回归评测结构。阶段 0 只建立目录、指标与报告模板，不修改现有题库，也不虚构测试案例。
+当前案例均为 `draft/sample/not reviewed`，只用于验证请求结构、Mock Provider、非阻塞任务、事件、产物、耗时记录与报告生成。
 
-案例按 `easy`、`medium`、`hard`、`image` 分组。每个正式案例应包含稳定 ID、题目来源、输入、标准答案、评分要点和授权信息，并登记到 `benchmark_manifest.json`。
+```powershell
+.\.venv\Scripts\python.exe evaluation\circuit_theory\scripts\validate_cases.py
+.\.venv\Scripts\python.exe evaluation\circuit_theory\scripts\run_mock_benchmark.py
+.\.venv\Scripts\python.exe evaluation\circuit_theory\scripts\summarize_results.py
+```
+
+Mock 评测不得用于声称真实电路解题正确率。
+
+DEFERRED：真实星辰回归评测等待工作流外部 API 发布。
