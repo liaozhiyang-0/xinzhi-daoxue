@@ -33,10 +33,14 @@
           </select>
         </label>
         <label class="wide">问题
-          <textarea id="question" rows="5" required>请演示本地任务链路。</textarea>
+          <textarea id="question" rows="5">请识别并解答图片中的电路题。</textarea>
         </label>
-        <label class="wide">附件（png/jpg/jpeg/pdf/md/txt）
-          <input id="attachments" type="file" multiple accept=".png,.jpg,.jpeg,.pdf,.md,.txt">
+        <label class="wide">电路题图片（单张 png/jpg/jpeg）
+          <input id="attachments" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+          <div id="image-preview-wrap" class="image-preview" hidden>
+            <img id="image-preview" alt="待提交的电路题图片预览">
+            <span id="image-name"></span>
+          </div>
         </label>
         <label>Mock 延迟（秒）
           <input id="delay" type="number" min="0" max="30" step="0.1" value="0.5">

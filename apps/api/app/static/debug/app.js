@@ -7,10 +7,15 @@ const cancelButton = document.querySelector("#cancel");
 const retryButton = document.querySelector("#retry");
 const knowledgeForm = document.querySelector("#knowledge-form");
 const knowledgeResult = document.querySelector("#knowledge-result");
+const attachmentsInput = document.querySelector("#attachments");
+const imagePreviewWrap = document.querySelector("#image-preview-wrap");
+const imagePreview = document.querySelector("#image-preview");
+const imageName = document.querySelector("#image-name");
 
 let sessionId = null;
 let taskId = null;
 let eventSource = null;
+let imagePreviewUrl = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -67,6 +72,22 @@ async function uploadAttachments() {
   }));
 }
 
+attachmentsInput.addEventListener("change", () => {
+  if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+  const file = attachmentsInput.files[0];
+  if (!file) {
+    imagePreviewWrap.hidden = true;
+    imagePreview.removeAttribute("src");
+    imageName.textContent = "";
+    imagePreviewUrl = null;
+    return;
+  }
+  imagePreviewUrl = URL.createObjectURL(file);
+  imagePreview.src = imagePreviewUrl;
+  imageName.textContent = `${file.name} · ${Math.ceil(file.size / 1024)} KB`;
+  imagePreviewWrap.hidden = false;
+});
+
 function connectEvents(id) {
   eventSource?.close();
   eventsList.replaceChildren();
@@ -110,6 +131,14 @@ form.addEventListener("submit", async event => {
   errorBox.textContent = "";
   resultBox.textContent = "任务已提交，等待后台执行…";
   try {
+    const question = document.querySelector("#question").value.trim();
+    const selectedFiles = attachmentsInput.files;
+    if (!question && selectedFiles.length === 0) {
+      throw new Error("请输入题目文字或选择一张电路图片");
+    }
+    if (selectedFiles.length > 1) {
+      throw new Error("当前只支持单张图片");
+    }
     const attachments = await uploadAttachments();
     const task = await api("/api/v1/tasks", {
       method: "POST",
@@ -120,7 +149,7 @@ form.addEventListener("submit", async event => {
         course_id: document.querySelector("#course-id").value,
         scene: document.querySelector("#intent").value === "solve_problem" ? "solving" : "learning",
         intent: document.querySelector("#intent").value,
-        canonical_input: {text: document.querySelector("#question").value},
+        canonical_input: {text: question},
         attachments,
         options: {mock_delay_seconds: Number(document.querySelector("#delay").value)}
       })

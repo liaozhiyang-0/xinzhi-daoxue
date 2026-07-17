@@ -1,9 +1,19 @@
+import json
+
 import httpx
-from app.contracts import AgentRequest, KnowledgeCourseId, KnowledgeHit
+import pytest
+from app.contracts import (
+    AgentRequest,
+    AttachmentRef,
+    KnowledgeCourseId,
+    KnowledgeHit,
+)
 from app.core.config import Settings
+from app.core.errors import ValidationAppError
 from app.providers.xingchen import (
     XingchenCloudProvider,
     build_workflow_payload,
+    get_single_image,
     parse_json_answer,
     parse_sse_answer,
 )
@@ -107,3 +117,91 @@ async def test_xingchen_provider_returns_answer_and_artifact() -> None:
     assert result.answer == "Provider 回答"
     assert result.artifacts[0].content["answer"] == "Provider 回答"
     assert captured["authorization"] == "Bearer test-key:test-secret"
+
+
+async def test_xingchen_uploads_single_image_and_injects_url(tmp_path) -> None:
+    image_path = tmp_path / "storage" / "image" / "circuit.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"fake-png")
+    image_request = AgentRequest(
+        session_id="session-image",
+        user_id="user-image",
+        canonical_input={"text": "请解答图片中的电路题"},
+        attachments=[
+            AttachmentRef(
+                file_id="file-image",
+                filename="circuit.png",
+                content_type="image/png",
+                size_bytes=8,
+                storage_key="local:image/circuit.png",
+                checksum_sha256="test-checksum",
+            )
+        ],
+    )
+    captured: dict[str, object] = {}
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        if http_request.url.path.endswith("/upload_file"):
+            captured["upload_content_type"] = http_request.headers["Content-Type"]
+            captured["upload_body"] = http_request.content
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "message": "success",
+                    "data": {"url": "https://files.example/circuit.png"},
+                },
+            )
+        captured["workflow_payload"] = json.loads(http_request.content)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "code": 0,
+                "choices": [
+                    {"delta": {"content": "图片解题结果"}, "finish_reason": "stop"}
+                ],
+            },
+        )
+
+    settings = Settings(
+        app_env="test",
+        xingchen_enabled=True,
+        xingchen_api_key="test-key",
+        xingchen_api_secret="test-secret",
+        xingchen_solver_ct_flow_id="test-flow",
+        local_storage_path=tmp_path / "storage",
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = await XingchenCloudProvider(settings, client=client).run(
+        "SOLVER_CT_V1", image_request, stream=False
+    )
+    await client.aclose()
+
+    assert str(captured["upload_content_type"]).startswith("multipart/form-data")
+    assert b"fake-png" in captured["upload_body"]
+    payload = captured["workflow_payload"]
+    assert isinstance(payload, dict)
+    assert payload["parameters"]["USER_INPUT_image"] == (
+        "https://files.example/circuit.png"
+    )
+    assert result.structured_result["input_type"] == "image"
+    assert result.answer == "图片解题结果"
+
+
+def test_xingchen_rejects_multiple_images() -> None:
+    attachment = AttachmentRef(
+        file_id="file-image",
+        filename="circuit.png",
+        content_type="image/png",
+        size_bytes=8,
+        storage_key="local:image/circuit.png",
+    )
+    image_request = AgentRequest(
+        session_id="session-image",
+        user_id="user-image",
+        canonical_input={},
+        attachments=[attachment, attachment.model_copy(update={"file_id": "file-2"})],
+    )
+    with pytest.raises(ValidationAppError, match="单张图片"):
+        get_single_image(image_request)

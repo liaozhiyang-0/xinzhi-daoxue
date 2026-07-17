@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     xingchen_publication_status: str = "published"
     xingchen_base_url: str = "https://xingchen-api.xf-yun.com"
     xingchen_workflow_path: str = "/workflow/v1/chat/completions"
+    xingchen_upload_path: str = "/workflow/v1/upload_file"
     xingchen_api_key: SecretStr = SecretStr("")
     xingchen_api_secret: SecretStr = SecretStr("")
     xingchen_solver_ct_flow_id: str = ""

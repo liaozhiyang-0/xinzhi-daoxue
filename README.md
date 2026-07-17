@@ -94,7 +94,14 @@ python scripts/xingchen_smoke_test.py
 .\scripts\docker_dev.ps1
 ```
 
-打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，输入纯文本电路题。页面会显示当前 Agent、Provider、最终回答、错误、知识库来源和 Artifact。将 `XINGCHEN_USE_LOCAL_KB_CONTEXT=false` 可关闭 top 3 本地知识片段注入。
+打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，可以输入纯文本电路题，或选择一张 PNG/JPG/JPEG 电路图片并填写补充要求。页面会先显示本地图片预览，再将图片上传到星辰文件接口，并把返回的 URL 传入工作流开始节点的 `USER_INPUT_image`。页面会显示当前 Agent、Provider、最终回答、错误、知识库来源和 Artifact。将 `XINGCHEN_USE_LOCAL_KB_CONTEXT=false` 可关闭 top 3 本地知识片段注入。
+
+图片输入要求：
+
+- 当前只支持单张 PNG/JPG/JPEG，仍不支持 PDF 和多图。
+- 星辰工作流开始节点必须存在名称完全一致、类型为 `Image` 的 `USER_INPUT_image` 参数。
+- `USER_INPUT_image` 必须连接到 OCR 或图像理解节点；修改工作流后需要重新发布 API，并在绑定页面点击“更新绑定”。
+- 图片上传成功后，任务结果的 `structured_result.input_type` 为 `image`。
 
 ### Windows PowerShell
 

@@ -88,6 +88,22 @@ class StorageService:
         except (OSError, S3Error, Urllib3HTTPError, ValueError):
             return
 
+    async def read(self, storage_key: str) -> bytes:
+        if storage_key.startswith("local:"):
+            relative = storage_key.removeprefix("local:")
+            target = (self.settings.local_storage_path / relative).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root not in target.parents or not target.is_file():
+                raise StorageError("本地附件不存在或路径无效")
+            try:
+                return await asyncio.to_thread(target.read_bytes)
+            except OSError as exc:
+                raise StorageError("读取本地附件失败") from exc
+        try:
+            return await asyncio.to_thread(self._read_minio, storage_key)
+        except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
+            raise StorageError("读取 MinIO 附件失败") from exc
+
     def _client(self) -> Minio:
         return Minio(
             self.settings.minio_endpoint,
@@ -114,3 +130,11 @@ class StorageService:
 
     def _remove_minio(self, key: str) -> None:
         self._client().remove_object(self.settings.minio_bucket, key)
+
+    def _read_minio(self, key: str) -> bytes:
+        response = self._client().get_object(self.settings.minio_bucket, key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()

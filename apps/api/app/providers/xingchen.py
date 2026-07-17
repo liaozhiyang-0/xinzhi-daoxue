@@ -7,7 +7,13 @@ from typing import Any
 
 import httpx
 
-from app.contracts import AgentRequest, AgentResult, Artifact, RunMetrics
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    Artifact,
+    AttachmentRef,
+    RunMetrics,
+)
 from app.core.config import Settings
 from app.core.errors import (
     ValidationAppError,
@@ -19,9 +25,12 @@ from app.core.errors import (
 )
 from app.core.logging import mask_sensitive_text
 from app.providers.base import AgentProvider
+from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
 TEXT_FIELDS = ("text", "question", "problem", "query", "prompt")
+IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
+DEFAULT_IMAGE_PROMPT = "请识别并解答图片中的电路题，说明关键步骤和最终答案。"
 
 
 def extract_input_text(request: AgentRequest) -> str:
@@ -29,22 +38,54 @@ def extract_input_text(request: AgentRequest) -> str:
         value = request.canonical_input.get(field)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    if request.attachments:
+        return DEFAULT_IMAGE_PROMPT
     raise ValidationAppError("星辰工作流需要非空文本题目")
 
 
 def build_workflow_payload(
-    settings: Settings, request: AgentRequest
+    settings: Settings,
+    request: AgentRequest,
+    *,
+    image_url: str | None = None,
 ) -> dict[str, Any]:
     ext = {"caller": "workflow"}
     if settings.xingchen_bot_id.strip():
         ext["bot_id"] = settings.xingchen_bot_id.strip()
+    parameters = {"AGENT_USER_INPUT": extract_input_text(request)}
+    if image_url:
+        parameters["USER_INPUT_image"] = image_url
     return {
         "flow_id": settings.xingchen_solver_ct_flow_id,
         "uid": settings.xingchen_uid,
-        "parameters": {"AGENT_USER_INPUT": extract_input_text(request)},
+        "parameters": parameters,
         "ext": ext,
         "stream": False,
     }
+
+
+def get_single_image(request: AgentRequest) -> AttachmentRef | None:
+    if not request.attachments:
+        return None
+    if len(request.attachments) != 1:
+        raise ValidationAppError("星辰图片解题当前只支持单张图片")
+    attachment = request.attachments[0]
+    if attachment.content_type not in IMAGE_CONTENT_TYPES:
+        raise ValidationAppError("星辰图片解题仅支持 PNG、JPG 或 JPEG")
+    return attachment
+
+
+def parse_upload_url(payload: dict[str, Any]) -> str:
+    if payload.get("code") != 0:
+        raise XingchenHttpError(
+            "星辰文件上传返回业务错误",
+            details={"upstream_code": payload.get("code")},
+        )
+    data = payload.get("data")
+    url = data.get("url") if isinstance(data, dict) else None
+    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        raise XingchenResponseParseError("星辰文件上传响应缺少有效 data.url")
+    return url
 
 
 def _choice_content(payload: dict[str, Any]) -> str:
@@ -114,6 +155,74 @@ class XingchenCloudProvider(AgentProvider):
     def is_available(self) -> bool:
         return self.settings.xingchen_runtime_available
 
+    @property
+    def authorization(self) -> str:
+        return (
+            "Bearer "
+            f"{self.settings.xingchen_api_key.get_secret_value()}:"
+            f"{self.settings.xingchen_api_secret.get_secret_value()}"
+        )
+
+    async def _upload_image(
+        self,
+        client: httpx.AsyncClient,
+        attachment: AttachmentRef,
+    ) -> str:
+        image = await StorageService(self.settings).read(attachment.storage_key)
+        url = (
+            self.settings.xingchen_base_url.rstrip("/")
+            + self.settings.xingchen_upload_path
+        )
+        response = await client.post(
+            url,
+            headers={"Accept": "application/json", "Authorization": self.authorization},
+            files={
+                "file": (
+                    attachment.filename,
+                    image,
+                    attachment.content_type,
+                )
+            },
+        )
+        if not response.is_success:
+            raise XingchenHttpError(
+                "星辰文件上传 HTTP 请求失败",
+                details={"http_status": response.status_code},
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise XingchenResponseParseError("星辰文件上传响应不是 JSON") from exc
+        if not isinstance(payload, dict):
+            raise XingchenResponseParseError("星辰文件上传 JSON 顶层格式无效")
+        return parse_upload_url(payload)
+
+    async def _request_workflow(
+        self,
+        client: httpx.AsyncClient,
+        request: AgentRequest,
+    ) -> tuple[httpx.Response, bool]:
+        attachment = get_single_image(request)
+        image_url = (
+            await self._upload_image(client, attachment) if attachment else None
+        )
+        payload = build_workflow_payload(
+            self.settings,
+            request,
+            image_url=image_url,
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": self.authorization,
+        }
+        url = (
+            self.settings.xingchen_base_url.rstrip("/")
+            + self.settings.xingchen_workflow_path
+        )
+        response = await client.post(url, headers=headers, json=payload)
+        return response, attachment is not None
+
     async def run(
         self,
         agent_id: str,
@@ -127,29 +236,19 @@ class XingchenCloudProvider(AgentProvider):
         if not self.settings.xingchen_runtime_available:
             raise XingchenConfigurationError("星辰 Key、Secret 或 Flow ID 配置不完整")
 
-        payload = build_workflow_payload(self.settings, request)
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": (
-                "Bearer "
-                f"{self.settings.xingchen_api_key.get_secret_value()}:"
-                f"{self.settings.xingchen_api_secret.get_secret_value()}"
-            ),
-        }
-        url = (
-            self.settings.xingchen_base_url.rstrip("/")
-            + self.settings.xingchen_workflow_path
-        )
         started = perf_counter()
         try:
             if self.client is None:
                 async with httpx.AsyncClient(
                     timeout=self.settings.xingchen_timeout_seconds
                 ) as client:
-                    response = await client.post(url, headers=headers, json=payload)
+                    response, image_used = await self._request_workflow(
+                        client, request
+                    )
             else:
-                response = await self.client.post(url, headers=headers, json=payload)
+                response, image_used = await self._request_workflow(
+                    self.client, request
+                )
         except httpx.TimeoutException as exc:
             raise XingchenTimeoutError("星辰工作流请求超时") from exc
         except httpx.RequestError as exc:
@@ -189,6 +288,7 @@ class XingchenCloudProvider(AgentProvider):
             course_id=request.course_id,
             content={
                 "mode": "xingchen_workflow",
+                "input_type": "image" if image_used else "text",
                 "answer": answer,
                 "knowledge_sources": source_refs,
             },
@@ -202,6 +302,7 @@ class XingchenCloudProvider(AgentProvider):
             answer=answer,
             structured_result={
                 "mode": "xingchen_workflow",
+                "input_type": "image" if image_used else "text",
                 "knowledge_sources": source_refs,
             },
             artifacts=[artifact],
