@@ -1,0 +1,1 @@
+{"case_id":"AE_RET_001","course_id":"AE","query":"MOS 场效应管有哪些工作区域","expected_sources":[{"document_path":"教材/3-第三章.md","chapter":"场效应晶体管","required":true}],"forbidden_courses":["CT","DE"],"tags":["mosfet","operating_region"],"review_status":"draft"}

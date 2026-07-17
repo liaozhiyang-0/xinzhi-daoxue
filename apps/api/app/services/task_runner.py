@@ -7,6 +7,7 @@ from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agents import AgentRegistry
 from app.contracts import AgentEventType, AgentRequest, KnowledgeHit
 from app.core.errors import AppError, ProviderCancelledError
 from app.models import AgentRunModel, ArtifactModel, TaskStatus
@@ -14,6 +15,10 @@ from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
 from app.services.event_service import append_task_event
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_qa_service import (
+    KnowledgeQAExecution,
+    KnowledgeQAService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +43,21 @@ class TaskRunner:
         session_factory: async_sessionmaker[AsyncSession],
         provider: AgentProvider,
         knowledge_base: KnowledgeBaseService,
+        agent_registry: AgentRegistry,
+        knowledge_qa: KnowledgeQAService,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
         self.knowledge_base = knowledge_base
+        self.agent_registry = agent_registry
+        self.knowledge_qa = knowledge_qa
         self._tasks: dict[str, asyncio.Task[None]] = {}
 
     def submit(self, task_id: str) -> bool:
         existing = self._tasks.get(task_id)
         if existing is not None and not existing.done():
             return False
-        background = asyncio.create_task(
-            self.run(task_id), name=f"xzd-task-{task_id}"
-        )
+        background = asyncio.create_task(self.run(task_id), name=f"xzd-task-{task_id}")
         self._tasks[task_id] = background
         background.add_done_callback(lambda _: self._tasks.pop(task_id, None))
         return True
@@ -74,6 +81,13 @@ class TaskRunner:
                 if task.cancellation_requested:
                     await self._mark_cancelled(db, task_id, "任务在执行前已取消")
                     return
+                agent_id = task.agent_id
+                agent_definition = self.agent_registry.get(agent_id)
+                active_provider = (
+                    "local"
+                    if agent_definition.mode == "retrieval_only"
+                    else self.provider.provider_name
+                )
                 task.status = TaskStatus.RUNNING
                 task.started_at = started_at
                 task.updated_at = started_at
@@ -89,39 +103,33 @@ class TaskRunner:
                     task_id,
                     AgentEventType.AGENT_STARTED,
                     agent_id=task.agent_id,
-                    data={"provider": self.provider.provider_name},
+                    data={"provider": active_provider},
                 )
                 request = AgentRequest.model_validate(task.input_content)
                 await db.commit()
 
-            knowledge_hits, retrieval_attempted = await self._retrieve_knowledge(
-                request
-            )
-            if retrieval_attempted:
-                async with self.session_factory() as db:
-                    task = await TaskRepository(db).get(task_id)
-                    if task is not None:
-                        await append_task_event(
-                            db,
-                            task_id,
-                            AgentEventType.KNOWLEDGE_RETRIEVED,
-                            agent_id=task.agent_id,
-                            data={
-                                "course_id": request.course_id,
-                                "hit_count": len(knowledge_hits),
-                            },
-                        )
-                        await db.commit()
-
-            provider_started = perf_counter()
-            result = await self.provider.run(
-                "SOLVER_CT_V1",
-                request,
-                stream=True,
-            )
-            provider_latency_ms = int((perf_counter() - provider_started) * 1000)
-            if retrieval_attempted:
-                result.metrics.retrieval_calls += 1
+            knowledge_hits: list[KnowledgeHit] = []
+            retrieval_attempted = False
+            if agent_definition.mode == "retrieval_only":
+                execution = await asyncio.to_thread(
+                    self.knowledge_qa.run, agent_id, request
+                )
+                await self._append_local_knowledge_events(task_id, agent_id, execution)
+                result = execution.result
+                provider_latency_ms = 0
+            else:
+                knowledge_hits, retrieval_attempted = await self._retrieve_knowledge(
+                    request
+                )
+                if retrieval_attempted:
+                    await self._append_retrieval_event(
+                        task_id, agent_id, request.course_id, len(knowledge_hits)
+                    )
+                provider_started = perf_counter()
+                result = await self.provider.run(agent_id, request, stream=True)
+                provider_latency_ms = int((perf_counter() - provider_started) * 1000)
+                if retrieval_attempted:
+                    result.metrics.retrieval_calls += 1
             if knowledge_hits:
                 hit_payloads = [hit.model_dump(mode="json") for hit in knowledge_hits]
                 result.structured_result["knowledge"] = {
@@ -269,6 +277,73 @@ class TaskRunner:
                 return value.strip()
         return ""
 
+    async def _append_retrieval_event(
+        self, task_id: str, agent_id: str, course_id: str, hit_count: int
+    ) -> None:
+        async with self.session_factory() as db:
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.KNOWLEDGE_RETRIEVED,
+                agent_id=agent_id,
+                data={"course_id": course_id, "hit_count": hit_count},
+            )
+            await db.commit()
+
+    async def _append_local_knowledge_events(
+        self,
+        task_id: str,
+        agent_id: str,
+        execution: KnowledgeQAExecution,
+    ) -> None:
+        async with self.session_factory() as db:
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.KNOWLEDGE_QUERY_NORMALIZED,
+                agent_id=agent_id,
+                data={"normalized_query": execution.retrieval.normalized_query},
+            )
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.KNOWLEDGE_RETRIEVED,
+                agent_id=agent_id,
+                data={
+                    "course_id": execution.context.course_id,
+                    "hit_count": len(execution.retrieval.hits),
+                    "confidence": execution.retrieval.confidence,
+                    "retrieval_mode": execution.retrieval.retrieval_mode,
+                },
+            )
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.KNOWLEDGE_CONTEXT_BUILT,
+                agent_id=agent_id,
+                data={
+                    "evidence_count": len(execution.context.evidence),
+                    "evidence_status": execution.context.evidence_status,
+                    "source_refs": execution.context.source_refs,
+                },
+            )
+            if execution.context.evidence_status in {"insufficient", "unavailable"}:
+                await append_task_event(
+                    db,
+                    task_id,
+                    AgentEventType.KNOWLEDGE_INSUFFICIENT,
+                    agent_id=agent_id,
+                    data={"warnings": execution.context.warnings},
+                )
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.ANSWER_RETRIEVAL_ONLY_CREATED,
+                agent_id=agent_id,
+                data={"mode": "retrieval_only"},
+            )
+            await db.commit()
+
     async def _mark_cancelled(
         self, db: AsyncSession, task_id: str, reason: str
     ) -> None:
@@ -327,9 +402,7 @@ class TaskRunner:
                     provider=self.provider.provider_name,
                     status=TaskStatus.FAILED.value,
                     latency_ms=(
-                        elapsed_ms(task.started_at, now)
-                        if task.started_at
-                        else None
+                        elapsed_ms(task.started_at, now) if task.started_at else None
                     ),
                     started_at=task.started_at,
                     completed_at=now,

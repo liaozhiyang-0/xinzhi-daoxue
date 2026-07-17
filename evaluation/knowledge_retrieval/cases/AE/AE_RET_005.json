@@ -1,0 +1,1 @@
+{"case_id":"AE_RET_005","course_id":"AE","query":"直流稳压电源由哪些部分组成","expected_sources":[{"document_path":"教材/模电_第十一章.md","chapter":"直流稳压电源","required":true}],"forbidden_courses":["CT","DE"],"tags":["power_supply","voltage_regulator"],"review_status":"draft"}

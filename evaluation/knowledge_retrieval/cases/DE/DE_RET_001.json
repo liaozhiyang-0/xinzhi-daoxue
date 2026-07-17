@@ -1,0 +1,1 @@
+{"case_id":"DE_RET_001","course_id":"DE","query":"格雷码相邻代码有什么特点","expected_sources":[{"document_path":"教材/数电_第一章.md","chapter":"1.4.2 格雷码","required":true}],"forbidden_courses":["CT","AE"],"tags":["gray_code","coding"],"review_status":"draft"}

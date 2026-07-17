@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     knowledge_default_top_k: int = Field(default=5, ge=1, le=20)
     knowledge_max_files_per_course: int = Field(default=1000, ge=1, le=10000)
     knowledge_max_file_size_mb: int = Field(default=5, ge=1, le=100)
+    knowledge_config_path: Path = PROJECT_ROOT / "knowledge_config"
+    knowledge_min_score_v2: float = Field(default=0.35, ge=0)
+    knowledge_low_confidence_threshold: float = Field(default=0.45, ge=0, le=1)
+    knowledge_max_hits_per_document: int = Field(default=2, ge=1, le=10)
+    knowledge_max_context_chars: int = Field(default=6000, ge=500, le=50000)
 
     @field_validator("log_level")
     @classmethod

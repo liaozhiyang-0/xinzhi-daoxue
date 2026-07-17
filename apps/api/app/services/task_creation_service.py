@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import AgentEventType, AgentRequest
+from app.contracts import AgentEventType, AgentRequest, RouteDecision, RouteStatus
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
 from app.repositories import FileRepository, SessionRepository, TaskRepository
@@ -19,7 +19,7 @@ class TaskCreationService:
         self,
         request: AgentRequest,
         *,
-        agent_id: str = "SOLVER_CT_V1",
+        route: RouteDecision,
         parent_task_id: str | None = None,
         attempt: int = 1,
     ) -> TaskModel:
@@ -66,7 +66,9 @@ class TaskCreationService:
             intent=request.intent.value,
             status=TaskStatus.CREATED,
             provider=self.provider_name,
-            agent_id=agent_id,
+            agent_id=route.agent_id,
+            route_status=route.route_status.value,
+            route_reason=route.reason,
             input_content=request.model_dump(mode="json"),
             parent_task_id=parent_task_id,
             attempt=attempt,
@@ -75,6 +77,30 @@ class TaskCreationService:
         for file_model in files:
             file_model.task_id = task.id
         await append_task_event(self.db, task.id, AgentEventType.TASK_CREATED)
+        route_event = (
+            AgentEventType.ROUTE_SELECTED
+            if route.route_status == RouteStatus.SELECTED
+            else AgentEventType.ROUTE_UNSUPPORTED
+        )
+        await append_task_event(
+            self.db,
+            task.id,
+            route_event,
+            agent_id=route.agent_id,
+            data=route.model_dump(mode="json"),
+        )
+        if route.route_status == RouteStatus.UNSUPPORTED:
+            task.status = TaskStatus.FAILED
+            task.error_message = route.reason
+            await append_task_event(
+                self.db,
+                task.id,
+                AgentEventType.TASK_FAILED,
+                agent_id=route.agent_id,
+                data={"error_code": "unsupported_route"},
+            )
+            await self.db.commit()
+            return task
         task.status = TaskStatus.QUEUED
         await append_task_event(self.db, task.id, AgentEventType.TASK_QUEUED)
         await self.db.commit()

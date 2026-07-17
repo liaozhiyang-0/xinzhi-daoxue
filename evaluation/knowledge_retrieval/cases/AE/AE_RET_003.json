@@ -1,0 +1,1 @@
+{"case_id":"AE_RET_003","course_id":"AE","query":"理想集成运算放大器的虚短和虚断是什么意思","expected_sources":[{"document_path":"教材/2-第二章.md","chapter":"集成运算放大器","required":true}],"forbidden_courses":["CT","DE"],"tags":["op_amp","ideal_model"],"review_status":"draft"}

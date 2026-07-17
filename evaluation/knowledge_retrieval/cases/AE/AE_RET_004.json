@@ -1,0 +1,1 @@
+{"case_id":"AE_RET_004","course_id":"AE","query":"一阶有源低通滤波电路的传递函数","expected_sources":[{"document_path":"教材/模电_第十章.md","chapter":"10.2 一阶有源滤波电路","required":true}],"forbidden_courses":["CT","DE"],"tags":["active_filter","transfer_function"],"review_status":"draft"}

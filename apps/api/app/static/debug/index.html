@@ -9,13 +9,13 @@
 <body>
   <main class="shell">
     <header>
-      <p class="eyebrow">LOCAL STAGE 0—1.5</p>
+      <p class="eyebrow">LOCAL STAGE 1.6</p>
       <h1>芯智导学本地调试台</h1>
-      <p class="warning">当前为本地 Mock 演示结果，不是讯飞星辰真实输出。</p>
+      <p class="warning">课程问答为本地 retrieval_only 整理结果；解题仍为 Mock，不是讯飞星辰真实输出。</p>
     </header>
 
     <section class="panel">
-      <h2>创建任务</h2>
+      <h2>课程知识问答与统一任务入口</h2>
       <form id="task-form">
         <label>用户 ID <input id="user-id" value="debug-user" required></label>
         <label>课程
@@ -23,6 +23,13 @@
             <option value="CT">电路理论（CT）</option>
             <option value="AE">模拟电子技术（AE）</option>
             <option value="DE">数字电子技术（DE）</option>
+          </select>
+        </label>
+        <label>意图
+          <select id="intent">
+            <option value="general_qa">课程知识问答</option>
+            <option value="explain_concept">概念解释</option>
+            <option value="solve_problem">解题</option>
           </select>
         </label>
         <label class="wide">问题
@@ -68,6 +75,7 @@
           <dt>task_id</dt><dd>尚未创建</dd>
           <dt>status</dt><dd>-</dd>
           <dt>provider</dt><dd>-</dd>
+          <dt>route</dt><dd>-</dd>
         </dl>
       </article>
       <article class="panel">

@@ -31,13 +31,44 @@ class KnowledgeSearchRequest(BaseModel):
 class KnowledgeHit(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    chunk_id: str = ""
     course_id: KnowledgeCourseId
     course_name: str
+    chapter: str = ""
+    section: str = ""
     document_path: str
     title: str
     content: str
     score: float = Field(ge=0)
+    score_components: dict[str, float] = Field(default_factory=dict)
     source_ref: str
+    document_checksum: str = ""
+
+
+class RetrievalResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    normalized_query: str
+    course_ids: list[str]
+    hits: list[KnowledgeHit] = Field(default_factory=list)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    retrieval_mode: str = "local_lexical_v2"
+    warnings: list[str] = Field(default_factory=list)
+    latency_ms: int = Field(ge=0)
+
+
+class RetrievalContextPacket(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    course_id: str
+    intent: str
+    evidence: list[KnowledgeHit] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    evidence_status: str
+    warnings: list[str] = Field(default_factory=list)
+    max_context_chars: int = Field(gt=0)
 
 
 class KnowledgeSourceStatus(BaseModel):

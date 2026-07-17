@@ -1,0 +1,1 @@
+{"case_id":"DE_RET_005","course_id":"DE","query":"同步时序逻辑电路中计数器的设计步骤","expected_sources":[{"document_path":"教材/数电_第六章.md","chapter":"计数器","required":true}],"forbidden_courses":["CT","AE"],"tags":["counter","sequential_logic"],"review_status":"draft"}

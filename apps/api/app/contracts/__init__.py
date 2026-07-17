@@ -21,7 +21,10 @@ from app.contracts.knowledge import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     KnowledgeSourceStatus,
+    RetrievalContextPacket,
+    RetrievalResult,
 )
+from app.contracts.routing import RouteDecision, RouteStatus
 
 __all__ = [
     "AgentEvent",
@@ -39,7 +42,11 @@ __all__ = [
     "KnowledgeSearchRequest",
     "KnowledgeSearchResponse",
     "KnowledgeSourceStatus",
+    "RetrievalContextPacket",
+    "RetrievalResult",
     "ProviderAvailability",
+    "RouteDecision",
+    "RouteStatus",
     "RunMetrics",
     "Scene",
     "UserRole",

@@ -83,7 +83,9 @@ class TaskModel(Base):
         task_status_enum, default=TaskStatus.CREATED
     )
     provider: Mapped[str] = mapped_column(String(32), default="mock")
-    agent_id: Mapped[str] = mapped_column(String(64), default="SOLVER_CT_V1")
+    agent_id: Mapped[str] = mapped_column(String(64))
+    route_status: Mapped[str] = mapped_column(String(32), default="selected")
+    route_reason: Mapped[str] = mapped_column(Text, default="")
     input_content: Mapped[dict[str, Any]] = mapped_column(JSON)
     result_content: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

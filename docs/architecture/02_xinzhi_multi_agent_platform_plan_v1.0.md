@@ -100,3 +100,34 @@ Xingchen Provider 当前只建立隔离良好的适配器结构。以下信息�
 2. 完成本地到星辰的端到端回归测试。
 3. 建立最小调试页面，展示请求、事件与产物。
 4. 在稳定协议上启动 `LEARN_01` 课程知识问答。
+
+## 8. 阶段 1.6 本地知识问答闭环
+
+阶段 1.6 在统一任务入口内增加配置驱动的 AgentRegistry 与 TaskRouter：
+
+```text
+POST /api/v1/tasks
+  -> TaskRouter
+  -> route.selected / route.unsupported
+  -> 持久化 agent_id / route_status / route_reason
+  -> TaskRunner 使用已保存 agent_id
+```
+
+本地知识问答数据流：
+
+```text
+AgentRequest
+  -> LEARN_01_KNOWLEDGE_QA_V1
+  -> local_lexical_v2
+  -> RetrievalResult
+  -> RetrievalContextPacket
+  -> EvidenceQuality
+  -> ExplanationArtifact
+  -> AgentResult
+```
+
+`LEARN_01` 当前是 `retrieval_only`，不调用星辰 Provider。所有证据限定在请求课程内并保留
+`kb://` 引用；证据不足时显式返回 partial/insufficient/unavailable 和警告。
+
+本阶段没有收到用户所述最终完整总体架构原文。本文保留全部既有内容并增加阶段 1.6 实际
+数据流；待原文提供后，应原样保存到本文档或按版本号新增文档，不得缩写。

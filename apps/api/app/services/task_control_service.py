@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import AgentEventType, AgentRequest, new_id
+from app.contracts import (
+    AgentEventType,
+    AgentRequest,
+    RouteDecision,
+    RouteStatus,
+    new_id,
+)
 from app.core.errors import ConflictError, NotFoundError
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
@@ -43,7 +49,16 @@ class TaskControlService:
             self.db, self.provider.provider_name
         ).create_queued(
             request,
-            agent_id=original.agent_id,
+            route=RouteDecision(
+                agent_id=original.agent_id,
+                scene=request.scene.value,
+                course_id=original.course_id,
+                intent=original.intent,
+                route_status=RouteStatus(original.route_status),
+                reason=f"retry preserves route from task {original.id}",
+                retrieval_required=original.agent_id == "LEARN_01_KNOWLEDGE_QA_V1",
+                provider_required=original.agent_id != "LEARN_01_KNOWLEDGE_QA_V1",
+            ),
             parent_task_id=original.id,
             attempt=original.attempt + 1,
         )

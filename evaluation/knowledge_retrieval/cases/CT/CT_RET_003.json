@@ -1,0 +1,1 @@
+{"case_id":"CT_RET_003","course_id":"CT","query":"一阶电路三要素法中的初始值稳态值和时间常数","expected_sources":[{"document_path":"课本/基础篇/3-重置md/第八章.md","chapter":"一阶电路的三要素法","required":true}],"forbidden_courses":["AE","DE"],"tags":["first_order","transient"],"review_status":"draft"}

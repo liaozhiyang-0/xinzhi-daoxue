@@ -27,6 +27,8 @@ function renderTask(task) {
     <dt>task_id</dt><dd>${task.id}</dd>
     <dt>status</dt><dd>${task.status}</dd>
     <dt>provider</dt><dd>${task.provider}</dd>
+    <dt>agent</dt><dd>${task.agent_id}</dd>
+    <dt>route</dt><dd>${task.route_status}: ${task.route_reason}</dd>
     <dt>attempt</dt><dd>${task.attempt}</dd>`;
   cancelButton.disabled = ["completed", "failed", "cancelled"].includes(task.status);
   retryButton.disabled = !["failed", "cancelled"].includes(task.status);
@@ -70,8 +72,9 @@ function connectEvents(id) {
   eventsList.replaceChildren();
   eventSource = new EventSource(`/api/v1/tasks/${id}/stream`);
   const eventNames = [
-    "task.created", "task.queued", "task.running", "agent.started",
-    "agent.progress", "knowledge.retrieved", "agent.output", "artifact.created", "cancel.requested",
+    "task.created", "route.selected", "route.unsupported", "task.queued", "task.running", "agent.started",
+    "agent.progress", "knowledge.query_normalized", "knowledge.retrieved", "knowledge.context_built",
+    "knowledge.insufficient", "answer.retrieval_only_created", "agent.output", "artifact.created", "cancel.requested",
     "task.cancelled", "task.completed", "task.failed", "task.retry_created"
   ];
   for (const name of eventNames) {
@@ -112,6 +115,8 @@ form.addEventListener("submit", async event => {
         session_id: await ensureSession(),
         user_id: document.querySelector("#user-id").value,
         course_id: document.querySelector("#course-id").value,
+        scene: document.querySelector("#intent").value === "solve_problem" ? "solving" : "learning",
+        intent: document.querySelector("#intent").value,
         canonical_input: {text: document.querySelector("#question").value},
         attachments,
         options: {mock_delay_seconds: Number(document.querySelector("#delay").value)}

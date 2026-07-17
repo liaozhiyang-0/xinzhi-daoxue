@@ -592,6 +592,70 @@
         }
       }
     },
+    "/api/v1/knowledge/evaluate-query": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Evaluate Query",
+        "operationId": "evaluate_query_api_v1_knowledge_evaluate_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/benchmark-summary": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Benchmark Summary",
+        "operationId": "benchmark_summary_api_v1_knowledge_benchmark_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Benchmark Summary Api V1 Knowledge Benchmark Summary Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/knowledge/reload": {
       "post": {
         "tags": [
@@ -1051,12 +1115,27 @@
       },
       "KnowledgeHit": {
         "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id",
+            "default": ""
+          },
           "course_id": {
             "$ref": "#/components/schemas/KnowledgeCourseId"
           },
           "course_name": {
             "type": "string",
             "title": "Course Name"
+          },
+          "chapter": {
+            "type": "string",
+            "title": "Chapter",
+            "default": ""
+          },
+          "section": {
+            "type": "string",
+            "title": "Section",
+            "default": ""
           },
           "document_path": {
             "type": "string",
@@ -1075,9 +1154,21 @@
             "minimum": 0.0,
             "title": "Score"
           },
+          "score_components": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Score Components"
+          },
           "source_ref": {
             "type": "string",
             "title": "Source Ref"
+          },
+          "document_checksum": {
+            "type": "string",
+            "title": "Document Checksum",
+            "default": ""
           }
         },
         "additionalProperties": false,
@@ -1209,6 +1300,71 @@
         ],
         "title": "KnowledgeSourceStatus"
       },
+      "RetrievalResult": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "normalized_query": {
+            "type": "string",
+            "title": "Normalized Query"
+          },
+          "course_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Course Ids"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "retrieval_mode": {
+            "type": "string",
+            "title": "Retrieval Mode",
+            "default": "local_lexical_v2"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Latency Ms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query",
+          "normalized_query",
+          "course_ids",
+          "latency_ms"
+        ],
+        "title": "RetrievalResult"
+      },
       "Scene": {
         "type": "string",
         "enum": [
@@ -1315,6 +1471,14 @@
             "type": "string",
             "title": "Agent Id"
           },
+          "route_status": {
+            "type": "string",
+            "title": "Route Status"
+          },
+          "route_reason": {
+            "type": "string",
+            "title": "Route Reason"
+          },
           "input_content": {
             "additionalProperties": true,
             "type": "object",
@@ -1414,6 +1578,8 @@
           "status",
           "provider",
           "agent_id",
+          "route_status",
+          "route_reason",
           "input_content",
           "result_content",
           "error_message",

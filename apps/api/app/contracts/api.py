@@ -36,6 +36,8 @@ class TaskRead(BaseModel):
     status: TaskStatus
     provider: str
     agent_id: str
+    route_status: str
+    route_reason: str
     input_content: dict[str, Any]
     result_content: dict[str, Any] | None
     error_message: str | None

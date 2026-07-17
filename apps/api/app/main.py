@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agents import AgentRegistry, TaskRouter
 from app.api.v1.health import health as health_endpoint
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
@@ -22,6 +23,8 @@ from app.database.base import Base
 from app.database.session import create_engine_and_session
 from app.providers.factory import get_agent_provider
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_qa_service import KnowledgeQAService
+from app.services.retrieval_context import RetrievalContextService
 from app.services.task_runner import TaskRunner
 
 logger = logging.getLogger(__name__)
@@ -39,8 +42,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings.active_database_url
     )
     provider = get_agent_provider(app_settings)
+    agent_registry = AgentRegistry()
+    task_router = TaskRouter(agent_registry)
     knowledge_base = KnowledgeBaseService(app_settings)
-    task_runner = TaskRunner(session_factory, provider, knowledge_base)
+    context_service = RetrievalContextService(app_settings.knowledge_max_context_chars)
+    knowledge_qa = KnowledgeQAService(knowledge_base, context_service)
+    task_runner = TaskRunner(
+        session_factory,
+        provider,
+        knowledge_base,
+        agent_registry,
+        knowledge_qa,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -48,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.provider = provider
+        app.state.agent_registry = agent_registry
+        app.state.task_router = task_router
         app.state.knowledge_base = knowledge_base
         app.state.task_runner = task_runner
         if app_settings.app_env == "test":
