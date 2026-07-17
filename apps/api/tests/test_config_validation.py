@@ -12,6 +12,8 @@ def test_missing_xingchen_fields_are_not_required() -> None:
             default_agent_provider="mock",
             xingchen_base_url="",
             xingchen_api_key="",
+            xingchen_publication_status="published",
+            _env_file=None,
         )
     )
     provider = result["provider"]

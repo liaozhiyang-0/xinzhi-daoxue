@@ -104,8 +104,10 @@ def settings(tmp_path: Path) -> Settings:
         minio_endpoint="127.0.0.1:1",
         default_agent_provider="mock",
         allow_mock_fallback=True,
+        xingchen_publication_status="published",
         local_storage_path=tmp_path / "storage",
         sse_heartbeat_seconds=0.02,
+        _env_file=None,
     )
 
 
