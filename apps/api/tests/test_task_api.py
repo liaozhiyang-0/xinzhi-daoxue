@@ -27,8 +27,26 @@ def test_create_and_query_mock_task(
 
     events = client.get(f"/api/v1/tasks/{task['id']}/events")
     assert events.status_code == 200
-    assert [item["event_type"] for item in events.json()] == [
-        "task.created",
+    event_types = [item["event_type"] for item in events.json()]
+    assert event_types[0] == "task.created"
+    assert event_types[-1] == "task.completed"
+    assert {
+        "input.validated",
+        "session.context_loaded",
+        "route.local_selected",
         "agent.started",
-        "task.completed",
-    ]
+        "provider.request_started",
+        "provider.request_completed",
+        "result.normalized",
+    } <= set(event_types)
+
+
+def test_debug_page_displays_runtime_fields(client) -> None:
+    response = client.get("/debug/")
+    script = client.get("/debug/app.js")
+
+    assert response.status_code == 200
+    assert script.status_code == 200
+    assert "本地总控调试页" in response.text
+    assert "目标 Agent" in script.text
+    assert "缓存命中" in script.text

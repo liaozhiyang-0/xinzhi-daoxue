@@ -33,9 +33,14 @@ class Scene(StrEnum):
 
 class Intent(StrEnum):
     SOLVE_PROBLEM = "solve_problem"
+    CHECK_USER_SOLUTION = "check_user_solution"
     EXPLAIN_CONCEPT = "explain_concept"
+    SUMMARIZE_KNOWLEDGE = "summarize_knowledge"
+    LEARNING_ADVICE = "learning_advice"
+    FOLLOW_UP_QUESTION = "follow_up_question"
     VERIFY_ANSWER = "verify_answer"
     GENERAL_QA = "general_qa"
+    UNKNOWN = "unknown"
 
 
 class AgentResultStatus(StrEnum):
@@ -46,6 +51,17 @@ class AgentResultStatus(StrEnum):
 
 class AgentEventType(StrEnum):
     TASK_CREATED = "task.created"
+    INPUT_VALIDATED = "input.validated"
+    SESSION_CONTEXT_LOADED = "session.context_loaded"
+    ROUTE_LOCAL_SELECTED = "route.local_selected"
+    ROUTE_CLOUD_FALLBACK_STARTED = "route.cloud_fallback_started"
+    ROUTE_CLOUD_FALLBACK_COMPLETED = "route.cloud_fallback_completed"
+    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
+    CACHE_HIT = "cache.hit"
+    CACHE_MISS = "cache.miss"
+    PROVIDER_REQUEST_STARTED = "provider.request_started"
+    PROVIDER_REQUEST_COMPLETED = "provider.request_completed"
+    RESULT_NORMALIZED = "result.normalized"
     AGENT_STARTED = "agent.started"
     AGENT_OUTPUT = "agent.output"
     TASK_COMPLETED = "task.completed"
@@ -58,6 +74,18 @@ class ArtifactType(StrEnum):
     REPORT = "report"
     FILE = "file"
     STRUCTURED_RESULT = "structured_result"
+
+
+class AttachmentRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_id: str
+    filename: str
+    content_type: str
+    size_bytes: int = Field(ge=0)
+    storage_key: str
+    provider_file_id: str | None = None
+    checksum_sha256: str | None = None
 
 
 class Artifact(BaseModel):
@@ -86,9 +114,10 @@ class AgentRequest(BaseModel):
     course_id: str = "CT"
     intent: Intent = Intent.SOLVE_PROBLEM
     canonical_input: dict[str, Any] = Field(default_factory=dict)
-    attachments: list[str] = Field(default_factory=list)
+    attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)
     options: dict[str, Any] = Field(default_factory=dict)
+    force_refresh: bool = False
 
 
 class AgentResult(BaseModel):

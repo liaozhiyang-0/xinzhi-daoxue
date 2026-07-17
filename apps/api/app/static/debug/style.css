@@ -1,0 +1,13 @@
+:root { font-family: system-ui, sans-serif; color-scheme: light dark; }
+body { margin: 0; background: #101827; color: #e5eefb; }
+main { max-width: 880px; margin: 0 auto; padding: 32px 20px; }
+form { display: grid; gap: 14px; padding: 20px; background: #17243a; border-radius: 12px; }
+label { display: grid; gap: 6px; }
+input, select, textarea, button { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid #52647f; }
+textarea { min-height: 120px; }
+button { cursor: pointer; background: #4f8cff; color: white; border: 0; }
+dl { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; }
+dt { color: #9db1ce; }
+dd { margin: 0; white-space: pre-wrap; }
+pre { white-space: pre-wrap; padding: 20px; background: #17243a; border-radius: 12px; }
+#notice { color: #ffcf70; }

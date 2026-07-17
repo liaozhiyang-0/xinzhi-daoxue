@@ -139,18 +139,22 @@ Mock 结果始终包含 `provider=mock` 和 `mock_result` 警告，不代表真�
 
 ## 星辰 Provider 配置
 
-预留环境变量：
+按工作流配置环境变量：
 
 ```env
 DEFAULT_AGENT_PROVIDER=xingchen
 XINGCHEN_ENABLED=true
 XINGCHEN_BASE_URL=
 XINGCHEN_API_KEY=
-XINGCHEN_SOLVER_CT_WORKFLOW_ID=
-XINGCHEN_TIMEOUT_SECONDS=120
+XINGCHEN_API_SECRET=
+XINGCHEN_SOLVER_CT_FLOW_ID=
+XINGCHEN_KNOWLEDGE_QA_FLOW_ID=
+XINGCHEN_FALLBACK_ROUTER_FLOW_ID=
 ```
 
-当前 Adapter 不猜测正式请求路径和字段。即使配置变量，仍需补充官方 API 文档后实现请求与响应转换。密钥不得提交到 Git。
+Provider 复用同一组 Base URL、Key 和 Secret，并按 Agent 选择 Flow ID。文字与单图请求使用已经验证的星辰字段；缺少对应 Flow ID 时返回 `agent_unavailable`，不会改用其他 Agent。各工作流超时、知识库上下文和缓存参数见 `.env.example`。密钥不得提交到 Git。
+
+本地调试页位于 `http://localhost:8000/debug/`，显示会话、输入模式、路由来源、目标 Agent、知识库引用、缓存状态、Provider、耗时与最终回答。
 
 ## 数据库迁移
 

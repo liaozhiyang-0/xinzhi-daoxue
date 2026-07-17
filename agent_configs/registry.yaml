@@ -1,13 +1,18 @@
 agents:
   SOLVER_CT_V1:
     provider: xingchen
-    workflow_version: "1.0.0"
-    course_pack: course_ct_v1
+    flow_env: XINGCHEN_SOLVER_CT_FLOW_ID
     enabled: true
-    supports_streaming: true
-    default_timeout_seconds: 120
-    fallback:
-      provider: mock
-      when:
-        - xingchen_disabled
-        - xingchen_not_configured
+    mode: professional_solver
+
+  LEARN_01_KNOWLEDGE_QA_V1:
+    provider: xingchen
+    flow_env: XINGCHEN_KNOWLEDGE_QA_FLOW_ID
+    enabled: true
+    mode: knowledge_explanation
+
+  ROUTER_01_FALLBACK_V1:
+    provider: xingchen
+    flow_env: XINGCHEN_FALLBACK_ROUTER_FLOW_ID
+    enabled: true
+    mode: routing_only

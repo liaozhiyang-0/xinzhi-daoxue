@@ -28,7 +28,9 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+")
 
 
 def sanitize_filename(filename: str) -> str:
-    name = Path(filename).name.strip()
+    name = filename.strip()
+    if "/" in name or "\\" in name or name in {".", ".."}:
+        raise ValidationAppError("文件名不得包含路径")
     clean = SAFE_NAME.sub("_", name)
     if not clean or clean in {".", ".."}:
         raise ValidationAppError("文件名无效")
@@ -44,6 +46,8 @@ class StorageService:
     ) -> str:
         safe = sanitize_filename(filename)
         extension = Path(safe).suffix.lower()
+        if size <= 0:
+            raise ValidationAppError("不允许上传空文件")
         if extension not in ALLOWED_EXTENSIONS:
             raise ValidationAppError("不支持的文件类型")
         if content_type and content_type not in ALLOWED_CONTENT_TYPES[extension]:
@@ -56,9 +60,7 @@ class StorageService:
         safe = self.validate(filename, len(data), content_type)
         storage_key = f"{uuid4().hex}/{safe}"
         try:
-            await asyncio.to_thread(
-                self._save_minio, storage_key, content_type, data
-            )
+            await asyncio.to_thread(self._save_minio, storage_key, content_type, data)
             return storage_key
         except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
             if not self.settings.local_storage_fallback:
@@ -67,6 +69,40 @@ class StorageService:
             target.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(target.write_bytes, data)
             return f"local:{storage_key}"
+
+    async def read(self, storage_key: str) -> bytes:
+        if storage_key.startswith("local:"):
+            relative = storage_key.removeprefix("local:")
+            target = (self.settings.local_storage_path / relative).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root not in target.parents or not target.is_file():
+                raise StorageError("本地附件不存在或路径无效")
+            try:
+                return await asyncio.to_thread(target.read_bytes)
+            except OSError as exc:
+                raise StorageError("读取本地附件失败") from exc
+        try:
+            return await asyncio.to_thread(self._read_minio, storage_key)
+        except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
+            raise StorageError("读取 MinIO 附件失败") from exc
+
+    def _read_minio(self, key: str) -> bytes:
+        client = Minio(
+            self.settings.minio_endpoint,
+            access_key=self.settings.minio_access_key,
+            secret_key=self.settings.minio_secret_key,
+            secure=self.settings.minio_secure,
+            http_client=PoolManager(
+                timeout=Timeout(connect=1.0, read=3.0),
+                retries=Retry(total=0),
+            ),
+        )
+        response = client.get_object(self.settings.minio_bucket, key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
 
     def _save_minio(self, key: str, content_type: str, data: bytes) -> None:
         client = Minio(

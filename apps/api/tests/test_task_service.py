@@ -57,7 +57,11 @@ async def test_provider_failure_marks_task_failed(db) -> None:
     session = await SessionService(db).create(
         SessionCreate(user_id="user-1", course_id="CT")
     )
-    request = AgentRequest(session_id=session.id, user_id="user-1")
+    request = AgentRequest(
+        session_id=session.id,
+        user_id="user-1",
+        canonical_input={"text": "触发 Provider 失败"},
+    )
 
     task = await TaskService(db, FailingProvider()).create_and_run(request)
 

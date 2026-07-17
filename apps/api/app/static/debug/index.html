@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>芯智导学本地总控调试页</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>芯智导学本地总控调试页</h1>
+      <form id="task-form">
+        <label>会话 ID <input id="session-id" placeholder="留空自动创建" /></label>
+        <label>课程
+          <select id="course"><option>CT</option><option>AE</option><option>DE</option><option>UNKNOWN</option></select>
+        </label>
+        <label>intent
+          <select id="intent"><option>solve_problem</option><option>explain_concept</option><option>summarize_knowledge</option><option>learning_advice</option><option>follow_up_question</option><option>unknown</option></select>
+        </label>
+        <label>问题 <textarea id="question" required></textarea></label>
+        <button type="submit">提交任务</button>
+      </form>
+      <p id="notice" hidden>本地路由置信度较低，已由云端调度能力进一步判断。</p>
+      <dl id="summary"></dl>
+      <pre id="answer">等待提交</pre>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

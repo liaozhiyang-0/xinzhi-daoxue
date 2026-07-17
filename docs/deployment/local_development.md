@@ -195,4 +195,4 @@ docker compose logs minio
 
 ### 星辰 Provider 回退到 Mock
 
-确认 `DEFAULT_AGENT_PROVIDER=xingchen`、`XINGCHEN_ENABLED=true`，以及 Base URL、API Key、工作流 ID 均已填写。当前仍需正式 API 字段文档才能完成真实调用；系统不会编造接口。
+确认 `DEFAULT_AGENT_PROVIDER=xingchen`、`XINGCHEN_ENABLED=true`，以及 Base URL、API Key、API Secret 和目标 Agent 的 Flow ID 均已填写。缺少目标 Flow ID 时系统返回 `agent_unavailable`，不会静默调用其他 Agent。

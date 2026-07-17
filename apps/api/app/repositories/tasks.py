@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import TaskEventModel, TaskModel
+from app.models import TaskEventModel, TaskModel, TaskStatus
 
 
 class TaskRepository:
@@ -38,3 +38,15 @@ class TaskRepository:
         if after:
             query = query.where(TaskEventModel.id > after)
         return list((await self.session.scalars(query)).all())
+
+    async def latest_completed_for_session(self, session_id: str) -> TaskModel | None:
+        query = (
+            select(TaskModel)
+            .where(
+                TaskModel.session_id == session_id,
+                TaskModel.status == TaskStatus.COMPLETED,
+            )
+            .order_by(TaskModel.completed_at.desc(), TaskModel.created_at.desc())
+            .limit(1)
+        )
+        return await self.session.scalar(query)

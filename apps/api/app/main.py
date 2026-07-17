@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import health as health_endpoint
 from app.api.v1.router import api_router
@@ -47,6 +49,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(api_router, prefix="/api/v1")
+    static_dir = Path(__file__).resolve().parent / "static" / "debug"
+    app.mount("/debug", StaticFiles(directory=static_dir, html=True), name="debug")
     app.add_api_route("/health", health_endpoint, methods=["GET"], tags=["health"])
 
     @app.exception_handler(AppError)

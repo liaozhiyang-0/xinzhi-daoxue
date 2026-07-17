@@ -6,11 +6,13 @@ from app.contracts.agent import (
     AgentResultStatus,
     Artifact,
     ArtifactType,
+    AttachmentRef,
     CoursePack,
     Intent,
     Scene,
     UserRole,
 )
+from app.contracts.routing import InputMode, RouteDecision, RouteStatus
 
 __all__ = [
     "AgentEvent",
@@ -18,10 +20,14 @@ __all__ = [
     "AgentRequest",
     "AgentResult",
     "AgentResultStatus",
+    "AttachmentRef",
     "Artifact",
     "ArtifactType",
     "CoursePack",
     "Intent",
     "Scene",
     "UserRole",
+    "InputMode",
+    "RouteDecision",
+    "RouteStatus",
 ]

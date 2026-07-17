@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentRequest
 from app.contracts.api import EventRead, TaskRead
-from app.dependencies import get_db, get_provider
+from app.core.config import Settings
+from app.dependencies import get_db, get_provider, get_settings_from_app
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories.tasks import TaskRepository
@@ -35,8 +36,9 @@ async def create_task(
     data: AgentRequest,
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
+    settings: Settings = Depends(get_settings_from_app),
 ) -> TaskRead:
-    task = await TaskService(db, provider).create_and_run(data)
+    task = await TaskService(db, provider, settings=settings).create_and_run(data)
     return task_read(task)
 
 
@@ -45,8 +47,9 @@ async def get_task(
     task_id: str,
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
+    settings: Settings = Depends(get_settings_from_app),
 ) -> TaskRead:
-    task = await TaskService(db, provider).get(task_id)
+    task = await TaskService(db, provider, settings=settings).get(task_id)
     return task_read(task)
 
 
@@ -55,8 +58,9 @@ async def get_task_events(
     task_id: str,
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
+    settings: Settings = Depends(get_settings_from_app),
 ) -> list[EventRead]:
-    events = await TaskService(db, provider).list_events(task_id)
+    events = await TaskService(db, provider, settings=settings).list_events(task_id)
     return [EventRead.model_validate(event) for event in events]
 
 
@@ -79,9 +83,7 @@ async def event_stream(request: Request, task_id: str) -> AsyncGenerator[str, No
                 last_event_id = event.id
                 payload = json.dumps(event.event_data, ensure_ascii=False)
                 yield (
-                    f"id: {event.id}\n"
-                    f"event: {event.event_type}\n"
-                    f"data: {payload}\n\n"
+                    f"id: {event.id}\nevent: {event.event_type}\ndata: {payload}\n\n"
                 )
             if task.status in TERMINAL_STATUSES and not events:
                 return
