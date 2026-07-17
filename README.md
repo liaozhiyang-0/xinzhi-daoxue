@@ -79,7 +79,8 @@ XINGCHEN_API_KEY=<API_KEY>
 XINGCHEN_API_SECRET=<API_SECRET>
 XINGCHEN_SOLVER_CT_FLOW_ID=<FLOW_ID>
 XINGCHEN_UID=local-demo-user
-XINGCHEN_USE_LOCAL_KB_CONTEXT=true
+XINGCHEN_TIMEOUT_SECONDS=300
+XINGCHEN_USE_LOCAL_KB_CONTEXT=false
 ```
 
 先确认真实响应：
@@ -94,7 +95,9 @@ python scripts/xingchen_smoke_test.py
 .\scripts\docker_dev.ps1
 ```
 
-打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，可以输入纯文本电路题，或选择一张 PNG/JPG/JPEG 电路图片并填写补充要求。页面会先显示本地图片预览，再将图片上传到星辰文件接口，并把返回的 URL 传入工作流开始节点的 `USER_INPUT_image`。页面会显示当前 Agent、Provider、最终回答、错误、知识库来源和 Artifact。将 `XINGCHEN_USE_LOCAL_KB_CONTEXT=false` 可关闭 top 3 本地知识片段注入。
+打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，可以输入纯文本电路题，或选择一张 PNG/JPG/JPEG 电路图片并填写补充要求。页面会先显示本地图片预览，再将图片上传到星辰文件接口，并把返回的 URL 传入工作流开始节点的 `USER_INPUT_image`。页面会显示当前 Agent、Provider、最终回答、错误和 Artifact。当前默认不检索或注入本地知识库；后续由独立的用户意图理解 Agent 提供结构化检索信息。
+
+`XINGCHEN_TIMEOUT_SECONDS` 默认 300 秒，允许范围为 30～600 秒。超过 600 秒的配置会在服务启动时被拒绝，避免同步请求无限占用本地任务执行器。
 
 图片输入要求：
 

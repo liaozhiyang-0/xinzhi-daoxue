@@ -8,6 +8,9 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+XINGCHEN_TIMEOUT_DEFAULT_SECONDS = 300
+XINGCHEN_TIMEOUT_MIN_SECONDS = 30
+XINGCHEN_TIMEOUT_MAX_SECONDS = 600
 
 
 class Settings(BaseSettings):
@@ -47,8 +50,12 @@ class Settings(BaseSettings):
     xingchen_api_secret: SecretStr = SecretStr("")
     xingchen_solver_ct_flow_id: str = ""
     xingchen_uid: str = "local-demo-user"
-    xingchen_timeout_seconds: float = Field(default=150, gt=0)
-    xingchen_use_local_kb_context: bool = True
+    xingchen_timeout_seconds: float = Field(
+        default=XINGCHEN_TIMEOUT_DEFAULT_SECONDS,
+        ge=XINGCHEN_TIMEOUT_MIN_SECONDS,
+        le=XINGCHEN_TIMEOUT_MAX_SECONDS,
+    )
+    xingchen_use_local_kb_context: bool = False
     xingchen_bot_id: str = ""
 
     max_upload_size_mb: int = Field(default=20, gt=0)

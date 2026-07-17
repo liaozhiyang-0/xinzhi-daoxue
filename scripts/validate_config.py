@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.core.config import Settings  # noqa: E402
+from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # noqa: E402
 
 
 def safe_status(value: str, *, required: bool) -> str:
@@ -52,6 +52,9 @@ def validate(settings: Settings) -> dict[str, object]:
                 settings.xingchen_solver_ct_flow_id,
                 required=settings.xingchen_enabled,
             ),
+            "timeout_seconds": settings.xingchen_timeout_seconds,
+            "timeout_max_seconds": XINGCHEN_TIMEOUT_MAX_SECONDS,
+            "use_local_kb_context": settings.xingchen_use_local_kb_context,
         },
         "uploads": {
             "max_size_mb": settings.max_upload_size_mb,

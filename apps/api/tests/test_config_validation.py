@@ -1,4 +1,6 @@
+import pytest
 from app.core.config import Settings
+from pydantic import ValidationError
 
 from scripts.validate_config import validate
 
@@ -21,3 +23,16 @@ def test_missing_xingchen_fields_are_not_required() -> None:
     assert isinstance(knowledge, dict)
     assert knowledge["enabled"] is True
     assert set(knowledge["sources"]) == {"CT", "AE", "DE"}
+
+
+def test_xingchen_timeout_is_bounded_and_local_context_defaults_off() -> None:
+    settings = Settings(app_env="test", _env_file=None)
+    assert settings.xingchen_timeout_seconds == 300
+    assert settings.xingchen_use_local_kb_context is False
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="test",
+            _env_file=None,
+            xingchen_timeout_seconds=601,
+        )
