@@ -3,8 +3,8 @@ agents:
     provider: xingchen
     workflow_version: "1.0.0"
     course_pack: course_ct_v1
-    enabled: false
-    publication_status: not_published
+    enabled: true
+    publication_status: published
     supports_streaming: false
     default_timeout_seconds: 120
     fallback:

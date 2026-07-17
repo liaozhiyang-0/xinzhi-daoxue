@@ -155,9 +155,15 @@ Set-KnowledgeHostPath "KNOWLEDGE_DE_HOST_PATH" $DigitalElectronicsFolder
 
 Write-Host "[xzd] Validating Docker Compose..."
 & $Docker compose config --quiet
+if ($LASTEXITCODE -ne 0) {
+    throw "Docker Compose validation failed with exit code $LASTEXITCODE."
+}
 
 Write-Host "[xzd] Building and starting services..."
 & $Docker compose up -d --build
+if ($LASTEXITCODE -ne 0) {
+    throw "Docker Compose startup failed with exit code $LASTEXITCODE."
+}
 Wait-ComposeHealth $Docker
 
 $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" -TimeoutSec 10

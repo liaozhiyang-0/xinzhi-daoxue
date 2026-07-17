@@ -118,15 +118,23 @@ class TaskRunner:
                 result = execution.result
                 provider_latency_ms = 0
             else:
-                knowledge_hits, retrieval_attempted = await self._retrieve_knowledge(
-                    request
-                )
+                if self.knowledge_base.settings.xingchen_use_local_kb_context:
+                    knowledge_hits, retrieval_attempted = (
+                        await self._retrieve_knowledge(request)
+                    )
                 if retrieval_attempted:
                     await self._append_retrieval_event(
                         task_id, agent_id, request.course_id, len(knowledge_hits)
                     )
                 provider_started = perf_counter()
-                result = await self.provider.run(agent_id, request, stream=True)
+                provider_request = request
+                if self.provider.provider_name == "xingchen" and knowledge_hits:
+                    provider_request = self._with_xingchen_context(
+                        request, knowledge_hits
+                    )
+                result = await self.provider.run(
+                    agent_id, provider_request, stream=False
+                )
                 provider_latency_ms = int((perf_counter() - provider_started) * 1000)
                 if retrieval_attempted:
                     result.metrics.retrieval_calls += 1
@@ -255,7 +263,7 @@ class TaskRunner:
                 self.knowledge_base.search,
                 query,
                 [request.course_id],
-                self.knowledge_base.settings.knowledge_default_top_k,
+                3,
             )
             return hits, True
         except Exception as exc:
@@ -276,6 +284,43 @@ class TaskRunner:
             if isinstance(value, str) and value.strip():
                 return value.strip()
         return ""
+
+    @classmethod
+    def _with_xingchen_context(
+        cls, request: AgentRequest, hits: list[KnowledgeHit]
+    ) -> AgentRequest:
+        question = cls._knowledge_query(request)
+        prefix = f"【用户题目】\n{question}\n\n【本地知识库参考】\n"
+        suffix = (
+            "\n【作答要求】\n"
+            "请以用户题目中的参数、电路连接和参考方向为事实依据。\n"
+            "本地知识库只用于方法参考，不得覆盖或修改题目事实。\n"
+            "信息不足时允许给出条件化答案，并说明不确定性。"
+        )
+        remaining = max(0, 3000 - len(prefix) - len(suffix))
+        blocks: list[str] = []
+        used = 0
+        for index, hit in enumerate(hits[:3], start=1):
+            block = f"{index}. {hit.content.strip()}\n来源：{hit.source_ref}\n\n"
+            available = remaining - used
+            if available <= 0:
+                break
+            blocks.append(block[:available])
+            used += min(len(block), available)
+        augmented = prefix + "".join(blocks) + suffix
+        canonical_input = dict(request.canonical_input)
+        for field in ("text", "question", "problem", "query", "prompt"):
+            value = canonical_input.get(field)
+            if isinstance(value, str) and value.strip():
+                canonical_input[field] = augmented
+                break
+        options = dict(request.options)
+        options["xingchen_knowledge_sources"] = [
+            hit.source_ref for hit in hits[:3]
+        ]
+        return request.model_copy(
+            update={"canonical_input": canonical_input, "options": options}
+        )
 
     async def _append_retrieval_event(
         self, task_id: str, agent_id: str, course_id: str, hit_count: int

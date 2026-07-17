@@ -1,3 +1,5 @@
+from typing import cast
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,7 +28,7 @@ class TaskRepository:
             query = query.options(selectinload(TaskModel.artifacts))
         if for_update:
             query = query.with_for_update()
-        return await self.session.scalar(query)
+        return cast(TaskModel | None, await self.session.scalar(query))
 
     async def next_event_sequence(self, task_id: str) -> int:
         value = await self.session.scalar(

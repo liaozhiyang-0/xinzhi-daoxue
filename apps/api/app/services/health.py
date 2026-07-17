@@ -56,12 +56,7 @@ async def build_health(
         _redis_status(settings.redis_url),
         _minio_status(settings.minio_endpoint),
     )
-    provider_mode = (
-        "only_mock"
-        if provider.provider_name == "mock"
-        and settings.xingchen_publication_status == "not_published"
-        else "configured"
-    )
+    provider_mode = "xingchen_sync" if provider.provider_name == "xingchen" else "mock"
     return HealthRead(
         status=(
             "ok"
@@ -72,7 +67,7 @@ async def build_health(
         database=database,
         redis=redis,
         minio=minio,
-        requested_provider=settings.default_agent_provider,
+        requested_provider="xingchen" if settings.xingchen_enabled else "mock",
         active_provider=provider.provider_name,
         provider_mode=provider_mode,
         xingchen_publication_status=settings.xingchen_publication_status,

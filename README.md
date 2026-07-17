@@ -1,6 +1,6 @@
 # 芯智导学：电子信息课程群多智能体平台
 
-芯智导学当前是一个本地可运行、文档与验证优先的多智能体教学平台基线。阶段 1.6 打通了统一任务路由、三课程本地词项检索、检索质量评测和 `LEARN_01` 课程知识问答的最小闭环。
+芯智导学当前是一个本地可运行的多智能体教学平台。阶段 2 在阶段 1.6 基础上增加了 `SOLVER_CT_V1` 到讯飞星辰工作流 API 的同步文本调用能力。
 
 ## 当前技术栈
 
@@ -23,11 +23,12 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 - 阶段 1：建立 FastAPI、统一 Agent 合同、Mock Provider、数据库、文件存储和 Docker Compose。
 - 阶段 1.5：实现 HTTP 202、TaskRunner、递增事件 sequence、SSE 重连、取消、重试和本地调试页。
 - 阶段 1.6：增加配置驱动的 AgentRegistry/TaskRouter、路由持久化、三课程检索元数据、v1/v2 评测闭环、RetrievalContextPacket 和 `LEARN_01_KNOWLEDGE_QA_V1`。
+- 阶段 2：增加 `SOLVER_CT_V1` 的讯飞星辰 `stream=false` 文本调用，并可注入 CT 本地知识库 top 3 方法参考。
 
 ## 当前能力边界
 
-- `SOLVER_CT_V1` 的讯飞星辰工作流尚未发布外部 API；代码不会构造或发送真实星辰 HTTP 请求。
-- CT `solve_problem` 路由到 `SOLVER_CT_V1`，当前由明确标识的 Mock Provider 执行。
+- CT `solve_problem` 路由到 `SOLVER_CT_V1`；`XINGCHEN_ENABLED=true` 且配置完整时调用真实星辰，否则在未启用时使用明确标识的 Mock。
+- 星辰上游当前只支持同步文本调用，不支持图片、PDF 或上游流式调用。
 - CT/AE/DE 的 `general_qa` 与 `explain_concept` 路由到 `LEARN_01_KNOWLEDGE_QA_V1`。
 - `LEARN_01` 当前为 `retrieval_only`：整理命中章节、摘要、建议阅读与 `kb://` 来源，不伪装成完整智能问答或星辰模型正式答案。
 - AE/DE 的 `solve_problem` 明确返回 `unsupported`，不会回退到电路理论解题 Agent。
@@ -52,7 +53,7 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 
 | course_id | intent | agent_id | 状态 |
 |---|---|---|---|
-| CT | `solve_problem` | `SOLVER_CT_V1` | selected / Mock |
+| CT | `solve_problem` | `SOLVER_CT_V1` | selected / Xingchen 或 Mock |
 | CT、AE、DE | `general_qa`、`explain_concept` | `LEARN_01_KNOWLEDGE_QA_V1` | selected / retrieval_only |
 | AE、DE | `solve_problem` | `UNSUPPORTED` | unsupported |
 | 其他组合 | `UNSUPPORTED` | `UNSUPPORTED` | unsupported |
@@ -60,6 +61,40 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 路由定义在 `agent_configs/registry.yaml`。任务表保存 `agent_id`、`route_status`、`route_reason`，TaskRunner 使用已保存的 `agent_id`，不自行硬编码 Agent。
 
 ## 快速开始
+
+### 配置并验证星辰同步调用
+
+不要把 Key 或 Secret 发到聊天中。先复制配置文件，再仅在当前 worktree 的 `.env` 中填入新轮换的凭据：
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+至少设置：
+
+```env
+XINGCHEN_ENABLED=true
+XINGCHEN_API_KEY=<API_KEY>
+XINGCHEN_API_SECRET=<API_SECRET>
+XINGCHEN_SOLVER_CT_FLOW_ID=<FLOW_ID>
+XINGCHEN_UID=local-demo-user
+XINGCHEN_USE_LOCAL_KB_CONTEXT=true
+```
+
+先确认真实响应：
+
+```powershell
+python scripts/xingchen_smoke_test.py
+```
+
+成功后启动本地服务：
+
+```powershell
+.\scripts\docker_dev.ps1
+```
+
+打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，输入纯文本电路题。页面会显示当前 Agent、Provider、最终回答、错误、知识库来源和 Artifact。将 `XINGCHEN_USE_LOCAL_KB_CONTEXT=false` 可关闭 top 3 本地知识片段注入。
 
 ### Windows PowerShell
 
@@ -140,6 +175,6 @@ git diff --check
 ## 下一阶段
 
 1. 人工审核 15 条检索案例、3 条 OCR 清洗草稿和 AE 两条未召回案例。
-2. 星辰工作流正式发布后，在 Provider 边界接入真实 `SOLVER_CT_V1` 协议并运行端到端回归。
+2. 基于已跑通的文本链路增加单张图片调用。
 3. 依据人工审核后的评测集继续优化轻量词项/混合检索，保持 `KnowledgeHit` 与 `RetrievalContextPacket` 合同稳定。
 4. 将进程内 TaskRunner 和索引按规模需求迁移为独立 Worker/检索服务，不改变统一任务入口。

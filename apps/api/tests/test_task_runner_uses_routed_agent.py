@@ -7,7 +7,7 @@ def test_task_runner_has_no_solver_agent_literal() -> None:
     ).read_text(encoding="utf-8")
 
     assert "SOLVER_CT_V1" not in source
-    assert "self.provider.run(agent_id, request, stream=True)" in source
+    assert "agent_id, provider_request, stream=False" in source
 
 
 def test_route_is_persisted_before_runner_submission(api, client) -> None:

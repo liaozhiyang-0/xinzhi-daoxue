@@ -86,7 +86,10 @@ function connectEvents(id) {
         eventSource.close();
         const task = await api(`/api/v1/tasks/${id}`);
         renderTask(task);
-        resultBox.textContent = JSON.stringify(task.result_content || {
+        const providerLabel = task.provider === "xingchen"
+          ? "真实星辰工作流结果"
+          : task.provider === "mock" ? "当前为 Mock 结果" : "本地知识库结果";
+        resultBox.textContent = `${providerLabel}\n\n` + JSON.stringify(task.result_content || {
           error: task.error_message
         }, null, 2);
         if (task.artifact_ids?.length) {

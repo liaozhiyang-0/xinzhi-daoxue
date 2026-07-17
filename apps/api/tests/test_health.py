@@ -6,7 +6,7 @@ def test_root_and_v1_health_show_only_mock(client) -> None:
         assert payload["database"] == "ok"
         assert payload["requested_provider"] == "mock"
         assert payload["active_provider"] == "mock"
-        assert payload["provider_mode"] == "only_mock"
-        assert payload["xingchen_publication_status"] == "not_published"
+        assert payload["provider_mode"] == "mock"
+        assert payload["xingchen_publication_status"] == "published"
         assert payload["xingchen_runtime_available"] is False
         assert response.headers["X-Request-ID"] == "req-test"

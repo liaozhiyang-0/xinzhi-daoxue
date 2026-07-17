@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -39,11 +39,16 @@ class Settings(BaseSettings):
     default_agent_provider: Literal["mock", "xingchen"] = "mock"
     allow_mock_fallback: bool = True
     xingchen_enabled: bool = False
-    xingchen_publication_status: Literal["not_published"] = "not_published"
-    xingchen_base_url: str = ""
-    xingchen_api_key: str = ""
-    xingchen_solver_ct_workflow_id: str = ""
-    xingchen_timeout_seconds: float = Field(default=120, gt=0)
+    xingchen_publication_status: str = "published"
+    xingchen_base_url: str = "https://xingchen-api.xf-yun.com"
+    xingchen_workflow_path: str = "/workflow/v1/chat/completions"
+    xingchen_api_key: SecretStr = SecretStr("")
+    xingchen_api_secret: SecretStr = SecretStr("")
+    xingchen_solver_ct_flow_id: str = ""
+    xingchen_uid: str = "local-demo-user"
+    xingchen_timeout_seconds: float = Field(default=150, gt=0)
+    xingchen_use_local_kb_context: bool = True
+    xingchen_bot_id: str = ""
 
     max_upload_size_mb: int = Field(default=20, gt=0)
     local_storage_fallback: bool = True
@@ -79,7 +84,13 @@ class Settings(BaseSettings):
 
     @property
     def xingchen_runtime_available(self) -> bool:
-        return False
+        return self.xingchen_enabled and all(
+            (
+                self.xingchen_api_key.get_secret_value(),
+                self.xingchen_api_secret.get_secret_value(),
+                self.xingchen_solver_ct_flow_id,
+            )
+        )
 
     @property
     def knowledge_paths(self) -> dict[str, Path]:

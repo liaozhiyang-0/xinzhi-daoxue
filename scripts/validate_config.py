@@ -34,13 +34,24 @@ def validate(settings: Settings) -> dict[str, object]:
             ),
         },
         "provider": {
-            "requested": settings.default_agent_provider,
+            "requested": "xingchen" if settings.xingchen_enabled else "mock",
             "allow_mock_fallback": settings.allow_mock_fallback,
             "publication_status": settings.xingchen_publication_status,
-            "runtime_configuration_required": False,
-            "xingchen_api_key": "not_required",
-            "xingchen_base_url": "not_required",
-            "xingchen_workflow_id": "not_required",
+            "runtime_configuration_required": settings.xingchen_enabled,
+            "runtime_available": settings.xingchen_runtime_available,
+            "xingchen_credentials": (
+                "configured"
+                if settings.xingchen_api_key.get_secret_value()
+                and settings.xingchen_api_secret.get_secret_value()
+                else "missing" if settings.xingchen_enabled else "not_required"
+            ),
+            "xingchen_base_url": safe_status(
+                settings.xingchen_base_url, required=settings.xingchen_enabled
+            ),
+            "xingchen_workflow_id": safe_status(
+                settings.xingchen_solver_ct_flow_id,
+                required=settings.xingchen_enabled,
+            ),
         },
         "uploads": {
             "max_size_mb": settings.max_upload_size_mb,

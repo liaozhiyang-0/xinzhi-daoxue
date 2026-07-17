@@ -76,8 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=app_settings.app_name,
         version=app_settings.app_version,
         description=(
-            "芯智导学本地阶段 0—1.5 API。当前仅运行 Mock Provider；"
-            "SOLVER_CT 外部 API 尚未发布。"
+            "芯智导学阶段 2 API。SOLVER_CT 支持讯飞星辰同步文本工作流；"
+            "LEARN_01 保持本地 retrieval_only。"
         ),
         lifespan=lifespan,
     )
