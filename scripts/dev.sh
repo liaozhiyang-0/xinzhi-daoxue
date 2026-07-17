@@ -35,6 +35,22 @@ set +a
 export DATABASE_URL="${HOST_DATABASE_URL:-postgresql+asyncpg://xzd_user:xzd_password@localhost:5432/xzd}"
 export REDIS_URL="${HOST_REDIS_URL:-redis://localhost:6379/0}"
 export MINIO_ENDPOINT="${HOST_MINIO_ENDPOINT:-localhost:9000}"
+resolve_local_knowledge() {
+  local folder="$1"
+  for candidate in "$repo_root/$folder" "$repo_root/../xinzhi-daoxue/$folder"; do
+    if [[ -d "$candidate" ]]; then
+      (cd "$candidate" && pwd)
+      return
+    fi
+  done
+}
+
+knowledge_path="$(resolve_local_knowledge "电路理论")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_CT_PATH="$knowledge_path"
+knowledge_path="$(resolve_local_knowledge "模电")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_AE_PATH="$knowledge_path"
+knowledge_path="$(resolve_local_knowledge "数电")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_DE_PATH="$knowledge_path"
 
 docker compose up -d postgres redis minio
 (cd apps/api && ../../.venv/bin/python -m alembic upgrade head)

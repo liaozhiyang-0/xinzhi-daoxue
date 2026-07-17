@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Knowledge retrieval draft case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "course_id", "query", "expected_sources", "forbidden_courses", "tags", "review_status"],
+  "properties": {
+    "case_id": {"type": "string", "pattern": "^(CT|AE|DE)_RET_[0-9]{3}$"},
+    "course_id": {"enum": ["CT", "AE", "DE"]},
+    "query": {"type": "string", "minLength": 1},
+    "expected_sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["document_path", "chapter", "required"],
+        "properties": {
+          "document_path": {"type": "string", "minLength": 1},
+          "chapter": {"type": "string", "minLength": 1},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "forbidden_courses": {"type": "array", "items": {"enum": ["CT", "AE", "DE"]}},
+    "tags": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "review_status": {"enum": ["draft", "approved", "rejected"]}
+  }
+}

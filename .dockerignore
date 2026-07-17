@@ -1,9 +1,14 @@
 .git
 .venv
 .env
+.local_inputs
+.local_outputs
 **/__pycache__
 **/*.pyc
 *.db
+*.log
+*.xingchen.raw.yml
+*.xingchen.raw.yaml
 local_storage
 archive_legacy
 数电

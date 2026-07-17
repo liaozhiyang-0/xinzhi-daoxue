@@ -1,34 +1,33 @@
-from datetime import datetime
+from datetime import UTC
 
-from app.contracts import AgentEvent, AgentEventType, AgentRequest, AgentResult
+from app.contracts import (
+    AgentEvent,
+    AgentEventType,
+    AgentRequest,
+    AgentResult,
+    RunMetrics,
+)
 
 
-def test_agent_request_serialization() -> None:
-    request = AgentRequest(
-        session_id="session-1",
-        user_id="user-1",
-        canonical_input={"text": "test"},
+def test_agent_request_and_result_serialization() -> None:
+    request = AgentRequest(session_id="session-1", user_id="user-1")
+    restored_request = AgentRequest.model_validate(request.model_dump(mode="json"))
+    assert restored_request.attachments == []
+
+    result = AgentResult(
+        agent_id="SOLVER_CT_V1",
+        provider="mock",
+        metrics=RunMetrics(latency_ms=10),
     )
-    payload = request.model_dump(mode="json")
-    restored = AgentRequest.model_validate(payload)
-
-    assert restored.task_id == request.task_id
-    assert restored.attachments == []
-    assert restored.options == {}
-    assert payload["intent"] == "solve_problem"
-
-
-def test_agent_result_serialization() -> None:
-    result = AgentResult(agent_id="SOLVER_CT_V1", provider="mock")
-    payload = result.model_dump(mode="json")
-    restored = AgentResult.model_validate(payload)
-
-    assert restored.provider == "mock"
-    assert restored.artifacts == []
-    assert restored.metrics == {}
+    restored_result = AgentResult.model_validate(result.model_dump(mode="json"))
+    assert restored_result.provider == "mock"
+    assert restored_result.metrics.latency_ms == 10
 
 
 def test_event_timestamp_is_timezone_aware() -> None:
-    event = AgentEvent(task_id="task-1", type=AgentEventType.TASK_CREATED)
-    assert isinstance(event.timestamp, datetime)
-    assert event.timestamp.utcoffset() is not None
+    event = AgentEvent(
+        task_id="task-1",
+        sequence=1,
+        type=AgentEventType.TASK_CREATED,
+    )
+    assert event.timestamp.tzinfo == UTC

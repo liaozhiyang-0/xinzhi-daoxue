@@ -1,0 +1,16 @@
+{
+  "case_id": "CT_MEDIUM_001",
+  "difficulty": "medium",
+  "input_type": "text",
+  "question": "示例：说明节点电压法的建模步骤，不要求真实评测正确率。",
+  "attachments": [],
+  "expected": {
+    "final_answer": "",
+    "required_points": ["选择参考节点", "列写 KCL"],
+    "units": [],
+    "reference_directions": []
+  },
+  "tags": ["sample", "draft"],
+  "source_type": "original",
+  "review_status": "draft_not_reviewed"
+}

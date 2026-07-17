@@ -4,10 +4,10 @@
   "solver_id": "SOLVER_CT_V1",
   "version": "1.0.0",
   "case_groups": {
-    "easy": [],
-    "medium": [],
-    "hard": [],
-    "image": []
+    "easy": ["cases/easy/CT_EASY_001.sample.json"],
+    "medium": ["cases/medium/CT_MEDIUM_001.sample.json"],
+    "hard": ["cases/hard/CT_HARD_001.sample.json"],
+    "image": ["cases/image/CT_IMAGE_001.template.json"]
   },
   "metrics": [
     "answer_correctness",
@@ -16,5 +16,7 @@
     "unit_correctness",
     "reference_direction_correctness",
     "latency_ms"
-  ]
+  ],
+  "status": "draft_samples_not_reviewed",
+  "real_xingchen_evaluation": "DEFERRED: waiting for workflow API publication"
 }

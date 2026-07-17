@@ -33,14 +33,9 @@ class Scene(StrEnum):
 
 class Intent(StrEnum):
     SOLVE_PROBLEM = "solve_problem"
-    CHECK_USER_SOLUTION = "check_user_solution"
     EXPLAIN_CONCEPT = "explain_concept"
-    SUMMARIZE_KNOWLEDGE = "summarize_knowledge"
-    LEARNING_ADVICE = "learning_advice"
-    FOLLOW_UP_QUESTION = "follow_up_question"
     VERIFY_ANSWER = "verify_answer"
     GENERAL_QA = "general_qa"
-    UNKNOWN = "unknown"
 
 
 class AgentResultStatus(StrEnum):
@@ -51,22 +46,24 @@ class AgentResultStatus(StrEnum):
 
 class AgentEventType(StrEnum):
     TASK_CREATED = "task.created"
-    INPUT_VALIDATED = "input.validated"
-    SESSION_CONTEXT_LOADED = "session.context_loaded"
-    ROUTE_LOCAL_SELECTED = "route.local_selected"
-    ROUTE_CLOUD_FALLBACK_STARTED = "route.cloud_fallback_started"
-    ROUTE_CLOUD_FALLBACK_COMPLETED = "route.cloud_fallback_completed"
-    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
-    CACHE_HIT = "cache.hit"
-    CACHE_MISS = "cache.miss"
-    PROVIDER_REQUEST_STARTED = "provider.request_started"
-    PROVIDER_REQUEST_COMPLETED = "provider.request_completed"
-    RESULT_NORMALIZED = "result.normalized"
+    TASK_QUEUED = "task.queued"
+    TASK_RUNNING = "task.running"
     AGENT_STARTED = "agent.started"
+    AGENT_PROGRESS = "agent.progress"
+    ROUTE_SELECTED = "route.selected"
+    ROUTE_UNSUPPORTED = "route.unsupported"
+    KNOWLEDGE_QUERY_NORMALIZED = "knowledge.query_normalized"
+    KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
+    KNOWLEDGE_CONTEXT_BUILT = "knowledge.context_built"
+    KNOWLEDGE_INSUFFICIENT = "knowledge.insufficient"
+    ANSWER_RETRIEVAL_ONLY_CREATED = "answer.retrieval_only_created"
     AGENT_OUTPUT = "agent.output"
+    ARTIFACT_CREATED = "artifact.created"
+    CANCEL_REQUESTED = "cancel.requested"
+    TASK_CANCELLED = "task.cancelled"
     TASK_COMPLETED = "task.completed"
     TASK_FAILED = "task.failed"
-    TASK_CANCELLED = "task.cancelled"
+    TASK_RETRY_CREATED = "task.retry_created"
 
 
 class ArtifactType(StrEnum):
@@ -86,6 +83,19 @@ class AttachmentRef(BaseModel):
     storage_key: str
     provider_file_id: str | None = None
     checksum_sha256: str | None = None
+
+
+class RunMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latency_ms: int | None = Field(default=None, ge=0)
+    queue_latency_ms: int | None = Field(default=None, ge=0)
+    provider_latency_ms: int | None = Field(default=None, ge=0)
+    model_calls: int = Field(default=0, ge=0)
+    tool_calls: int = Field(default=0, ge=0)
+    retrieval_calls: int = Field(default=0, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
 
 
 class Artifact(BaseModel):
@@ -117,7 +127,6 @@ class AgentRequest(BaseModel):
     attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)
     options: dict[str, Any] = Field(default_factory=dict)
-    force_refresh: bool = False
 
 
 class AgentResult(BaseModel):
@@ -132,7 +141,7 @@ class AgentResult(BaseModel):
     citations: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, ge=0, le=1)
-    metrics: dict[str, Any] = Field(default_factory=dict)
+    metrics: RunMetrics = Field(default_factory=RunMetrics)
 
 
 class AgentEvent(BaseModel):
@@ -140,6 +149,7 @@ class AgentEvent(BaseModel):
 
     event_id: str = Field(default_factory=lambda: new_id("event"))
     task_id: str
+    sequence: int = Field(ge=1)
     type: AgentEventType
     agent_id: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
@@ -157,3 +167,12 @@ class CoursePack(BaseModel):
     agents: dict[str, str] = Field(default_factory=dict)
     tools: dict[str, bool] = Field(default_factory=dict)
     evaluation: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderAvailability(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_name: str
+    available: bool
+    reason: str | None = None
+    publication_status: str

@@ -1,0 +1,7 @@
+rules:
+  - original: "10.8 diameters = 100 kg"
+    replacement: "10.8 非正弦波产生电路"
+    document_path: "教材/模电_第十章.md"
+    scope: heading_exact
+    reason: "标题与后续电压比较器、方波和锯齿波章节明显不一致，待对照 PDF 人工确认"
+    review_status: draft

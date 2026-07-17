@@ -1,121 +1,42 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from app.agents.registry import AgentRegistry
-from app.contracts import AgentRequest, InputMode, RouteDecision, RouteStatus
-
-
-@dataclass(frozen=True, slots=True)
-class SessionRouteContext:
-    course_id: str = ""
-    intent: str = ""
-    target_agent_id: str = ""
+from app.contracts.agent import AgentRequest
+from app.contracts.routing import RouteDecision, RouteStatus
 
 
 class TaskRouter:
-    """Deterministic local-first router; it never calls a model."""
+    """Select an explicit registered agent; unknown work never falls back."""
 
-    def __init__(self, registry: AgentRegistry, threshold: float = 0.75) -> None:
+    def __init__(self, registry: AgentRegistry) -> None:
         self.registry = registry
-        self.threshold = threshold
 
-    def route(
-        self,
-        request: AgentRequest,
-        input_mode: InputMode,
-        context: SessionRouteContext | None = None,
-    ) -> RouteDecision:
-        course_id = request.course_id.strip().upper() or "UNKNOWN"
+    def route(self, request: AgentRequest) -> RouteDecision:
         intent = request.intent.value
-        route = self._local_route(course_id, intent, input_mode, context)
-        if route is not None and route.route_confidence >= self.threshold:
-            return route
-        if course_id not in {"CT", "AE", "DE", "UNKNOWN"}:
-            return RouteDecision(
-                route_status=RouteStatus.UNSUPPORTED,
-                course_id=course_id,
-                intent=intent,
-                target_agent_id="",
-                route_confidence=1.0,
-                route_source="local_fast",
-                reason="当前版本仅支持电子信息课程群中的 CT、AE 和 DE。",
-                input_mode=input_mode,
-            )
-        return RouteDecision(
-            route_status=RouteStatus.SELECTED,
-            course_id=course_id,
-            intent=intent,
-            target_agent_id="ROUTER_01_FALLBACK_V1",
-            route_confidence=0.5,
-            route_source="cloud_fallback",
-            reason="本地规则无法以足够置信度确定唯一目标 Agent。",
-            input_mode=input_mode,
-            needs_fallback=True,
-        )
-
-    @staticmethod
-    def _local_route(
-        course_id: str,
-        intent: str,
-        input_mode: InputMode,
-        context: SessionRouteContext | None,
-    ) -> RouteDecision | None:
-        if (
-            course_id == "CT"
-            and intent in {"solve_problem", "check_user_solution", "verify_answer"}
-        ):
-            return TaskRouter._selected(
-                course_id, intent, "SOLVER_CT_V1", input_mode, False
-            )
-        if (
-            course_id in {"CT", "AE", "DE"}
-            and intent
-            in {
-                "explain_concept",
-                "summarize_knowledge",
-                "learning_advice",
-                "general_qa",
-            }
-            and input_mode == InputMode.TEXT
-        ):
-            return TaskRouter._selected(
-                course_id,
-                intent,
-                "LEARN_01_KNOWLEDGE_QA_V1",
-                input_mode,
-                True,
-            )
-        if intent == "follow_up_question" and context and context.target_agent_id:
-            target = context.target_agent_id
-            if target in AgentRegistry.ROUTING_TARGETS:
-                return TaskRouter._selected(
-                    context.course_id or course_id,
-                    intent,
-                    target,
-                    input_mode,
-                    target == "LEARN_01_KNOWLEDGE_QA_V1",
-                    reason="沿用同一会话最近一次已完成任务的课程与 Agent。",
+        course_id = request.course_id.upper()
+        for rule in self.registry.routing_rules:
+            if course_id in rule.course_ids and intent in rule.intents:
+                agent = self.registry.get(rule.agent_id)
+                return RouteDecision(
+                    agent_id=agent.agent_id,
+                    scene=rule.scene,
+                    course_id=course_id,
+                    intent=intent,
+                    route_status=RouteStatus.SELECTED,
+                    reason=(
+                        f"matched configured route course_id={course_id}, "
+                        f"intent={intent}"
+                    ),
+                    retrieval_required=rule.retrieval_required,
+                    provider_required=rule.provider_required,
                 )
-        return None
-
-    @staticmethod
-    def _selected(
-        course_id: str,
-        intent: str,
-        target_agent_id: str,
-        input_mode: InputMode,
-        needs_knowledge: bool,
-        reason: str = "命中本地确定性课程与意图规则。",
-    ) -> RouteDecision:
         return RouteDecision(
-            route_status=RouteStatus.SELECTED,
+            agent_id="UNSUPPORTED",
+            scene=request.scene.value,
             course_id=course_id,
             intent=intent,
-            target_agent_id=target_agent_id,
-            route_confidence=0.95,
-            route_source="local_fast",
-            reason=reason,
-            input_mode=input_mode,
-            needs_knowledge=needs_knowledge,
+            route_status=RouteStatus.UNSUPPORTED,
+            reason=f"no configured route for course_id={course_id}, intent={intent}",
+            retrieval_required=False,
+            provider_required=False,
         )

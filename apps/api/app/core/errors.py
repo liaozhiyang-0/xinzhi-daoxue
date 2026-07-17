@@ -32,8 +32,13 @@ class ProviderTimeoutError(ProviderError):
     status_code = 504
 
 
+class ProviderCancelledError(ProviderError):
+    code = "provider_cancelled"
+    status_code = 409
+
+
 class XingchenConfigurationError(ConfigurationError):
-    code = "agent_unavailable"
+    code = "xingchen_configuration_error"
     status_code = 503
 
 
@@ -53,13 +58,13 @@ class XingchenResponseParseError(ProviderError):
     code = "xingchen_response_parse_error"
 
 
-class RouteUnresolvedError(AppError):
-    code = "route_unresolved"
-    status_code = 422
-
-
 class NotConfiguredError(ConfigurationError):
     code = "not_configured"
+    status_code = 503
+
+
+class NotPublishedError(ConfigurationError):
+    code = "not_published"
     status_code = 503
 
 
@@ -76,6 +81,11 @@ class DatabaseError(AppError):
 class NotFoundError(AppError):
     code = "not_found"
     status_code = 404
+
+
+class ConflictError(AppError):
+    code = "conflict"
+    status_code = 409
 
 
 class ValidationAppError(AppError):

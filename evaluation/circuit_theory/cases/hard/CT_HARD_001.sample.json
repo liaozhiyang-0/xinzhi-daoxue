@@ -1,0 +1,16 @@
+{
+  "case_id": "CT_HARD_001",
+  "difficulty": "hard",
+  "input_type": "text",
+  "question": "示例：描述含受控源电路的通用求解检查项。",
+  "attachments": [],
+  "expected": {
+    "final_answer": "",
+    "required_points": ["受控变量定义", "方程完整性", "单位检查"],
+    "units": [],
+    "reference_directions": []
+  },
+  "tags": ["sample", "draft"],
+  "source_type": "original",
+  "review_status": "draft_not_reviewed"
+}

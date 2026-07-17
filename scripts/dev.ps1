@@ -50,6 +50,25 @@ if ($HostDatabaseUrl) { $env:DATABASE_URL = $HostDatabaseUrl }
 if ($HostRedisUrl) { $env:REDIS_URL = $HostRedisUrl }
 if ($HostMinioEndpoint) { $env:MINIO_ENDPOINT = $HostMinioEndpoint }
 
+$CircuitTheoryFolder = -join @(
+    [char]0x7535, [char]0x8DEF, [char]0x7406, [char]0x8BBA
+)
+$AnalogElectronicsFolder = -join @([char]0x6A21, [char]0x7535)
+$DigitalElectronicsFolder = -join @([char]0x6570, [char]0x7535)
+foreach ($Knowledge in @(
+    @{ Variable = "KNOWLEDGE_CT_PATH"; Folder = $CircuitTheoryFolder },
+    @{ Variable = "KNOWLEDGE_AE_PATH"; Folder = $AnalogElectronicsFolder },
+    @{ Variable = "KNOWLEDGE_DE_PATH"; Folder = $DigitalElectronicsFolder }
+)) {
+    $Candidate = Join-Path $RepoRoot $Knowledge.Folder
+    $Sibling = Join-Path (Split-Path -Parent $RepoRoot) "xinzhi-daoxue\$($Knowledge.Folder)"
+    if (Test-Path -LiteralPath $Candidate -PathType Container) {
+        Set-Item "Env:$($Knowledge.Variable)" (Resolve-Path -LiteralPath $Candidate).Path
+    } elseif (Test-Path -LiteralPath $Sibling -PathType Container) {
+        Set-Item "Env:$($Knowledge.Variable)" (Resolve-Path -LiteralPath $Sibling).Path
+    }
+}
+
 Write-Host "[xzd] Starting PostgreSQL, Redis, and MinIO..."
 docker compose up -d postgres redis minio
 

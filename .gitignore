@@ -10,6 +10,8 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
+evaluation/circuit_theory/results/*
+!evaluation/circuit_theory/results/.gitkeep
 node_modules/
 dist/
 build/
@@ -20,4 +22,24 @@ target/
 *.log
 *.db
 local_storage/
+local_knowledge/*
+!local_knowledge/README.md
+!local_knowledge/CT/
+!local_knowledge/AE/
+!local_knowledge/DE/
+local_knowledge/CT/*
+local_knowledge/AE/*
+local_knowledge/DE/*
+!local_knowledge/CT/.gitkeep
+!local_knowledge/AE/.gitkeep
+!local_knowledge/DE/.gitkeep
 .minio/
+.local_inputs/
+.local_outputs/
+*.xingchen.raw.yml
+*.xingchen.raw.yaml
+
+# 本地教材只读数据源：体积大且可能受版权约束，只允许挂载，不提交。
+/电路理论/
+/模电/
+/数电/

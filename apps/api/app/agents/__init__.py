@@ -1,5 +1,4 @@
 from app.agents.registry import AgentDefinition, AgentRegistry
-from app.agents.router import SessionRouteContext, TaskRouter
+from app.agents.router import TaskRouter
 
-__all__ = ["AgentDefinition", "AgentRegistry", "SessionRouteContext", "TaskRouter"]
-
+__all__ = ["AgentDefinition", "AgentRegistry", "TaskRouter"]

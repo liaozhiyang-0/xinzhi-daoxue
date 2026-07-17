@@ -4,13 +4,16 @@ import asyncio
 
 from redis.asyncio import Redis
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.contracts.api import HealthRead
 from app.core.config import Settings
+from app.providers.base import AgentProvider
 
 
-async def _database_status(session_factory: async_sessionmaker) -> str:
+async def _database_status(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> str:
     try:
         async with session_factory() as session:
             await session.execute(text("SELECT 1"))
@@ -44,19 +47,30 @@ async def _minio_status(endpoint: str) -> str:
 
 
 async def build_health(
-    settings: Settings, session_factory: async_sessionmaker
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    provider: AgentProvider,
 ) -> HealthRead:
     database, redis, minio = await asyncio.gather(
         _database_status(session_factory),
         _redis_status(settings.redis_url),
         _minio_status(settings.minio_endpoint),
     )
+    provider_mode = "xingchen_sync" if provider.provider_name == "xingchen" else "mock"
     return HealthRead(
-        status="ok" if database == "ok" else "degraded",
+        status=(
+            "ok"
+            if database == "ok" and redis == "ok" and minio == "ok"
+            else "degraded"
+        ),
         environment=settings.app_env,
         database=database,
         redis=redis,
         minio=minio,
-        default_provider=settings.default_agent_provider,
+        requested_provider="xingchen" if settings.xingchen_enabled else "mock",
+        active_provider=provider.provider_name,
+        provider_mode=provider_mode,
+        xingchen_publication_status=settings.xingchen_publication_status,
+        xingchen_runtime_available=settings.xingchen_runtime_available,
         version=settings.app_version,
     )

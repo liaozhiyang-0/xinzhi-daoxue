@@ -7,11 +7,15 @@ from typing import Any
 
 import httpx
 
-from app.agents.registry import AgentRegistry
-from app.contracts import AgentRequest, AgentResult, Artifact, AttachmentRef
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    Artifact,
+    AttachmentRef,
+    RunMetrics,
+)
 from app.core.config import Settings
 from app.core.errors import (
-    NotConfiguredError,
     ValidationAppError,
     XingchenConfigurationError,
     XingchenConnectionError,
@@ -27,20 +31,11 @@ logger = logging.getLogger(__name__)
 TEXT_FIELDS = ("text", "question", "problem", "query", "prompt")
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
 DEFAULT_IMAGE_PROMPT = "请识别并解答图片中的电路题，说明关键步骤和最终答案。"
-STRUCTURED_LIST_FIELDS = (
-    "key_equations",
-    "assumptions",
-    "remaining_risks",
-    "key_points",
-    "examples",
-    "common_mistakes",
-    "recommended_reading",
-)
+STRUCTURED_LIST_FIELDS = ("key_equations", "assumptions", "remaining_risks")
 STRUCTURED_TEXT_FIELDS = (
     "answer_text",
     "problem_summary",
     "final_answer",
-    "knowledge_summary",
 )
 
 
@@ -58,14 +53,8 @@ def build_workflow_payload(
     settings: Settings,
     request: AgentRequest,
     *,
-    agent_id: str = "SOLVER_CT_V1",
     image_url: str | None = None,
-    registry: AgentRegistry | None = None,
 ) -> dict[str, Any]:
-    active_registry = registry or AgentRegistry()
-    flow_id = active_registry.resolve_flow_id(agent_id, settings)
-    if not flow_id:
-        raise XingchenConfigurationError(f"{agent_id} 对应云端工作流尚未启用")
     ext = {"caller": "workflow"}
     if settings.xingchen_bot_id.strip():
         ext["bot_id"] = settings.xingchen_bot_id.strip()
@@ -73,7 +62,7 @@ def build_workflow_payload(
     if image_url:
         parameters["USER_INPUT_image"] = image_url
     return {
-        "flow_id": flow_id,
+        "flow_id": settings.xingchen_solver_ct_flow_id,
         "uid": settings.xingchen_uid,
         "parameters": parameters,
         "ext": ext,
@@ -85,12 +74,8 @@ def get_single_image(request: AgentRequest) -> AttachmentRef | None:
     if not request.attachments:
         return None
     if len(request.attachments) != 1:
-        raise ValidationAppError(
-            "当前版本暂只支持单张图片，请将完整题目整理为一张截图。"
-        )
+        raise ValidationAppError("星辰图片解题当前只支持单张图片")
     attachment = request.attachments[0]
-    if attachment.content_type == "application/pdf":
-        raise ValidationAppError("当前版本暂不直接解析 PDF，请先转换为单张清晰图片。")
     if attachment.content_type not in IMAGE_CONTENT_TYPES:
         raise ValidationAppError("星辰图片解题仅支持 PNG、JPG 或 JPEG")
     return attachment
@@ -122,7 +107,9 @@ def _choice_content(payload: dict[str, Any]) -> str:
     if not isinstance(first, dict):
         raise XingchenResponseParseError("星辰 choices 格式无效")
     delta = first.get("delta")
-    content = delta.get("content") if isinstance(delta, dict) else None
+    if not isinstance(delta, dict):
+        raise XingchenResponseParseError("星辰响应缺少 choices[0].delta")
+    content = delta.get("content")
     if not isinstance(content, str):
         raise XingchenResponseParseError("星辰响应缺少最终文本")
     return content
@@ -149,14 +136,16 @@ def parse_sse_answer(body: str) -> str:
             raise XingchenResponseParseError("星辰 SSE data 不是 JSON") from exc
         if not isinstance(payload, dict):
             raise XingchenResponseParseError("星辰 SSE data 顶层格式无效")
-        chunks.append(_choice_content(payload))
+        content = _choice_content(payload)
+        if content:
+            chunks.append(content)
     answer = "".join(chunks).strip()
     if not answer:
         raise XingchenResponseParseError("星辰 SSE 未包含最终回答")
     return answer
 
 
-def json_object_from_answer(answer: str) -> dict[str, Any] | None:
+def _json_object_from_answer(answer: str) -> dict[str, Any] | None:
     candidate = answer.strip()
     if candidate.startswith("```") and candidate.endswith("```"):
         lines = candidate.splitlines()
@@ -170,7 +159,11 @@ def json_object_from_answer(answer: str) -> dict[str, Any] | None:
 
 
 def standardize_answer(answer: str, *, input_type: str) -> dict[str, Any]:
+    """Best-effort mapping that always preserves the upstream student answer."""
+
     structured: dict[str, Any] = {
+        "status": "completed",
+        "input_type": input_type,
         "answer_text": answer,
         "problem_summary": "",
         "key_equations": [],
@@ -179,24 +172,29 @@ def standardize_answer(answer: str, *, input_type: str) -> dict[str, Any]:
         "remaining_risks": [],
         "confidence": None,
     }
-    payload = json_object_from_answer(answer)
-    if payload is not None:
-        for field in STRUCTURED_TEXT_FIELDS:
-            value = payload.get(field)
-            if isinstance(value, str):
-                structured[field] = value.strip()
-        for field in STRUCTURED_LIST_FIELDS:
-            value = payload.get(field)
-            if isinstance(value, list):
-                structured[field] = [str(item) for item in value if str(item).strip()]
-        confidence = payload.get("confidence")
-        if (
-            isinstance(confidence, (int, float))
-            and not isinstance(confidence, bool)
-            and 0 <= confidence <= 1
-        ):
-            structured["confidence"] = float(confidence)
-    structured["input_type"] = input_type
+    payload = _json_object_from_answer(answer)
+    if payload is None:
+        return structured
+
+    for field in STRUCTURED_TEXT_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, str):
+            structured[field] = value.strip()
+    if not structured["answer_text"]:
+        structured["answer_text"] = answer
+
+    for field in STRUCTURED_LIST_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, list):
+            structured[field] = [str(item) for item in value if str(item).strip()]
+
+    confidence = payload.get("confidence")
+    if (
+        isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and 0 <= confidence <= 1
+    ):
+        structured["confidence"] = float(confidence)
     return structured
 
 
@@ -207,16 +205,14 @@ class XingchenCloudProvider(AgentProvider):
         self,
         settings: Settings,
         *,
-        registry: AgentRegistry | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.settings = settings
-        self.registry = registry or AgentRegistry()
         self.client = client
 
     @property
-    def is_configured(self) -> bool:
-        return self.settings.xingchen_credentials_available
+    def is_available(self) -> bool:
+        return self.settings.xingchen_runtime_available
 
     @property
     def authorization(self) -> str:
@@ -230,7 +226,6 @@ class XingchenCloudProvider(AgentProvider):
         self,
         client: httpx.AsyncClient,
         attachment: AttachmentRef,
-        timeout_seconds: float,
     ) -> str:
         image = await StorageService(self.settings).read(attachment.storage_key)
         url = (
@@ -240,8 +235,13 @@ class XingchenCloudProvider(AgentProvider):
         response = await client.post(
             url,
             headers={"Accept": "application/json", "Authorization": self.authorization},
-            files={"file": (attachment.filename, image, attachment.content_type)},
-            timeout=timeout_seconds,
+            files={
+                "file": (
+                    attachment.filename,
+                    image,
+                    attachment.content_type,
+                )
+            },
         )
         if not response.is_success:
             raise XingchenHttpError(
@@ -259,37 +259,27 @@ class XingchenCloudProvider(AgentProvider):
     async def _request_workflow(
         self,
         client: httpx.AsyncClient,
-        agent_id: str,
         request: AgentRequest,
-        timeout_seconds: float,
     ) -> tuple[httpx.Response, bool]:
         attachment = get_single_image(request)
         image_url = (
-            await self._upload_image(client, attachment, timeout_seconds)
-            if attachment
-            else None
+            await self._upload_image(client, attachment) if attachment else None
         )
         payload = build_workflow_payload(
             self.settings,
             request,
-            agent_id=agent_id,
             image_url=image_url,
-            registry=self.registry,
         )
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": self.authorization,
+        }
         url = (
             self.settings.xingchen_base_url.rstrip("/")
             + self.settings.xingchen_workflow_path
         )
-        response = await client.post(
-            url,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Authorization": self.authorization,
-            },
-            json=payload,
-            timeout=timeout_seconds,
-        )
+        response = await client.post(url, headers=headers, json=payload)
         return response, attachment is not None
 
     async def run(
@@ -298,32 +288,28 @@ class XingchenCloudProvider(AgentProvider):
         request: AgentRequest,
         stream: bool = False,
     ) -> AgentResult:
+        if agent_id != "SOLVER_CT_V1":
+            raise ValidationAppError("Xingchen Provider 仅支持 SOLVER_CT_V1")
         if stream:
             raise ValidationAppError("本阶段仅支持星辰 stream=false")
-        if not self.settings.xingchen_credentials_available:
-            raise NotConfiguredError("星辰 Key 或 Secret 配置不完整")
-        if not self.registry.is_callable(agent_id, self.settings):
-            raise XingchenConfigurationError(f"{agent_id} 对应云端工作流尚未启用")
+        if not self.settings.xingchen_runtime_available:
+            raise XingchenConfigurationError("星辰 Key、Secret 或 Flow ID 配置不完整")
 
         started = perf_counter()
-        timeout = self.registry.timeout_seconds(agent_id, self.settings)
         try:
             if self.client is None:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(
+                    timeout=self.settings.xingchen_timeout_seconds
+                ) as client:
                     response, image_used = await self._request_workflow(
-                        client, agent_id, request, timeout
+                        client, request
                     )
             else:
                 response, image_used = await self._request_workflow(
-                    self.client, agent_id, request, timeout
+                    self.client, request
                 )
         except httpx.TimeoutException as exc:
-            message = (
-                "专业工作流响应超时，请稍后重新提交。"
-                if agent_id == "SOLVER_CT_V1"
-                else "星辰工作流响应超时，请稍后重新提交。"
-            )
-            raise XingchenTimeoutError(message) from exc
+            raise XingchenTimeoutError("星辰工作流请求超时") from exc
         except httpx.RequestError as exc:
             raise XingchenConnectionError("无法连接星辰工作流 API") from exc
 
@@ -342,31 +328,34 @@ class XingchenCloudProvider(AgentProvider):
                     raise XingchenResponseParseError("星辰 JSON 顶层格式无效")
                 answer = parse_json_answer(parsed)
         except (ValueError, XingchenResponseParseError, XingchenHttpError):
+            preview = mask_sensitive_text(response.text[:500])
             logger.warning(
                 "xingchen_response_parse_failed status=%s content_type=%s preview=%s",
                 response.status_code,
                 content_type or "unknown",
-                mask_sensitive_text(response.text[:500]),
+                preview,
             )
             raise
 
         input_type = "image" if image_used else "text"
         structured = standardize_answer(answer, input_type=input_type)
         source_refs = [
-            str(item) for item in request.options.get("xingchen_knowledge_sources", [])
+            str(item)
+            for item in request.options.get("xingchen_knowledge_sources", [])
         ]
         artifact = Artifact(
             owner_id=request.user_id,
             task_id=request.task_id,
             course_id=request.course_id,
             content={
-                "mode": self.registry.get(agent_id).mode,
-                "answer": str(structured["answer_text"]),
+                **structured,
+                "mode": "xingchen_workflow",
                 "knowledge_sources": source_refs,
             },
             source_refs=source_refs,
             confidence=structured["confidence"],
         )
+        latency_ms = int((perf_counter() - started) * 1000)
         return AgentResult(
             agent_id=agent_id,
             provider=self.provider_name,
@@ -375,10 +364,7 @@ class XingchenCloudProvider(AgentProvider):
             artifacts=[artifact],
             citations=source_refs,
             confidence=structured["confidence"],
-            metrics={
-                "provider_latency_ms": int((perf_counter() - started) * 1000),
-                "model_calls": 1,
-            },
+            metrics=RunMetrics(provider_latency_ms=latency_ms),
         )
 
     async def cancel(self, run_id: str) -> None:

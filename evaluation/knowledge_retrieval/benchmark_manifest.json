@@ -1,0 +1,10 @@
+{
+  "name": "stage_1_6_local_knowledge_retrieval_drafts",
+  "status": "draft",
+  "courses": ["CT", "AE", "DE"],
+  "minimum_cases_per_course": 5,
+  "metrics": ["Recall@1", "Recall@3", "Recall@5", "MRR", "nDCG@5", "zero_hit_rate", "wrong_course_rate", "mean_latency_ms", "p95_latency_ms"],
+  "runs": ["baseline_lexical_v1", "local_lexical_v2"],
+  "relevance_granularity": "required document_path; chapter is retained for human audit",
+  "human_review_required": true
+}

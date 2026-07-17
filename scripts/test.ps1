@@ -10,4 +10,5 @@ if (-not (Test-Path $Python)) {
 }
 
 & $Python -m ruff check .
+& $Python -m mypy apps/api/app
 & $Python -m pytest

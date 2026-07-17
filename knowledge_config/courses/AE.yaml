@@ -1,0 +1,6 @@
+course_id: AE
+course_name: 模拟电子技术
+document_patterns:
+  - "**/*.md"
+chapter_aliases: {}
+excluded_paths: []

@@ -1,0 +1,9 @@
+course_id: CT
+course_name: 电路理论
+document_patterns:
+  - "**/*.md"
+chapter_aliases:
+  戴维南定理: 戴维宁定理
+excluded_paths:
+  - "**/映射表.md"
+  - "**/目录.md"

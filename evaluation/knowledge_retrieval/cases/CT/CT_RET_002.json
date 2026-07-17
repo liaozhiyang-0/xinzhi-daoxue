@@ -1,0 +1,1 @@
+{"case_id":"CT_RET_002","course_id":"CT","query":"结点电压法怎样列写结点方程","expected_sources":[{"document_path":"课本/基础篇/3-重置md/第三章.md","chapter":"结点分析法","required":true}],"forbidden_courses":["AE","DE"],"tags":["node_analysis","equations"],"review_status":"draft"}

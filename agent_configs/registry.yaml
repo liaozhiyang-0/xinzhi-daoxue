@@ -1,18 +1,37 @@
 agents:
   SOLVER_CT_V1:
     provider: xingchen
-    flow_env: XINGCHEN_SOLVER_CT_FLOW_ID
+    workflow_version: "1.0.0"
+    course_pack: course_ct_v1
     enabled: true
-    mode: professional_solver
-
+    publication_status: published
+    supports_streaming: false
+    default_timeout_seconds: 120
+    fallback:
+      provider: mock
+      when:
+        - xingchen_disabled
+        - xingchen_not_configured
+        - xingchen_not_published
   LEARN_01_KNOWLEDGE_QA_V1:
-    provider: xingchen
-    flow_env: XINGCHEN_KNOWLEDGE_QA_FLOW_ID
+    provider: local
+    workflow_version: "1.0.0"
+    course_pack: local_three_course_v1
     enabled: true
-    mode: knowledge_explanation
+    publication_status: local
+    mode: retrieval_only
+    supports_streaming: true
 
-  ROUTER_01_FALLBACK_V1:
-    provider: xingchen
-    flow_env: XINGCHEN_FALLBACK_ROUTER_FLOW_ID
-    enabled: true
-    mode: routing_only
+routing:
+  - course_ids: [CT]
+    intents: [solve_problem]
+    agent_id: SOLVER_CT_V1
+    scene: solving
+    retrieval_required: false
+    provider_required: true
+  - course_ids: [CT, AE, DE]
+    intents: [general_qa, explain_concept]
+    agent_id: LEARN_01_KNOWLEDGE_QA_V1
+    scene: learning
+    retrieval_required: true
+    provider_required: false

@@ -1,0 +1,877 @@
+{
+  "run_id": "local_lexical_v2",
+  "retrieval_mode": "local_lexical_v2",
+  "generated_at": "2026-07-17T01:51:57.312788+00:00",
+  "case_status": "draft",
+  "case_count": 15,
+  "corpus": {
+    "CT": {
+      "path": "../xinzhi-daoxue/电路理论",
+      "document_count": 16,
+      "chunk_count": 1017
+    },
+    "AE": {
+      "path": "../xinzhi-daoxue/模电",
+      "document_count": 11,
+      "chunk_count": 998
+    },
+    "DE": {
+      "path": "../xinzhi-daoxue/数电",
+      "document_count": 12,
+      "chunk_count": 768
+    }
+  },
+  "metrics": {
+    "Recall@1": 0.8,
+    "Recall@3": 0.866667,
+    "Recall@5": 0.866667,
+    "MRR": 0.822222,
+    "nDCG@5": 0.833333,
+    "zero_hit_rate": 0.0,
+    "wrong_course_rate": 0.0,
+    "mean_latency_ms": 22.266667,
+    "p95_latency_ms": 35.0
+  },
+  "cases": [
+    {
+      "case_id": "AE_RET_001",
+      "course_id": "AE",
+      "query": "MOS 场效应管有哪些工作区域",
+      "review_status": "draft",
+      "relevant_rank": null,
+      "latency_ms": 35,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "AE",
+          "document_path": "教材/4-第四章.md",
+          "chapter": "4.8 结型场效应管 (JFET)及其放大电路",
+          "title": "4.8 结型场效应管 (JFET)及其放大电路",
+          "score": 92.320603,
+          "source_ref": "kb://AE/教材/4-第四章.md#chunk-117"
+        },
+        {
+          "rank": 2,
+          "course_id": "AE",
+          "document_path": "教材/4-第四章.md",
+          "chapter": "引言",
+          "title": "引言",
+          "score": 77.271603,
+          "source_ref": "kb://AE/教材/4-第四章.md#chunk-2"
+        },
+        {
+          "rank": 3,
+          "course_id": "AE",
+          "document_path": "教材/5-第五章.md",
+          "chapter": "复习思考题",
+          "title": "复习思考题",
+          "score": 56.222258,
+          "source_ref": "kb://AE/教材/5-第五章.md#chunk-63"
+        },
+        {
+          "rank": 4,
+          "course_id": "AE",
+          "document_path": "教材/5-第五章.md",
+          "chapter": "5.3.1 FET 和 BJT 重要特性的比较",
+          "title": "5.3.1 FET 和 BJT 重要特性的比较",
+          "score": 46.454744,
+          "source_ref": "kb://AE/教材/5-第五章.md#chunk-59"
+        },
+        {
+          "rank": 5,
+          "course_id": "AE",
+          "document_path": "教材/模电_第七章.md",
+          "chapter": "1. 噪声的种类及性质",
+          "title": "1. 噪声的种类及性质",
+          "score": 31.566115,
+          "source_ref": "kb://AE/教材/模电_第七章.md#chunk-140"
+        }
+      ]
+    },
+    {
+      "case_id": "AE_RET_002",
+      "course_id": "AE",
+      "query": "负反馈放大电路有哪四种基本组态",
+      "review_status": "draft",
+      "relevant_rank": null,
+      "latency_ms": 26,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "AE",
+          "document_path": "教材/模电_第八章.md",
+          "chapter": "8.1.6 负反馈放大电路的四种组态",
+          "title": "8.1.6 负反馈放大电路的四种组态",
+          "score": 111.886552,
+          "source_ref": "kb://AE/教材/模电_第八章.md#chunk-14"
+        },
+        {
+          "rank": 2,
+          "course_id": "AE",
+          "document_path": "教材/模电_第八章.md",
+          "chapter": "8.5，负反馈放大电路设计",
+          "title": "8.5，负反馈放大电路设计",
+          "score": 71.76449,
+          "source_ref": "kb://AE/教材/模电_第八章.md#chunk-63"
+        },
+        {
+          "rank": 3,
+          "course_id": "AE",
+          "document_path": "教材/2-第二章.md",
+          "chapter": "1. 基本电路",
+          "title": "1. 基本电路",
+          "score": 37.612483,
+          "source_ref": "kb://AE/教材/2-第二章.md#chunk-18"
+        },
+        {
+          "rank": 4,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十一章.md",
+          "chapter": "1. 输出电压固定的稳压电路",
+          "title": "1. 输出电压固定的稳压电路",
+          "score": 36.721787,
+          "source_ref": "kb://AE/教材/模电_第十一章.md#chunk-18"
+        },
+        {
+          "rank": 5,
+          "course_id": "AE",
+          "document_path": "教材/5-第五章.md",
+          "chapter": "复习思考题",
+          "title": "复习思考题",
+          "score": 33.92621,
+          "source_ref": "kb://AE/教材/5-第五章.md#chunk-57"
+        }
+      ]
+    },
+    {
+      "case_id": "AE_RET_003",
+      "course_id": "AE",
+      "query": "理想集成运算放大器的虚短和虚断是什么意思",
+      "review_status": "draft",
+      "relevant_rank": 3,
+      "latency_ms": 24,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "AE",
+          "document_path": "教材/模电_第七章.md",
+          "chapter": "7.4.3 BJT 型 LM741 集成运算放大器",
+          "title": "7.4.3 BJT 型 LM741 集成运算放大器",
+          "score": 95.611364,
+          "source_ref": "kb://AE/教材/模电_第七章.md#chunk-80"
+        },
+        {
+          "rank": 2,
+          "course_id": "AE",
+          "document_path": "教材/模电_第七章.md",
+          "chapter": "7.4、集成运算放大器电路简介",
+          "title": "7.4、集成运算放大器电路简介",
+          "score": 82.570012,
+          "source_ref": "kb://AE/教材/模电_第七章.md#chunk-65"
+        },
+        {
+          "rank": 3,
+          "course_id": "AE",
+          "document_path": "教材/2-第二章.md",
+          "chapter": "1. 集成电路运算放大器简介",
+          "title": "1. 集成电路运算放大器简介",
+          "score": 81.935867,
+          "source_ref": "kb://AE/教材/2-第二章.md#chunk-3"
+        },
+        {
+          "rank": 4,
+          "course_id": "AE",
+          "document_path": "教材/2-第二章.md",
+          "chapter": "2.2 理想运算放大器",
+          "title": "2.2 理想运算放大器",
+          "score": 72.945819,
+          "source_ref": "kb://AE/教材/2-第二章.md#chunk-15"
+        },
+        {
+          "rank": 5,
+          "course_id": "AE",
+          "document_path": "教材/模电_第八章.md",
+          "chapter": "复习思考题",
+          "title": "复习思考题",
+          "score": 69.276771,
+          "source_ref": "kb://AE/教材/模电_第八章.md#chunk-62"
+        }
+      ]
+    },
+    {
+      "case_id": "AE_RET_004",
+      "course_id": "AE",
+      "query": "一阶有源低通滤波电路的传递函数",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 23,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十章.md",
+          "chapter": "10.2 一阶有源滤波电路",
+          "title": "10.2 一阶有源滤波电路",
+          "score": 101.558053,
+          "source_ref": "kb://AE/教材/模电_第十章.md#chunk-103"
+        },
+        {
+          "rank": 2,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十章.md",
+          "chapter": "2. 无限增益多路反馈二阶有源低通滤波电路",
+          "title": "2. 无限增益多路反馈二阶有源低通滤波电路",
+          "score": 96.210419,
+          "source_ref": "kb://AE/教材/模电_第十章.md#chunk-20"
+        },
+        {
+          "rank": 3,
+          "course_id": "AE",
+          "document_path": "教材/模电_第九章.md",
+          "chapter": "9.5 丁类(D 类)功率放大电路原理简介",
+          "title": "9.5 丁类(D 类)功率放大电路原理简介",
+          "score": 31.009442,
+          "source_ref": "kb://AE/教材/模电_第九章.md#chunk-32"
+        },
+        {
+          "rank": 4,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十一章.md",
+          "chapter": "11.1.2 滤波电路",
+          "title": "11.1.2 滤波电路",
+          "score": 28.085905,
+          "source_ref": "kb://AE/教材/模电_第十一章.md#chunk-7"
+        },
+        {
+          "rank": 5,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十一章.md",
+          "chapter": "1. 电容滤波电路",
+          "title": "1. 电容滤波电路",
+          "score": 23.594115,
+          "source_ref": "kb://AE/教材/模电_第十一章.md#chunk-11"
+        }
+      ]
+    },
+    {
+      "case_id": "AE_RET_005",
+      "course_id": "AE",
+      "query": "直流稳压电源由哪些部分组成",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 22,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十一章.md",
+          "chapter": "11.2 线性稳压电路",
+          "title": "11.2 线性稳压电路",
+          "score": 44.749945,
+          "source_ref": "kb://AE/教材/模电_第十一章.md#chunk-59"
+        },
+        {
+          "rank": 2,
+          "course_id": "AE",
+          "document_path": "教材/模电_第十一章.md",
+          "chapter": "引言",
+          "title": "引言",
+          "score": 39.447073,
+          "source_ref": "kb://AE/教材/模电_第十一章.md#chunk-1"
+        },
+        {
+          "rank": 3,
+          "course_id": "AE",
+          "document_path": "教材/模电_第七章.md",
+          "chapter": "3. 由交流电源串入的干扰和抑制",
+          "title": "3. 由交流电源串入的干扰和抑制",
+          "score": 29.750538,
+          "source_ref": "kb://AE/教材/模电_第七章.md#chunk-147"
+        },
+        {
+          "rank": 4,
+          "course_id": "AE",
+          "document_path": "教材/3-第三章.md",
+          "chapter": "复习思考题",
+          "title": "复习思考题",
+          "score": 28.014793,
+          "source_ref": "kb://AE/教材/3-第三章.md#chunk-65"
+        },
+        {
+          "rank": 5,
+          "course_id": "AE",
+          "document_path": "教材/3-第三章.md",
+          "chapter": "3.5.1 齐纳二极管",
+          "title": "3.5.1 齐纳二极管",
+          "score": 25.625877,
+          "source_ref": "kb://AE/教材/3-第三章.md#chunk-55"
+        }
+      ]
+    },
+    {
+      "case_id": "CT_RET_001",
+      "course_id": "CT",
+      "query": "戴维南定理的等效电阻如何求",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 20,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第四章.md",
+          "chapter": "4.5 戴维南定理与诺顿定理",
+          "title": "4.5 戴维南定理与诺顿定理",
+          "score": 169.11261,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第四章.md#chunk-20"
+        },
+        {
+          "rank": 2,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "10.5.3 戴维南定理与诺顿定理应用",
+          "title": "10.5.3 戴维南定理与诺顿定理应用",
+          "score": 153.83378,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-78"
+        },
+        {
+          "rank": 3,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第四章.md",
+          "chapter": "4.5 戴维南定理与诺顿定理",
+          "title": "4.5 戴维南定理与诺顿定理",
+          "score": 150.242906,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第四章.md#chunk-21"
+        },
+        {
+          "rank": 4,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "10.5.3 戴维南定理与诺顿定理应用",
+          "title": "10.5.3 戴维南定理与诺顿定理应用",
+          "score": 149.856865,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-80"
+        },
+        {
+          "rank": 5,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十一章.md",
+          "chapter": "11.7 最大有功功率传输",
+          "title": "11.7 最大有功功率传输",
+          "score": 106.687155,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十一章.md#chunk-28"
+        }
+      ]
+    },
+    {
+      "case_id": "CT_RET_002",
+      "course_id": "CT",
+      "query": "结点电压法怎样列写结点方程",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 20,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第三章.md",
+          "chapter": "3.3.1 结点方程的形式",
+          "title": "3.3.1 结点方程的形式",
+          "score": 83.431146,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第三章.md#chunk-18"
+        },
+        {
+          "rank": 2,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第三章.md",
+          "chapter": "3.3.2 结点方程快速列写法",
+          "title": "3.3.2 结点方程快速列写法",
+          "score": 81.576991,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第三章.md#chunk-29"
+        },
+        {
+          "rank": 3,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "10.5.1 结点分析与网孔分析",
+          "title": "10.5.1 结点分析与网孔分析",
+          "score": 73.835641,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-65"
+        },
+        {
+          "rank": 4,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "10.5.1 结点分析与网孔分析",
+          "title": "10.5.1 结点分析与网孔分析",
+          "score": 52.220387,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-71"
+        },
+        {
+          "rank": 5,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第六章.md",
+          "chapter": "6.2 电路方程分析法",
+          "title": "6.2 电路方程分析法",
+          "score": 50.449116,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第六章.md#chunk-3"
+        }
+      ]
+    },
+    {
+      "case_id": "CT_RET_003",
+      "course_id": "CT",
+      "query": "一阶电路三要素法中的初始值稳态值和时间常数",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 26,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第八章.md",
+          "chapter": "8.3.2 直流电源激励的 \\( {RL} \\) 电路",
+          "title": "8.3.2 直流电源激励的 \\( {RL} \\) 电路",
+          "score": 64.51887,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第八章.md#chunk-47"
+        },
+        {
+          "rank": 2,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第八章.md",
+          "chapter": "8.3.2 直流电源激励的 \\( {RL} \\) 电路",
+          "title": "8.3.2 直流电源激励的 \\( {RL} \\) 电路",
+          "score": 63.749258,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第八章.md#chunk-40"
+        },
+        {
+          "rank": 3,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十三章.md",
+          "chapter": "8. 耦合电感的储能",
+          "title": "8. 耦合电感的储能",
+          "score": 40.996611,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十三章.md#chunk-18"
+        },
+        {
+          "rank": 4,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第七章.md",
+          "chapter": "7.5.5 暂态过程计算",
+          "title": "7.5.5 暂态过程计算",
+          "score": 39.347868,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第七章.md#chunk-101"
+        },
+        {
+          "rank": 5,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第七章.md",
+          "chapter": "7.5.3 初始值",
+          "title": "7.5.3 初始值",
+          "score": 37.24721,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第七章.md#chunk-88"
+        }
+      ]
+    },
+    {
+      "case_id": "CT_RET_004",
+      "course_id": "CT",
+      "query": "正弦稳态电路为什么使用相量模型",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 23,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "10.5 复杂正弦稳态电路分析",
+          "title": "10.5 复杂正弦稳态电路分析",
+          "score": 73.737074,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-64"
+        },
+        {
+          "rank": 2,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十章.md",
+          "chapter": "3. 电容的相量模型",
+          "title": "3. 电容的相量模型",
+          "score": 70.203571,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十章.md#chunk-39"
+        },
+        {
+          "rank": 3,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十三章.md",
+          "chapter": "13.3.1 网孔分析法应用",
+          "title": "13.3.1 网孔分析法应用",
+          "score": 36.639105,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十三章.md#chunk-24"
+        },
+        {
+          "rank": 4,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第八章.md",
+          "chapter": "正弦稳态电路",
+          "title": "正弦稳态电路",
+          "score": 34.727003,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第八章.md#chunk-72"
+        },
+        {
+          "rank": 5,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第八章.md",
+          "chapter": "正弦稳态电路",
+          "title": "正弦稳态电路",
+          "score": 33.196156,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第八章.md#chunk-73"
+        }
+      ]
+    },
+    {
+      "case_id": "CT_RET_005",
+      "course_id": "CT",
+      "query": "耦合电感的同名端和互感电压如何判断",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 27,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十三章.md",
+          "chapter": "5. 线性耦合电感的 \\( u - i \\) 关系",
+          "title": "5. 线性耦合电感的 \\( u - i \\) 关系",
+          "score": 100.974278,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十三章.md#chunk-9"
+        },
+        {
+          "rank": 2,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第十三章.md",
+          "chapter": "5. 线性耦合电感的 \\( u - i \\) 关系",
+          "title": "5. 线性耦合电感的 \\( u - i \\) 关系",
+          "score": 81.95014,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第十三章.md#chunk-10"
+        },
+        {
+          "rank": 3,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/附录.md",
+          "chapter": "文档前言",
+          "title": "文档前言",
+          "score": 44.999764,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/附录.md#chunk-1"
+        },
+        {
+          "rank": 4,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第七章.md",
+          "chapter": "7.4.4 电感的储能",
+          "title": "7.4.4 电感的储能",
+          "score": 39.566102,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第七章.md#chunk-51"
+        },
+        {
+          "rank": 5,
+          "course_id": "CT",
+          "document_path": "课本/基础篇/3-重置md/第七章.md",
+          "chapter": "7.4.3 电感的重要性质",
+          "title": "7.4.3 电感的重要性质",
+          "score": 31.952849,
+          "source_ref": "kb://CT/课本/基础篇/3-重置md/第七章.md#chunk-48"
+        }
+      ]
+    },
+    {
+      "case_id": "DE_RET_001",
+      "course_id": "DE",
+      "query": "格雷码相邻代码有什么特点",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 15,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "DE",
+          "document_path": "教材/数电_第一章.md",
+          "chapter": "1.4.2 格雷码",
+          "title": "1.4.2 格雷码",
+          "score": 122.3123,
+          "source_ref": "kb://DE/教材/数电_第一章.md#chunk-45"
+        },
+        {
+          "rank": 2,
+          "course_id": "DE",
+          "document_path": "教材/数电_第一章.md",
+          "chapter": "2. 格雷码与二进制码的转换",
+          "title": "2. 格雷码与二进制码的转换",
+          "score": 97.635846,
+          "source_ref": "kb://DE/教材/数电_第一章.md#chunk-47"
+        },
+        {
+          "rank": 3,
+          "course_id": "DE",
+          "document_path": "教材/数电_第七章.md",
+          "chapter": "7.1.5 ROM 应用举例",
+          "title": "7.1.5 ROM 应用举例",
+          "score": 60.823526,
+          "source_ref": "kb://DE/教材/数电_第七章.md#chunk-13"
+        },
+        {
+          "rank": 4,
+          "course_id": "DE",
+          "document_path": "教材/数电_第四章.md",
+          "chapter": "4.2.1 组合逻辑电路的设计过程",
+          "title": "4.2.1 组合逻辑电路的设计过程",
+          "score": 38.371222,
+          "source_ref": "kb://DE/教材/数电_第四章.md#chunk-8"
+        },
+        {
+          "rank": 5,
+          "course_id": "DE",
+          "document_path": "教材/数电_第四章.md",
+          "chapter": "4.2.1 组合逻辑电路的设计过程",
+          "title": "4.2.1 组合逻辑电路的设计过程",
+          "score": 38.276784,
+          "source_ref": "kb://DE/教材/数电_第四章.md#chunk-9"
+        }
+      ]
+    },
+    {
+      "case_id": "DE_RET_002",
+      "course_id": "DE",
+      "query": "怎样用卡诺图化简逻辑函数",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 16,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "DE",
+          "document_path": "教材/数电_第二章.md",
+          "chapter": "2.4 逻辑函数的卡诺图化简法",
+          "title": "2.4 逻辑函数的卡诺图化简法",
+          "score": 117.954997,
+          "source_ref": "kb://DE/教材/数电_第二章.md#chunk-74"
+        },
+        {
+          "rank": 2,
+          "course_id": "DE",
+          "document_path": "教材/数电_第二章.md",
+          "chapter": "逻辑函数的卡诺图化简法",
+          "title": "逻辑函数的卡诺图化简法",
+          "score": 105.407321,
+          "source_ref": "kb://DE/教材/数电_第二章.md#chunk-30"
+        },
+        {
+          "rank": 3,
+          "course_id": "DE",
+          "document_path": "教材/数电_第一章.md",
+          "chapter": "1.6.2 逻辑函数表示方法之间的转换",
+          "title": "1.6.2 逻辑函数表示方法之间的转换",
+          "score": 65.415672,
+          "source_ref": "kb://DE/教材/数电_第一章.md#chunk-63"
+        },
+        {
+          "rank": 4,
+          "course_id": "DE",
+          "document_path": "教材/数电_第六章.md",
+          "chapter": "5. 确定激励方程组和输出方程组",
+          "title": "5. 确定激励方程组和输出方程组",
+          "score": 60.300734,
+          "source_ref": "kb://DE/教材/数电_第六章.md#chunk-23"
+        },
+        {
+          "rank": 5,
+          "course_id": "DE",
+          "document_path": "教材/数电_第四章.md",
+          "chapter": "【2】组合逻辑电路的设计",
+          "title": "【2】组合逻辑电路的设计",
+          "score": 55.752301,
+          "source_ref": "kb://DE/教材/数电_第四章.md#chunk-6"
+        }
+      ]
+    },
+    {
+      "case_id": "DE_RET_003",
+      "course_id": "DE",
+      "query": "CMOS 传输门的结构和工作原理",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 17,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "DE",
+          "document_path": "教材/数电_第三章.md",
+          "chapter": "3.2.4 CMOS 传输门",
+          "title": "3.2.4 CMOS 传输门",
+          "score": 85.132177,
+          "source_ref": "kb://DE/教材/数电_第三章.md#chunk-22"
+        },
+        {
+          "rank": 2,
+          "course_id": "DE",
+          "document_path": "教材/数电_第三章.md",
+          "chapter": "3. 传输门在数字电路中的应用",
+          "title": "3. 传输门在数字电路中的应用",
+          "score": 66.830568,
+          "source_ref": "kb://DE/教材/数电_第三章.md#chunk-25"
+        },
+        {
+          "rank": 3,
+          "course_id": "DE",
+          "document_path": "教材/数电_第五章.md",
+          "chapter": "复习思考题",
+          "title": "复习思考题",
+          "score": 56.378425,
+          "source_ref": "kb://DE/教材/数电_第五章.md#chunk-22"
+        },
+        {
+          "rank": 4,
+          "course_id": "DE",
+          "document_path": "教材/数电_第五章.md",
+          "chapter": "1. 传输门控 D 锁存器",
+          "title": "1. 传输门控 D 锁存器",
+          "score": 54.02784,
+          "source_ref": "kb://DE/教材/数电_第五章.md#chunk-16"
+        },
+        {
+          "rank": 5,
+          "course_id": "DE",
+          "document_path": "教材/数电_第七章.md",
+          "chapter": "引言",
+          "title": "引言",
+          "score": 25.206891,
+          "source_ref": "kb://DE/教材/数电_第七章.md#chunk-1"
+        }
+      ]
+    },
+    {
+      "case_id": "DE_RET_004",
+      "course_id": "DE",
+      "query": "D 触发器的建立时间和保持时间是什么",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 19,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "DE",
+          "document_path": "教材/数电_第五章.md",
+          "chapter": "5.4.5 D触发器的动态特性",
+          "title": "5.4.5 D触发器的动态特性",
+          "score": 77.31177,
+          "source_ref": "kb://DE/教材/数电_第五章.md#chunk-34"
+        },
+        {
+          "rank": 2,
+          "course_id": "DE",
+          "document_path": "教材/数电_第五章.md",
+          "chapter": "5.4.4 其他结构的 D 触发器",
+          "title": "5.4.4 其他结构的 D 触发器",
+          "score": 69.391533,
+          "source_ref": "kb://DE/教材/数电_第五章.md#chunk-31"
+        },
+        {
+          "rank": 3,
+          "course_id": "DE",
+          "document_path": "教材/数电_第一章.md",
+          "chapter": "2. 数字波形",
+          "title": "2. 数字波形",
+          "score": 53.44996,
+          "source_ref": "kb://DE/教材/数电_第一章.md#chunk-17"
+        },
+        {
+          "rank": 4,
+          "course_id": "DE",
+          "document_path": "教材/数电_第六章.md",
+          "chapter": "6.3.3 同步时序逻辑电路中的时钟偏移",
+          "title": "6.3.3 同步时序逻辑电路中的时钟偏移",
+          "score": 48.091521,
+          "source_ref": "kb://DE/教材/数电_第六章.md#chunk-34"
+        },
+        {
+          "rank": 5,
+          "course_id": "DE",
+          "document_path": "教材/数电_第六章.md",
+          "chapter": "1. 二进制计数器",
+          "title": "1. 二进制计数器",
+          "score": 47.420056,
+          "source_ref": "kb://DE/教材/数电_第六章.md#chunk-50"
+        }
+      ]
+    },
+    {
+      "case_id": "DE_RET_005",
+      "course_id": "DE",
+      "query": "同步时序逻辑电路中计数器的设计步骤",
+      "review_status": "draft",
+      "relevant_rank": 1,
+      "latency_ms": 21,
+      "wrong_course": false,
+      "hits": [
+        {
+          "rank": 1,
+          "course_id": "DE",
+          "document_path": "教材/数电_第六章.md",
+          "chapter": "6.3.2 同步时序逻辑电路设计举例",
+          "title": "6.3.2 同步时序逻辑电路设计举例",
+          "score": 78.871918,
+          "source_ref": "kb://DE/教材/数电_第六章.md#chunk-25"
+        },
+        {
+          "rank": 2,
+          "course_id": "DE",
+          "document_path": "教材/数电_第六章.md",
+          "chapter": "D。 同步时序逻辑电路的设计",
+          "title": "D。 同步时序逻辑电路的设计",
+          "score": 68.504113,
+          "source_ref": "kb://DE/教材/数电_第六章.md#chunk-19"
+        },
+        {
+          "rank": 3,
+          "course_id": "DE",
+          "document_path": "教材/数电_第四章.md",
+          "chapter": "4.2.1 组合逻辑电路的设计过程",
+          "title": "4.2.1 组合逻辑电路的设计过程",
+          "score": 39.992594,
+          "source_ref": "kb://DE/教材/数电_第四章.md#chunk-7"
+        },
+        {
+          "rank": 4,
+          "course_id": "DE",
+          "document_path": "教材/数电_第四章.md",
+          "chapter": "【2】组合逻辑电路的设计",
+          "title": "【2】组合逻辑电路的设计",
+          "score": 35.230671,
+          "source_ref": "kb://DE/教材/数电_第四章.md#chunk-6"
+        },
+        {
+          "rank": 5,
+          "course_id": "DE",
+          "document_path": "教材/数电_第一章.md",
+          "chapter": "3. 数字电路的分析、设计与测试",
+          "title": "3. 数字电路的分析、设计与测试",
+          "score": 34.123693,
+          "source_ref": "kb://DE/教材/数电_第一章.md#chunk-8"
+        }
+      ]
+    }
+  ]
+}

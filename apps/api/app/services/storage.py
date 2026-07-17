@@ -28,10 +28,10 @@ SAFE_NAME = re.compile(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+")
 
 
 def sanitize_filename(filename: str) -> str:
-    name = filename.strip()
-    if "/" in name or "\\" in name or name in {".", ".."}:
+    raw = filename.strip()
+    if "/" in raw or "\\" in raw or raw in {".", ".."}:
         raise ValidationAppError("文件名不得包含路径")
-    clean = SAFE_NAME.sub("_", name)
+    clean = SAFE_NAME.sub("_", raw)
     if not clean or clean in {".", ".."}:
         raise ValidationAppError("文件名无效")
     return clean[:200]
@@ -60,15 +60,33 @@ class StorageService:
         safe = self.validate(filename, len(data), content_type)
         storage_key = f"{uuid4().hex}/{safe}"
         try:
-            await asyncio.to_thread(self._save_minio, storage_key, content_type, data)
+            await asyncio.to_thread(
+                self._save_minio, storage_key, content_type, data
+            )
             return storage_key
         except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
             if not self.settings.local_storage_fallback:
                 raise StorageError("MinIO 上传失败") from exc
-            target = self.settings.local_storage_path / storage_key
+            target = (self.settings.local_storage_path / storage_key).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root not in target.parents:
+                raise StorageError("本地存储路径越界") from exc
             target.parent.mkdir(parents=True, exist_ok=True)
             await asyncio.to_thread(target.write_bytes, data)
             return f"local:{storage_key}"
+
+    async def delete(self, storage_key: str) -> None:
+        if storage_key.startswith("local:"):
+            relative = storage_key.removeprefix("local:")
+            target = (self.settings.local_storage_path / relative).resolve()
+            root = self.settings.local_storage_path.resolve()
+            if root in target.parents and target.exists():
+                await asyncio.to_thread(target.unlink)
+            return
+        try:
+            await asyncio.to_thread(self._remove_minio, storage_key)
+        except (OSError, S3Error, Urllib3HTTPError, ValueError):
+            return
 
     async def read(self, storage_key: str) -> bytes:
         if storage_key.startswith("local:"):
@@ -86,8 +104,8 @@ class StorageService:
         except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
             raise StorageError("读取 MinIO 附件失败") from exc
 
-    def _read_minio(self, key: str) -> bytes:
-        client = Minio(
+    def _client(self) -> Minio:
+        return Minio(
             self.settings.minio_endpoint,
             access_key=self.settings.minio_access_key,
             secret_key=self.settings.minio_secret_key,
@@ -97,24 +115,9 @@ class StorageService:
                 retries=Retry(total=0),
             ),
         )
-        response = client.get_object(self.settings.minio_bucket, key)
-        try:
-            return response.read()
-        finally:
-            response.close()
-            response.release_conn()
 
     def _save_minio(self, key: str, content_type: str, data: bytes) -> None:
-        client = Minio(
-            self.settings.minio_endpoint,
-            access_key=self.settings.minio_access_key,
-            secret_key=self.settings.minio_secret_key,
-            secure=self.settings.minio_secure,
-            http_client=PoolManager(
-                timeout=Timeout(connect=1.0, read=3.0),
-                retries=Retry(total=0),
-            ),
-        )
+        client = self._client()
         if not client.bucket_exists(self.settings.minio_bucket):
             client.make_bucket(self.settings.minio_bucket)
         client.put_object(
@@ -124,3 +127,14 @@ class StorageService:
             length=len(data),
             content_type=content_type,
         )
+
+    def _remove_minio(self, key: str) -> None:
+        self._client().remove_object(self.settings.minio_bucket, key)
+
+    def _read_minio(self, key: str) -> bytes:
+        response = self._client().get_object(self.settings.minio_bucket, key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()

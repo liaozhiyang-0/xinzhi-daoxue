@@ -1,0 +1,16 @@
+{
+  "case_id": "CT_IMAGE_001",
+  "difficulty": "image",
+  "input_type": "image",
+  "question": "模板：待补充经过授权的电路图与人工审查答案。",
+  "attachments": [],
+  "expected": {
+    "final_answer": "",
+    "required_points": [],
+    "units": [],
+    "reference_directions": []
+  },
+  "tags": ["template", "draft"],
+  "source_type": "original",
+  "review_status": "draft_not_reviewed"
+}

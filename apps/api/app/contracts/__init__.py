@@ -9,10 +9,22 @@ from app.contracts.agent import (
     AttachmentRef,
     CoursePack,
     Intent,
+    ProviderAvailability,
+    RunMetrics,
     Scene,
     UserRole,
+    new_id,
 )
-from app.contracts.routing import InputMode, RouteDecision, RouteStatus
+from app.contracts.knowledge import (
+    KnowledgeCourseId,
+    KnowledgeHit,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
+    KnowledgeSourceStatus,
+    RetrievalContextPacket,
+    RetrievalResult,
+)
+from app.contracts.routing import RouteDecision, RouteStatus
 
 __all__ = [
     "AgentEvent",
@@ -20,14 +32,23 @@ __all__ = [
     "AgentRequest",
     "AgentResult",
     "AgentResultStatus",
-    "AttachmentRef",
     "Artifact",
     "ArtifactType",
+    "AttachmentRef",
     "CoursePack",
     "Intent",
-    "Scene",
-    "UserRole",
-    "InputMode",
+    "KnowledgeCourseId",
+    "KnowledgeHit",
+    "KnowledgeSearchRequest",
+    "KnowledgeSearchResponse",
+    "KnowledgeSourceStatus",
+    "RetrievalContextPacket",
+    "RetrievalResult",
+    "ProviderAvailability",
     "RouteDecision",
     "RouteStatus",
+    "RunMetrics",
+    "Scene",
+    "UserRole",
+    "new_id",
 ]

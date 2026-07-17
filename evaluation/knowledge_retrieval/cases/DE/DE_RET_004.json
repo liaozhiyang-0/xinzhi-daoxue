@@ -1,0 +1,1 @@
+{"case_id":"DE_RET_004","course_id":"DE","query":"D 触发器的建立时间和保持时间是什么","expected_sources":[{"document_path":"教材/数电_第五章.md","chapter":"触发器的动态特性","required":true}],"forbidden_courses":["CT","AE"],"tags":["flip_flop","timing"],"review_status":"draft"}
