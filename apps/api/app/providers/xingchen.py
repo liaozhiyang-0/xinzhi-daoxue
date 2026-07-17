@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 TEXT_FIELDS = ("text", "question", "problem", "query", "prompt")
 IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg"}
 DEFAULT_IMAGE_PROMPT = "请识别并解答图片中的电路题，说明关键步骤和最终答案。"
+STRUCTURED_LIST_FIELDS = ("key_equations", "assumptions", "remaining_risks")
+STRUCTURED_TEXT_FIELDS = (
+    "answer_text",
+    "problem_summary",
+    "final_answer",
+)
 
 
 def extract_input_text(request: AgentRequest) -> str:
@@ -137,6 +143,59 @@ def parse_sse_answer(body: str) -> str:
     if not answer:
         raise XingchenResponseParseError("星辰 SSE 未包含最终回答")
     return answer
+
+
+def _json_object_from_answer(answer: str) -> dict[str, Any] | None:
+    candidate = answer.strip()
+    if candidate.startswith("```") and candidate.endswith("```"):
+        lines = candidate.splitlines()
+        if len(lines) >= 3:
+            candidate = "\n".join(lines[1:-1]).strip()
+    try:
+        payload = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def standardize_answer(answer: str, *, input_type: str) -> dict[str, Any]:
+    """Best-effort mapping that always preserves the upstream student answer."""
+
+    structured: dict[str, Any] = {
+        "status": "completed",
+        "input_type": input_type,
+        "answer_text": answer,
+        "problem_summary": "",
+        "key_equations": [],
+        "final_answer": "",
+        "assumptions": [],
+        "remaining_risks": [],
+        "confidence": None,
+    }
+    payload = _json_object_from_answer(answer)
+    if payload is None:
+        return structured
+
+    for field in STRUCTURED_TEXT_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, str):
+            structured[field] = value.strip()
+    if not structured["answer_text"]:
+        structured["answer_text"] = answer
+
+    for field in STRUCTURED_LIST_FIELDS:
+        value = payload.get(field)
+        if isinstance(value, list):
+            structured[field] = [str(item) for item in value if str(item).strip()]
+
+    confidence = payload.get("confidence")
+    if (
+        isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and 0 <= confidence <= 1
+    ):
+        structured["confidence"] = float(confidence)
+    return structured
 
 
 class XingchenCloudProvider(AgentProvider):
@@ -278,6 +337,8 @@ class XingchenCloudProvider(AgentProvider):
             )
             raise
 
+        input_type = "image" if image_used else "text"
+        structured = standardize_answer(answer, input_type=input_type)
         source_refs = [
             str(item)
             for item in request.options.get("xingchen_knowledge_sources", [])
@@ -287,27 +348,22 @@ class XingchenCloudProvider(AgentProvider):
             task_id=request.task_id,
             course_id=request.course_id,
             content={
+                **structured,
                 "mode": "xingchen_workflow",
-                "input_type": "image" if image_used else "text",
-                "answer": answer,
                 "knowledge_sources": source_refs,
             },
             source_refs=source_refs,
-            confidence=None,
+            confidence=structured["confidence"],
         )
         latency_ms = int((perf_counter() - started) * 1000)
         return AgentResult(
             agent_id=agent_id,
             provider=self.provider_name,
-            answer=answer,
-            structured_result={
-                "mode": "xingchen_workflow",
-                "input_type": "image" if image_used else "text",
-                "knowledge_sources": source_refs,
-            },
+            answer=str(structured["answer_text"]),
+            structured_result=structured,
             artifacts=[artifact],
             citations=source_refs,
-            confidence=None,
+            confidence=structured["confidence"],
             metrics=RunMetrics(provider_latency_ms=latency_ms),
         )
 

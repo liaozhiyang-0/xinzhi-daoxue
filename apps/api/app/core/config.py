@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         ge=XINGCHEN_TIMEOUT_MIN_SECONDS,
         le=XINGCHEN_TIMEOUT_MAX_SECONDS,
     )
-    xingchen_use_local_kb_context: bool = False
+    xingchen_use_local_kb_context: bool = True
     xingchen_bot_id: str = ""
 
     max_upload_size_mb: int = Field(default=20, gt=0)

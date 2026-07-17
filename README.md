@@ -1,6 +1,6 @@
 # 芯智导学：电子信息课程群多智能体平台
 
-芯智导学当前是一个本地可运行的多智能体教学平台。阶段 2 在阶段 1.6 基础上增加了 `SOLVER_CT_V1` 到讯飞星辰工作流 API 的同步文本调用能力。
+芯智导学当前是一个本地可运行的多智能体教学平台。阶段 2.1 已打通 `SOLVER_CT_V1` 到讯飞星辰工作流 API 的同步文字与单图片调用，并提供一页式演示界面。
 
 ## 当前技术栈
 
@@ -23,12 +23,12 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 - 阶段 1：建立 FastAPI、统一 Agent 合同、Mock Provider、数据库、文件存储和 Docker Compose。
 - 阶段 1.5：实现 HTTP 202、TaskRunner、递增事件 sequence、SSE 重连、取消、重试和本地调试页。
 - 阶段 1.6：增加配置驱动的 AgentRegistry/TaskRouter、路由持久化、三课程检索元数据、v1/v2 评测闭环、RetrievalContextPacket 和 `LEARN_01_KNOWLEDGE_QA_V1`。
-- 阶段 2：增加 `SOLVER_CT_V1` 的讯飞星辰 `stream=false` 文本调用，并可注入 CT 本地知识库 top 3 方法参考。
+- 阶段 2.1：固化 `SOLVER_CT_V1` 的讯飞星辰 `stream=false` 文字/单图片调用、统一回答字段，并将 `/debug` 更新为一页式演示界面。
 
 ## 当前能力边界
 
 - CT `solve_problem` 路由到 `SOLVER_CT_V1`；`XINGCHEN_ENABLED=true` 且配置完整时调用真实星辰，否则在未启用时使用明确标识的 Mock。
-- 星辰上游当前只支持同步文本调用，不支持图片、PDF 或上游流式调用。
+- 星辰上游当前支持同步文字和单图片调用，不支持多图片、PDF 或上游流式调用。
 - CT/AE/DE 的 `general_qa` 与 `explain_concept` 路由到 `LEARN_01_KNOWLEDGE_QA_V1`。
 - `LEARN_01` 当前为 `retrieval_only`：整理命中章节、摘要、建议阅读与 `kb://` 来源，不伪装成完整智能问答或星辰模型正式答案。
 - AE/DE 的 `solve_problem` 明确返回 `unsupported`，不会回退到电路理论解题 Agent。
@@ -80,7 +80,7 @@ XINGCHEN_API_SECRET=<API_SECRET>
 XINGCHEN_SOLVER_CT_FLOW_ID=<FLOW_ID>
 XINGCHEN_UID=local-demo-user
 XINGCHEN_TIMEOUT_SECONDS=300
-XINGCHEN_USE_LOCAL_KB_CONTEXT=false
+XINGCHEN_USE_LOCAL_KB_CONTEXT=true
 ```
 
 先确认真实响应：
@@ -95,7 +95,7 @@ python scripts/xingchen_smoke_test.py
 .\scripts\docker_dev.ps1
 ```
 
-打开 `http://localhost:8000/debug`，选择 `CT`、`solve_problem`，可以输入纯文本电路题，或选择一张 PNG/JPG/JPEG 电路图片并填写补充要求。页面会先显示本地图片预览，再将图片上传到星辰文件接口，并把返回的 URL 传入工作流开始节点的 `USER_INPUT_image`。页面会显示当前 Agent、Provider、最终回答、错误和 Artifact。当前默认不检索或注入本地知识库；后续由独立的用户意图理解 Agent 提供结构化检索信息。
+打开 `http://localhost:8000/debug`，切换文字题或图片题后从同一个按钮提交。页面显示图片预览、当前步骤、耗时、Provider、完整解答、结构化字段、风险和 `kb://` 来源。纯文字 `SOLVER_CT` 题默认检索最多 3 条方法参考，参考正文合计不超过 2000 字；图片题完全跳过本地检索，直接上传并调用星辰工作流。检索失败不会阻塞文字求解。
 
 `XINGCHEN_TIMEOUT_SECONDS` 默认 300 秒，允许范围为 30～600 秒。超过 600 秒的配置会在服务启动时被拒绝，避免同步请求无限占用本地任务执行器。
 
@@ -144,7 +144,7 @@ POST /api/v1/knowledge/reload
 GET  /debug
 ```
 
-`http://localhost:8000/debug` 可选择课程和 intent，创建统一任务，并查看路由、SSE 时间线、命中章节、评分、证据状态、`kb://` 来源、retrieval_only 警告和 Artifact。
+`http://localhost:8000/debug` 是原生 HTML/CSS/JavaScript 一页式演示界面。文字和图片共用 `POST /api/v1/tasks`，并通过 SSE 展示“正在识别、正在求解、正在整理答案”等步骤；真实星辰、Mock 和本地结果使用不同标识。
 
 ## 检索评测
 

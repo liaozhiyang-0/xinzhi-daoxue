@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agents import AgentRegistry, TaskRouter
@@ -76,7 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=app_settings.app_name,
         version=app_settings.app_version,
         description=(
-            "芯智导学阶段 2 API。SOLVER_CT 支持讯飞星辰同步文本工作流；"
+            "芯智导学阶段 2.1 API。SOLVER_CT 支持讯飞星辰文字和单图片工作流；"
             "LEARN_01 保持本地 retrieval_only。"
         ),
         lifespan=lifespan,
@@ -84,6 +84,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router, prefix="/api/v1")
     app.add_api_route("/health", health_endpoint, methods=["GET"], tags=["health"])
     app.mount("/debug-assets", StaticFiles(directory=DEBUG_ROOT), name="debug-assets")
+
+    @app.get("/", include_in_schema=False)
+    async def root_page() -> RedirectResponse:
+        return RedirectResponse(url="/debug", status_code=307)
 
     @app.get("/debug", include_in_schema=True, tags=["development"])
     async def debug_page() -> FileResponse:

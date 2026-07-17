@@ -255,6 +255,8 @@ class TaskRunner:
     ) -> tuple[list[KnowledgeHit], bool]:
         if not self.knowledge_base.settings.knowledge_enabled:
             return [], False
+        if request.attachments:
+            return [], False
         query = self._knowledge_query(request)
         if not query:
             return [], False
@@ -290,19 +292,20 @@ class TaskRunner:
         cls, request: AgentRequest, hits: list[KnowledgeHit]
     ) -> AgentRequest:
         question = cls._knowledge_query(request)
-        prefix = f"【用户题目】\n{question}\n\n【本地知识库参考】\n"
+        prefix = f"【用户题目】\n{question}\n\n【本地知识库方法参考】\n"
         suffix = (
-            "\n【作答要求】\n"
-            "请以用户题目中的参数、电路连接和参考方向为事实依据。\n"
-            "本地知识库只用于方法参考，不得覆盖或修改题目事实。\n"
-            "信息不足时允许给出条件化答案，并说明不确定性。"
+            "\n【使用约束】\n"
+            "本地知识库仅用于方法参考。\n"
+            "题目参数、电路连接和参考方向以用户输入为准。\n"
+            "不得使用知识库内容覆盖题目事实。\n"
+            "信息不足时请条件化作答，并明确说明假设。"
         )
-        remaining = max(0, 3000 - len(prefix) - len(suffix))
+        context_limit = 2000
         blocks: list[str] = []
         used = 0
         for index, hit in enumerate(hits[:3], start=1):
             block = f"{index}. {hit.content.strip()}\n来源：{hit.source_ref}\n\n"
-            available = remaining - used
+            available = context_limit - used
             if available <= 0:
                 break
             blocks.append(block[:available])

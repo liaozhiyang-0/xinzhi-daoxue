@@ -16,6 +16,7 @@ from app.providers.xingchen import (
     get_single_image,
     parse_json_answer,
     parse_sse_answer,
+    standardize_answer,
 )
 from app.services.task_runner import TaskRunner
 
@@ -61,6 +62,43 @@ def test_xingchen_sse_response_minimal_parsing() -> None:
     assert parse_sse_answer(body) == "第一段第二段"
 
 
+def test_xingchen_structured_answer_mapping_is_best_effort() -> None:
+    answer = json.dumps(
+        {
+            "answer_text": "完整分步骤解答",
+            "problem_summary": "求等效电阻",
+            "key_equations": ["R=U/I"],
+            "final_answer": "R=5 Ω",
+            "assumptions": ["采用关联参考方向"],
+            "remaining_risks": ["图片参数需复核"],
+            "confidence": 0.8,
+        },
+        ensure_ascii=False,
+    )
+
+    structured = standardize_answer(answer, input_type="text")
+
+    assert structured == {
+        "status": "completed",
+        "input_type": "text",
+        "answer_text": "完整分步骤解答",
+        "problem_summary": "求等效电阻",
+        "key_equations": ["R=U/I"],
+        "final_answer": "R=5 Ω",
+        "assumptions": ["采用关联参考方向"],
+        "remaining_risks": ["图片参数需复核"],
+        "confidence": 0.8,
+    }
+
+
+def test_xingchen_unstructured_answer_is_preserved() -> None:
+    structured = standardize_answer("不是 JSON，但必须保留", input_type="image")
+
+    assert structured["answer_text"] == "不是 JSON，但必须保留"
+    assert structured["input_type"] == "image"
+    assert structured["confidence"] is None
+
+
 def test_xingchen_context_is_limited_and_keeps_sources() -> None:
     hits = [
         KnowledgeHit(
@@ -77,7 +115,13 @@ def test_xingchen_context_is_limited_and_keeps_sources() -> None:
     augmented = TaskRunner._with_xingchen_context(request(), hits)
     text = augmented.canonical_input["question"]
     assert isinstance(text, str)
-    assert len(text) <= 3000
+    context = text.split("【本地知识库方法参考】\n", 1)[1].split(
+        "\n【使用约束】", 1
+    )[0]
+    assert len(context) <= 2000
+    assert "本地知识库仅用于方法参考。" in text
+    assert "题目参数、电路连接和参考方向以用户输入为准。" in text
+    assert "不得使用知识库内容覆盖题目事实。" in text
     assert augmented.options["xingchen_knowledge_sources"] == [
         "kb://CT/chapter-1",
         "kb://CT/chapter-2",
@@ -115,7 +159,9 @@ async def test_xingchen_provider_returns_answer_and_artifact() -> None:
     await client.aclose()
     assert result.provider == "xingchen"
     assert result.answer == "Provider 回答"
-    assert result.artifacts[0].content["answer"] == "Provider 回答"
+    assert result.structured_result["answer_text"] == "Provider 回答"
+    assert result.structured_result["confidence"] is None
+    assert result.artifacts[0].content["answer_text"] == "Provider 回答"
     assert captured["authorization"] == "Bearer test-key:test-secret"
 
 

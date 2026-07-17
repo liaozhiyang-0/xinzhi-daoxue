@@ -3,94 +3,110 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>芯智导学本地调试台</title>
+  <title>芯智导学演示</title>
   <link rel="stylesheet" href="/debug-assets/style.css">
 </head>
 <body>
   <main class="shell">
-    <header>
-      <p class="eyebrow">LOCAL STAGE 1.6</p>
-      <h1>芯智导学本地调试台</h1>
-      <p class="warning">课程问答为本地 retrieval_only 整理结果；解题仍为 Mock，不是讯飞星辰真实输出。</p>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">XINZHI · STAGE 2.1</p>
+        <h1>芯智导学</h1>
+        <p class="subtitle">电路理论文字与单图片解题演示</p>
+      </div>
+      <div id="runtime-status" class="runtime-status pending" role="status">
+        <span class="status-dot"></span>
+        <span id="runtime-text">正在检查服务状态…</span>
+      </div>
     </header>
 
-    <section class="panel">
-      <h2>课程知识问答与统一任务入口</h2>
-      <form id="task-form">
-        <label>用户 ID <input id="user-id" value="debug-user" required></label>
-        <label>课程
-          <select id="course-id">
-            <option value="CT">电路理论（CT）</option>
-            <option value="AE">模拟电子技术（AE）</option>
-            <option value="DE">数字电子技术（DE）</option>
-          </select>
-        </label>
-        <label>意图
-          <select id="intent">
-            <option value="general_qa">课程知识问答</option>
-            <option value="explain_concept">概念解释</option>
-            <option value="solve_problem">解题</option>
-          </select>
-        </label>
-        <label class="wide">问题
-          <textarea id="question" rows="5">请识别并解答图片中的电路题。</textarea>
-        </label>
-        <label class="wide">电路题图片（单张 png/jpg/jpeg）
-          <input id="attachments" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
-          <div id="image-preview-wrap" class="image-preview" hidden>
-            <img id="image-preview" alt="待提交的电路题图片预览">
-            <span id="image-name"></span>
-          </div>
-        </label>
-        <label>Mock 延迟（秒）
-          <input id="delay" type="number" min="0" max="30" step="0.1" value="0.5">
-        </label>
-        <div class="actions wide">
-          <button type="submit">创建任务</button>
-          <button id="cancel" type="button" class="secondary" disabled>取消</button>
-          <button id="retry" type="button" class="secondary" disabled>重试</button>
+    <section class="workspace">
+      <aside class="panel input-panel">
+        <div class="section-heading">
+          <span class="step-number">01</span>
+          <div><h2>输入题目</h2><p>文字和图片共用同一个任务入口</p></div>
         </div>
-      </form>
-      <p id="error" class="error" role="alert"></p>
+
+        <form id="task-form">
+          <input id="user-id" type="hidden" value="demo-user">
+          <fieldset class="mode-switch">
+            <legend>输入方式</legend>
+            <label><input type="radio" name="input-mode" value="text" checked><span>文字题</span></label>
+            <label><input type="radio" name="input-mode" value="image"><span>图片题</span></label>
+          </fieldset>
+
+          <label class="field-label" for="question">题目内容</label>
+          <textarea id="question" rows="9" placeholder="例如：一个 10V 电压源串联 2Ω 和 3Ω 电阻，求回路电流。"></textarea>
+
+          <div id="image-field" class="image-field" hidden>
+            <label class="upload-box" for="attachments">
+              <strong>选择一张电路题图片</strong>
+              <span>支持 PNG、JPG、JPEG</span>
+              <input id="attachments" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg">
+            </label>
+            <div id="image-preview-wrap" class="image-preview" hidden>
+              <img id="image-preview" alt="待提交的电路题图片预览">
+              <span id="image-name"></span>
+            </div>
+          </div>
+
+          <button id="submit-button" type="submit">
+            <span id="submit-label">开始解题</span>
+          </button>
+          <p class="form-hint">图片题无需粘贴识别文字；上传后将直接调用星辰工作流。</p>
+          <p id="error" class="error" role="alert"></p>
+        </form>
+      </aside>
+
+      <section class="panel output-panel" aria-live="polite">
+        <div class="section-heading output-heading">
+          <span class="step-number">02</span>
+          <div><h2>解题结果</h2><p id="task-id">尚未创建任务</p></div>
+          <span id="provider-badge" class="provider-badge idle">等待运行</span>
+        </div>
+
+        <div class="run-strip">
+          <div><span>当前步骤</span><strong id="current-step">等待提交</strong></div>
+          <div><span>运行耗时</span><strong id="elapsed-time">0.0 秒</strong></div>
+        </div>
+
+        <article class="result-card accent">
+          <h3>识别后的题目摘要</h3>
+          <p id="problem-summary" class="placeholder">工作流返回后显示</p>
+        </article>
+
+        <article class="result-card">
+          <h3>分步骤解答</h3>
+          <div id="answer-text" class="answer-text placeholder">等待解题结果…</div>
+        </article>
+
+        <div class="result-grid">
+          <article class="result-card">
+            <h3>关键公式</h3>
+            <ul id="key-equations" class="clean-list"><li class="placeholder">暂无</li></ul>
+          </article>
+          <article class="result-card final-card">
+            <h3>最终答案</h3>
+            <p id="final-answer" class="placeholder">暂无</p>
+          </article>
+        </div>
+
+        <div class="result-grid">
+          <article class="result-card">
+            <h3>假设与风险提示</h3>
+            <ul id="risk-list" class="clean-list"><li class="placeholder">暂无</li></ul>
+          </article>
+          <article class="result-card">
+            <h3>知识库来源</h3>
+            <ul id="source-list" class="clean-list"><li class="placeholder">本次未使用</li></ul>
+          </article>
+        </div>
+      </section>
     </section>
 
-    <section class="panel">
-      <h2>本地知识库检索</h2>
-      <form id="knowledge-form">
-        <label>课程
-          <select id="knowledge-course">
-            <option value="CT">电路理论（CT）</option>
-            <option value="AE">模拟电子技术（AE）</option>
-            <option value="DE">数字电子技术（DE）</option>
-          </select>
-        </label>
-        <label class="wide">检索词
-          <input id="knowledge-query" value="戴维南等效电路" required>
-        </label>
-        <div class="actions wide"><button type="submit">检索 Markdown</button></div>
-      </form>
-      <pre id="knowledge-result">等待检索…</pre>
-    </section>
-
-    <section class="grid">
-      <article class="panel">
-        <h2>任务状态</h2>
-        <dl id="task-summary">
-          <dt>task_id</dt><dd>尚未创建</dd>
-          <dt>status</dt><dd>-</dd>
-          <dt>provider</dt><dd>-</dd>
-          <dt>route</dt><dd>-</dd>
-        </dl>
-      </article>
-      <article class="panel">
-        <h2>最终结果</h2>
-        <pre id="result">等待任务完成…</pre>
-      </article>
-    </section>
-
-    <section class="panel">
-      <h2>事件序列</h2>
-      <ol id="events" class="events"></ol>
+    <section class="panel progress-panel">
+      <h2>运行步骤</h2>
+      <ol id="events" class="events"><li class="muted">等待任务提交</li></ol>
     </section>
   </main>
   <script src="/debug-assets/app.js" defer></script>

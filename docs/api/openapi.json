@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "xinzhi-daoxue-api",
-    "description": "芯智导学阶段 2 API。SOLVER_CT 支持讯飞星辰同步文本工作流；LEARN_01 保持本地 retrieval_only。",
+    "description": "芯智导学阶段 2.1 API。SOLVER_CT 支持讯飞星辰文字和单图片工作流；LEARN_01 保持本地 retrieval_only。",
     "version": "0.1.0"
   },
   "paths": {
