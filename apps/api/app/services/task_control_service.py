@@ -45,6 +45,7 @@ class TaskControlService:
         payload = dict(original.input_content)
         payload["task_id"] = new_id("task")
         request = AgentRequest.model_validate(payload)
+        route_context = request.options.get("_routing", {})
         new_task = await TaskCreationService(
             self.db, self.provider.provider_name
         ).create_queued(
@@ -56,8 +57,12 @@ class TaskControlService:
                 intent=original.intent,
                 route_status=RouteStatus(original.route_status),
                 reason=f"retry preserves route from task {original.id}",
-                retrieval_required=original.agent_id == "LEARN_01_KNOWLEDGE_QA_V1",
-                provider_required=original.agent_id != "LEARN_01_KNOWLEDGE_QA_V1",
+                retrieval_required=bool(route_context.get("retrieval_required", False)),
+                provider_required=bool(route_context.get("provider_required", False)),
+                route_source=str(route_context.get("route_source", "local_degraded")),
+                route_confidence=float(route_context.get("route_confidence", 1.0)),
+                fallback_used=bool(route_context.get("fallback_used", False)),
+                original_agent_id=route_context.get("original_agent_id"),
             ),
             parent_task_id=original.id,
             attempt=original.attempt + 1,

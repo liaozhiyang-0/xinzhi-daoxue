@@ -25,5 +25,5 @@ def test_route_is_persisted_before_runner_submission(api, client) -> None:
 
     assert response.status_code == 202
     task = response.json()
-    assert task["agent_id"] == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert task["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert task["route_status"] == "selected"

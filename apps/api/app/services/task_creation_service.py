@@ -3,16 +3,21 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentEventType, AgentRequest, RouteDecision, RouteStatus
+from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
 from app.repositories import FileRepository, SessionRepository, TaskRepository
 from app.services.event_service import append_task_event
+from app.services.session_context import SessionContextService
 
 
 class TaskCreationService:
-    def __init__(self, db: AsyncSession, provider_name: str) -> None:
+    def __init__(
+        self, db: AsyncSession, provider_name: str, settings: Settings | None = None
+    ) -> None:
         self.db = db
         self.provider_name = provider_name
+        self.settings = settings or Settings()
         self.repository = TaskRepository(db)
 
     async def create_queued(
@@ -23,11 +28,14 @@ class TaskCreationService:
         parent_task_id: str | None = None,
         attempt: int = 1,
     ) -> TaskModel:
-        if await SessionRepository(self.db).get(request.session_id) is None:
+        request = self._with_route_context(request, route)
+        session = await SessionRepository(self.db).get(request.session_id)
+        if session is None:
             raise NotFoundError(
                 "任务引用的会话不存在",
                 details={"session_id": request.session_id},
             )
+        request = SessionContextService(self.settings).apply(session, request)
         if await self.repository.get(request.task_id) is not None:
             raise ConflictError(
                 "task_id 已存在，拒绝重复执行",
@@ -76,6 +84,7 @@ class TaskCreationService:
         await self.repository.add(task)
         for file_model in files:
             file_model.task_id = task.id
+            file_model.expires_at = None
         await append_task_event(self.db, task.id, AgentEventType.TASK_CREATED)
         route_event = (
             AgentEventType.ROUTE_SELECTED
@@ -89,7 +98,7 @@ class TaskCreationService:
             agent_id=route.agent_id,
             data=route.model_dump(mode="json"),
         )
-        if route.route_status == RouteStatus.UNSUPPORTED:
+        if route.route_status != RouteStatus.SELECTED:
             task.status = TaskStatus.FAILED
             task.error_message = route.reason
             await append_task_event(
@@ -97,7 +106,7 @@ class TaskCreationService:
                 task.id,
                 AgentEventType.TASK_FAILED,
                 agent_id=route.agent_id,
-                data={"error_code": "unsupported_route"},
+                data={"error_code": "route_unresolved"},
             )
             await self.db.commit()
             return task
@@ -105,3 +114,22 @@ class TaskCreationService:
         await append_task_event(self.db, task.id, AgentEventType.TASK_QUEUED)
         await self.db.commit()
         return task
+
+    @staticmethod
+    def _with_route_context(
+        request: AgentRequest, route: RouteDecision
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options["_routing"] = route.model_dump(mode="json")
+        canonical_input = dict(request.canonical_input)
+        if route.fallback_used and route.fallback_instruction:
+            for key in ("text", "question", "problem", "query", "prompt"):
+                value = canonical_input.get(key)
+                if isinstance(value, str) and value.strip():
+                    canonical_input[key] = (
+                        f"{route.fallback_instruction}\n\n{value.strip()}"
+                    )
+                    break
+        return request.model_copy(
+            update={"canonical_input": canonical_input, "options": options}
+        )

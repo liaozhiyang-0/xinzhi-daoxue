@@ -21,7 +21,7 @@ def test_local_knowledge_qa_is_explicitly_retrieval_only(tmp_path: Path) -> None
         canonical_input={"question": "什么是戴维南定理"},
     )
 
-    execution = service.run("LEARN_01_KNOWLEDGE_QA_V1", request)
+    execution = service.run("LEARN_01_LOCAL_RETRIEVAL_V1", request)
 
     assert execution.result.provider == "local"
     assert execution.result.structured_result["mode"] == "retrieval_only"

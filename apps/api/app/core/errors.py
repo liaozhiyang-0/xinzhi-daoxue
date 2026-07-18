@@ -58,6 +58,11 @@ class XingchenResponseParseError(ProviderError):
     code = "xingchen_response_parse_error"
 
 
+class ProviderCircuitOpenError(ProviderError):
+    code = "provider_circuit_open"
+    status_code = 503
+
+
 class NotConfiguredError(ConfigurationError):
     code = "not_configured"
     status_code = 503
@@ -91,3 +96,16 @@ class ConflictError(AppError):
 class ValidationAppError(AppError):
     code = "validation_error"
     status_code = 422
+
+
+class AgentConfigurationIncompleteError(ConfigurationError):
+    code = "agent_configuration_incomplete"
+    status_code = 503
+
+
+class AgentInputNotSupportedError(ValidationAppError):
+    code = "agent_input_not_supported"
+
+
+class RouteInvalidTargetError(ValidationAppError):
+    code = "route_invalid_target"

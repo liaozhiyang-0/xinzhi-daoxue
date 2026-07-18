@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from app.core.config import Settings
+from app.services.rag_providers import (
+    BGERerankerProvider,
+    LocalBGETextEmbeddingProvider,
+    LocalSigLIP2ImageEmbeddingProvider,
+)
+from app.services.vector_store import QdrantVectorStoreAdapter
+
+
+def create_text_embedding_provider(
+    settings: Settings,
+) -> LocalBGETextEmbeddingProvider:
+    return LocalBGETextEmbeddingProvider(
+        model_name=settings.text_embedding_model,
+        revision=settings.text_embedding_revision,
+        device=settings.text_embedding_device,
+        batch_size=settings.text_embedding_batch_size,
+        normalize=settings.text_embedding_normalize,
+        max_length=settings.text_embedding_max_length,
+        cache_dir=settings.text_embedding_cache_dir,
+        trust_remote_code=settings.text_embedding_trust_remote_code,
+        query_instruction=settings.text_embedding_query_instruction,
+    )
+
+
+def create_image_embedding_provider(
+    settings: Settings,
+) -> LocalSigLIP2ImageEmbeddingProvider:
+    return LocalSigLIP2ImageEmbeddingProvider(
+        model_name=settings.image_embedding_model,
+        revision=settings.image_embedding_revision,
+        device=settings.image_embedding_device,
+        batch_size=settings.image_embedding_batch_size,
+        normalize=settings.image_embedding_normalize,
+        cache_dir=settings.image_embedding_cache_dir,
+    )
+
+
+def create_reranker_provider(settings: Settings) -> BGERerankerProvider:
+    return BGERerankerProvider(
+        model_name=settings.reranker_model,
+        revision=settings.reranker_revision,
+        device=settings.reranker_device,
+        cache_dir=settings.text_embedding_cache_dir,
+    )
+
+
+def create_vector_store(settings: Settings) -> QdrantVectorStoreAdapter:
+    return QdrantVectorStoreAdapter(
+        mode=settings.qdrant_mode,
+        url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key.get_secret_value(),
+        local_path=settings.qdrant_local_path,
+        text_collection=settings.qdrant_text_collection,
+        image_collection=settings.qdrant_image_collection,
+    )

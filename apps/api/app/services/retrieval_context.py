@@ -12,14 +12,31 @@ class EvidenceQuality:
 
 
 class EvidenceQualityEvaluator:
+    def __init__(
+        self,
+        *,
+        sufficient_min_score: float = 0.65,
+        partial_min_score: float = 0.4,
+        sufficient_min_sources: int = 2,
+    ) -> None:
+        self.sufficient_min_score = sufficient_min_score
+        self.partial_min_score = partial_min_score
+        self.sufficient_min_sources = sufficient_min_sources
+
     def evaluate(self, result: RetrievalResult) -> EvidenceQuality:
         if not result.hits:
             return EvidenceQuality("insufficient", "没有满足最低分阈值的证据")
         if result.confidence is None:
-            return EvidenceQuality("unavailable", "检索器未提供置信度")
-        if result.confidence >= 0.65 and len(result.hits) >= 2:
+            return EvidenceQuality("failed", "检索器未提供置信度")
+        source_count = len(
+            {hit.document_id or hit.document_path for hit in result.hits}
+        )
+        if (
+            result.confidence >= self.sufficient_min_score
+            and source_count >= self.sufficient_min_sources
+        ):
             return EvidenceQuality("sufficient", "存在多个较高置信度的课程内来源")
-        if result.confidence >= 0.4:
+        if result.confidence >= self.partial_min_score:
             return EvidenceQuality("partial", "已命中课程内来源，但证据仍需人工核对")
         return EvidenceQuality("insufficient", "命中分数不足以支持稳定的知识整理")
 
@@ -40,7 +57,6 @@ class RetrievalContextService:
         course_id: str,
         intent: str,
     ) -> RetrievalContextPacket:
-        quality = self.evaluator.evaluate(result)
         evidence = []
         seen_chunks: set[str] = set()
         seen_content: set[str] = set()
@@ -65,15 +81,29 @@ class RetrievalContextService:
             used_chars += len(content)
         if len(evidence) < len(result.hits):
             warnings.append("上下文已按字符预算截断或去重")
-        if quality.status in {"insufficient", "unavailable"}:
+        quality = self.evaluator.evaluate(result.model_copy(update={"hits": evidence}))
+        if quality.status in {"insufficient", "failed"}:
             warnings.append(quality.reason)
+        numbered_evidence = [
+            hit.model_copy(update={"evidence_id": f"S{index}"})
+            for index, hit in enumerate(evidence, start=1)
+        ]
         return RetrievalContextPacket(
             query=result.query,
             course_id=course_id,
             intent=intent,
-            evidence=evidence,
-            source_refs=[hit.source_ref for hit in evidence],
+            evidence=numbered_evidence,
+            source_refs=[hit.source_ref for hit in numbered_evidence],
             evidence_status=quality.status,
+            retrieval_mode=result.retrieval_mode,
             warnings=list(dict.fromkeys(warnings)),
             max_context_chars=self.max_context_chars,
+            rag_status=result.rag_status,
+            embedding_status=result.embedding_status,
+            vector_store_status=result.vector_store_status,
+            reranker_status=result.reranker_status,
+            query_modalities=result.query_modalities,
+            retrieval_trace_id=result.retrieval_trace_id,
+            latency_ms=result.latency_ms,
+            index_version=result.index_version,
         )

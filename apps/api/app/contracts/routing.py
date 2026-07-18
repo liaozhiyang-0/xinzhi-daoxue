@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class RouteStatus(StrEnum):
     SELECTED = "selected"
     UNSUPPORTED = "unsupported"
+    UNRESOLVED = "unresolved"
 
 
 class RouteDecision(BaseModel):
@@ -21,3 +22,8 @@ class RouteDecision(BaseModel):
     reason: str
     retrieval_required: bool
     provider_required: bool
+    route_source: str = "local_fast"
+    route_confidence: float = 1.0
+    fallback_used: bool = False
+    original_agent_id: str | None = None
+    fallback_instruction: str = ""

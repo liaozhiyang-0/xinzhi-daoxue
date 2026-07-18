@@ -63,8 +63,7 @@ def configure_logging(settings: Settings) -> None:
     logging.basicConfig(
         level=getattr(logging, settings.log_level, logging.INFO),
         format=(
-            "%(asctime)s %(levelname)s %(name)s "
-            "request_id=%(request_id)s %(message)s"
+            "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s"
         ),
     )
     logging.getLogger().setLevel(getattr(logging, settings.log_level, logging.INFO))

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from minio import Minio
 from minio.error import S3Error
+from PIL import Image, ImageOps, UnidentifiedImageError
 from urllib3 import PoolManager, Timeout
 from urllib3.exceptions import HTTPError as Urllib3HTTPError
 from urllib3.util.retry import Retry
@@ -15,11 +16,12 @@ from urllib3.util.retry import Retry
 from app.core.config import Settings
 from app.core.errors import StorageError, ValidationAppError
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".pdf", ".md", ".txt"}
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".md", ".txt"}
 ALLOWED_CONTENT_TYPES = {
     ".png": {"image/png"},
     ".jpg": {"image/jpeg"},
     ".jpeg": {"image/jpeg"},
+    ".webp": {"image/webp"},
     ".pdf": {"application/pdf"},
     ".md": {"text/markdown", "text/plain"},
     ".txt": {"text/plain"},
@@ -56,13 +58,56 @@ class StorageService:
             raise ValidationAppError("文件超过大小限制")
         return safe
 
+    def normalize_student_image(
+        self, filename: str, content_type: str, data: bytes
+    ) -> tuple[str, str, bytes]:
+        safe = sanitize_filename(filename)
+        extension = Path(safe).suffix.lower()
+        allowed = {
+            ".png": ("PNG", "image/png"),
+            ".jpg": ("JPEG", "image/jpeg"),
+            ".jpeg": ("JPEG", "image/jpeg"),
+            ".webp": ("WEBP", "image/webp"),
+        }
+        if extension not in allowed:
+            raise ValidationAppError("学生端仅支持jpg、jpeg、png和webp单图片")
+        expected_format, expected_mime = allowed[extension]
+        if content_type != expected_mime:
+            raise ValidationAppError("图片扩展名与Content-Type不匹配")
+        if len(data) <= 0:
+            raise ValidationAppError("不允许上传空文件")
+        if len(data) > self.settings.student_image_max_size_mb * 1024 * 1024:
+            raise ValidationAppError("学生图片超过大小限制")
+        try:
+            with Image.open(io.BytesIO(data)) as probe:
+                detected = str(probe.format or "").upper()
+                probe.verify()
+            if detected != expected_format:
+                raise ValidationAppError("图片文件签名与扩展名不匹配")
+            with Image.open(io.BytesIO(data)) as source:
+                source.seek(0)
+                image = ImageOps.exif_transpose(source)
+                if image.width * image.height > 40_000_000:
+                    raise ValidationAppError("图片像素尺寸过大")
+                if expected_format == "JPEG" and image.mode not in {"RGB", "L"}:
+                    image = image.convert("RGB")
+                output = io.BytesIO()
+                save_options: dict[str, int | bool] = {"optimize": True}
+                if expected_format in {"JPEG", "WEBP"}:
+                    save_options["quality"] = 90
+                image.save(output, format=expected_format, **save_options)
+        except (Image.DecompressionBombError, OSError, UnidentifiedImageError) as exc:
+            raise ValidationAppError("图片内容无效或无法安全解码") from exc
+        normalized = output.getvalue()
+        if len(normalized) > self.settings.student_image_max_size_mb * 1024 * 1024:
+            raise ValidationAppError("规范化后的图片仍超过大小限制")
+        return safe, expected_mime, normalized
+
     async def save(self, filename: str, content_type: str, data: bytes) -> str:
         safe = self.validate(filename, len(data), content_type)
         storage_key = f"{uuid4().hex}/{safe}"
         try:
-            await asyncio.to_thread(
-                self._save_minio, storage_key, content_type, data
-            )
+            await asyncio.to_thread(self._save_minio, storage_key, content_type, data)
             return storage_key
         except (OSError, S3Error, Urllib3HTTPError, ValueError) as exc:
             if not self.settings.local_storage_fallback:

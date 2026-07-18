@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from time import perf_counter
@@ -7,17 +8,21 @@ from typing import Any
 
 import httpx
 
+from app.agents.registry import AgentDefinition, AgentRegistry
 from app.contracts import (
     AgentRequest,
     AgentResult,
     Artifact,
     AttachmentRef,
     RunMetrics,
+    TaskRequestContext,
 )
 from app.core.config import Settings
 from app.core.errors import (
+    AgentConfigurationIncompleteError,
+    AgentInputNotSupportedError,
+    ProviderCircuitOpenError,
     ValidationAppError,
-    XingchenConfigurationError,
     XingchenConnectionError,
     XingchenHttpError,
     XingchenResponseParseError,
@@ -25,6 +30,11 @@ from app.core.errors import (
 )
 from app.core.logging import mask_sensitive_text
 from app.providers.base import AgentProvider
+from app.services.agent_runtime import (
+    AgentInputMapper,
+    ProviderCircuitBreaker,
+    WorkflowOutputParserRegistry,
+)
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -54,15 +64,68 @@ def build_workflow_payload(
     request: AgentRequest,
     *,
     image_url: str | None = None,
+    definition: AgentDefinition | None = None,
+    flow_id: str | None = None,
 ) -> dict[str, Any]:
     ext = {"caller": "workflow"}
     if settings.xingchen_bot_id.strip():
         ext["bot_id"] = settings.xingchen_bot_id.strip()
-    parameters = {"AGENT_USER_INPUT": extract_input_text(request)}
-    if image_url:
-        parameters["USER_INPUT_image"] = image_url
+    mapping = definition.input_mapping if definition else {}
+    text_parameter = mapping.get("text", "AGENT_USER_INPUT")
+    image_parameter = mapping.get("image", "USER_INPUT_image")
+    question = extract_input_text(request)
+    packet = request.options.get("retrieval_context_packet", {})
+    retrieved_context = request.options.get("retrieved_context", "")
+    if not retrieved_context and isinstance(packet, dict):
+        retrieved_context = str(packet.get("formatted_context", ""))
+    logical_values = {
+        "text": question,
+        "question": question,
+        "course_id": request.course_id or "UNKNOWN",
+        "intent": request.intent.value,
+        "retrieved_context": retrieved_context,
+        "previous_answer_summary": request.options.get(
+            "previous_answer_summary",
+            request.canonical_input.get("previous_answer_summary", ""),
+        ),
+        "conversation_summary": request.options.get(
+            "conversation_summary",
+            request.canonical_input.get("conversation_summary", ""),
+        ),
+        "response_depth": request.options.get("response_depth", "standard"),
+        "request_id": request.options.get("request_id", request.task_id),
+    }
+    parameters: dict[str, str] = {}
+    if definition is not None and definition.input_rules:
+        input_type = classify_input(request, definition)
+        context = TaskRequestContext.from_agent_request(request, input_mode=input_type)
+        parameters = (
+            AgentInputMapper()
+            .map(
+                definition,
+                context,
+                retrieval_context=str(retrieved_context or ""),
+                image_url=image_url,
+            )
+            .parameters
+        )
+    elif mapping:
+        for logical_name, parameter_name in mapping.items():
+            if logical_name == "image":
+                continue
+            value = logical_values.get(logical_name, "")
+            if isinstance(value, str):
+                parameters[parameter_name] = value
+            elif value is None:
+                parameters[parameter_name] = ""
+            else:
+                parameters[parameter_name] = json.dumps(value, ensure_ascii=False)
+    else:
+        parameters[text_parameter] = question
+    if image_url and image_parameter not in parameters:
+        parameters[image_parameter] = image_url
     return {
-        "flow_id": settings.xingchen_solver_ct_flow_id,
+        "flow_id": flow_id or settings.xingchen_solver_ct_flow_id,
         "uid": settings.xingchen_uid,
         "parameters": parameters,
         "ext": ext,
@@ -74,11 +137,39 @@ def get_single_image(request: AgentRequest) -> AttachmentRef | None:
     if not request.attachments:
         return None
     if len(request.attachments) != 1:
-        raise ValidationAppError("星辰图片解题当前只支持单张图片")
+        raise AgentInputNotSupportedError("星辰工作流当前只支持单张图片")
     attachment = request.attachments[0]
     if attachment.content_type not in IMAGE_CONTENT_TYPES:
-        raise ValidationAppError("星辰图片解题仅支持 PNG、JPG 或 JPEG")
+        raise AgentInputNotSupportedError("星辰工作流仅支持 PNG、JPG 或 JPEG")
     return attachment
+
+
+def classify_input(request: AgentRequest, definition: AgentDefinition) -> str:
+    has_text = any(
+        isinstance(request.canonical_input.get(field), str)
+        and bool(request.canonical_input[field].strip())
+        for field in TEXT_FIELDS
+    )
+    attachment = get_single_image(request)
+    input_type = (
+        "text_and_single_image"
+        if has_text and attachment
+        else "single_image"
+        if attachment
+        else "text"
+        if has_text
+        else "empty"
+    )
+    if input_type == "empty" or input_type not in definition.supports:
+        raise AgentInputNotSupportedError(
+            "Agent 不支持当前输入类型",
+            details={
+                "agent_id": definition.agent_id,
+                "input_type": input_type,
+                "supports": sorted(definition.supports),
+            },
+        )
+    return input_type
 
 
 def parse_upload_url(payload: dict[str, Any]) -> str:
@@ -158,7 +249,50 @@ def _json_object_from_answer(answer: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def standardize_answer(answer: str, *, input_type: str) -> dict[str, Any]:
+def _line_protocol_object(answer: str) -> dict[str, Any] | None:
+    """Parse the published LEARN end node's ordered, newline-delimited fields."""
+
+    lines = [line.strip() for line in answer.splitlines()]
+    if len(lines) < 10 or lines[0] not in {
+        "success",
+        "completed",
+        "partial",
+        "failed",
+        "misrouted",
+    }:
+        return None
+    return {
+        "status": lines[0],
+        "course_id": lines[1],
+        "intent": lines[2],
+        "answer": "\n".join(lines[3:-6]).strip(),
+        "key_points_json": lines[-6],
+        "source_references_json": lines[-5],
+        "warnings_json": lines[-4],
+        "confidence": lines[-3],
+        "parse_status": lines[-2],
+        "request_id": lines[-1],
+    }
+
+
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return parsed if isinstance(parsed, list) else []
+
+
+def standardize_answer(
+    answer: str,
+    *,
+    input_type: str,
+    output_mapping: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Best-effort mapping that always preserves the upstream student answer."""
 
     structured: dict[str, Any] = {
@@ -173,7 +307,51 @@ def standardize_answer(answer: str, *, input_type: str) -> dict[str, Any]:
         "confidence": None,
     }
     payload = _json_object_from_answer(answer)
+    if payload is None and output_mapping:
+        payload = _line_protocol_object(answer)
     if payload is None:
+        return structured
+
+    if output_mapping:
+
+        def output_value(logical_name: str, default: Any = None) -> Any:
+            return payload.get(output_mapping.get(logical_name, logical_name), default)
+
+        mapped_answer = output_value("answer", "")
+        if isinstance(mapped_answer, str) and mapped_answer.strip():
+            structured["answer_text"] = mapped_answer.strip()
+        structured.update(
+            {
+                "status": str(output_value("status", "completed") or "completed"),
+                "course_id": str(output_value("course_id", "") or ""),
+                "intent": str(output_value("intent", "") or ""),
+                "key_points": [
+                    str(item) for item in _json_list(output_value("key_points", []))
+                ],
+                "source_references": [
+                    str(item)
+                    for item in _json_list(output_value("source_references", []))
+                    if str(item).strip()
+                ],
+                "warnings": [
+                    str(item) for item in _json_list(output_value("warnings", []))
+                ],
+                "parse_status": str(output_value("parse_status", "") or ""),
+                "request_id": str(output_value("request_id", "") or ""),
+            }
+        )
+        confidence = output_value("confidence")
+        if isinstance(confidence, str):
+            try:
+                confidence = float(confidence)
+            except ValueError:
+                confidence = None
+        if (
+            isinstance(confidence, (int, float))
+            and not isinstance(confidence, bool)
+            and 0 <= confidence <= 1
+        ):
+            structured["confidence"] = float(confidence)
         return structured
 
     for field in STRUCTURED_TEXT_FIELDS:
@@ -205,14 +383,48 @@ class XingchenCloudProvider(AgentProvider):
         self,
         settings: Settings,
         *,
+        registry: AgentRegistry | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.settings = settings
+        self.registry = registry or AgentRegistry()
+        self._owns_client = client is None
         self.client = client
+        self.input_mapper = AgentInputMapper()
+        self.output_parsers = WorkflowOutputParserRegistry()
+        self._semaphore = asyncio.Semaphore(settings.cloud_concurrency_limit)
+        self._active_requests = 0
+        self.circuit_breaker = ProviderCircuitBreaker(
+            failure_threshold=settings.cloud_circuit_failure_threshold,
+            reset_seconds=settings.cloud_circuit_reset_seconds,
+        )
+
+    def _client(self) -> httpx.AsyncClient:
+        """Return the provider-scoped connection pool, creating it lazily."""
+        if self.client is None:
+            self.client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=self.settings.xingchen_connect_timeout_seconds,
+                    read=self.settings.xingchen_read_timeout_seconds,
+                    write=self.settings.xingchen_write_timeout_seconds,
+                    pool=self.settings.xingchen_pool_timeout_seconds,
+                ),
+                limits=httpx.Limits(
+                    max_connections=self.settings.xingchen_max_connections,
+                    max_keepalive_connections=(
+                        self.settings.xingchen_max_keepalive_connections
+                    ),
+                ),
+            )
+        return self.client
 
     @property
     def is_available(self) -> bool:
-        return self.settings.xingchen_runtime_available
+        return any(
+            self.registry.is_runtime_available(agent.agent_id, self.settings)
+            for agent in self.registry.list_agents()
+            if agent.provider == "xingchen"
+        )
 
     @property
     def authorization(self) -> str:
@@ -259,16 +471,18 @@ class XingchenCloudProvider(AgentProvider):
     async def _request_workflow(
         self,
         client: httpx.AsyncClient,
+        definition: AgentDefinition,
+        flow_id: str,
         request: AgentRequest,
     ) -> tuple[httpx.Response, bool]:
         attachment = get_single_image(request)
-        image_url = (
-            await self._upload_image(client, attachment) if attachment else None
-        )
+        image_url = await self._upload_image(client, attachment) if attachment else None
         payload = build_workflow_payload(
             self.settings,
             request,
             image_url=image_url,
+            definition=definition,
+            flow_id=flow_id,
         )
         headers = {
             "Content-Type": "application/json",
@@ -288,29 +502,49 @@ class XingchenCloudProvider(AgentProvider):
         request: AgentRequest,
         stream: bool = False,
     ) -> AgentResult:
-        if agent_id != "SOLVER_CT_V1":
-            raise ValidationAppError("Xingchen Provider 仅支持 SOLVER_CT_V1")
         if stream:
             raise ValidationAppError("本阶段仅支持星辰 stream=false")
-        if not self.settings.xingchen_runtime_available:
-            raise XingchenConfigurationError("星辰 Key、Secret 或 Flow ID 配置不完整")
+        try:
+            definition = self.registry.get(agent_id)
+        except KeyError as exc:
+            raise ValidationAppError("Xingchen Provider 收到未注册 Agent") from exc
+        if definition.provider != "xingchen" or not definition.enabled:
+            raise ValidationAppError("Agent 未启用星辰 Provider")
+        flow_id = self.registry.resolve_flow_id(agent_id, self.settings)
+        if (
+            not self.registry.is_runtime_available(agent_id, self.settings)
+            or not flow_id
+        ):
+            raise AgentConfigurationIncompleteError(
+                "Agent 的星辰凭据、发布状态或 Flow ID 配置不完整",
+                details={"agent_id": agent_id, "flow_configured": bool(flow_id)},
+            )
+        input_type = classify_input(request, definition)
+        if not self.circuit_breaker.allow_request():
+            raise ProviderCircuitOpenError(
+                "星辰 Provider 熔断中，已阻止必然失败的云端请求",
+                details={"state": self.circuit_breaker.state},
+            )
 
         started = perf_counter()
         try:
-            if self.client is None:
-                async with httpx.AsyncClient(
-                    timeout=self.settings.xingchen_timeout_seconds
-                ) as client:
+            async with self._semaphore:
+                self._active_requests += 1
+                try:
                     response, image_used = await self._request_workflow(
-                        client, request
+                        self._client(), definition, flow_id, request
                     )
+                finally:
+                    self._active_requests -= 1
+            if response.status_code >= 500:
+                self.circuit_breaker.record_failure()
             else:
-                response, image_used = await self._request_workflow(
-                    self.client, request
-                )
+                self.circuit_breaker.record_success()
         except httpx.TimeoutException as exc:
+            self.circuit_breaker.record_failure()
             raise XingchenTimeoutError("星辰工作流请求超时") from exc
         except httpx.RequestError as exc:
+            self.circuit_breaker.record_failure()
             raise XingchenConnectionError("无法连接星辰工作流 API") from exc
 
         if not response.is_success:
@@ -337,12 +571,31 @@ class XingchenCloudProvider(AgentProvider):
             )
             raise
 
-        input_type = "image" if image_used else "text"
-        structured = standardize_answer(answer, input_type=input_type)
+        del image_used
+        parsed_output = self.output_parsers.parse(
+            answer,
+            definition,
+            input_type=input_type,
+        )
+        structured = parsed_output.structured
+        declared_refs = [str(item) for item in structured.get("source_references", [])]
+        packet = request.options.get("retrieval_context_packet", {})
+        evidence_by_id: dict[str, str] = {}
+        if isinstance(packet, dict):
+            for item in packet.get("evidence", []):
+                if isinstance(item, dict):
+                    evidence_id = str(item.get("evidence_id", ""))
+                    source_ref = str(item.get("source_ref", ""))
+                    if evidence_id and source_ref:
+                        evidence_by_id[evidence_id] = source_ref
         source_refs = [
-            str(item)
-            for item in request.options.get("xingchen_knowledge_sources", [])
+            evidence_by_id[item] for item in declared_refs if item in evidence_by_id
         ]
+        warnings = [str(item) for item in structured.get("warnings", [])]
+        expected_request_id = str(request.options.get("request_id", request.task_id))
+        returned_request_id = str(structured.get("request_id", ""))
+        if definition.output_mapping and returned_request_id != expected_request_id:
+            warnings.append("云端 request_id 未按输入值返回")
         artifact = Artifact(
             owner_id=request.user_id,
             task_id=request.task_id,
@@ -363,9 +616,34 @@ class XingchenCloudProvider(AgentProvider):
             structured_result=structured,
             artifacts=[artifact],
             citations=source_refs,
+            warnings=warnings,
             confidence=structured["confidence"],
             metrics=RunMetrics(provider_latency_ms=latency_ms),
+            agent_version=definition.version,
+            course_id=request.course_id,
+            intent=request.intent.value,
+            business_data=dict(structured.get("business_data", {})),
+            assumptions=[str(item) for item in structured.get("assumptions", [])],
+            remaining_risks=[
+                str(item) for item in structured.get("remaining_risks", [])
+            ],
+            request_id=expected_request_id,
+            task_id=request.task_id,
+            cloud_status=f"cloud_{structured.get('status', 'completed')}",
+            timings={"provider_ms": latency_ms},
         )
+
+    def runtime_status(self) -> dict[str, Any]:
+        return {
+            **self.circuit_breaker.snapshot(),
+            "active_requests": self._active_requests,
+            "concurrency_limit": self.settings.cloud_concurrency_limit,
+        }
+
+    async def aclose(self) -> None:
+        if self._owns_client and self.client is not None:
+            await self.client.aclose()
+            self.client = None
 
     async def cancel(self, run_id: str) -> None:
         del run_id

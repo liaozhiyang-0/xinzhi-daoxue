@@ -44,3 +44,13 @@ local_knowledge/DE/*
 /模电/
 /数电/
 /知识库/
+
+# 本地知识库索引缓存包含教材正文和向量，全部由各机器本地生成，不提交。
+/knowledge_indexes/
+/model_cache/
+
+# 本地凭据、证书和临时导出。
+*.pem
+*.p12
+*.pfx
+*.key

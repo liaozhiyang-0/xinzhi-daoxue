@@ -15,5 +15,5 @@ def test_solver_is_not_used_as_fallback_for_ae_de(course_id: str) -> None:
 
     decision = TaskRouter(AgentRegistry()).route(request)
 
-    assert decision.route_status == RouteStatus.UNSUPPORTED
-    assert decision.agent_id == "UNSUPPORTED"
+    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert decision.agent_id == "UNRESOLVED"

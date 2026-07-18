@@ -14,6 +14,7 @@ os.environ["APP_ENV"] = "test"
 os.environ["DEFAULT_AGENT_PROVIDER"] = "mock"
 os.environ["ALLOW_MOCK_FALLBACK"] = "true"
 os.environ["XINGCHEN_ENABLED"] = "false"
+os.environ["RAG_ENABLED"] = "false"
 
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -105,6 +106,9 @@ def settings(tmp_path: Path) -> Settings:
         default_agent_provider="mock",
         allow_mock_fallback=True,
         xingchen_publication_status="published",
+        knowledge_ct_path=tmp_path / "knowledge" / "CT",
+        knowledge_ae_path=tmp_path / "knowledge" / "AE",
+        knowledge_de_path=tmp_path / "knowledge" / "DE",
         local_storage_path=tmp_path / "storage",
         sse_heartbeat_seconds=0.02,
         _env_file=None,

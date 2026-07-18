@@ -1,8 +1,6 @@
 def test_failed_task_retry_creates_child_attempt(api, client) -> None:
     session = api.create_session()
-    original = api.create_task(
-        session["id"], options={"mock_force_failure": True}
-    )
+    original = api.create_task(session["id"], options={"mock_force_failure": True})
     original = api.wait_for_task(original["id"])
     response = client.post(f"/api/v1/tasks/{original['id']}/retry")
     assert response.status_code == 202

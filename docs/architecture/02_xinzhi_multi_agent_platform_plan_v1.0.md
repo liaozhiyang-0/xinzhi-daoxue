@@ -1,133 +1,59 @@
-# 芯智导学多智能体平台总体架构计划 v1.0
+# 芯智导学多智能体平台架构（Stage 2.2）
 
-> 本文档依据 2026-07-16 阶段 0—1 建设需求整理，是当前仓库建设的架构基线。若后续提供更完整的原始总体架构文档，应在保留版本历史的前提下补充或升级本文档。
->
-> BLOCKED：本轮附件未包含用户所述完整总体架构原文，因此当前文件保持既有内容，未虚构缺失章节。
+## 1. 当前边界
 
-## 1. 项目定位
+平台保留一套 FastAPI 入口、一套 `TaskRouter`、一套 `TaskRunner`、一套 `AgentRegistry`、一套本地知识库服务和一套 `XingchenCloudProvider`。不引入第二套调度、Provider、结果合同或知识库，也不接入 LangGraph、RAGFlow、Celery、向量数据库、旧 Spring/Vue/MaaS 链路。
 
-“芯智导学”面向电子信息课程群，目标是形成可扩展的多智能体教学平台。本版本不建设完整多智能体编排，而是先冻结已经在讯飞星辰平台跑通的电路理论解题工作流，并用本地 FastAPI 建立稳定的业务协议、数据持久化与 Provider 隔离层。
+## 2. 注册模型
 
-## 2. 阶段边界
+`agent_configs/registry.yaml` 是唯一工作流注册源。每个 `AgentDefinition` 包含：
 
-### 阶段 0：冻结现有基线
+- `agent_id`、`scene`、`provider`、`enabled`、`publication_status`、`mode`；
+- `flow_env`、`course_ids`、`supports`、`fallback_agent_id`；
+- `input_mapping` 和 `knowledge_top_k`。
 
-- 基线对象：`SOLVER_CT_电路理论专业解题_v1.0`。
-- 保留现有星辰工作流，不改写其节点与提示词。
-- 记录性能、能力、限制、回滚原则和待导出信息。
-- 建立电路理论回归评测目录和指标清单。
+Flow ID 只通过 `Settings` 的环境变量字段解析。状态接口只返回 `flow_configured` 布尔值，不返回 Flow ID、Key 或 Secret。计划态 Agent 允许 Flow 为空；已启用星辰 Agent 真正执行但配置不完整时返回 `agent_configuration_incomplete`。
 
-### 阶段 1：本地 API 壳层
-
-- 提供统一的 AgentRequest、AgentResult、AgentEvent、Artifact、CoursePack 协议。
-- 通过 AgentProvider 屏蔽 Mock 与讯飞星辰的接口差异。
-- 使用 FastAPI 提供会话、任务、事件、文件和产物 API。
-- 使用 SQLAlchemy 2 与 Alembic 建立最小数据模型。
-- 使用 SSE 提供任务事件流。
-- 使用 PostgreSQL、Redis、MinIO 作为目标基础设施；测试环境允许 SQLite，本地开发允许文件存储回退。
-
-## 3. 分层架构
-
-```text
-HTTP / SSE
-    |
-FastAPI routes
-    |
-Application services
-    |---- repositories ---- SQLAlchemy / PostgreSQL or SQLite
-    |---- provider factory ---- MockAgentProvider
-    |                         \- XingchenCloudProvider
-    \---- storage service ---- MinIO or local fallback
-```
-
-约束：
-
-- 路由层不直接写 SQL。
-- 业务层不感知星辰原始请求和响应字段。
-- 未配置星辰时默认回退到明确标识的 Mock Provider。
-- 配置全部来自环境变量。
-- 日志不得输出密钥、数据库密码或完整学生隐私数据。
-
-## 4. 核心数据流
+## 3. 路由与降级
 
 ```text
 AgentRequest
-  -> 创建 task
-  -> task.created
-  -> agent.started
-  -> AgentProvider.run
-  -> AgentResult
-  -> 保存 task / agent_run / artifact
-  -> task.completed
+  -> TaskRouter 本地确定性匹配
+  -> 已发布且可运行的目标 Agent
+  -> 不可用时仅沿 registry fallback_agent_id 降级
+  -> 未匹配时最多调用一次 ROUTER_01_FALLBACK_V1
+  -> 校验 JSON、注册、启用、非自身、课程、输入和运行可用性
+  -> 无有效目标则 unresolved
 ```
 
-异常路径：
+固定规则：
 
-```text
-ProviderError / timeout / configuration error
-  -> 保存错误摘要
-  -> task.failed
-  -> API 返回统一错误或可查询的失败任务
-```
+- CT `solve_problem` -> `SOLVER_CT_V1`。
+- CT `check_user_solution` -> `CHECK_01_ANSWER_REVIEW_V1`；不可用时 -> `SOLVER_CT_V1`，并要求优先指出第一个错误。
+- CT/AE/DE 学习类意图 -> `LEARN_01_KNOWLEDGE_QA_V1`；不可用时 -> `LEARN_01_LOCAL_RETRIEVAL_V1`。
+- AE/DE 解题、UNKNOWN、未匹配或低置信输入不自动进入 CT Solver。
 
-## 5. Provider 接入原则
+`route_confidence` 只衡量路由判断。`route_source` 使用 `local_fast`、`cloud_fallback`、`local_degraded` 或预留的 `session_context`。
 
-Mock Provider 是本地开发、CI 和无密钥演示的默认实现，返回结果必须包含 `provider=mock`。
+## 4. 执行与 Provider
 
-Xingchen Provider 当前只建立隔离良好的适配器结构。以下信息尚未提供，不得推测：
+所有已注册的星辰 Agent 共用 `XingchenCloudProvider.run(agent_id, request)`：Provider 从注册表读取 Flow 环境变量名、文本参数名和图片参数名，再复用现有鉴权、上传、HTTP 请求、响应解析、错误映射和日志脱敏链路。禁止增加 Agent 专用 HTTP 方法。
 
-- TODO：待补充正式 API Base URL。
-- TODO：待补充鉴权 Header 或签名方式。
-- TODO：待补充工作流执行请求字段。
-- TODO：待补充同步响应与流式事件字段。
-- TODO：待补充运行状态查询接口。
-- TODO：待补充取消运行接口。
-- TODO：待从讯飞星辰平台导出或人工补录工作流节点和提示词。
+支持的输入类型为 `text`、`single_image`、`text_and_single_image`。Solver 支持三类，其他当前注册工作流只支持文本；多图、PDF、空输入或不匹配的输入返回 `agent_input_not_supported`。
 
-## 6. 当前不实现
+## 5. 知识库策略
 
-- 完整 LangGraph 编排。
-- RAGFlow 集成。
-- Kubernetes。
-- Celery 或分布式 Worker。
-- 完整学生端、教师端、科研端。
-- 十门课程的完整工作流。
-- 自动执行用户上传文件。
+- `SOLVER_CT_V1` 纯文本最多注入 Top 2 方法参考；带图片时跳过检索。
+- 云端 `LEARN_01_KNOWLEDGE_QA_V1` 最多注入 Top 3 课程证据。
+- `LEARN_01_LOCAL_RETRIEVAL_V1` 保持现有 `retrieval_only` 流程与 `kb://` 引用。
+- routing_only Agent 不查询知识库。
 
-## 7. 后续演进
+## 6. 状态、事件与会话
 
-1. 补齐真实星辰协议并接入 `SOLVER_CT`。
-2. 完成本地到星辰的端到端回归测试。
-3. 建立最小调试页面，展示请求、事件与产物。
-4. 在稳定协议上启动 `LEARN_01` 课程知识问答。
+现有 `AgentRun`、Artifact、SSE 和 Task 事件继续复用。路由场景、模式、课程、意图、来源、置信度、目标 Agent、降级信息、知识库命中和 Flow 配置状态写入现有 JSON 字段，因此 Stage 2.2 不需要数据库迁移。
 
-## 8. 阶段 1.6 本地知识问答闭环
+`GET /api/v1/agents/status` 暴露非敏感注册与运行状态。`/debug` 显示同一组调度信息、Provider、状态、延迟和回答。会话上下文只保留后续 `session_context` 接入位，不实现长期记忆。
 
-阶段 1.6 在统一任务入口内增加配置驱动的 AgentRegistry 与 TaskRouter：
+## 7. 扩展流程
 
-```text
-POST /api/v1/tasks
-  -> TaskRouter
-  -> route.selected / route.unsupported
-  -> 持久化 agent_id / route_status / route_reason
-  -> TaskRunner 使用已保存 agent_id
-```
-
-本地知识问答数据流：
-
-```text
-AgentRequest
-  -> LEARN_01_KNOWLEDGE_QA_V1
-  -> local_lexical_v2
-  -> RetrievalResult
-  -> RetrievalContextPacket
-  -> EvidenceQuality
-  -> ExplanationArtifact
-  -> AgentResult
-```
-
-`LEARN_01` 当前是 `retrieval_only`，不调用星辰 Provider。所有证据限定在请求课程内并保留
-`kb://` 引用；证据不足时显式返回 partial/insufficient/unavailable 和警告。
-
-本阶段没有收到用户所述最终完整总体架构原文。本文保留全部既有内容并增加阶段 1.6 实际
-数据流；待原文提供后，应原样保存到本文档或按版本号新增文档，不得缩写。
+新增工作流时只需：在注册表增加 Agent 定义、在 `.env.example` 增加 Flow 环境变量占位、发布后将状态改为 enabled/published，并添加对应路由与输入契约测试。无需复制 Provider、TaskRunner 或 HTTP 调用链。

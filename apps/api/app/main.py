@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agents import AgentRegistry, TaskRouter
@@ -21,10 +21,22 @@ from app.core.errors import AppError
 from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.database.base import Base
 from app.database.session import create_engine_and_session
+from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.knowledge_qa_service import KnowledgeQAService
-from app.services.retrieval_context import RetrievalContextService
+from app.services.rag_debug import RAGDebugService
+from app.services.rag_retrieval import RAGRetrievalService
+from app.services.rag_runtime import (
+    create_image_embedding_provider,
+    create_reranker_provider,
+    create_text_embedding_provider,
+    create_vector_store,
+)
+from app.services.retrieval_context import (
+    EvidenceQualityEvaluator,
+    RetrievalContextService,
+)
 from app.services.task_runner import TaskRunner
 
 logger = logging.getLogger(__name__)
@@ -41,17 +53,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine, session_factory = create_engine_and_session(
         app_settings.active_database_url
     )
-    provider = get_agent_provider(app_settings)
     agent_registry = AgentRegistry()
-    task_router = TaskRouter(agent_registry)
+    provider = get_agent_provider(app_settings, agent_registry)
+    development_mock_provider = DevelopmentMockProvider(app_settings, agent_registry)
+    task_router = TaskRouter(agent_registry, app_settings)
     knowledge_base = KnowledgeBaseService(app_settings)
-    context_service = RetrievalContextService(app_settings.knowledge_max_context_chars)
-    knowledge_qa = KnowledgeQAService(knowledge_base, context_service)
+    text_embedding = create_text_embedding_provider(app_settings)
+    image_embedding = create_image_embedding_provider(app_settings)
+    reranker = create_reranker_provider(app_settings)
+    vector_store = create_vector_store(app_settings)
+    rag_retrieval = RAGRetrievalService(
+        app_settings,
+        knowledge_base,
+        text_embedding,
+        image_embedding,
+        reranker,
+        vector_store,
+    )
+    context_service = RetrievalContextService(
+        app_settings.knowledge_max_context_chars,
+        evaluator=EvidenceQualityEvaluator(
+            sufficient_min_score=app_settings.rag_sufficient_min_score,
+            partial_min_score=app_settings.rag_partial_min_score,
+            sufficient_min_sources=app_settings.rag_sufficient_min_sources,
+        ),
+    )
+    knowledge_qa = KnowledgeQAService(
+        knowledge_base, context_service, rag_retrieval=rag_retrieval
+    )
     task_runner = TaskRunner(
         session_factory,
         provider,
         knowledge_base,
         agent_registry,
+        knowledge_qa,
+        rag_retrieval,
+    )
+    rag_debug = RAGDebugService(
+        app_settings,
+        task_router,
+        agent_registry,
+        provider,
+        rag_retrieval,
+        context_service,
         knowledge_qa,
     )
 
@@ -61,23 +105,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.provider = provider
+        app.state.development_mock_provider = development_mock_provider
+        app.state.agent_contract_results = {}
         app.state.agent_registry = agent_registry
         app.state.task_router = task_router
         app.state.knowledge_base = knowledge_base
+        app.state.rag_retrieval = rag_retrieval
+        app.state.context_service = context_service
+        app.state.knowledge_qa = knowledge_qa
+        app.state.rag_debug = rag_debug
         app.state.task_runner = task_runner
         if app_settings.app_env == "test":
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
         yield
         await task_runner.shutdown()
+        close_provider = getattr(provider, "aclose", None)
+        if close_provider is not None:
+            await close_provider()
         await engine.dispose()
 
     app = FastAPI(
         title=app_settings.app_name,
         version=app_settings.app_version,
         description=(
-            "芯智导学阶段 2.1 API。SOLVER_CT 支持讯飞星辰文字和单图片工作流；"
-            "LEARN_01 保持本地 retrieval_only。"
+            "芯智导学阶段 2.2 API。统一 Agent 注册、快速路由、受控降级与"
+            "多星辰工作流共用同一 Provider 调用链。"
         ),
         lifespan=lifespan,
     )
@@ -86,12 +139,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/debug-assets", StaticFiles(directory=DEBUG_ROOT), name="debug-assets")
 
     @app.get("/", include_in_schema=False)
-    async def root_page() -> RedirectResponse:
-        return RedirectResponse(url="/debug", status_code=307)
+    async def root_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "home.html")
 
     @app.get("/debug", include_in_schema=True, tags=["development"])
     async def debug_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "index.html")
+        return FileResponse(DEBUG_ROOT / "demo.html")
+
+    @app.get("/debug/rag", include_in_schema=True, tags=["development"])
+    async def rag_debug_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "rag.html")
+
+    @app.get("/debug/agents", include_in_schema=True, tags=["development"])
+    async def agent_debug_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "agents.html")
+
+    @app.get("/student", include_in_schema=True, tags=["student"])
+    async def student_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "student.html")
+
+    @app.get("/system", include_in_schema=True, tags=["system"])
+    async def system_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "system.html")
+
+    @app.get("/demo", include_in_schema=True, tags=["development"])
+    async def demo_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "demo.html")
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: Any) -> Any:

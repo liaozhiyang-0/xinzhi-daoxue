@@ -115,9 +115,7 @@ def test_xingchen_context_is_limited_and_keeps_sources() -> None:
     augmented = TaskRunner._with_xingchen_context(request(), hits)
     text = augmented.canonical_input["question"]
     assert isinstance(text, str)
-    context = text.split("【本地知识库方法参考】\n", 1)[1].split(
-        "\n【使用约束】", 1
-    )[0]
+    context = text.split("【本地知识库方法参考】\n", 1)[1].split("\n【使用约束】", 1)[0]
     assert len(context) <= 2000
     assert "本地知识库仅用于方法参考。" in text
     assert "题目参数、电路连接和参考方向以用户输入为准。" in text
@@ -231,7 +229,7 @@ async def test_xingchen_uploads_single_image_and_injects_url(tmp_path) -> None:
     assert payload["parameters"]["USER_INPUT_image"] == (
         "https://files.example/circuit.png"
     )
-    assert result.structured_result["input_type"] == "image"
+    assert result.structured_result["input_type"] == "text_and_single_image"
     assert result.answer == "图片解题结果"
 
 

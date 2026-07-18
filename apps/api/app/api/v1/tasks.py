@@ -47,9 +47,9 @@ async def create_task(
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     decision = request.app.state.task_router.route(data)
-    task = await TaskCreationService(db, provider.provider_name).create_queued(
-        data, route=decision
-    )
+    task = await TaskCreationService(
+        db, provider.provider_name, request.app.state.settings
+    ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
         request.app.state.task_runner.submit(task.id)
     return task_read(task)

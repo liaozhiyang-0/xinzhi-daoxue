@@ -50,6 +50,16 @@ services:
       retries: 10
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    container_name: xzd-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - xzd_qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -87,11 +97,21 @@ services:
       KNOWLEDGE_CT_PATH: /knowledge/CT
       KNOWLEDGE_AE_PATH: /knowledge/AE
       KNOWLEDGE_DE_PATH: /knowledge/DE
-      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-1200}
+      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-800}
       KNOWLEDGE_CHUNK_OVERLAP_CHARS: ${KNOWLEDGE_CHUNK_OVERLAP_CHARS:-150}
       KNOWLEDGE_DEFAULT_TOP_K: ${KNOWLEDGE_DEFAULT_TOP_K:-5}
       KNOWLEDGE_MAX_FILES_PER_COURSE: ${KNOWLEDGE_MAX_FILES_PER_COURSE:-1000}
       KNOWLEDGE_MAX_FILE_SIZE_MB: ${KNOWLEDGE_MAX_FILE_SIZE_MB:-5}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      TEXT_EMBEDDING_MODEL: ${TEXT_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      TEXT_EMBEDDING_REVISION: ${TEXT_EMBEDDING_REVISION:-7999e1d3359715c523056ef9478215996d62a620}
+      TEXT_EMBEDDING_DEVICE: ${TEXT_EMBEDDING_DEVICE:-auto}
+      IMAGE_EMBEDDING_MODEL: ${IMAGE_EMBEDDING_MODEL:-google/siglip2-base-patch16-224}
+      IMAGE_EMBEDDING_DEVICE: ${IMAGE_EMBEDDING_DEVICE:-auto}
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_DEVICE: ${RERANKER_DEVICE:-auto}
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
     volumes:
       - type: bind
         source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
@@ -114,6 +134,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -131,3 +153,4 @@ volumes:
   xzd_postgres_data:
   xzd_redis_data:
   xzd_minio_data:
+  xzd_qdrant_data:

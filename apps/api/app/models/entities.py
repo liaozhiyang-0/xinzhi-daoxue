@@ -58,6 +58,7 @@ class SessionModel(Base):
     user_id: Mapped[str] = mapped_column(String(128), index=True)
     course_id: Mapped[str] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(255), default="")
+    context_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -70,9 +71,7 @@ class SessionModel(Base):
 
 class TaskModel(Base):
     __tablename__ = "tasks"
-    __table_args__ = (
-        Index("ix_tasks_status_created_at", "status", "created_at"),
-    )
+    __table_args__ = (Index("ix_tasks_status_created_at", "status", "created_at"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"), index=True)
@@ -120,6 +119,8 @@ class FileModel(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     checksum_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    purpose: Mapped[str] = mapped_column(String(64), default="generic")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )

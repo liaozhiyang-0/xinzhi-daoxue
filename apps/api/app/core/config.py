@@ -49,12 +49,31 @@ class Settings(BaseSettings):
     xingchen_api_key: SecretStr = SecretStr("")
     xingchen_api_secret: SecretStr = SecretStr("")
     xingchen_solver_ct_flow_id: str = ""
+    xingchen_fallback_router_flow_id: str = ""
+    xingchen_knowledge_qa_flow_id: str = ""
+    xingchen_answer_review_flow_id: str = ""
+    xingchen_lesson_prep_flow_id: str = ""
+    xingchen_assignment_review_flow_id: str = ""
+    xingchen_learning_analysis_flow_id: str = ""
+    xingchen_class_analysis_flow_id: str = ""
+    xingchen_literature_tracking_flow_id: str = ""
+    xingchen_academic_writing_flow_id: str = ""
+    xingchen_data_analysis_flow_id: str = ""
     xingchen_uid: str = "local-demo-user"
     xingchen_timeout_seconds: float = Field(
         default=XINGCHEN_TIMEOUT_DEFAULT_SECONDS,
         ge=XINGCHEN_TIMEOUT_MIN_SECONDS,
         le=XINGCHEN_TIMEOUT_MAX_SECONDS,
     )
+    xingchen_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    xingchen_read_timeout_seconds: float = Field(default=300, gt=0, le=600)
+    xingchen_write_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    xingchen_pool_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    xingchen_max_connections: int = Field(default=20, ge=1, le=100)
+    xingchen_max_keepalive_connections: int = Field(default=10, ge=1, le=100)
+    cloud_concurrency_limit: int = Field(default=4, ge=1, le=32)
+    cloud_circuit_failure_threshold: int = Field(default=3, ge=1, le=20)
+    cloud_circuit_reset_seconds: float = Field(default=30, gt=0, le=600)
     xingchen_use_local_kb_context: bool = True
     xingchen_bot_id: str = ""
 
@@ -67,16 +86,101 @@ class Settings(BaseSettings):
     knowledge_ct_path: Path = PROJECT_ROOT / "电路理论"
     knowledge_ae_path: Path = PROJECT_ROOT / "模电"
     knowledge_de_path: Path = PROJECT_ROOT / "数电"
-    knowledge_chunk_size_chars: int = Field(default=1200, ge=300, le=4000)
+    knowledge_chunk_size_chars: int = Field(default=800, ge=300, le=4000)
     knowledge_chunk_overlap_chars: int = Field(default=150, ge=0, le=500)
     knowledge_default_top_k: int = Field(default=5, ge=1, le=20)
     knowledge_max_files_per_course: int = Field(default=1000, ge=1, le=10000)
     knowledge_max_file_size_mb: int = Field(default=5, ge=1, le=100)
     knowledge_config_path: Path = PROJECT_ROOT / "knowledge_config"
+    knowledge_index_path: Path = PROJECT_ROOT / "knowledge_indexes"
     knowledge_min_score_v2: float = Field(default=0.35, ge=0)
     knowledge_low_confidence_threshold: float = Field(default=0.45, ge=0, le=1)
     knowledge_max_hits_per_document: int = Field(default=2, ge=1, le=10)
     knowledge_max_context_chars: int = Field(default=6000, ge=500, le=50000)
+    knowledge_keyword_weight: float = Field(default=1.0, ge=0, le=10)
+    knowledge_image_context_weight: float = Field(default=0.4, ge=0, le=10)
+
+    rag_enabled: bool = True
+    text_embedding_provider: Literal["local_bge"] = "local_bge"
+    text_embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    text_embedding_revision: str = "7999e1d3359715c523056ef9478215996d62a620"
+    text_embedding_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    text_embedding_batch_size: int = Field(default=8, ge=1, le=128)
+    text_embedding_normalize: bool = True
+    text_embedding_max_length: int = Field(default=1024, ge=64, le=8192)
+    text_embedding_cache_dir: Path | None = None
+    text_embedding_trust_remote_code: bool = False
+    text_embedding_query_instruction: str = ""
+    text_colbert_enabled: bool = False
+
+    image_embedding_enabled: bool = True
+    image_embedding_provider: Literal["local_siglip2"] = "local_siglip2"
+    image_embedding_model: str = "google/siglip2-base-patch16-224"
+    image_embedding_revision: str = "main"
+    image_embedding_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    image_embedding_batch_size: int = Field(default=4, ge=1, le=64)
+    image_embedding_normalize: bool = True
+    image_embedding_cache_dir: Path | None = None
+    image_caption_embedding_enabled: bool = True
+
+    reranker_enabled: bool = True
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_revision: str = "main"
+    reranker_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    reranker_top_n: int = Field(default=20, ge=1, le=100)
+    reranker_output_k: int = Field(default=5, ge=1, le=20)
+
+    vector_store_provider: Literal["qdrant"] = "qdrant"
+    qdrant_mode: Literal["local", "server"] = "local"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: SecretStr = SecretStr("")
+    qdrant_local_path: Path = PROJECT_ROOT / "knowledge_indexes" / "qdrant"
+    qdrant_text_collection: str = "xinzhi_kb_text_v2"
+    qdrant_image_collection: str = "xinzhi_kb_image_v2"
+
+    rag_dense_candidate_k: int = Field(default=20, ge=1, le=100)
+    rag_sparse_candidate_k: int = Field(default=20, ge=1, le=100)
+    rag_image_candidate_k: int = Field(default=12, ge=1, le=100)
+    rag_final_text_k: int = Field(default=5, ge=1, le=20)
+    rag_final_image_k: int = Field(default=3, ge=0, le=20)
+    rag_rrf_k: int = Field(default=60, ge=1, le=1000)
+    rag_query_cache_size: int = Field(default=256, ge=0, le=10000)
+    rag_result_cache_size: int = Field(default=128, ge=0, le=10000)
+    rag_result_cache_ttl_seconds: float = Field(default=300, ge=0, le=86400)
+    text_embedding_concurrency_limit: int = Field(default=2, ge=1, le=16)
+    image_embedding_concurrency_limit: int = Field(default=1, ge=1, le=8)
+    reranker_concurrency_limit: int = Field(default=1, ge=1, le=8)
+    reranker_conditional_score_gap: float = Field(default=0.01, ge=0, le=1)
+    rag_retrieval_worker_count: int = Field(default=2, ge=1, le=8)
+    rag_default_use_reranker: bool = False
+    rag_chunker_version: str = "semantic_v2"
+    rag_cleaning_version: str = "clean_v1"
+    rag_schema_version: str = "2"
+    rag_sufficient_min_sources: int = Field(default=2, ge=1, le=10)
+    rag_sufficient_min_score: float = Field(default=0.45, ge=0, le=1)
+    rag_partial_min_score: float = Field(default=0.01, ge=0, le=1)
+
+    rag_debug_enabled: bool = True
+    rag_debug_max_input_chars: int = Field(default=2000, ge=100, le=20000)
+    rag_debug_trace_max_records: int = Field(default=100, ge=1, le=10000)
+    rag_debug_trace_ttl_seconds: float = Field(default=3600, ge=60, le=86400)
+
+    allow_agent_mocks: bool = False
+    agent_mock_profiles_path: Path = (
+        PROJECT_ROOT / "agent_configs" / "mock_profiles.yaml"
+    )
+    agent_mock_max_latency_ms: int = Field(default=100, ge=0, le=2000)
+
+    student_image_max_size_mb: int = Field(default=8, ge=1, le=20)
+    student_upload_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
+    student_conversation_summary_chars: int = Field(default=800, ge=100, le=2000)
+    student_previous_answer_chars: int = Field(default=600, ge=100, le=2000)
+
+    route_budget_ms: int = Field(default=50, ge=1, le=5000)
+    normalization_budget_ms: int = Field(default=20, ge=1, le=5000)
+    retrieval_p95_target_ms: int = Field(default=600, ge=1, le=30000)
+    context_format_budget_ms: int = Field(default=50, ge=1, le=5000)
+    local_total_p95_target_ms: int = Field(default=1000, ge=1, le=30000)
 
     @field_validator("log_level")
     @classmethod
@@ -100,13 +204,46 @@ class Settings(BaseSettings):
             )
         )
 
+    def resolve_flow_env(self, env_name: str | None) -> str | None:
+        """Resolve an allow-listed Flow setting without reading process env directly."""
+
+        if (
+            not env_name
+            or not env_name.startswith("XINGCHEN_")
+            or not env_name.endswith("_FLOW_ID")
+        ):
+            return None
+        value = getattr(self, env_name.lower(), "")
+        if not isinstance(value, str):
+            return None
+        return value.strip() or None
+
     @property
     def knowledge_paths(self) -> dict[str, Path]:
         return {
-            "CT": self.knowledge_ct_path,
-            "AE": self.knowledge_ae_path,
-            "DE": self.knowledge_de_path,
+            "CT": self._resolve_local_placeholder(self.knowledge_ct_path, "电路理论"),
+            "AE": self._resolve_local_placeholder(self.knowledge_ae_path, "模电"),
+            "DE": self._resolve_local_placeholder(self.knowledge_de_path, "数电"),
         }
+
+    @staticmethod
+    def _resolve_local_placeholder(configured: Path, source_name: str) -> Path:
+        """Resolve an empty repo-local placeholder to the actual source folder."""
+
+        placeholder_root = (PROJECT_ROOT / "local_knowledge").resolve()
+        configured_resolved = configured.resolve()
+        try:
+            configured_resolved.relative_to(placeholder_root)
+        except ValueError:
+            return configured
+        has_material = configured_resolved.is_dir() and any(
+            path.is_file() and path.name != ".gitkeep"
+            for path in configured_resolved.rglob("*")
+        )
+        discovered = PROJECT_ROOT / source_name
+        if not has_material and discovered.is_dir():
+            return discovered
+        return configured
 
 
 @lru_cache

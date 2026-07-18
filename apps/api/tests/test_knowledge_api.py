@@ -15,6 +15,13 @@ def make_client(tmp_path: Path) -> TestClient:
         "## 节点电压法\n节点电压法以独立节点电压作为未知量列写方程。",
         encoding="utf-8",
     )
+    chapter = ct / "chapter.md"
+    chapter.write_text(
+        chapter.read_text(encoding="utf-8")
+        + "\nNodal voltage method writes circuit equations.",
+        encoding="utf-8",
+    )
+    (ct / "diagram.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 24)
     settings = Settings(
         app_env="test",
         test_database_url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
@@ -26,6 +33,8 @@ def make_client(tmp_path: Path) -> TestClient:
         knowledge_de_path=de,
         knowledge_chunk_size_chars=300,
         knowledge_chunk_overlap_chars=20,
+        rag_enabled=False,
+        _env_file=None,
     )
     return TestClient(create_app(settings))
 
@@ -68,9 +77,41 @@ def test_mock_task_records_local_knowledge_hits(tmp_path: Path) -> None:
         assert result["metrics"]["retrieval_calls"] == 1
         assert result["citations"][0].startswith("kb://CT/")
         assert result["structured_result"]["knowledge"]["hits"]
-        artifact = client.get(
-            f"/api/v1/artifacts/{current['artifact_ids'][0]}"
-        ).json()
+        artifact = client.get(f"/api/v1/artifacts/{current['artifact_ids'][0]}").json()
         assert artifact["content"]["knowledge_sources"][0].startswith("kb://CT/")
         events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
         assert "knowledge.retrieved" in [event["event_type"] for event in events]
+
+
+def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        health = client.get("/api/v1/knowledge/health")
+        assert health.status_code == 200
+        assert health.json()["rag_status"] in {"ready", "degraded"}
+        assert "qdrant_api_key" not in health.text
+
+        response = client.post(
+            "/api/v1/knowledge/rag-search",
+            json={"query_text": "鑺傜偣鐢靛帇娉?", "course_id": "CT", "top_k": 3},
+        )
+        assert response.status_code == 200
+        response = client.post(
+            "/api/v1/knowledge/rag-search",
+            json={
+                "query_text": "nodal voltage method",
+                "course_id": "CT",
+                "top_k": 3,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["rag_status"] == "disabled"
+        assert response.json()["hits"]
+
+        image = client.get("/api/v1/knowledge/images/CT/diagram.png")
+        assert image.status_code == 200
+        assert image.headers["content-type"] == "image/png"
+        document = client.get("/api/v1/knowledge/documents/CT/chapter.md")
+        assert document.status_code == 200
+        assert "text/markdown" in document.headers["content-type"]
+        traversal = client.get("/api/v1/knowledge/documents/CT/../.env")
+        assert traversal.status_code in {400, 404}

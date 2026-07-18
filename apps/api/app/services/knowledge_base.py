@@ -16,10 +16,16 @@ import yaml
 from app.contracts import (
     KnowledgeHit,
     KnowledgeSourceStatus,
+    RelatedImage,
     RetrievalResult,
 )
 from app.contracts.knowledge import KnowledgeCourseId, utc_now
 from app.core.config import Settings
+from app.services.knowledge_audit import (
+    infer_content_type,
+    markdown_image_references,
+    stable_id,
+)
 
 COURSE_NAMES: dict[str, str] = {
     "CT": "电路理论",
@@ -36,12 +42,14 @@ CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]+")
 @dataclass(frozen=True, slots=True)
 class IndexedChunk:
     chunk_id: str
+    document_id: str
     course_id: KnowledgeCourseId
     course_name: str
     chapter: str
     section: str
     document_path: str
     title: str
+    content_type: str
     content: str
     source_ref: str
     document_checksum: str
@@ -52,6 +60,7 @@ class IndexedChunk:
     token_count: int
     normalized_content: str
     excluded_v2: bool
+    related_images: tuple[RelatedImage, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +69,22 @@ class CourseMetadata:
     excluded_paths: tuple[str, ...]
     chapter_aliases: dict[str, str]
     synonyms: dict[str, tuple[str, ...]]
+    retrieval_topic_boosts: tuple[RetrievalTopicBoost, ...]
     approved_corrections: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalTopicBoost:
+    """Course-local, terminology-based boost for a narrowly defined topic."""
+
+    name: str
+    query_terms: tuple[str, ...]
+    query_context_terms: tuple[str, ...]
+    evidence_terms: tuple[str, ...]
+    preferred_content_types: tuple[str, ...]
+    evidence_term_boost: float
+    content_type_boost: float
+    max_boost: float
 
 
 def normalize_query(text: str) -> str:
@@ -239,7 +263,12 @@ class KnowledgeBaseService:
             for chunk in self._chunks:
                 if chunk.course_id not in selected or chunk.excluded_v2:
                     continue
-                components = self._score_v2(chunk, query_tokens, normalized, total)
+                components = self._score_v2(
+                    chunk,
+                    query_tokens,
+                    normalized,
+                    total,
+                )
                 score = sum(components.values())
                 if score >= self.settings.knowledge_min_score_v2:
                     scored.append((score, chunk, components))
@@ -263,6 +292,11 @@ class KnowledgeBaseService:
             course_ids=selected,
             hits=hits,
             confidence=confidence,
+            retrieval_mode="sparse_bm25_v1",
+            rag_status="degraded",
+            embedding_status="unavailable",
+            vector_store_status="not_used",
+            reranker_status="not_used",
             warnings=warnings,
             latency_ms=max(0, round((perf_counter() - started) * 1000)),
         )
@@ -290,6 +324,38 @@ class KnowledgeBaseService:
                         seen.add(normalized_term)
         return " ".join(expansions)
 
+    def retrieval_topic_bonus(self, query: str, hit: KnowledgeHit) -> float:
+        """Return an opt-in course/topic bonus without changing global RRF weights."""
+        self._ensure_loaded()
+        metadata = self._metadata.get(hit.course_id.value)
+        if metadata is None:
+            return 0.0
+        normalized_query = normalize_query(query)
+        searchable = normalize_query(
+            " ".join((hit.title, hit.chapter, hit.section, hit.content))
+        )
+        best_bonus = 0.0
+        for rule in metadata.retrieval_topic_boosts:
+            if rule.query_terms and not any(
+                normalize_query(term) in normalized_query for term in rule.query_terms
+            ):
+                continue
+            if rule.query_context_terms and not any(
+                normalize_query(term) in normalized_query
+                for term in rule.query_context_terms
+            ):
+                continue
+            evidence_matches = sum(
+                1 for term in rule.evidence_terms if normalize_query(term) in searchable
+            )
+            if evidence_matches == 0:
+                continue
+            bonus = evidence_matches * rule.evidence_term_boost
+            if hit.content_type in rule.preferred_content_types:
+                bonus += rule.content_type_boost
+            best_bonus = max(best_bonus, min(rule.max_boost, bonus))
+        return best_bonus
+
     def _ensure_loaded(self) -> None:
         if not self._loaded:
             self.refresh()
@@ -315,6 +381,27 @@ class KnowledgeBaseService:
             else ()
         )
         aliases = course_payload.get("chapter_aliases", {})
+        topic_boost_payload = course_payload.get("retrieval_topic_boosts", [])
+        topic_boosts = tuple(
+            RetrievalTopicBoost(
+                name=str(item.get("name", "unnamed")),
+                query_terms=tuple(str(term) for term in item.get("query_terms", [])),
+                query_context_terms=tuple(
+                    str(term) for term in item.get("query_context_terms", [])
+                ),
+                evidence_terms=tuple(
+                    str(term) for term in item.get("evidence_terms", [])
+                ),
+                preferred_content_types=tuple(
+                    str(term) for term in item.get("preferred_content_types", [])
+                ),
+                evidence_term_boost=float(item.get("evidence_term_boost", 0.0)),
+                content_type_boost=float(item.get("content_type_boost", 0.0)),
+                max_boost=float(item.get("max_boost", 0.0)),
+            )
+            for item in topic_boost_payload
+            if isinstance(item, dict)
+        )
         return CourseMetadata(
             patterns=tuple(
                 str(item)
@@ -327,6 +414,7 @@ class KnowledgeBaseService:
             if isinstance(aliases, dict)
             else {},
             synonyms=synonyms,
+            retrieval_topic_boosts=topic_boosts,
             approved_corrections=approved,
         )
 
@@ -372,6 +460,14 @@ class KnowledgeBaseService:
             relative = file_path.relative_to(root).as_posix()
             text = self._apply_approved_corrections(raw_text, relative, metadata)
             checksum = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+            document_id = stable_id("DOC", course_id.value, relative.casefold())
+            image_references = markdown_image_references(
+                course_id=course_id.value,
+                document_path=file_path,
+                root=root,
+                document_id=document_id,
+                text=raw_text,
+            )
             excluded = any(
                 PurePosixPath(relative).match(pattern)
                 for pattern in metadata.excluded_paths
@@ -394,12 +490,14 @@ class KnowledgeBaseService:
                 chunks.append(
                     IndexedChunk(
                         chunk_id=chunk_id,
+                        document_id=document_id,
                         course_id=course_id,
                         course_name=course_name,
                         chapter=title,
                         section=title,
                         document_path=relative,
                         title=title,
+                        content_type=infer_content_type(file_path, title, content),
                         content=content,
                         source_ref=source_ref,
                         document_checksum=checksum,
@@ -410,6 +508,23 @@ class KnowledgeBaseService:
                         token_count=sum(baseline_tokens.values()),
                         normalized_content=normalize_query(content),
                         excluded_v2=excluded,
+                        related_images=tuple(
+                            RelatedImage(
+                                image_id=stable_id(
+                                    "IMG",
+                                    course_id.value,
+                                    reference.image_relative_path.casefold(),
+                                ),
+                                resource_uri=(
+                                    f"kb-image://{course_id.value}/"
+                                    f"{reference.image_relative_path}"
+                                ),
+                                caption=(reference.alt_text or reference.nearby_text),
+                                description_source="source_text",
+                            )
+                            for reference in image_references
+                            if reference.exists and reference.section == title
+                        ),
                     )
                 )
         message = f"跳过 {skipped} 个不可读或超限文件" if skipped else None
@@ -464,13 +579,24 @@ class KnowledgeBaseService:
         normalized_query_text: str,
         total: int,
     ) -> dict[str, float]:
-        bm25 = self._score_baseline(chunk, query_tokens, total)
+        bm25 = (
+            self._score_baseline(chunk, query_tokens, total)
+            * self.settings.knowledge_keyword_weight
+        )
         title_overlap = sum(
             query_tokens[token] for token in chunk.title_tokens if token in query_tokens
         )
         filename_overlap = sum(
             query_tokens[token]
             for token in chunk.filename_tokens
+            if token in query_tokens
+        )
+        image_context_tokens = Counter(
+            tokenize(" ".join(image.caption for image in chunk.related_images))
+        )
+        image_context_overlap = sum(
+            query_tokens[token]
+            for token in image_context_tokens
             if token in query_tokens
         )
         exact_phrase = 0.0
@@ -486,6 +612,12 @@ class KnowledgeBaseService:
             "title_boost": min(3.0, title_overlap * 0.18),
             "chapter_boost": min(1.5, title_overlap * 0.08),
             "filename_boost": min(1.0, filename_overlap * 0.12),
+            "image_context_boost": min(
+                self.settings.knowledge_image_context_weight,
+                image_context_overlap
+                * 0.08
+                * self.settings.knowledge_image_context_weight,
+            ),
             "short_fragment_penalty": short_penalty,
         }
 
@@ -523,12 +655,14 @@ class KnowledgeBaseService:
     ) -> KnowledgeHit:
         return KnowledgeHit(
             chunk_id=chunk.chunk_id,
+            document_id=chunk.document_id,
             course_id=chunk.course_id,
             course_name=chunk.course_name,
             chapter=chunk.chapter,
             section=chunk.section,
             document_path=chunk.document_path,
             title=chunk.title,
+            content_type=chunk.content_type,
             content=chunk.content,
             score=round(max(0.0, score), 6),
             score_components={
@@ -536,4 +670,5 @@ class KnowledgeBaseService:
             },
             source_ref=chunk.source_ref,
             document_checksum=chunk.document_checksum,
+            related_images=list(chunk.related_images),
         )

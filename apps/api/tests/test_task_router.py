@@ -22,9 +22,11 @@ def test_learning_routes_to_local_knowledge_agent(course_id: str, intent: str) -
     decision = TaskRouter(AgentRegistry()).route(request(course_id, intent))
 
     assert decision.route_status == RouteStatus.SELECTED
-    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert decision.retrieval_required is True
     assert decision.provider_required is False
+    assert decision.route_source == "local_degraded"
+    assert decision.original_agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
 
 
 def test_ct_solve_routes_to_solver() -> None:

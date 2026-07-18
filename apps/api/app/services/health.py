@@ -59,9 +59,7 @@ async def build_health(
     provider_mode = "xingchen_sync" if provider.provider_name == "xingchen" else "mock"
     return HealthRead(
         status=(
-            "ok"
-            if database == "ok" and redis == "ok" and minio == "ok"
-            else "degraded"
+            "ok" if database == "ok" and redis == "ok" and minio == "ok" else "degraded"
         ),
         environment=settings.app_env,
         database=database,

@@ -20,7 +20,16 @@ def test_evidence_quality_distinguishes_sufficient_and_insufficient() -> None:
     )
     strong = empty.model_copy(
         update={
-            "hits": [hit, hit.model_copy(update={"chunk_id": "2"})],
+            "hits": [
+                hit,
+                hit.model_copy(
+                    update={
+                        "chunk_id": "2",
+                        "document_id": "document-2",
+                        "document_path": "b.md",
+                    }
+                ),
+            ],
             "confidence": 0.8,
         }
     )

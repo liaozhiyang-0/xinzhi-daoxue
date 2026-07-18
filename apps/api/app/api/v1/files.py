@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 async def upload_file(
     upload: UploadFile = File(...),
     task_id: str | None = Form(default=None),
+    purpose: str = Form(default="generic"),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_from_app),
 ) -> FileRead:
@@ -30,7 +32,18 @@ async def upload_file(
     data = await upload.read(limit + 1)
     service = StorageService(settings)
     content_type = upload.content_type or "application/octet-stream"
-    safe_name = service.validate(upload.filename or "upload", len(data), content_type)
+    repository = FileRepository(db)
+    for expired in await repository.list_expired(datetime.now(UTC)):
+        await service.delete(expired.storage_key)
+        await db.delete(expired)
+    if purpose == "student_solver_image":
+        safe_name, content_type, data = service.normalize_student_image(
+            upload.filename or "upload", content_type, data
+        )
+    else:
+        safe_name = service.validate(
+            upload.filename or "upload", len(data), content_type
+        )
     storage_key = await service.save(safe_name, content_type, data)
     model = FileModel(
         id=f"file_{uuid4().hex}",
@@ -40,9 +53,15 @@ async def upload_file(
         size_bytes=len(data),
         storage_key=storage_key,
         checksum_sha256=sha256(data).hexdigest(),
+        purpose=purpose,
+        expires_at=(
+            datetime.now(UTC) + timedelta(seconds=settings.student_upload_ttl_seconds)
+            if purpose == "student_solver_image" and task_id is None
+            else None
+        ),
     )
     try:
-        await FileRepository(db).add(model)
+        await repository.add(model)
         await db.commit()
         await db.refresh(model)
     except Exception:

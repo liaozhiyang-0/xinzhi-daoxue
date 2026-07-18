@@ -22,7 +22,7 @@ def test_explanation_artifact_contains_required_trace_fields(tmp_path: Path) -> 
 
     artifact = (
         KnowledgeQAService(kb, RetrievalContextService(2000))
-        .run("LEARN_01_KNOWLEDGE_QA_V1", request)
+        .run("LEARN_01_LOCAL_RETRIEVAL_V1", request)
         .result.artifacts[0]
     )
 
@@ -34,6 +34,6 @@ def test_explanation_artifact_contains_required_trace_fields(tmp_path: Path) -> 
         "sufficient",
         "partial",
         "insufficient",
-        "unavailable",
+        "failed",
     }
     assert artifact.content["sources"] == artifact.source_refs

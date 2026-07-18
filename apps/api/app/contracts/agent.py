@@ -25,17 +25,23 @@ class UserRole(StrEnum):
 
 
 class Scene(StrEnum):
+    DISPATCH = "dispatch"
     SOLVING = "solving"
     LEARNING = "learning"
     TEACHING = "teaching"
     RESEARCH = "research"
+    INFRASTRUCTURE = "infrastructure"
 
 
 class Intent(StrEnum):
+    UNKNOWN = "unknown"
     SOLVE_PROBLEM = "solve_problem"
     EXPLAIN_CONCEPT = "explain_concept"
     VERIFY_ANSWER = "verify_answer"
+    CHECK_USER_SOLUTION = "check_user_solution"
     GENERAL_QA = "general_qa"
+    SUMMARIZE_KNOWLEDGE = "summarize_knowledge"
+    LEARNING_ADVICE = "learning_advice"
 
 
 class AgentResultStatus(StrEnum):
@@ -142,6 +148,28 @@ class AgentResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     confidence: float | None = Field(default=None, ge=0, le=1)
     metrics: RunMetrics = Field(default_factory=RunMetrics)
+    rag_status: str = "disabled"
+    evidence_status: str = "insufficient"
+    related_images: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_trace_id: str = ""
+    retrieval_latency_ms: int = Field(default=0, ge=0)
+    index_version: str = ""
+    agent_version: str = "1.0"
+    course_id: str = ""
+    intent: str = "unknown"
+    business_data: dict[str, Any] = Field(default_factory=dict)
+    assumptions: list[str] = Field(default_factory=list)
+    remaining_risks: list[str] = Field(default_factory=list)
+    request_id: str = ""
+    task_id: str = ""
+    cloud_status: str = "not_run"
+    fallback_used: bool = False
+    fallback_reason: str = ""
+    timings: dict[str, int] = Field(default_factory=dict)
+    schema_version: str = "1"
+    raw_output_available: bool = False
+    mock_used: bool = False
+    mock_profile: str = ""
 
 
 class AgentEvent(BaseModel):

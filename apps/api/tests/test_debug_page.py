@@ -1,20 +1,20 @@
-def test_root_redirects_to_demo(client) -> None:
+def test_root_is_unified_home(client) -> None:
     response = client.get("/", follow_redirects=False)
-    assert response.status_code == 307
-    assert response.headers["location"] == "/debug"
+    assert response.status_code == 200
+    assert "欢迎使用芯智导学" in response.text
+    assert "/student" in response.text
+    assert "/demo" in response.text
 
 
 def test_debug_page_is_single_page_demo(client) -> None:
     response = client.get("/debug")
     assert response.status_code == 200
     assert "芯智导学" in response.text
-    assert "文字题" in response.text
-    assert "图片题" in response.text
-    assert "识别后的题目摘要" in response.text
+    assert "演示中心" in response.text
+    assert "presentation=1" in response.text
     assert "API Key" not in response.text
 
-    script = client.get("/debug-assets/app.js")
+    script = client.get("/debug-assets/demo.js")
     assert script.status_code == 200
-    assert "URL.createObjectURL" in script.text
-    assert "submitButton.disabled" in script.text
-    assert 'new EventSource(`/api/v1/tasks/${id}/stream`)' in script.text
+    assert "知识问答与 RAG" in script.text
+    assert "window.confirm" in script.text
