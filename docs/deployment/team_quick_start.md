@@ -20,6 +20,17 @@ Set-Location xinzhi-daoxue
 
 首次运行会安装 Python 依赖并拉取四个基础服务镜像，耗时取决于网络。后续启动不会重复安装未变化的依赖。
 
+数据库和服务数据使用固定 Docker 卷：
+
+```text
+xinzhi-daoxue_xzd_postgres_data
+xinzhi-daoxue_xzd_redis_data
+xinzhi-daoxue_xzd_minio_data
+xinzhi-daoxue_xzd_qdrant_data
+```
+
+这些名称不依赖仓库所在目录。重启 Docker、更新代码或重新创建容器都会复用同一套数据；`xzd.cmd stop` 不删除数据卷。不要使用 `docker compose down -v`，除非明确要永久清空本地数据。
+
 ## 2. 打开页面
 
 启动器显示“服务已就绪”后访问：
@@ -104,6 +115,21 @@ chmod +x xzd.sh
 .\xzd.cmd doctor
 .\xzd.cmd start
 ```
+
+### 提示容器名称已被旧项目占用
+
+统一启动器不会自动删除旧容器。先停止旧容器并改名，确认新版本运行正常后再决定是否清理：
+
+```powershell
+docker stop xzd-api xzd-postgres xzd-redis xzd-minio
+docker rename xzd-api xzd-api-legacy
+docker rename xzd-postgres xzd-postgres-legacy
+docker rename xzd-redis xzd-redis-legacy
+docker rename xzd-minio xzd-minio-legacy
+.\xzd.cmd start
+```
+
+改名和停止不会删除旧数据卷。
 
 ### 端口已占用
 

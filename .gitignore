@@ -49,6 +49,9 @@ local_knowledge/DE/*
 /knowledge_indexes/
 /model_cache/
 
+# 防止误在仓库根目录再次 clone 后把嵌套仓库及其中的 .env 提交。
+/xinzhi-daoxue/
+
 # 本地凭据、证书和临时导出。
 *.pem
 *.p12

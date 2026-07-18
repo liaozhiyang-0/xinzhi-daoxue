@@ -29,6 +29,8 @@ SECRET_NAMES = (
     "XINGCHEN_SOLVER_CT_FLOW_ID",
     "XINGCHEN_KNOWLEDGE_QA_FLOW_ID",
 )
+COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
+CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
 
 
 class LaunchError(RuntimeError):
@@ -77,6 +79,7 @@ def build_host_environment(dotenv: dict[str, str]) -> dict[str, str]:
     for runtime_name, host_name in HOST_OVERRIDES.items():
         environment[runtime_name] = environment.get(host_name) or defaults[runtime_name]
     environment["QDRANT_MODE"] = "server"
+    environment["COMPOSE_PROJECT_NAME"] = COMPOSE_PROJECT_NAME
     environment.setdefault("APP_ENV", "development")
     environment.setdefault("RAG_CPU_MODE", "1")
     return environment
@@ -168,11 +171,39 @@ def ensure_python_environment(*, refresh: bool) -> None:
 
 def start_dependencies(environment: dict[str, str]) -> None:
     require_docker()
+    conflicts = container_conflicts()
+    if conflicts:
+        names = ", ".join(conflicts)
+        raise LaunchError(
+            "发现其他旧 Compose 项目占用容器名："
+            f"{names}。请先停止并重命名这些旧容器，数据卷不会被删除。"
+        )
     print("[xzd] 启动 PostgreSQL、Redis、MinIO 和 Qdrant...")
     command = ["docker", "compose", "up", "-d", "--wait", *SERVICES]
     result = run_command(command, env=environment)
     if result.returncode != 0:
         raise LaunchError("基础服务启动失败。请运行 '.\\xzd.ps1 status' 查看状态。")
+
+
+def container_conflicts() -> list[str]:
+    conflicts: list[str] = []
+    for name in CONTAINER_NAMES:
+        result = run_command(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                '{{index .Config.Labels "com.docker.compose.project"}}',
+                name,
+            ],
+            capture=True,
+        )
+        if result.returncode != 0:
+            continue
+        owner = result.stdout.strip()
+        if owner != COMPOSE_PROJECT_NAME:
+            conflicts.append(f"{name} (owner={owner or 'unmanaged'})")
+    return conflicts
 
 
 def migrate_database(environment: dict[str, str]) -> None:
@@ -267,7 +298,8 @@ def command_start(args: argparse.Namespace) -> int:
 
 def command_stop(_: argparse.Namespace) -> int:
     require_docker()
-    result = run_command(["docker", "compose", "stop", *SERVICES])
+    environment = build_host_environment(parse_dotenv(ROOT / ".env"))
+    result = run_command(["docker", "compose", "stop", *SERVICES], env=environment)
     if result.returncode != 0:
         raise LaunchError("停止基础服务失败。")
     print("[xzd] 基础服务已停止，数据卷仍保留。")
@@ -276,11 +308,12 @@ def command_stop(_: argparse.Namespace) -> int:
 
 def command_status(_: argparse.Namespace) -> int:
     require_docker()
-    result = run_command(["docker", "compose", "ps", *SERVICES])
+    environment = build_host_environment(parse_dotenv(ROOT / ".env"))
+    result = run_command(["docker", "compose", "ps", *SERVICES], env=environment)
     if result.returncode != 0:
         raise LaunchError("无法读取基础服务状态。")
     print(
-        "[xzd] Web API："
+        "[xzd] Web API: "
         + ("ready" if api_ready("http://127.0.0.1:8000") else "not running on :8000")
     )
     return 0

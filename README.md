@@ -11,7 +11,9 @@
 .\xzd.cmd start
 ```
 
-`start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。启动成功后打开：
+`start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。
+
+PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：
 
 ```text
 统一首页  http://localhost:8000/

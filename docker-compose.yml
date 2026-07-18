@@ -1,3 +1,6 @@
+# 固定 Compose 项目名与卷名，确保换目录、重新克隆和重启 Docker 后仍复用同一套数据。
+name: xinzhi-daoxue
+
 services:
   postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -151,6 +154,10 @@ services:
 
 volumes:
   xzd_postgres_data:
+    name: xinzhi-daoxue_xzd_postgres_data
   xzd_redis_data:
+    name: xinzhi-daoxue_xzd_redis_data
   xzd_minio_data:
+    name: xinzhi-daoxue_xzd_minio_data
   xzd_qdrant_data:
+    name: xinzhi-daoxue_xzd_qdrant_data

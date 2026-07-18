@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 
 def load_launcher() -> ModuleType:
@@ -55,6 +55,7 @@ def test_host_runtime_uses_host_endpoints(monkeypatch) -> None:
     assert environment["REDIS_URL"] == "redis://localhost:6379/0"
     assert environment["MINIO_ENDPOINT"] == "localhost:9000"
     assert environment["QDRANT_MODE"] == "server"
+    assert environment["COMPOSE_PROJECT_NAME"] == "xinzhi-daoxue"
 
 
 def test_configuration_summary_never_returns_secret_values() -> None:
@@ -71,3 +72,32 @@ def test_configuration_summary_never_returns_secret_values() -> None:
     assert secret not in rendered
     assert summary["secrets"]["XINGCHEN_API_KEY"] == "configured"
     assert summary["secrets"]["XINGCHEN_SOLVER_CT_FLOW_ID"] == "missing"
+
+
+def test_compose_uses_stable_project_and_volume_names() -> None:
+    root = Path(__file__).resolve().parents[3]
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "name: xinzhi-daoxue" in compose
+    for volume in ("postgres", "redis", "minio", "qdrant"):
+        assert f"name: xinzhi-daoxue_xzd_{volume}_data" in compose
+
+
+def test_container_conflicts_only_reports_foreign_owners(monkeypatch) -> None:
+    launcher = load_launcher()
+
+    def fake_run(command, **_kwargs):
+        container = command[-1]
+        owners = {
+            "xzd-postgres": "xinzhi-daoxue",
+            "xzd-redis": "legacy-project",
+            "xzd-minio": "",
+        }
+        if container == "xzd-qdrant":
+            return SimpleNamespace(returncode=1, stdout="")
+        return SimpleNamespace(returncode=0, stdout=owners[container])
+
+    monkeypatch.setattr(launcher, "run_command", fake_run)
+    assert launcher.container_conflicts() == [
+        "xzd-redis (owner=legacy-project)",
+        "xzd-minio (owner=unmanaged)",
+    ]
