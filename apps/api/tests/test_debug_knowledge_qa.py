@@ -1,9 +1,9 @@
-def test_debug_page_exposes_local_knowledge_qa_controls(client) -> None:
+def test_debug_page_exposes_unified_execution_controls(client) -> None:
     response = client.get("/debug/rag")
 
     assert response.status_code == 200
-    assert 'id="debug-intent"' in response.text
-    assert 'id="use-rag"' in response.text
+    assert 'id="task-id"' in response.text
+    assert 'data-tab-target="retrieval"' in response.text
 
 
 def test_local_knowledge_qa_runs_through_unified_task_api(api, client) -> None:

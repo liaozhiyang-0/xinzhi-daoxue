@@ -1,0 +1,1189 @@
+[
+  {
+    "case_id": "LEARN_CT_01",
+    "user_input": "为什么电容电压不能突变？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "LEARN_CT_02",
+    "user_input": "戴维宁定理是什么？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "LEARN_CT_03",
+    "user_input": "总结一阶电路的基本概念。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "LEARN_CT_04",
+    "user_input": "如何复习相量法？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "LEARN_AE_01",
+    "user_input": "负反馈为什么能稳定增益？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "LEARN_AE_02",
+    "user_input": "运放的虚短是什么？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "LEARN_AE_03",
+    "user_input": "共射放大电路有什么作用？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "LEARN_DE_01",
+    "user_input": "锁存器和触发器有什么区别？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "LEARN_DE_02",
+    "user_input": "卡诺图怎么理解？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "LEARN_DE_03",
+    "user_input": "总结时序逻辑的学习要点。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+    "expected_intent": "explain_concept",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "ACADEMIC_PROBLEM_SOLVER"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "SOLVER_CT_01",
+    "user_input": "完整解答含受控源的一阶电路并列方程。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_02",
+    "user_input": "用节点电压法计算各支路电流。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_03",
+    "user_input": "用网孔电流法求数值。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_04",
+    "user_input": "计算RC电路的零输入响应。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_05",
+    "user_input": "求这个正弦稳态电路的相量响应。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_06",
+    "user_input": "列方程求戴维宁等效电阻。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_07",
+    "user_input": "完整解答这个二阶电路。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_08",
+    "user_input": "计算一个10V电源串联5欧电阻的回路电流。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_09",
+    "user_input": "求数值并说明电流参考方向。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "SOLVER_CT_10",
+    "user_input": "识别图片中的电路并完整解答。",
+    "session_context": {},
+    "attachments": [
+      {
+        "content_type": "image/png",
+        "filename": "circuit.png"
+      }
+    ],
+    "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+    "expected_intent": "solve_problem",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_01_01",
+    "user_input": "给大二学生设计一节90分钟的负反馈课程，要有课堂活动。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [
+      "class_duration"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "TEACH_01_02",
+    "user_input": "帮我备课：两课时讲解节点电压法。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_01_03",
+    "user_input": "围绕触发器设计45分钟教学流程。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [
+      "class_duration"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "TEACH_01_04",
+    "user_input": "设计电容暂态教学目标和形成性评价。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_01_05",
+    "user_input": "给本科生做一个运放课堂活动教案。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "TEACH_01_06",
+    "user_input": "设计组合逻辑双课时教案。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "TEACH_01_07",
+    "user_input": "帮我备课，只要课堂活动和课后作业。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_01_08",
+    "user_input": "给大一学生设计60分钟相量法课程。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [
+      "class_duration"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_01_09",
+    "user_input": "设计MOS管静态工作点教学方案。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE"
+  },
+  {
+    "case_id": "TEACH_01_10",
+    "user_input": "围绕计数器设计教学目标与课堂流程。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "AUTO",
+    "expected_course_id": "DE"
+  },
+  {
+    "case_id": "TEACH_02_01",
+    "user_input": "题目：求电路电流1\n学生答案：我得到2A\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_02",
+    "user_input": "题目：求电路电流2\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_03",
+    "user_input": "题目：求电路电流3\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_04",
+    "user_input": "题目：求电路电流4\n学生答案：我得到2A\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_05",
+    "user_input": "题目：求电路电流5\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_06",
+    "user_input": "题目：求电路电流6\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_07",
+    "user_input": "题目：求电路电流7\n学生答案：我得到2A\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_08",
+    "user_input": "题目：求电路电流8\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_09",
+    "user_input": "题目：求电路电流9\n学生答案：我得到2A\n评分标准：列式4分，结果6分\n满分：10分\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer",
+      "rubric",
+      "maximum_score"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": false,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "TEACH_02_10",
+    "user_input": "题目：求电路电流10\n学生答案：我得到2A\n请批改并给教师反馈。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [
+      "student_answer"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "CT",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_01",
+    "user_input": "润色这段论文结果部分，使其符合学术表达。原文：结果显示模型性能提升。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_02",
+    "user_input": "帮我写一个论文摘要，来源仅限下面文字。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_03",
+    "user_input": "为这项研究拟一个结构化提纲。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_04",
+    "user_input": "改写这段引言，但不要新增引用。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_05",
+    "user_input": "根据真实结果撰写Results段落。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_06",
+    "user_input": "检查这段结论是否表述过度。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_07",
+    "user_input": "帮我回复审稿意见，不要虚构实验。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_08",
+    "user_input": "修改方法部分的学术表达。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_09",
+    "user_input": "把这段中文论文翻译并润色为英文摘要。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_02_10",
+    "user_input": "检查引用并列出无依据声明。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [
+      "writing_task"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_01",
+    "user_input": "这些实验结果适合用什么统计方法分析？AUC=0.81，样本量120。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [
+      "provided_results"
+    ],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_02",
+    "user_input": "设计一个数据分析流程，变量包括年龄和结局。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_03",
+    "user_input": "检查数据质量和缺失值处理方案。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_04",
+    "user_input": "解释回归结果，但不要虚构p值。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_05",
+    "user_input": "分类任务应该使用哪些指标？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_06",
+    "user_input": "连续结局适合什么统计检验？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_07",
+    "user_input": "解释AUC结果的限制。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_08",
+    "user_input": "没有变量定义时如何制定分析计划？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_09",
+    "user_input": "给出可复现的数据分析方案。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "RESEARCH_03_10",
+    "user_input": "分析样本量与置信区间的关系。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [
+      "LEARN_01_KNOWLEDGE_QA_V1"
+    ],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT"
+  },
+  {
+    "case_id": "ROUTE_EDGE_01",
+    "user_input": "帮我处理一下这个任务。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "GENERAL_QUESTION_V1",
+    "expected_intent": "general_qa",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_02",
+    "user_input": "这个怎么弄？",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "GENERAL_QUESTION_V1",
+    "expected_intent": "general_qa",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_03",
+    "user_input": "帮我判断应该交给哪个智能体。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "GENERAL_QUESTION_V1",
+    "expected_intent": "general_qa",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_04",
+    "user_input": "既要教案又要论文润色。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "GENERAL_QUESTION_V1",
+    "expected_intent": "general_qa",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_05",
+    "user_input": "请分析并解释。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "GENERAL_QUESTION_V1",
+    "expected_intent": "general_qa",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_06",
+    "user_input": "先分析这些实验数据，然后把结果写成论文段落。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": true
+  },
+  {
+    "case_id": "ROUTE_EDGE_07",
+    "user_input": "分析AUC结果后，再写成学术摘要。",
+    "session_context": {},
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+    "expected_intent": "data_analysis",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": true
+  },
+  {
+    "case_id": "ROUTE_EDGE_08",
+    "user_input": "把刚才的教案压缩成45分钟。",
+    "session_context": {
+      "previous_agent": "TEACH_01_LESSON_PREP_V1",
+      "previous_course": "AE",
+      "previous_intent": "lesson_prep"
+    },
+    "attachments": [],
+    "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+    "expected_intent": "lesson_prep",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "AE",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_09",
+    "user_input": "按照刚才的分析结果写一段Results。",
+    "session_context": {
+      "previous_agent": "RESEARCH_03_DATA_ANALYSIS_V1",
+      "previous_course": "CT",
+      "previous_intent": "data_analysis"
+    },
+    "attachments": [],
+    "expected_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+    "expected_intent": "academic_writing",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  },
+  {
+    "case_id": "ROUTE_EDGE_10",
+    "user_input": "这个评分项为什么扣了2分？",
+    "session_context": {
+      "previous_agent": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+      "previous_course": "CT",
+      "previous_intent": "assignment_review"
+    },
+    "attachments": [],
+    "expected_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "expected_intent": "assignment_review",
+    "expected_status": "selected",
+    "required_fields": [],
+    "forbidden_agent_ids": [],
+    "manual_review_required": true,
+    "course_hint": "AUTO",
+    "expected_course_id": "CT",
+    "requires_pipeline": false
+  }
+]

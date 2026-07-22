@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+import webbrowser
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -24,6 +25,8 @@ HOST_OVERRIDES = {
     "QDRANT_URL": "HOST_QDRANT_URL",
 }
 SECRET_NAMES = (
+    "IFLYTEK_SPARK_API_KEY",
+    "DASHSCOPE_API_KEY",
     "XINGCHEN_API_KEY",
     "XINGCHEN_API_SECRET",
     "XINGCHEN_SOLVER_CT_FLOW_ID",
@@ -64,7 +67,7 @@ def ensure_env_file() -> Path:
         raise LaunchError("缺少 .env.example，无法初始化本地配置。")
     shutil.copyfile(source, target)
     print("[xzd] 已创建本机 .env；该文件已被 Git 忽略，不会上传。")
-    print("[xzd] 如需真实星辰调用，请在 .env 中填写凭据后重新启动。")
+    print("[xzd] 国产模型基础调用只需填写 IFLYTEK_SPARK_API_KEY 和 DASHSCOPE_API_KEY。")
     return target
 
 
@@ -225,6 +228,19 @@ def api_ready(base_url: str) -> bool:
         return False
 
 
+def open_workspace(base_url: str) -> bool:
+    url = f"{base_url.rstrip('/')}/workspace"
+    try:
+        opened = webbrowser.open(url, new=2)
+    except (OSError, webbrowser.Error):
+        opened = False
+    if opened:
+        print(f"[xzd] 已在默认浏览器打开：{url}")
+    else:
+        print(f"[xzd] 无法自动打开浏览器，请手动访问：{url}")
+    return opened
+
+
 def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
     base_url = f"http://127.0.0.1:{args.port}"
     command = [
@@ -258,6 +274,8 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
         print(f"  演示中心：{base_url}/demo?presentation=1")
         print(f"  系统状态：{base_url}/system")
         print("  按 Ctrl+C 停止 Web；需要停止容器时运行 '.\\xzd.ps1 stop'。\n")
+        if args.open_browser:
+            open_workspace(base_url)
         if args.with_cloud:
             result = run_command(
                 [
@@ -288,6 +306,12 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
 def command_start(args: argparse.Namespace) -> int:
     if not (3, 11) <= sys.version_info[:2] < (3, 14):
         raise LaunchError("需要 Python 3.11-3.13；当前 Python 版本不受支持。")
+    base_url = f"http://127.0.0.1:{args.port}"
+    if api_ready(base_url):
+        print(f"[xzd] 服务已经运行：{base_url}")
+        if args.open_browser:
+            open_workspace(base_url)
+        return 0
     dotenv = parse_dotenv(ensure_env_file())
     environment = build_host_environment(dotenv)
     ensure_python_environment(refresh=args.refresh_deps)
@@ -350,7 +374,7 @@ def command_doctor(_: argparse.Namespace) -> int:
     print("芯智导学本地环境检查")
     for name, passed, detail in checks:
         print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
-    print("[INFO] 星辰配置（仅显示是否配置，不显示值）：")
+    print("[INFO] 云端配置（仅显示是否配置，不显示值）：")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     failed = sum(not passed for _, passed, _ in checks)
     print(f"结果：{len(checks) - failed}/{len(checks)} 通过")
@@ -409,6 +433,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     start.add_argument(
         "--with-cloud", action="store_true", help="启动后执行一次真实云端检查"
+    )
+    start.add_argument(
+        "--open-browser", action="store_true", help="就绪后打开学生工作台"
     )
     start.set_defaults(handler=command_start)
     commands.add_parser("stop", help="停止本地基础服务").set_defaults(

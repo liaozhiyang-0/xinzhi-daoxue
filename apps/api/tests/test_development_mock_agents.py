@@ -10,14 +10,10 @@ from app.main import create_app
 from app.providers.development_mock import MOCK_WARNING, DevelopmentMockProvider
 from fastapi.testclient import TestClient
 
-PLANNED_AGENTS = (
+ACTIVE_WORKFLOW_AGENTS = (
     "ROUTER_01_FALLBACK_V1",
-    "CHECK_01_ANSWER_REVIEW_V1",
     "TEACH_01_LESSON_PREP_V1",
     "TEACH_02_ASSIGNMENT_REVIEW_V1",
-    "TEACH_03_LEARNING_ANALYSIS_V1",
-    "TEACH_04_CLASS_ANALYSIS_V1",
-    "RESEARCH_01_LITERATURE_TRACKING_V1",
     "RESEARCH_02_ACADEMIC_WRITING_V1",
     "RESEARCH_03_DATA_ANALYSIS_V1",
 )
@@ -36,8 +32,8 @@ def mock_request(agent_id: str, registry: AgentRegistry) -> AgentRequest:
     )
 
 
-@pytest.mark.parametrize("agent_id", PLANNED_AGENTS)
-async def test_each_planned_agent_runs_definition_driven_mock(
+@pytest.mark.parametrize("agent_id", ACTIVE_WORKFLOW_AGENTS)
+async def test_each_active_workflow_runs_definition_driven_mock(
     settings: Settings, agent_id: str
 ) -> None:
     runtime_settings = settings.model_copy(update={"allow_agent_mocks": True})
@@ -63,7 +59,7 @@ async def test_production_forces_mock_off(settings: Settings) -> None:
     registry = AgentRegistry()
 
     result = await DevelopmentMockProvider(production, registry).run(
-        PLANNED_AGENTS[0], mock_request(PLANNED_AGENTS[0], registry)
+        ACTIVE_WORKFLOW_AGENTS[0], mock_request(ACTIVE_WORKFLOW_AGENTS[0], registry)
     )
 
     assert result.provider == "none"
@@ -138,10 +134,10 @@ def test_compare_mock_with_redacted_cloud_sample(settings: Settings) -> None:
         assert payload["semantic_quality_compared"] is False
 
 
-def test_all_planned_agent_fixture_sets_pass(settings: Settings) -> None:
+def test_all_active_workflow_fixture_sets_pass(settings: Settings) -> None:
     app = create_app(settings.model_copy(update={"allow_agent_mocks": True}))
     with TestClient(app) as client:
-        for agent_id in PLANNED_AGENTS:
+        for agent_id in ACTIVE_WORKFLOW_AGENTS:
             response = client.post(f"/api/v1/debug/agents/{agent_id}/contract-tests")
             assert response.status_code == 200, response.text
             payload = response.json()

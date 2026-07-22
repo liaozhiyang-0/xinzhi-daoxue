@@ -15,6 +15,8 @@ from app.dependencies import get_db, get_provider
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
+from app.repositories.sessions import SessionRepository
+from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
 from app.services.task_creation_service import TaskCreationService
 from app.services.task_query_service import TaskQueryService
@@ -46,6 +48,9 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
+    session = await SessionRepository(db).get(data.session_id)
+    if session is not None:
+        data = SessionContextService(request.app.state.settings).apply(session, data)
     decision = request.app.state.task_router.route(data)
     task = await TaskCreationService(
         db, provider.provider_name, request.app.state.settings

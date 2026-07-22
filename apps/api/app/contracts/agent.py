@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contracts.math_content import MathRichContent
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -35,6 +37,7 @@ class Scene(StrEnum):
 
 class Intent(StrEnum):
     UNKNOWN = "unknown"
+    FOLLOW_UP_QUESTION = "follow_up_question"
     SOLVE_PROBLEM = "solve_problem"
     EXPLAIN_CONCEPT = "explain_concept"
     VERIFY_ANSWER = "verify_answer"
@@ -42,6 +45,11 @@ class Intent(StrEnum):
     GENERAL_QA = "general_qa"
     SUMMARIZE_KNOWLEDGE = "summarize_knowledge"
     LEARNING_ADVICE = "learning_advice"
+    CHECK_SIMPLE_STEP = "check_simple_step"
+    LESSON_PREP = "lesson_prep"
+    ASSIGNMENT_REVIEW = "assignment_review"
+    ACADEMIC_WRITING = "academic_writing"
+    DATA_ANALYSIS = "data_analysis"
 
 
 class AgentResultStatus(StrEnum):
@@ -142,6 +150,7 @@ class AgentResult(BaseModel):
     agent_id: str
     provider: str
     answer: str = ""
+    math_content: MathRichContent | None = None
     structured_result: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[Artifact] = Field(default_factory=list)
     citations: list[str] = Field(default_factory=list)
@@ -161,6 +170,7 @@ class AgentResult(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     remaining_risks: list[str] = Field(default_factory=list)
     request_id: str = ""
+    trace_id: str = ""
     task_id: str = ""
     cloud_status: str = "not_run"
     fallback_used: bool = False

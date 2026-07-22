@@ -9,18 +9,6 @@ profiles:
       confidence: 0.8
       reason: 根据课程与意图执行本地确定性示例路由。
 
-  check_answer_review_v1:
-    status: success
-    answer_text: 开发态批改Mock已返回结构化审查字段，不代表真实批改质量。
-    business_data:
-      verdict: needs_revision
-      first_error_step: 1
-      error_type: method
-      error_reason: 示例错误原因，仅用于页面与协议联调。
-      correction: 按检查清单重新核对第一步。
-      correct_answer: 待正式工作流计算。
-      positive_feedback: 已识别用户提供的解题步骤。
-
   teach_lesson_prep_v1:
     status: success
     answer_text: 开发态备课Mock已生成结构化教学方案骨架。
@@ -41,37 +29,6 @@ profiles:
       errors: []
       feedback: 请按评分量规进行人工复核。
       review_required: true
-
-  teach_learning_analysis_v1:
-    status: success
-    answer_text: 开发态学情分析Mock未使用真实学生数据。
-    business_data:
-      strengths: []
-      weak_concepts: []
-      error_patterns: []
-      trend: insufficient_data
-      recommended_actions: [补充匿名化学习记录]
-      data_limitations: [当前为Mock，无真实学生数据]
-
-  teach_class_analysis_v1:
-    status: success
-    answer_text: 开发态班情分析Mock未生成任何虚构统计值。
-    business_data:
-      class_summary: 暂无真实班级数据，仅返回分析结构。
-      mastery_distribution: []
-      common_difficulties: []
-      student_groups: []
-      teaching_actions: [补充匿名化班级数据后再分析]
-      data_limitations: [当前为Mock，无真实班级数据]
-
-  research_literature_tracking_v1:
-    status: success
-    answer_text: 开发态文献跟踪Mock只生成检索计划，不生成或声称存在任何论文。
-    business_data:
-      tracking_status: plan_only
-      search_queries: [主题关键词组合, 同义词与限定词组合]
-      topic_clusters: [核心主题, 方法主题, 应用主题]
-      follow_up_queries: [根据可信来源结果继续细化]
 
   research_academic_writing_v1:
     status: success

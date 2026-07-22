@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+.env.local
+.env.*.local
+*.secret
 .venv/
 venv/
 __pycache__/
@@ -12,6 +15,8 @@ __pycache__/
 htmlcov/
 evaluation/circuit_theory/results/*
 !evaluation/circuit_theory/results/.gitkeep
+evaluation/cache/*
+evaluation/reports/*
 node_modules/
 dist/
 build/
@@ -21,6 +26,7 @@ target/
 .DS_Store
 *.log
 *.db
+.pytest-tmp*/
 local_storage/
 local_knowledge/*
 !local_knowledge/README.md

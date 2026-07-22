@@ -16,5 +16,7 @@ def test_debug_page_is_single_page_demo(client) -> None:
 
     script = client.get("/debug-assets/demo.js")
     assert script.status_code == 200
-    assert "知识问答与 RAG" in script.text
-    assert "window.confirm" in script.text
+    assert "课程知识问答" in script.text
+    assert "教案设计" in script.text
+    assert "数据分析" in script.text
+    assert "/api/v1/debug/execution/" in script.text

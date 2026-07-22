@@ -4,7 +4,7 @@ from app.contracts import AgentRequest, RouteStatus
 
 
 @pytest.mark.parametrize("course_id", ["AE", "DE"])
-def test_solver_is_not_used_as_fallback_for_ae_de(course_id: str) -> None:
+def test_ae_de_use_universal_solver_not_ct_cloud_baseline(course_id: str) -> None:
     request = AgentRequest(
         session_id="session-route",
         user_id="user-route",
@@ -15,5 +15,6 @@ def test_solver_is_not_used_as_fallback_for_ae_de(course_id: str) -> None:
 
     decision = TaskRouter(AgentRegistry()).route(request)
 
-    assert decision.route_status == RouteStatus.UNRESOLVED
-    assert decision.agent_id == "UNRESOLVED"
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert decision.agent_id != "SOLVER_CT_V1"

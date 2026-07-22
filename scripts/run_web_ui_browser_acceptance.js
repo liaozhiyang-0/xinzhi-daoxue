@@ -9,7 +9,7 @@ const server = spawn(python, ["-m", "uvicorn", "app.main:app", "--app-dir", "app
   cwd: root,
   windowsHide: true,
   stdio: "ignore",
-  env: { ...process.env, APP_ENV: "test", DEFAULT_AGENT_PROVIDER: "mock", ALLOW_AGENT_MOCKS: "true", MINIO_ENDPOINT: "127.0.0.1:1" },
+  env: { ...process.env, APP_ENV: "test", DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", RAG_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
 });
 
 async function ready() {

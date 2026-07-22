@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from app.core.config import PROJECT_ROOT, Settings
+from app.core.internal_workflows import internal_workflow_models_configured
 
 VALID_PARSERS = {
     "json",
@@ -50,6 +51,27 @@ VALID_OUTPUT_FIELD_PARSERS = {
     "float_string",
 }
 VALID_INPUT_MODES = {"text", "single_image", "text_and_single_image"}
+VALID_EXECUTION_MODES = {"local", "xingchen", "hybrid", "disabled"}
+VALID_VALIDATORS = {
+    "generic",
+    "learn_qa",
+    "solver_ct",
+    "lesson_prep",
+    "assignment_review",
+    "academic_writing",
+    "data_analysis",
+    "router_only",
+}
+VALID_RENDERERS = {
+    "generic",
+    "learn_qa",
+    "solver_ct",
+    "lesson_prep",
+    "assignment_review",
+    "academic_writing",
+    "data_analysis",
+    "router_only",
+}
 VALID_OUTPUT_ROOTS = {
     "status",
     "answer",
@@ -149,6 +171,20 @@ class RetrievalPolicyDefinition:
     context_max_chars: int
     generation_injection: bool
 
+    @property
+    def interaction_mode(self) -> str:
+        if not self.enabled or self.mode == "no_rag":
+            return "no_rag"
+        if self.mode == "method_only_rag":
+            return "method_reference"
+        if self.mode == "data_context_only":
+            return "data_context_only"
+        if self.mode == "external_source_context":
+            return "user_sources_only"
+        if self.generation_injection:
+            return "grounded_generation"
+        return "reference_only"
+
 
 @dataclass(frozen=True, slots=True)
 class FallbackDefinition:
@@ -195,6 +231,18 @@ class AgentDefinition:
     fallback: FallbackDefinition
     development: DevelopmentDefinition
     route_when_unconfigured: bool
+    validator_type: str
+    renderer_type: str
+    execution_mode: str
+    local_handler: str
+    priority: int
+    task_families: frozenset[str]
+    graph_name: str
+    required_capabilities: frozenset[str]
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self.provider_config.timeout_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -472,6 +520,27 @@ class AgentRegistry:
                     ),
                 ),
                 route_when_unconfigured=bool(raw.get("route_when_unconfigured", False)),
+                validator_type=str(raw.get("validator_type", "generic")),
+                renderer_type=str(raw.get("renderer_type", "generic")),
+                execution_mode=str(
+                    raw.get(
+                        "execution_mode",
+                        "local"
+                        if provider_type == "local"
+                        else "disabled"
+                        if not bool(raw.get("enabled", True))
+                        else "xingchen",
+                    )
+                ),
+                local_handler=str(raw.get("local_handler", "")),
+                priority=max(0, int(raw.get("priority", 100))),
+                task_families=frozenset(
+                    str(item).upper() for item in raw.get("task_families", [])
+                ),
+                graph_name=str(raw.get("graph_name", "")),
+                required_capabilities=frozenset(
+                    str(item) for item in raw.get("required_capabilities", [])
+                ),
             )
             AgentRegistry._validate_definition(definition)
             agents[agent_id] = definition
@@ -541,8 +610,17 @@ class AgentRegistry:
 
     @staticmethod
     def _validate_definition(definition: AgentDefinition) -> None:
+        if definition.execution_mode not in VALID_EXECUTION_MODES:
+            raise ValueError(
+                f"Agent execution_mode 无效: {definition.agent_id}: "
+                f"{definition.execution_mode}"
+            )
         if definition.provider_config.parser_type not in VALID_PARSERS:
             raise ValueError(f"Agent parser_type 未注册: {definition.agent_id}")
+        if definition.validator_type not in VALID_VALIDATORS:
+            raise ValueError(f"Agent validator_type 未注册: {definition.agent_id}")
+        if definition.renderer_type not in VALID_RENDERERS:
+            raise ValueError(f"Agent renderer_type 未注册: {definition.agent_id}")
         if definition.retrieval_policy.mode not in VALID_RETRIEVAL_MODES:
             raise ValueError(f"Agent retrieval mode 无效: {definition.agent_id}")
         if definition.retrieval_policy.reranker_mode not in {
@@ -658,6 +736,8 @@ class AgentRegistry:
         agent = self.get(agent_id)
         if not agent.enabled:
             return False
+        if internal_workflow_models_configured(settings, agent_id):
+            return True
         if agent.provider == "local":
             return True
         return bool(
@@ -671,6 +751,8 @@ class AgentRegistry:
 
     def is_configured(self, agent_id: str, settings: Settings) -> bool:
         agent = self.get(agent_id)
+        if internal_workflow_models_configured(settings, agent_id):
+            return True
         if agent.provider == "local":
             return True
         return bool(

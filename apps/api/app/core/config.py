@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     app_name: str = "xinzhi-daoxue-api"
     app_env: Literal["development", "test", "production"] = "development"
     app_version: str = "0.1.0"
+    app_debug: bool = True
+    app_host: str = "127.0.0.1"
+    app_port: int = 8000
     log_level: str = "INFO"
 
     api_host: str = "0.0.0.0"
@@ -32,6 +35,68 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./xzd-dev.db"
     test_database_url: str = "sqlite+aiosqlite:///./test.db"
     redis_url: str = "redis://localhost:6379/0"
+    vector_store_path: Path = PROJECT_ROOT / "knowledge_indexes"
+    upload_dir: Path = PROJECT_ROOT / "local_storage" / "uploads"
+    cache_dir: Path = PROJECT_ROOT / "local_storage" / "cache"
+
+    spark_enabled: bool = False
+    spark_base_url: str = "https://spark-api-open.xf-yun.com/v1/chat/completions"
+    spark_app_id: str = ""
+    spark_api_key: SecretStr = SecretStr("")
+    spark_api_secret: SecretStr = SecretStr("")
+    spark_api_password: SecretStr = SecretStr("")
+    spark_model: str = "4.0Ultra"
+    spark_timeout_seconds: float = Field(default=90, gt=0, le=600)
+
+    # Unified domestic model APIs. Legacy SPARK_* remains readable during migration.
+    iflytek_spark_enabled: bool = True
+    iflytek_spark_api_key: SecretStr = SecretStr("")
+    iflytek_spark_base_url: str = "https://spark-api-open.xf-yun.com/x2"
+    iflytek_spark_model: str = "spark-x"
+    iflytek_spark_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    iflytek_spark_max_tokens: int = Field(default=8192, ge=1, le=65536)
+    iflytek_spark_thinking_mode: Literal["enabled", "disabled", "auto"] = "auto"
+
+    dashscope_enabled: bool = True
+    dashscope_api_key: SecretStr = SecretStr("")
+    dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    dashscope_workspace_id: str = ""
+    dashscope_region: Literal[
+        "cn-beijing",
+        "ap-southeast-1",
+        "ap-northeast-1",
+        "eu-central-1",
+        "us-east-1",
+    ] = "cn-beijing"
+    qwen_vision_primary_model: str = "qwen3.7-plus"
+    qwen_vision_fast_model: str = "qwen3.6-flash"
+    qwen_text_fast_model: str = "qwen3.5-flash"
+    qwen_timeout_seconds: float = Field(default=90, gt=0, le=600)
+    qwen_vision_high_resolution: bool = True
+
+    model_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
+    model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    model_max_retries: int = Field(default=1, ge=0, le=1)
+    model_global_max_concurrency: int = Field(default=6, ge=1, le=32)
+    spark_max_concurrency: int = Field(default=2, ge=1, le=16)
+    qwen_max_concurrency: int = Field(default=4, ge=1, le=32)
+    enable_model_cost_tracking: bool = True
+    academic_solver_max_tokens: int = Field(default=4096, ge=1024, le=65536)
+    academic_solver_max_continuations: int = Field(default=2, ge=0, le=4)
+    academic_solver_timeout_seconds: float = Field(default=240, gt=0, le=600)
+
+    upload_max_image_size_mb: int = Field(default=6, ge=1, le=50)
+    upload_max_images: int = Field(default=8, ge=1, le=32)
+    image_max_long_edge: int = Field(default=4096, ge=256, le=16384)
+    image_auto_rotate: bool = True
+    image_remove_exif: bool = True
+
+    enable_spark_reasoner: bool = True
+    enable_qwen_text_fast: bool = True
+    enable_qwen_vision_fast: bool = True
+    enable_qwen_vision_primary: bool = True
+    enable_dual_model_verification: bool = True
+    dual_model_min_risk_level: Literal["low", "medium", "high", "critical"] = "high"
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "xzd_minio"
@@ -42,6 +107,7 @@ class Settings(BaseSettings):
     default_agent_provider: Literal["mock", "xingchen"] = "mock"
     allow_mock_fallback: bool = True
     xingchen_enabled: bool = False
+    xingchen_workflows_default_enabled: bool = False
     xingchen_publication_status: str = "published"
     xingchen_base_url: str = "https://xingchen-api.xf-yun.com"
     xingchen_workflow_path: str = "/workflow/v1/chat/completions"
@@ -49,14 +115,11 @@ class Settings(BaseSettings):
     xingchen_api_key: SecretStr = SecretStr("")
     xingchen_api_secret: SecretStr = SecretStr("")
     xingchen_solver_ct_flow_id: str = ""
+    xingchen_fallback_flow_id: str = ""
     xingchen_fallback_router_flow_id: str = ""
     xingchen_knowledge_qa_flow_id: str = ""
-    xingchen_answer_review_flow_id: str = ""
     xingchen_lesson_prep_flow_id: str = ""
     xingchen_assignment_review_flow_id: str = ""
-    xingchen_learning_analysis_flow_id: str = ""
-    xingchen_class_analysis_flow_id: str = ""
-    xingchen_literature_tracking_flow_id: str = ""
     xingchen_academic_writing_flow_id: str = ""
     xingchen_data_analysis_flow_id: str = ""
     xingchen_uid: str = "local-demo-user"
@@ -76,6 +139,8 @@ class Settings(BaseSettings):
     cloud_circuit_reset_seconds: float = Field(default=30, gt=0, le=600)
     xingchen_use_local_kb_context: bool = True
     xingchen_bot_id: str = ""
+    workflow_default_timeout_seconds: int = Field(default=120, ge=1, le=600)
+    workflow_max_retries: int = Field(default=1, ge=0, le=3)
 
     max_upload_size_mb: int = Field(default=20, gt=0)
     local_storage_fallback: bool = True
@@ -101,7 +166,7 @@ class Settings(BaseSettings):
     knowledge_image_context_weight: float = Field(default=0.4, ge=0, le=10)
 
     rag_enabled: bool = True
-    text_embedding_provider: Literal["local_bge"] = "local_bge"
+    text_embedding_provider: Literal["local", "local_bge", "hash_legacy"] = "local_bge"
     text_embedding_model: str = "BAAI/bge-small-zh-v1.5"
     text_embedding_revision: str = "7999e1d3359715c523056ef9478215996d62a620"
     text_embedding_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
@@ -112,6 +177,8 @@ class Settings(BaseSettings):
     text_embedding_trust_remote_code: bool = False
     text_embedding_query_instruction: str = ""
     text_colbert_enabled: bool = False
+    legacy_hash_embedding_enabled: bool = True
+    legacy_hash_embedding_dimension: int = Field(default=384, ge=8, le=4096)
 
     image_embedding_enabled: bool = True
     image_embedding_provider: Literal["local_siglip2"] = "local_siglip2"
@@ -165,6 +232,22 @@ class Settings(BaseSettings):
     rag_debug_trace_max_records: int = Field(default=100, ge=1, le=10000)
     rag_debug_trace_ttl_seconds: float = Field(default=3600, ge=60, le=86400)
 
+    enable_debug_api: bool = True
+    enable_evaluation_api: bool = False
+    enable_local_knowledge_qa: bool = True
+    enable_local_solver_ct: bool = False
+    enable_xingchen_fallback: bool = True
+
+    vision_enabled: bool = False
+    vision_endpoint: str = ""
+    vision_max_concurrency: int = Field(default=2, ge=1, le=8)
+    vision_max_images_per_request: int = Field(default=8, ge=1, le=32)
+    pdf_max_size_mb: int = Field(default=20, ge=1, le=200)
+    pdf_max_pages: int = Field(default=40, ge=1, le=500)
+    pdf_render_dpi: int = Field(default=144, ge=72, le=300)
+    pdf_max_concurrency: int = Field(default=2, ge=1, le=8)
+    temporary_file_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+
     allow_agent_mocks: bool = False
     agent_mock_profiles_path: Path = (
         PROJECT_ROOT / "agent_configs" / "mock_profiles.yaml"
@@ -213,7 +296,12 @@ class Settings(BaseSettings):
             or not env_name.endswith("_FLOW_ID")
         ):
             return None
-        value = getattr(self, env_name.lower(), "")
+        if env_name == "XINGCHEN_FALLBACK_FLOW_ID":
+            value = (
+                self.xingchen_fallback_flow_id or self.xingchen_fallback_router_flow_id
+            )
+        else:
+            value = getattr(self, env_name.lower(), "")
         if not isinstance(value, str):
             return None
         return value.strip() or None

@@ -1,0 +1,71 @@
+cases:
+  - case_id: course_ct_capacitor
+    agent_id: COURSE_CLASSIFIER_LOCAL_V1
+    input: 为什么电容电压不能突变？
+    expect: {course: CT}
+    max_tokens: 96
+
+  - case_id: course_ae_opamp
+    agent_id: COURSE_CLASSIFIER_LOCAL_V1
+    input: 分析反相运算放大器的闭环增益。
+    expect: {course: AE}
+    max_tokens: 96
+
+  - case_id: course_de_flipflop
+    agent_id: COURSE_CLASSIFIER_LOCAL_V1
+    input: JK触发器如何避免状态翻转歧义？
+    expect: {course: DE}
+    max_tokens: 96
+
+  - case_id: intent_solver
+    agent_id: INTENT_CLASSIFIER_LOCAL_V1
+    input: 已知R1=2Ω、R2=3Ω和电源10V，求串联电流。
+    expect: {intent: solve_problem}
+    max_tokens: 96
+
+  - case_id: intent_lesson_prep
+    agent_id: INTENT_CLASSIFIER_LOCAL_V1
+    input: 为大二学生设计一节45分钟的戴维南定理教案。
+    expect: {intent: lesson_prep}
+    max_tokens: 96
+
+  - case_id: rewrite_preserves_constraints
+    agent_id: QUERY_REWRITER_LOCAL_V1
+    input: 在参考方向不变且R=10Ω的条件下，为什么电流计算结果为负？
+    expect_non_empty: [rewritten_query, keywords, preserved_constraints]
+    max_tokens: 160
+
+  - case_id: circuit_plan_requires_tools
+    agent_id: CIRCUIT_PLANNER_LOCAL_V1
+    input: 已知两个网孔共享2Ω电阻，电源分别为10V和5V，请规划网孔法求解步骤，不要直接给数值答案。
+    expect: {needs_tool_verification: true}
+    expect_non_empty: [method, steps]
+    max_tokens: 320
+
+  - case_id: lesson_prep_structure
+    agent_id: LESSON_PREP_LOCAL_V1
+    input: 为大二学生生成45分钟电容暂态教学草稿，包含目标、课堂流程和形成性评价；没有教材证据时明确提示。
+    expect_non_empty: [title, learning_objectives, lesson_flow]
+    max_tokens: 480
+
+  - case_id: assignment_review_boundary
+    agent_id: ASSIGNMENT_REVIEW_LOCAL_V1
+    input: 题目：10V电源串联2Ω电阻，求电流。学生答案：I=10×2=20A。未提供评分细则，请做初审。
+    expect: {review_required: true}
+    expect_non_empty: [errors, feedback]
+    max_tokens: 320
+
+  - case_id: academic_writing_no_fabrication
+    agent_id: ACADEMIC_WRITING_LOCAL_V1
+    input: 将“实验说明滤波器效果很好”改为严谨学术表达。没有提供实验数据或文献，不得补充数值和引用。
+    expect: {citation_check_required: true}
+    expect_non_empty: [revised_text, revision_notes]
+    max_tokens: 320
+
+  - case_id: data_analysis_without_data
+    agent_id: DATA_ANALYSIS_LOCAL_V1
+    input: 我想分析不同教学方法对成绩的影响，但目前没有提供样本、成绩或分组数据。请说明可执行的分析计划。
+    expect_one_of:
+      analysis_status: [plan, insufficient_data]
+    expect_non_empty: [method, interpretation, limitations]
+    max_tokens: 384

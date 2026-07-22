@@ -101,3 +101,50 @@ def test_container_conflicts_only_reports_foreign_owners(monkeypatch) -> None:
         "xzd-redis (owner=legacy-project)",
         "xzd-minio (owner=unmanaged)",
     ]
+
+
+def test_open_workspace_uses_workspace_url(monkeypatch) -> None:
+    launcher = load_launcher()
+    opened: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        launcher.webbrowser,
+        "open",
+        lambda url, new: opened.append((url, new)) or True,
+    )
+
+    assert launcher.open_workspace("http://127.0.0.1:8000/") is True
+    assert opened == [("http://127.0.0.1:8000/workspace", 2)]
+
+
+def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> None:
+    launcher = load_launcher()
+    opened: list[str] = []
+    monkeypatch.setattr(launcher, "api_ready", lambda _base_url: True)
+    monkeypatch.setattr(
+        launcher, "open_workspace", lambda base_url: opened.append(base_url) or True
+    )
+    monkeypatch.setattr(
+        launcher,
+        "ensure_python_environment",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    args = SimpleNamespace(
+        port=8000,
+        open_browser=True,
+        refresh_deps=False,
+        reload=False,
+        with_cloud=False,
+    )
+
+    assert launcher.command_start(args) == 0
+    assert opened == ["http://127.0.0.1:8000"]
+
+
+def test_double_click_launcher_uses_unified_local_startup() -> None:
+    root = Path(__file__).resolve().parents[3]
+    launcher = (root / "打开芯智导学.cmd").read_text(encoding="utf-8")
+
+    assert "scripts\\team_launcher.py" in launcher
+    assert "start --open-browser" in launcher
+    assert "--with-cloud" not in launcher
+    assert "uvicorn" not in launcher.lower()

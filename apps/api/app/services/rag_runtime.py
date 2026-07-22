@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 from app.core.config import Settings
+from app.providers.embedding.fallback import DevelopmentEmbeddingFallback
+from app.providers.embedding.hash_legacy import HashLegacyEmbeddingProvider
+from app.providers.embedding.local_sentence_transformer import (
+    LocalSentenceTransformerEmbeddingProvider,
+)
 from app.services.rag_providers import (
     BGERerankerProvider,
-    LocalBGETextEmbeddingProvider,
     LocalSigLIP2ImageEmbeddingProvider,
+    TextEmbeddingProvider,
 )
 from app.services.vector_store import QdrantVectorStoreAdapter
 
 
 def create_text_embedding_provider(
     settings: Settings,
-) -> LocalBGETextEmbeddingProvider:
-    return LocalBGETextEmbeddingProvider(
+) -> TextEmbeddingProvider:
+    legacy = HashLegacyEmbeddingProvider(
+        dimension=settings.legacy_hash_embedding_dimension
+    )
+    if settings.text_embedding_provider == "hash_legacy":
+        return legacy
+    primary = LocalSentenceTransformerEmbeddingProvider(
         model_name=settings.text_embedding_model,
         revision=settings.text_embedding_revision,
         device=settings.text_embedding_device,
@@ -23,6 +33,9 @@ def create_text_embedding_provider(
         trust_remote_code=settings.text_embedding_trust_remote_code,
         query_instruction=settings.text_embedding_query_instruction,
     )
+    if settings.app_env == "development" and settings.legacy_hash_embedding_enabled:
+        return DevelopmentEmbeddingFallback(primary, legacy)
+    return primary
 
 
 def create_image_embedding_provider(

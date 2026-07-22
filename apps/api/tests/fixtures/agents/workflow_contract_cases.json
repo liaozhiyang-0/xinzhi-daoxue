@@ -3,10 +3,6 @@
   {"case_id":"ROUTER_01_002","agent_id":"ROUTER_01_FALLBACK_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"ROUTER_01_003","agent_id":"ROUTER_01_FALLBACK_V1","input":{"question":"无法确定课程的边界问题","course_id":"CT"},"expected_status":"success","required_business_fields":["target_agent_id"],"forbidden_strings":[],"manual_review_required":true},
 
-  {"case_id":"CHECK_01_001","agent_id":"CHECK_01_ANSWER_REVIEW_V1","input":{"question":"检查这份解答的第一处错误","course_id":"CT"},"expected_status":"success","required_business_fields":["verdict","first_error_step","error_type","error_reason","correction","correct_answer","positive_feedback"],"forbidden_strings":["Authorization"],"manual_review_required":true},
-  {"case_id":"CHECK_01_002","agent_id":"CHECK_01_ANSWER_REVIEW_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
-  {"case_id":"CHECK_01_003","agent_id":"CHECK_01_ANSWER_REVIEW_V1","input":{"question":"只有结论，没有推导步骤","course_id":"CT"},"expected_status":"success","required_business_fields":["verdict"],"forbidden_strings":[],"manual_review_required":true},
-
   {"case_id":"TEACH_01_001","agent_id":"TEACH_01_LESSON_PREP_V1","input":{"question":"为节点电压法准备一节课","course_id":"CT"},"expected_status":"success","required_business_fields":["learning_objectives","prerequisites","lesson_flow","activities","assessment","homework"],"forbidden_strings":["Authorization"],"manual_review_required":true},
   {"case_id":"TEACH_01_002","agent_id":"TEACH_01_LESSON_PREP_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"TEACH_01_003","agent_id":"TEACH_01_LESSON_PREP_V1","input":{"question":"课时和学生基础均未知","course_id":"AE"},"expected_status":"success","required_business_fields":["lesson_flow"],"forbidden_strings":[],"manual_review_required":true},
@@ -14,18 +10,6 @@
   {"case_id":"TEACH_02_001","agent_id":"TEACH_02_ASSIGNMENT_REVIEW_V1","input":{"question":"评阅这份匿名作业","course_id":"DE"},"expected_status":"success","required_business_fields":["score_suggestion","rubric_breakdown","errors","feedback","review_required"],"forbidden_strings":["Authorization"],"manual_review_required":true},
   {"case_id":"TEACH_02_002","agent_id":"TEACH_02_ASSIGNMENT_REVIEW_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"TEACH_02_003","agent_id":"TEACH_02_ASSIGNMENT_REVIEW_V1","input":{"question":"未提供评分量规的作业","course_id":"CT"},"expected_status":"success","required_business_fields":["review_required"],"forbidden_strings":[],"manual_review_required":true},
-
-  {"case_id":"TEACH_03_001","agent_id":"TEACH_03_LEARNING_ANALYSIS_V1","input":{"question":"分析匿名化学习记录","course_id":"AE"},"expected_status":"success","required_business_fields":["strengths","weak_concepts","error_patterns","trend","recommended_actions","data_limitations"],"forbidden_strings":["Authorization"],"manual_review_required":true},
-  {"case_id":"TEACH_03_002","agent_id":"TEACH_03_LEARNING_ANALYSIS_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
-  {"case_id":"TEACH_03_003","agent_id":"TEACH_03_LEARNING_ANALYSIS_V1","input":{"question":"只有一条记录","course_id":"CT"},"expected_status":"success","required_business_fields":["data_limitations"],"forbidden_strings":[],"manual_review_required":true},
-
-  {"case_id":"TEACH_04_001","agent_id":"TEACH_04_CLASS_ANALYSIS_V1","input":{"question":"分析匿名化班级数据","course_id":"DE"},"expected_status":"success","required_business_fields":["class_summary","mastery_distribution","common_difficulties","student_groups","teaching_actions","data_limitations"],"forbidden_strings":["Authorization"],"manual_review_required":true},
-  {"case_id":"TEACH_04_002","agent_id":"TEACH_04_CLASS_ANALYSIS_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
-  {"case_id":"TEACH_04_003","agent_id":"TEACH_04_CLASS_ANALYSIS_V1","input":{"question":"班级样本不足","course_id":"CT"},"expected_status":"success","required_business_fields":["data_limitations"],"forbidden_strings":[],"manual_review_required":true},
-
-  {"case_id":"RESEARCH_01_001","agent_id":"RESEARCH_01_LITERATURE_TRACKING_V1","input":{"question":"规划宽禁带器件文献检索","course_id":"AE"},"expected_status":"success","required_business_fields":["tracking_status","search_queries","topic_clusters","follow_up_queries"],"forbidden_strings":["DOI","Authorization"],"manual_review_required":true},
-  {"case_id":"RESEARCH_01_002","agent_id":"RESEARCH_01_LITERATURE_TRACKING_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
-  {"case_id":"RESEARCH_01_003","agent_id":"RESEARCH_01_LITERATURE_TRACKING_V1","input":{"question":"没有可信来源时制定检索计划","course_id":"CT"},"expected_status":"success","required_business_fields":["tracking_status"],"forbidden_strings":["doi.org"],"manual_review_required":true},
 
   {"case_id":"RESEARCH_02_001","agent_id":"RESEARCH_02_ACADEMIC_WRITING_V1","input":{"question":"根据用户可信来源规划论文结构","course_id":"DE"},"expected_status":"success","required_business_fields":["outline","draft","revision_notes","citation_checks","unsupported_claims"],"forbidden_strings":["Authorization"],"manual_review_required":true},
   {"case_id":"RESEARCH_02_002","agent_id":"RESEARCH_02_ACADEMIC_WRITING_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},

@@ -25,6 +25,22 @@ class SessionRead(BaseModel):
     updated_at: datetime
 
 
+class SessionTaskHistoryItem(BaseModel):
+    id: str
+    course_id: str
+    intent: str
+    status: TaskStatus
+    provider: str
+    agent_id: str
+    question: str
+    answer: str
+    error_message: str | None
+    fallback_used: bool = False
+    fallback_reason: str = ""
+    created_at: datetime
+    completed_at: datetime | None
+
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

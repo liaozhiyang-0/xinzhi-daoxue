@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import re
 from dataclasses import dataclass
 
 from app.contracts import (
@@ -11,6 +13,8 @@ from app.contracts import (
     RetrievalResult,
 )
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
+from app.services.model_service import ModelService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.retrieval_context import RetrievalContextService
 
@@ -32,10 +36,81 @@ class KnowledgeQAService:
         knowledge_base: KnowledgeBaseService,
         context_service: RetrievalContextService,
         rag_retrieval: RAGRetrievalService | None = None,
+        model_service: ModelService | None = None,
     ) -> None:
         self.knowledge_base = knowledge_base
         self.context_service = context_service
         self.rag_retrieval = rag_retrieval
+        self.model_service = model_service
+
+    async def run_with_generation(
+        self, agent_id: str, request: AgentRequest
+    ) -> KnowledgeQAExecution:
+        execution = await asyncio.to_thread(self.run, agent_id, request)
+        model_service = self.model_service
+        if model_service is None or not execution.context.evidence:
+            return execution
+        context = execution.context.to_retrieved_context()
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是电子信息课程助学助手。只能依据给定证据回答；"
+                    "引用时使用证据编号如[S1]。证据不足时列出条件和缺失信息，"
+                    f"不得伪造页码、参数或参考文献。{MATH_OUTPUT_INSTRUCTION}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"问题：{self._question(request)}\n\n课程证据：\n{context}",
+            },
+        ]
+        try:
+            generated = await model_service.generate_for_task(
+                "knowledge_answer",
+                messages=messages,
+                request_id=str(request.options.get("request_id", "")) or None,
+            )
+        except Exception as exc:
+            execution.result.warnings.append(
+                f"model_generation_unavailable:{type(exc).__name__}"
+            )
+            execution.result.fallback_used = True
+            execution.result.fallback_reason = "model_generation_unavailable"
+            return execution
+
+        evidence_by_id = {
+            item.evidence_id: item.source_ref for item in execution.context.evidence
+        }
+        declared = set(re.findall(r"\[(S\d+)\]", generated.content))
+        citations = [
+            source
+            for evidence_id, source in evidence_by_id.items()
+            if evidence_id in declared
+        ]
+        if not citations:
+            execution.result.warnings.append("模型回答未包含可验证的证据编号")
+        execution.result.provider = generated.provider
+        execution.result.answer = generated.content
+        execution.result.citations = citations
+        execution.result.structured_result.update(
+            {
+                "mode": "local_rag_model_generation",
+                "answer_text": generated.content,
+                "verified_evidence_ids": sorted(declared & evidence_by_id.keys()),
+                "generation_model": generated.model,
+                "generation_usage": (
+                    generated.usage.model_dump(exclude_none=True)
+                    if generated.usage is not None
+                    else {}
+                ),
+            }
+        )
+        execution.result.metrics.model_calls += 1
+        for artifact in execution.result.artifacts:
+            artifact.content.update(execution.result.structured_result)
+            artifact.source_refs = list(citations)
+        return execution
 
     def run(self, agent_id: str, request: AgentRequest) -> KnowledgeQAExecution:
         question = self._question(request)

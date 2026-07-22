@@ -6,7 +6,7 @@ def test_rag_debug_page_and_status_do_not_expose_credentials(client) -> None:
     status = client.get("/api/v1/debug/rag/status")
 
     assert page.status_code == 200
-    assert "多模态 RAG 调试" in page.text
+    assert "统一执行调试" in page.text
     assert status.status_code == 200
     body = status.text.casefold()
     assert "api_secret" not in body

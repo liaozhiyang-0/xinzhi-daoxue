@@ -1,11 +1,132 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.contracts.agent import AgentRequest, AttachmentRef, UserRole, utc_now
+from app.contracts.knowledge import KnowledgeHit, RelatedImage, RetrievalContextPacket
+
+
+class RAGInteractionMode(StrEnum):
+    GROUNDED_GENERATION = "grounded_generation"
+    REFERENCE_ONLY = "reference_only"
+    METHOD_REFERENCE = "method_reference"
+    USER_SOURCES_ONLY = "user_sources_only"
+    DATA_CONTEXT_ONLY = "data_context_only"
+    NO_RAG = "no_rag"
+
+
+class WorkflowContextBundle(BaseModel):
+    """One immutable retrieval view shared by mapping, validation and UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    task_id: str
+    agent_id: str
+    course_id: str
+    intent: str
+    retrieval_policy: str
+    rag_mode: RAGInteractionMode
+    rag_status: str = "disabled"
+    evidence_status: str = "insufficient"
+    retrieved_context: str = ""
+    evidence_items: list[KnowledgeHit] = Field(default_factory=list)
+    related_images: list[RelatedImage] = Field(default_factory=list)
+    workflow_evidence_ids: list[str] = Field(default_factory=list)
+    used_evidence_ids: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    index_version: str = ""
+    trace_id: str = ""
+
+    @classmethod
+    def from_packet(
+        cls,
+        packet: RetrievalContextPacket,
+        *,
+        request_id: str,
+        task_id: str,
+        agent_id: str,
+        retrieval_policy: str,
+        rag_mode: RAGInteractionMode,
+        related_images: list[RelatedImage] | None = None,
+    ) -> WorkflowContextBundle:
+        evidence_ids = [item.evidence_id for item in packet.evidence]
+        return cls(
+            request_id=request_id,
+            task_id=task_id,
+            agent_id=agent_id,
+            course_id=packet.course_id,
+            intent=packet.intent,
+            retrieval_policy=retrieval_policy,
+            rag_mode=rag_mode,
+            rag_status=packet.rag_status,
+            evidence_status=packet.evidence_status,
+            retrieved_context=packet.to_retrieved_context(),
+            evidence_items=list(packet.evidence),
+            related_images=list(related_images or []),
+            workflow_evidence_ids=(
+                evidence_ids
+                if rag_mode == RAGInteractionMode.GROUNDED_GENERATION
+                else []
+            ),
+            warnings=list(packet.warnings),
+            index_version=packet.index_version,
+            trace_id=packet.retrieval_trace_id,
+        )
+
+
+class EvidenceViewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    title: str
+    course_id: str
+    course_name: str
+    chapter: str = ""
+    section: str = ""
+    content_type: str = "unknown"
+    summary: str = ""
+    source_ref: str = ""
+    related_images: list[RelatedImage] = Field(default_factory=list)
+    entered_workflow: bool = False
+    used_by_answer: bool = False
+    role: str = "supplementary"
+
+
+class TaskExecutionSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route: dict[str, Any] = Field(default_factory=dict)
+    agent_id: str
+    agent_label: str
+    rag_mode: RAGInteractionMode
+    retrieval_policy: str
+    evidence_count: int = Field(default=0, ge=0)
+    workflow_evidence_count: int = Field(default=0, ge=0)
+    used_evidence_count: int = Field(default=0, ge=0)
+    provider: str
+    cloud_status: str
+    citation_status: str
+    fallback: bool = False
+    fallback_reason: str = ""
+    mock: bool = False
+    timings: dict[str, int] = Field(default_factory=dict)
+
+
+class TaskPresentation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    status_label: str
+    source_summary: str
+    provider_label: str
+    fallback_message: str = ""
+    evidence_message: str
+    execution_steps: list[dict[str, str]] = Field(default_factory=list)
 
 
 class TaskRequestContext(BaseModel):
@@ -30,6 +151,16 @@ class TaskRequestContext(BaseModel):
     previous_agent: str = ""
     conversation_summary: str = ""
     previous_answer_summary: str = ""
+    previous_business_summary: str = ""
+    previous_evidence_ids: list[str] = Field(default_factory=list)
+    task_subtype: str = ""
+    has_attachment: bool = False
+    has_image: bool = False
+    has_rubric: bool = False
+    has_student_answer: bool = False
+    has_data_summary: bool = False
+    has_source_text: bool = False
+    has_trusted_sources: bool = False
     options: dict[str, Any] = Field(default_factory=dict)
     canonical_input: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
@@ -63,9 +194,64 @@ class TaskRequestContext(BaseModel):
             previous_agent=str(options.get("previous_agent", "")),
             conversation_summary=str(options.get("conversation_summary", "")),
             previous_answer_summary=str(options.get("previous_answer_summary", "")),
+            previous_business_summary=str(options.get("previous_business_summary", "")),
+            previous_evidence_ids=[
+                str(item) for item in options.get("previous_evidence_ids", [])
+            ][:10],
+            task_subtype=str(options.get("task_subtype", "")),
+            has_attachment=bool(request.attachments),
+            has_image=any(
+                item.content_type.startswith("image/") for item in request.attachments
+            ),
+            has_rubric=bool(
+                request.canonical_input.get("rubric") or options.get("rubric")
+            ),
+            has_student_answer=bool(
+                request.canonical_input.get("student_answer")
+                or options.get("student_answer")
+            ),
+            has_data_summary=bool(
+                request.canonical_input.get("data_description")
+                or request.canonical_input.get("provided_results")
+                or options.get("data_description")
+                or options.get("provided_results")
+            ),
+            has_source_text=bool(
+                request.canonical_input.get("source_text") or options.get("source_text")
+            ),
+            has_trusted_sources=bool(
+                request.canonical_input.get("trusted_sources")
+                or options.get("trusted_sources")
+            ),
             options=options,
             canonical_input=dict(request.canonical_input),
         )
+
+
+class MaterialExtractionResult(BaseModel):
+    """Deterministic, lossless extraction metadata used by routing and adapters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_text: str = ""
+    materials: dict[str, Any] = Field(default_factory=dict)
+    source_fields: dict[str, str] = Field(default_factory=dict)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    assumptions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    attachment_types: list[str] = Field(default_factory=list)
+    latency_ms: float = Field(default=0.0, ge=0)
+
+
+class AgentValidationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    validation_status: str
+    validation_issues: list[str] = Field(default_factory=list)
+    corrected_fields: list[str] = Field(default_factory=list)
+    response_usable: bool = True
+    result_status: str = "accepted"
+    latency_ms: float = Field(default=0.0, ge=0)
 
 
 class ExecutionTimeBudget(BaseModel):
@@ -126,6 +312,11 @@ class AgentExecutionPlan(BaseModel):
     debug_enabled: bool
     budget: ExecutionTimeBudget
     skipped_optional_stages: list[str] = Field(default_factory=list)
+    rag_mode: RAGInteractionMode = RAGInteractionMode.NO_RAG
+    rag_used: bool = False
+    evidence_count: int = Field(default=0, ge=0)
+    context_injected: bool = False
+    availability_checks: dict[str, bool] = Field(default_factory=dict)
 
 
 class AgentResultEnvelope(BaseModel):

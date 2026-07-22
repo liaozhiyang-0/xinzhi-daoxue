@@ -1,0 +1,26 @@
+routes:
+  course_classification: {primary: qwen_text_fast, fallback: spark_reasoner}
+  intent_classification: {primary: qwen_text_fast, fallback: spark_reasoner}
+  query_rewrite: {primary: qwen_text_fast, fallback: spark_reasoner}
+  retrieval_keyword_generation: {primary: qwen_text_fast, fallback: spark_reasoner}
+  structured_output_normalization:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+  knowledge_answer: {primary: spark_reasoner, fallback: qwen_vision_primary}
+  general_question_answer: {primary: qwen_text_fast, fallback: spark_reasoner}
+  simple_image_understanding: {primary: qwen_vision_fast, fallback: qwen_vision_primary}
+  circuit_image_extraction:
+    primary: qwen_vision_primary
+    fallback: qwen_vision_fast
+    options: {high_resolution: true}
+  complex_circuit_reasoning:
+    primary: spark_reasoner
+    verifier: qwen_vision_primary
+  academic_problem_solving:
+    primary: qwen_vision_primary
+    fallback: spark_reasoner
+    verifier: qwen_vision_primary
+  lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
+  assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}
+  academic_writing: {primary: spark_reasoner, fallback: qwen_vision_primary}
+  data_analysis_explanation: {primary: spark_reasoner, fallback: qwen_vision_primary}

@@ -1,0 +1,100 @@
+cases:
+  - case_id: DE_NUMBER_001
+    title: 二进制转十进制
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: number_encoding
+    difficulty: easy
+    input_type: text
+    message: 将二进制1011转换为十进制，并写出位权展开。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [FAST, STANDARD]
+    reference_values: {value: 11}
+    required_keywords: [数制]
+    tags: [numeric]
+
+  - case_id: DE_BOOLEAN_001
+    title: 逻辑函数化简
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: logic_simplification
+    difficulty: medium
+    input_type: text
+    message: 化简逻辑函数F=A·B+A·非B。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [FAST, STANDARD]
+    expected_statuses: [partial]
+    expected_tools: [boolean_simplifier]
+    forbidden_claims: [布尔工具校验通过]
+    tags: [disabled_tool]
+
+  - case_id: DE_TRUTH_TABLE_001
+    title: 真值表
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: combinational_logic
+    difficulty: easy
+    input_type: text
+    message: 列出异或函数F=A xor B的真值表。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [FAST, STANDARD]
+    expected_statuses: [partial]
+    expected_tools: [truth_table_generator]
+    forbidden_claims: [真值表工具校验通过]
+    tags: [disabled_tool]
+
+  - case_id: DE_COMB_001
+    title: 组合逻辑分析
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: combinational_logic
+    difficulty: medium
+    input_type: text
+    message: 分析由与门和或门构成的组合逻辑电路并写出输出表达式。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [组合逻辑]
+    tags: [logic]
+
+  - case_id: DE_STATE_001
+    title: JK触发器状态判断
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: sequential_logic
+    difficulty: medium
+    input_type: text
+    message: JK触发器J=K=1时，在有效时钟沿后状态如何变化？
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [FAST, STANDARD]
+    expected_statuses: [partial]
+    expected_tools: [truth_table_generator]
+    forbidden_claims: [真值表工具校验通过]
+    tags: [disabled_tool]
+
+  - case_id: DE_VERILOG_001
+    title: 简单Verilog逻辑判断
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: verilog_analysis
+    difficulty: medium
+    input_type: text
+    message: 判断Verilog语句assign y = a & b;表示什么逻辑，不执行编译。
+    structured_input: {code_given: "assign y = a & b;"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_statuses: [partial]
+    expected_tools: [hdl_static_analyzer]
+    forbidden_claims: [HDL编译已通过]
+    tags: [disabled_tool, code]

@@ -45,7 +45,7 @@ function sourceCard(hit, course) {
 }
 function renderResult(task) {
   const result = task.result_content || {}; const structured = result.structured_result || {}; const knowledge = structured.knowledge || {}; const hits = knowledge.hits || result.citations || [];
-  state.lastAnswer = result.answer || task.error_message || "未返回回答";
+  state.lastAnswer = result.math_content?.markdown || result.structured_result?.math_content?.markdown || result.answer || task.error_message || "未返回回答";
   $("#answer-panel").hidden = false; $("#answer-agent").textContent = task.agent_id || "统一运行框架";
   const statusBadge = badge(task.status === "completed" ? (result.fallback_used ? "degraded" : "success") : "failed", task.status === "completed" ? (result.fallback_used ? "降级完成" : "已完成") : "未完成");
   statusBadge.id = "answer-status"; $("#answer-status").replaceWith(statusBadge);

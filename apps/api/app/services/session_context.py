@@ -27,11 +27,19 @@ class SessionContextService:
                 "previous_answer_summary": (
                     "" if switched else str(stored.get("previous_answer_summary", ""))
                 ),
+                "previous_business_summary": (
+                    "" if switched else str(stored.get("previous_business_summary", ""))
+                ),
                 "conversation_summary": (
                     "" if switched else str(stored.get("conversation_summary", ""))
                 ),
                 "last_evidence_ids": (
                     [] if switched else list(stored.get("last_evidence_ids", []))[:10]
+                ),
+                "previous_evidence_ids": (
+                    []
+                    if switched
+                    else list(stored.get("previous_evidence_ids", []))[:10]
                 ),
                 "course_context_reset": switched,
             }
@@ -61,14 +69,21 @@ class SessionContextService:
             for item in result.structured_result.get("knowledge", {}).get("hits", [])
             if isinstance(item, dict) and item.get("evidence_id")
         ][:10]
+        business_summary = " ".join(
+            str(value)
+            for value in result.business_data.values()
+            if isinstance(value, (str, int, float))
+        )[: self.settings.student_previous_answer_chars]
         session.context_data = {
             "active_course": request.course_id.upper(),
             "previous_course": old_course,
             "previous_intent": request.intent.value,
             "previous_agent": result.agent_id,
             "previous_answer_summary": answer_summary,
+            "previous_business_summary": business_summary,
             "conversation_summary": conversation,
             "last_evidence_ids": evidence_ids,
+            "previous_evidence_ids": evidence_ids,
         }
         session.course_id = request.course_id.upper()
 

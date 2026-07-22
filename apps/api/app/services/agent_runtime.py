@@ -12,6 +12,7 @@ from app.contracts import (
     AgentExecutionPlan,
     AgentRequest,
     ExecutionTimeBudget,
+    RAGInteractionMode,
     RouteDecision,
     TaskRequestContext,
 )
@@ -92,6 +93,8 @@ class AgentInputMapper:
     def _source_value(
         context: TaskRequestContext, source: str, *, retrieval_context: str
     ) -> Any:
+        if source == "workflow_prompt":
+            return AgentInputMapper._workflow_prompt(context, retrieval_context)
         if source in {"text", "question"}:
             return context.question or (IMAGE_PROMPT if context.attachments else "")
         if source in {"retrieval_context", "retrieved_context"}:
@@ -101,6 +104,34 @@ class AgentInputMapper:
         if source in context.canonical_input:
             return context.canonical_input[source]
         return context.options.get(source, "")
+
+    @staticmethod
+    def _workflow_prompt(context: TaskRequestContext, retrieval_context: str) -> str:
+        """Pack local business fields into one verified Xingchen text parameter."""
+        lines = [context.question.strip()]
+        metadata = {
+            "course_id": context.course_id,
+            "user_role": context.user_role,
+            "intent": context.intent,
+        }
+        for name, value in metadata.items():
+            if value:
+                lines.append(f"{name}: {value}")
+        for name in sorted(context.canonical_input):
+            if name in {"text", "question"}:
+                continue
+            value = context.canonical_input[name]
+            if AgentInputMapper._is_empty(value):
+                continue
+            rendered = (
+                json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                if isinstance(value, (dict, list, tuple))
+                else str(value)
+            )
+            lines.append(f"{name}: {rendered}")
+        if retrieval_context:
+            lines.append(f"retrieved_context: {retrieval_context}")
+        return "\n".join(line for line in lines if line)
 
     @staticmethod
     def _is_empty(value: Any) -> bool:
@@ -421,6 +452,29 @@ class AgentExecutionPlanner:
                 )
                 if skipped
             ],
+            rag_mode=RAGInteractionMode(policy.interaction_mode),
+            rag_used=policy.enabled and policy.mode != "no_rag",
+            availability_checks={
+                "enabled": definition.enabled,
+                "published": definition.publication_status in {"published", "local"},
+                "flow_configured": self.registry.is_configured(
+                    definition.agent_id, self.settings
+                ),
+                "provider_available": (
+                    definition.provider == "local"
+                    or (
+                        self.settings.xingchen_enabled
+                        and bool(self.settings.xingchen_api_key.get_secret_value())
+                        and bool(self.settings.xingchen_api_secret.get_secret_value())
+                    )
+                ),
+                "input_mode_supported": input_mode in definition.supports,
+                "course_supported": request.course_id in definition.course_ids,
+                "intent_supported": (
+                    not definition.capabilities.intents
+                    or request.intent.value in definition.capabilities.intents
+                ),
+            },
         )
 
     @staticmethod

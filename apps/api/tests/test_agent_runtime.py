@@ -59,6 +59,28 @@ def test_learn_input_mapper_preserves_nine_string_fields() -> None:
     assert "authorization" not in json.dumps(mapped.redacted_preview).lower()
 
 
+def test_assignment_mapper_packs_materials_into_verified_text_parameter() -> None:
+    definition = AgentRegistry().get("TEACH_02_ASSIGNMENT_REVIEW_V1")
+    request = _request(intent=Intent.ASSIGNMENT_REVIEW).model_copy(
+        update={
+            "user_role": "teacher",
+            "canonical_input": {
+                "text": "请按评分标准批改",
+                "student_answer": "I=2A",
+                "rubric": "列式4分，答案6分",
+            },
+        }
+    )
+    context = TaskRequestContext.from_agent_request(request, input_mode="text")
+
+    mapped = AgentInputMapper().map(definition, context)
+
+    assert set(mapped.parameters) == {"AGENT_USER_INPUT"}
+    assert mapped.parameters["AGENT_USER_INPUT"].startswith("请按评分标准批改")
+    assert "student_answer: I=2A" in mapped.parameters["AGENT_USER_INPUT"]
+    assert "rubric: 列式4分，答案6分" in mapped.parameters["AGENT_USER_INPUT"]
+
+
 def test_output_parser_supports_json_fence_and_fixed_lines() -> None:
     definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
     parser = WorkflowOutputParserRegistry()
@@ -197,7 +219,10 @@ def test_cloud_failure_uses_agent_configured_local_fallback(tmp_path: Path) -> N
                 "course_id": "CT",
                 "intent": "general_qa",
                 "canonical_input": {"question": "解释KCL"},
-                "options": {"mock_force_failure": True},
+                    "options": {
+                        "allow_cloud": True,
+                        "mock_force_failure": True,
+                    },
             },
         )
         assert created.status_code == 202

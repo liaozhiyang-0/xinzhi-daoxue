@@ -1,0 +1,58 @@
+models:
+  spark_reasoner:
+    provider: iflytek_spark
+    model: spark-x
+    enabled_env: ENABLE_SPARK_REASONER
+    modalities: [text]
+    supports_streaming: true
+    supports_tools: true
+    supports_json: true
+    default_options:
+      temperature: 0.2
+      max_tokens: 8192
+      thinking: auto
+    timeout_seconds: 120
+
+  qwen_vision_primary:
+    provider: dashscope
+    model: qwen3.7-plus
+    enabled_env: ENABLE_QWEN_VISION_PRIMARY
+    modalities: [text, image, video]
+    supports_streaming: true
+    supports_tools: true
+    supports_json: true
+    default_options:
+      temperature: 0.1
+      max_tokens: 4096
+      enable_thinking: false
+      high_resolution: true
+    timeout_seconds: 90
+
+  qwen_vision_fast:
+    provider: dashscope
+    model: qwen3.6-flash
+    enabled_env: ENABLE_QWEN_VISION_FAST
+    modalities: [text, image, video]
+    supports_streaming: true
+    supports_tools: true
+    supports_json: true
+    default_options:
+      temperature: 0.1
+      max_tokens: 3072
+      enable_thinking: false
+      high_resolution: false
+    timeout_seconds: 60
+
+  qwen_text_fast:
+    provider: dashscope
+    model: qwen3.5-flash
+    enabled_env: ENABLE_QWEN_TEXT_FAST
+    modalities: [text]
+    supports_streaming: true
+    supports_tools: true
+    supports_json: true
+    default_options:
+      temperature: 0.1
+      max_tokens: 1024
+      enable_thinking: false
+    timeout_seconds: 30

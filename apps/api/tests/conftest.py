@@ -39,14 +39,16 @@ class ApiHelper:
         task_id: str | None = None,
         options: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        intent: str = "solve_problem",
+        user_role: str = "student",
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "session_id": session_id,
             "user_id": "user-test",
-            "user_role": "student",
+            "user_role": user_role,
             "scene": "solving",
             "course_id": "CT",
-            "intent": "solve_problem",
+            "intent": intent,
             "canonical_input": {"text": "求电阻两端电压"},
             "attachments": attachments or [],
             "context_refs": [],
@@ -63,6 +65,8 @@ class ApiHelper:
         task_id: str | None = None,
         options: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        intent: str = "solve_problem",
+        user_role: str = "student",
     ) -> dict[str, Any]:
         response = self.client.post(
             "/api/v1/tasks",
@@ -71,6 +75,8 @@ class ApiHelper:
                 task_id=task_id,
                 options=options,
                 attachments=attachments,
+                intent=intent,
+                user_role=user_role,
             ),
         )
         assert response.status_code == 202, response.text

@@ -75,10 +75,17 @@ def test_mock_task_records_local_knowledge_hits(tmp_path: Path) -> None:
         assert current["status"] == "completed"
         result = current["result_content"]
         assert result["metrics"]["retrieval_calls"] == 1
-        assert result["citations"][0].startswith("kb://CT/")
+        assert result["citations"] == []
         assert result["structured_result"]["knowledge"]["hits"]
+        assert result["structured_result"]["execution_summary"]["rag_mode"] == (
+            "method_reference"
+        )
+        assert all(
+            item["role"] == "method_reference"
+            for item in result["structured_result"]["evidence_view"]
+        )
         artifact = client.get(f"/api/v1/artifacts/{current['artifact_ids'][0]}").json()
-        assert artifact["content"]["knowledge_sources"][0].startswith("kb://CT/")
+        assert "knowledge_sources" not in artifact["content"]
         events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
         assert "knowledge.retrieved" in [event["event_type"] for event in events]
 
@@ -87,7 +94,7 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
     with make_client(tmp_path) as client:
         health = client.get("/api/v1/knowledge/health")
         assert health.status_code == 200
-        assert health.json()["rag_status"] in {"ready", "degraded"}
+        assert health.json()["rag_status"] == "disabled"
         assert "qdrant_api_key" not in health.text
 
         response = client.post(

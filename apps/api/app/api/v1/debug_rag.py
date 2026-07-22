@@ -109,6 +109,7 @@ async def status(request: Request) -> dict[str, Any]:
             request.app.state.agent_registry.resolve_flow_id(learner.agent_id, settings)
         ),
         "cpu_mode": settings.text_embedding_device == "cpu",
+        "rag_enabled": settings.rag_enabled,
         "debug_write_enabled": settings.app_env != "production",
         "provider_runtime": provider_status() if provider_status else {},
         "agent_count": len(request.app.state.agent_registry.list_agents()),

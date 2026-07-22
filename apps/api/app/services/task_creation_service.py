@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import AgentEventType, AgentRequest, RouteDecision, RouteStatus
+from app.contracts import (
+    AgentEventType,
+    AgentRequest,
+    Intent,
+    RouteDecision,
+    RouteStatus,
+    UserRole,
+)
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
@@ -121,7 +128,24 @@ class TaskCreationService:
     ) -> AgentRequest:
         options = dict(request.options)
         options["_routing"] = route.model_dump(mode="json")
+        options["task_subtype"] = route.task_subtype
+        options["secondary_intents"] = list(route.secondary_intents)
+        options["requires_pipeline"] = route.requires_pipeline
+        options["available_agents"] = [
+            item.agent_id for item in route.candidate_agents if item.available
+        ]
+        options["candidate_agents"] = [
+            item.model_dump(mode="json") for item in route.candidate_agents
+        ]
+        options["local_confidence"] = route.local_confidence
+        options["_material_extraction"] = dict(route.material_extraction)
+        extracted = route.material_extraction.get("materials", {})
+        if isinstance(extracted, dict):
+            options.update({str(key): value for key, value in extracted.items()})
         canonical_input = dict(request.canonical_input)
+        if isinstance(extracted, dict):
+            for key, value in extracted.items():
+                canonical_input.setdefault(str(key), value)
         if route.fallback_used and route.fallback_instruction:
             for key in ("text", "question", "problem", "query", "prompt"):
                 value = canonical_input.get(key)
@@ -130,6 +154,12 @@ class TaskCreationService:
                         f"{route.fallback_instruction}\n\n{value.strip()}"
                     )
                     break
-        return request.model_copy(
-            update={"canonical_input": canonical_input, "options": options}
-        )
+        updates: dict[str, object] = {
+            "canonical_input": canonical_input,
+            "options": options,
+            "course_id": route.course_id,
+            "intent": Intent(route.intent),
+        }
+        if route.inferred_user_role:
+            updates["user_role"] = UserRole(route.inferred_user_role)
+        return request.model_copy(update=updates)

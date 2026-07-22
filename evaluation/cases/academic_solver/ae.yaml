@@ -1,0 +1,99 @@
+cases:
+  - case_id: AE_DIODE_001
+    title: 二极管导通判断
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: diode_circuit
+    difficulty: easy
+    input_type: text
+    message: 判断硅二极管在阳极0.8V、阴极0V时是否导通，并说明采用的模型。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [二极管]
+    forbidden_claims: [所有二极管压降永远精确为0.7V]
+    tags: [concept]
+
+  - case_id: AE_BJT_001
+    title: BJT静态工作点
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: bjt_bias
+    difficulty: medium
+    input_type: text
+    message: 计算BJT静态工作点，并检查晶体管是否工作在放大区。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [bjt]
+    required_steps: [工作区]
+    tags: [bias]
+
+  - case_id: AE_MOS_001
+    title: MOS静态工作点
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: mos_bias
+    difficulty: medium
+    input_type: text
+    message: 分析NMOS静态工作点，先判断截止区、线性区或饱和区。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [mos]
+    required_steps: [工作区]
+    tags: [bias]
+
+  - case_id: AE_OPAMP_001
+    title: 理想反相运放
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: op_amp
+    difficulty: easy
+    input_type: text
+    message: 理想反相运放输入电阻2kΩ、反馈电阻10kΩ、输入1V，求输出。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    reference_values: {vo: -5 V}
+    required_keywords: [运放]
+    tags: [numeric]
+
+  - case_id: AE_FEEDBACK_001
+    title: 负反馈类型判断
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: feedback
+    difficulty: medium
+    input_type: text
+    message: 判断电压串联反馈是否属于负反馈，并说明判断依据。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [反馈]
+    forbidden_claims: [反馈一定提高所有频率的增益]
+    tags: [feedback]
+
+  - case_id: AE_SMALL_SIGNAL_INSUFFICIENT_001
+    title: 小信号题参数不足
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: small_signal_amplifier
+    difficulty: boundary
+    input_type: text
+    message: 求共射放大器电压增益，但未给出静态工作点和小信号参数。
+    structured_input:
+      critical_missing_info: [{field: 静态工作点}, {field: 跨导gm}]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [CONDITIONAL]
+    expected_statuses: [partial]
+    required_keywords: [信息不足]
+    forbidden_claims: [gm取默认值]
+    tags: [insufficient]

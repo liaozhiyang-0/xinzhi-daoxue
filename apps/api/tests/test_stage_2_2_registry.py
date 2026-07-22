@@ -13,7 +13,7 @@ from app.core.errors import (
 from app.providers.xingchen import XingchenCloudProvider
 
 
-def test_registry_resolves_flow_and_planned_agent_stays_unavailable() -> None:
+def test_registry_resolves_flow_and_unconfigured_agent_stays_unavailable() -> None:
     registry = AgentRegistry()
     settings = Settings(
         app_env="test",
@@ -29,7 +29,7 @@ def test_registry_resolves_flow_and_planned_agent_stays_unavailable() -> None:
     assert registry.is_runtime_available("LEARN_01_KNOWLEDGE_QA_V1", settings) is False
 
 
-def test_answer_check_degrades_to_solver_with_trace() -> None:
+def test_answer_check_routes_directly_to_solver_without_dead_intermediate() -> None:
     decision = TaskRouter(AgentRegistry(), Settings(_env_file=None)).route(
         AgentRequest(
             session_id="session",
@@ -40,9 +40,9 @@ def test_answer_check_degrades_to_solver_with_trace() -> None:
         )
     )
 
-    assert decision.agent_id == "SOLVER_CT_V1"
-    assert decision.fallback_used is True
-    assert decision.original_agent_id == "CHECK_01_ANSWER_REVIEW_V1"
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert decision.fallback_used is False
+    assert decision.original_agent_id is None
 
 
 def test_cloud_router_rejects_unknown_and_self_targets() -> None:

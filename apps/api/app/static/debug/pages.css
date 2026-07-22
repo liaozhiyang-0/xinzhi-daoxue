@@ -124,3 +124,30 @@
   .evidence-item { grid-template-columns: 30px minmax(0, 1fr); }
   .score-column { grid-column: 2; text-align: left; }
 }
+
+.demo-theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.demo-theme { display: grid; align-content: start; min-height: 260px; padding: 22px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); }
+.demo-number { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+.demo-theme h2 { margin: 18px 0 8px; font-size: 20px; }
+.demo-theme > p { margin: 0; color: var(--text-secondary); }
+.demo-theme dl { margin: 22px 0; }
+.demo-theme dl div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
+.demo-theme dt { color: var(--text-muted); }
+.demo-theme dd { margin: 0; }
+.demo-theme .button { align-self: end; justify-self: start; }
+.trace-story { margin-top: 32px; padding: 26px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); }
+.trace-story > header, .demo-preflight { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.trace-story h2 { margin: 0; }
+.story-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 24px; }
+.story-step { min-width: 0; padding: 16px 10px; border-top: 2px solid var(--accent); }
+.story-step span, .story-step strong, .story-step small { display: block; }
+.story-step span { color: var(--accent); font-size: 10px; }
+.story-step strong { margin-top: 8px; font-size: 12px; }
+.story-step small { margin-top: 5px; color: var(--text-muted); }
+.demo-preflight { margin-top: 18px; padding: 18px 2px; border-top: 1px solid var(--border-subtle); }
+.demo-preflight p { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; }
+@media (max-width: 760px) {
+  .demo-theme-grid { grid-template-columns: 1fr; }
+  .story-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .demo-preflight { align-items: flex-start; flex-direction: column; }
+}

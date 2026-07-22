@@ -10,7 +10,9 @@ import pytest
     [
         ("/", "欢迎使用芯智导学"),
         ("/student", "今天想学习什么"),
-        ("/debug/rag", "多模态 RAG 调试"),
+        ("/workspace", "今天想学习什么"),
+        ("/debug/rag", "统一执行调试"),
+        ("/debug/execution", "统一执行调试"),
         ("/debug/agents", "Agent 管理"),
         ("/system", "系统状态"),
         ("/demo", "演示中心"),
@@ -35,8 +37,8 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
     assert 'matchMedia("(prefers-color-scheme: dark)")' in script
     assert "开发模拟" in script
     assert "降级运行" in script
-    assert 'href: "/student"' in script
-    assert 'href: "/debug/rag"' in script
+    assert 'href: "/workspace"' in script
+    assert 'href: "/debug/execution"' in script
     assert 'href: "/debug/agents"' in script
     assert 'href: "/system"' in script
     assert 'href: "/demo"' in script
@@ -46,7 +48,7 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
 
 def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     script = client.get("/debug-assets/ui-core.js").text
-    student = client.get("/debug-assets/student.js").text
+    student = client.get("/debug-assets/workspace.js").text
 
     assert "renderMarkdown" in script
     assert "document.createTextNode" in script
@@ -61,18 +63,18 @@ def test_demo_scenarios_and_presentation_mode_are_explicit(client) -> None:
 
     assert page.status_code == 200
     for scene in (
-        "知识问答与 RAG",
-        "三课程能力",
-        "电路理论专业解题",
-        "单图片解题",
-        "工作流边界",
-        "稳定降级",
-        "多 Agent 框架",
+        "课程知识问答",
+        "教案设计",
+        "作业批改",
+        "学术写作",
+        "数据分析",
+        "边界与一次重路由",
     ):
         assert scene in script
-    assert "预计等待约 20 秒" in script
+    assert "mode=solve" not in script
+    assert "预计时间" in script
     assert "presentation-mode" in shell
-    assert ".env" in script
+    assert "/api/v1/debug/execution/" in script
 
 
 def test_system_page_only_reads_lightweight_status_endpoints(client) -> None:

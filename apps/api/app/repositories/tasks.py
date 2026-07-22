@@ -1,6 +1,6 @@
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -55,3 +55,16 @@ class TaskRepository:
             .order_by(TaskEventModel.sequence)
         )
         return list((await self.session.scalars(query)).all())
+
+    async def list_by_session(
+        self, session_id: str, *, limit: int = 50
+    ) -> list[TaskModel]:
+        query = (
+            select(TaskModel)
+            .where(TaskModel.session_id == session_id)
+            .order_by(desc(TaskModel.created_at))
+            .limit(limit)
+        )
+        tasks = list((await self.session.scalars(query)).all())
+        tasks.reverse()
+        return tasks

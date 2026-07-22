@@ -83,8 +83,13 @@ def _check_rag_status(base_url: str, checks: list[tuple[str, bool, str]]) -> Non
             [
                 (
                     "Qdrant",
-                    bool(rag.get("vector_store_connected")),
-                    str(rag.get("vector_store_connected")),
+                    bool(rag.get("vector_store_connected"))
+                    or rag.get("rag_enabled") is False,
+                    (
+                        "disabled by configuration"
+                        if rag.get("rag_enabled") is False
+                        else str(rag.get("vector_store_connected"))
+                    ),
                 ),
                 (
                     "知识库索引",

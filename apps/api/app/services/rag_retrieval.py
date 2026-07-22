@@ -480,6 +480,29 @@ class RAGRetrievalService:
         return result
 
     def health(self) -> dict[str, Any]:
+        if not self.settings.rag_enabled:
+            return {
+                "rag_status": "disabled",
+                "text_model_loaded": False,
+                "text_model_name": self.settings.text_embedding_model,
+                "text_model_revision": self.settings.text_embedding_revision,
+                "text_dimension": 0,
+                "text_model_load_latency_ms": 0,
+                "image_model_loaded": False,
+                "image_model_name": self.settings.image_embedding_model,
+                "image_model_revision": self.settings.image_embedding_revision,
+                "image_dimension": 0,
+                "image_model_load_latency_ms": 0,
+                "reranker_loaded": False,
+                "reranker_model": self.settings.reranker_model,
+                "reranker_load_latency_ms": 0,
+                "vector_store_connected": False,
+                "text_vector_count": 0,
+                "image_vector_count": 0,
+                "index_version": self._index_version(),
+                "degraded_reasons": ["rag_disabled"],
+                "metrics": dict(self._metrics),
+            }
         vector = self.vector_store.health()
         text = self.text_provider.health().to_dict()
         image = self.image_provider.health().to_dict()

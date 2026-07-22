@@ -9,7 +9,14 @@ def test_queued_task_can_be_cancelled(api, client, monkeypatch) -> None:
 
 def test_running_mock_task_can_be_cancelled(api, client) -> None:
     session = api.create_session()
-    task = api.create_task(session["id"], options={"mock_delay_seconds": 1.0})
+    task = api.create_task(
+        session["id"],
+        options={
+            "mock_delay_seconds": 1.0,
+            "debug_agent_id": "SOLVER_CT_V1",
+        },
+        user_role="admin",
+    )
     api.wait_for_task(task["id"], statuses={"running"})
     response = client.post(f"/api/v1/tasks/{task['id']}/cancel")
     assert response.status_code == 200

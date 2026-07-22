@@ -159,7 +159,7 @@ class DevelopmentMockProvider(AgentProvider):
                 "mock_used": False,
                 "cloud_status": "not_called",
             },
-            warnings=["planned_agent_not_executed"],
+            warnings=["development_mock_not_executed"],
             cloud_status="not_called",
             request_id=str(request.options.get("request_id", request.task_id)),
             task_id=request.task_id,

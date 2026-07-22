@@ -19,7 +19,7 @@ FIXTURE_PATH = (
     / "tests"
     / "fixtures"
     / "agents"
-    / "planned_agent_contract_cases.json"
+    / "workflow_contract_cases.json"
 )
 
 

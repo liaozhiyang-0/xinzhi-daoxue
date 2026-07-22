@@ -1,6 +1,8 @@
 # 芯智导学：电子信息课程群多智能体平台
 
-芯智导学当前是一个本地可运行的多智能体教学平台。阶段 2.2 在既有 FastAPI、TaskRouter、TaskRunner 和星辰 Provider 上增加统一工作流注册、确定性路由、受控降级与非敏感运行状态接口。
+芯智导学当前是一个本地可运行的电子信息课程群多智能体编排中枢。本地负责协议、路由、状态、RAG 与专业工具；讯飞 Spark-X2 与阿里云百炼千问提供统一文本/多模态模型服务；既有星辰工作流继续作为已验证能力、基线与故障回退。所有扩展复用现有 FastAPI、TaskRouter、TaskRunner、数据库、SSE 与上传链路。
+
+专业求解入口现统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。`SOLVER_CT_V1` 保留为 CT 云端冻结基线和回退，不再作为本地核心。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_consolidation_audit.md`。
 
 ## 组员统一启动（Windows）
 
@@ -11,7 +13,11 @@
 .\xzd.cmd start
 ```
 
+日常使用无需重复输入命令：双击仓库根目录的 `打开芯智导学.cmd` 即可。它会复用统一启动器，在服务就绪后自动打开 `http://127.0.0.1:8000/workspace`；如果服务已经运行，则只打开工作台，不会再启动一套重复进程。这个入口默认不执行星辰云端 Preflight。
+
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。
+
+业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true` 才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
 
 PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：
 
@@ -55,6 +61,62 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 
 早期 Spring Boot、MySQL、Vue3 和 MaaS 微调方案已经移除。仓库只保留当前 FastAPI 多智能体平台、检索评测、运行文档与本地课程资料入口。
 
+## 数学公式渲染
+
+任务结果保留兼容 `answer`/`answer_text`，并可携带结构化 `math_content`。后端在最终输出阶段统一规范化 `$...$` 与 `$$...$$`，优先使用结构化公式字段；前端复用唯一的本地 KaTeX 渲染链，非法公式会降级显示原始 LaTeX，代码、URL、日期和 JSON 不参与转换。协议、安全边界、扩展方式与验收样本见 [数学公式渲染链路](docs/math_rendering_pipeline.md)。
+
+## 渐进式本地编排
+
+```text
+Web -> FastAPI -> XZD_SUPERVISOR -> existing TaskRunner
+                              |-> Model Registry -> Model Service
+                              |                    |-> Spark-X2
+                              |                    `-> Qwen text/vision
+                              |-> local RAG
+                              |-> calculator / SymPy / unit checker
+                              `-> Xingchen workflows (baseline/fallback)
+```
+
+新版 `POST /api/v1/chat` 会创建原有非阻塞任务，不会建立第二套任务队列。`GET /api/v1/capabilities` 与 `GET /api/v1/workflows` 可查看本地/星辰迁移状态；开发态可通过 `GET /api/v1/debug/traces/{trace_id}` 查看脱敏节点摘要。
+
+## 国产模型配置
+
+首次配置可复制模板；Windows PowerShell 使用：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Linux/macOS 使用：
+
+```bash
+cp .env.example .env
+```
+
+基础调用只需在本机 `.env` 填写两个字段，不能提交该文件：
+
+```env
+IFLYTEK_SPARK_API_KEY=
+DASHSCOPE_API_KEY=
+```
+
+`IFLYTEK_SPARK_API_KEY` 填写讯飞 Spark-X2 HTTP APIPassword（或控制台要求的 AK:SK 形式）；`DASHSCOPE_API_KEY` 填写阿里云百炼 API Key。使用百炼业务空间专属地址时才需要额外设置 `DASHSCOPE_WORKSPACE_ID`，并可显式覆盖 `DASHSCOPE_BASE_URL`。
+
+模型角色：`spark-x` 负责复杂推理与 RAG 答案生成；`qwen3.7-plus` 负责复杂图片/电路图；`qwen3.6-flash` 负责快速视觉任务；`qwen3.5-flash` 负责分类、改写与结构化任务。配置与真实连通性检查：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --config-only
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --provider iflytek
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --provider dashscope
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --vision .\path\to\test.png
+```
+
+服务启动后也可访问 `GET /api/v1/models` 和 `GET /api/v1/models/health?live=false`；只有显式使用 `live=true` 才产生极短真实调用。Key 为空不会阻止 FastAPI 启动，本地 RAG 与星辰工作流仍保持独立运行。401 应检查 Key/地域，404 应检查模型名、Base URL 与业务空间；图片超限和模型超时会返回统一、脱敏错误。完整说明见 [模型 API 配置](docs/model_api_configuration.md)。
+
+模型层已注册 9 个从属内部 Agent，覆盖课程/意图分类、RAG 查询改写、电路规划与图片提取、备课、作业初审、学术写作和数据分析。它们复用统一 ModelService，并保持 `subordinate_only`，不会建立第二套顶层任务路由。已通过专项测试的备课、作业初审、学术写作和数据分析 Agent 已接入原有 `POST /api/v1/tasks`；备课复用同一次任务的本地 RAG 上下文。`/student` 与 `/workspace` 采用单输入自动路由，只展示能力和知识增强状态，不显示 Provider、Flow ID 或原始 Agent ID。`GET /api/v1/internal-agents` 只查看本地注册和配置状态；真实批量评测使用 `scripts/evaluate_model_agents.py`，先以 `--dry-run` 检查，再用 `--agent` 或 `--case` 小批量执行以控制 Token。
+
+开发态真实 Embedding 不可用时可显式启用旧哈希兼容层；生产环境不会静默回退。
+
 ## 已完成阶段
 
 - 阶段 0：冻结 `SOLVER_CT_V1` 基线、节点清单、发布检查和回归评测结构。
@@ -68,7 +130,7 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 
 - CT `solve_problem` 路由到 `SOLVER_CT_V1`；`XINGCHEN_ENABLED=true` 且配置完整时调用真实星辰，否则在未启用时使用明确标识的 Mock。
 - 星辰上游当前支持同步文字和单图片调用，不支持多图片、PDF 或上游流式调用。
-- CT 的 `check_user_solution` 优先使用 `CHECK_01_ANSWER_REVIEW_V1`；当前计划态不可用时降级到 `SOLVER_CT_V1`，并注入“优先指出第一个错误”的检查指令。
+- CT 的 `check_user_solution` 和 `verify_answer` 直接复用冻结的 `SOLVER_CT_V1`；已移除从未发布的中间计划态 Agent，避免无效降级和额外 Flow 配置。
 - CT/AE/DE 的学习类意图优先使用云端 `LEARN_01_KNOWLEDGE_QA_V1`；未发布或未配置时降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。
 - 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的云端调度兜底；兜底不可用时返回 `unresolved`，不会自动送入 `SOLVER_CT_V1`。
 - 多图、PDF、空输入及 Agent 未声明的输入组合返回明确错误，不会静默丢弃附件。
@@ -94,8 +156,8 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 | course_id | intent | agent_id | 状态 |
 |---|---|---|---|
 | CT | `solve_problem` | `SOLVER_CT_V1` | selected / Xingchen 或 Mock |
-| CT | `check_user_solution` | `CHECK_01_ANSWER_REVIEW_V1` → `SOLVER_CT_V1` | planned → local_degraded |
-| CT、AE、DE | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` → `LEARN_01_LOCAL_RETRIEVAL_V1` | planned → local_degraded |
+| CT | `check_user_solution`、`verify_answer` | `SOLVER_CT_V1` | selected / Xingchen 或明确 Mock |
+| CT、AE、DE | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` → `LEARN_01_LOCAL_RETRIEVAL_V1` | cloud/local hybrid |
 | AE、DE | `solve_problem` | `UNRESOLVED` | unresolved，不使用 CT Solver |
 | 其他组合 | `ROUTER_01_FALLBACK_V1` 或 `UNRESOLVED` | cloud_fallback / unresolved |
 
@@ -119,9 +181,8 @@ XINGCHEN_ENABLED=true
 XINGCHEN_API_KEY=<API_KEY>
 XINGCHEN_API_SECRET=<API_SECRET>
 XINGCHEN_SOLVER_CT_FLOW_ID=<FLOW_ID>
-# 其余计划工作流按需配置；空值不会阻止服务启动
+# 其余已启用工作流按需配置；空值不会阻止服务启动
 # XINGCHEN_KNOWLEDGE_QA_FLOW_ID=<FLOW_ID>
-# XINGCHEN_ANSWER_REVIEW_FLOW_ID=<FLOW_ID>
 # XINGCHEN_FALLBACK_ROUTER_FLOW_ID=<FLOW_ID>
 XINGCHEN_UID=local-demo-user
 XINGCHEN_TIMEOUT_SECONDS=300
@@ -192,6 +253,13 @@ GET  /api/v1/knowledge/benchmark-summary
 POST /api/v1/knowledge/reload
 GET  /api/v1/agents/status
 GET  /api/v1/agents
+POST /api/v1/chat
+POST /api/v1/chat/stream
+GET  /api/v1/chat/{task_id}
+GET  /api/v1/capabilities
+GET  /api/v1/workflows
+GET  /api/v1/internal-agents
+GET  /api/v1/debug/traces/{trace_id}
 GET  /debug
 GET  /debug/rag
 GET  /debug/agents
@@ -215,6 +283,18 @@ python evaluation/knowledge_retrieval/scripts/compare_runs.py evaluation/knowled
 
 真实对比见 `docs/reports/retrieval_baseline_comparison.md`。
 
+多学科正式执行链评测使用同一 TaskRunner，默认不发送付费请求：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --validate-only
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --offline
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --case-id CT_KCL_001 --offline
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --live --confirm-paid --course CT --max-cases 3
+```
+
+报告输出到 `evaluation/reports/latest.json` 和 `latest.md`。评测只读 API 默认由
+`ENABLE_EVALUATION_API=false` 关闭，且不提供 HTTP 付费执行入口。
+
 ## 质量检查
 
 ```powershell
@@ -229,18 +309,17 @@ docker compose config
 git diff --check
 ```
 
-## 架构与阶段报告
+## 当前架构与历史隔离
 
-- 阶段范围：`docs/architecture/00_stage_0_1_scope.md`
-- 当前总体架构基线：`docs/architecture/02_xinzhi_multi_agent_platform_plan_v1.0.md`
-- 阶段 1.6 初始评估：`docs/reviews/stage_1_6_initial_assessment.md`
-- 阶段 1.6 最终审查：`docs/reviews/stage_1_6_final_review.md`
-
-用户所述“最终完整总体架构原文”没有包含在本轮附件中，因此仓库保留现有架构内容并明确缺口，没有缩写或虚构缺失正文。
+- 当前本地编排架构：`docs/local_orchestration_architecture.md`
+- 迁移审计：`docs/architecture_migration_audit.md`
+- Agent 注册表：`docs/agent_registry.md`
+- 模型 API 配置：`docs/model_api_configuration.md`
+- 历史阶段快照：`archive_legacy/docs/`，不参与运行、测试或 Docker 构建。
 
 ## 下一阶段
 
 1. 人工审核 15 条检索案例、3 条 OCR 清洗草稿和 AE 两条未召回案例。
-2. 基于已跑通的文本链路增加单张图片调用。
+2. 使用真实课程图片人工验收千问视觉回答质量与成本。
 3. 依据人工审核后的评测集继续优化轻量词项/混合检索，保持 `KnowledgeHit` 与 `RetrievalContextPacket` 合同稳定。
 4. 将进程内 TaskRunner 和索引按规模需求迁移为独立 Worker/检索服务，不改变统一任务入口。

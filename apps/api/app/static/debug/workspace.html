@@ -1,0 +1,98 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>智能任务工作台 · 芯智导学</title>
+  <link rel="stylesheet" href="/debug-assets/design-tokens.css">
+  <link rel="stylesheet" href="/debug-assets/app-shell.css">
+  <link rel="stylesheet" href="/debug-assets/components.css">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css">
+</head>
+<body class="workspace-page">
+  <aside id="app-sidebar" class="app-sidebar"></aside>
+  <header id="app-topbar" class="app-topbar"></header>
+  <main class="workspace-shell">
+    <section class="workspace-center">
+      <header class="workspace-toolbar" aria-label="任务模式">
+        <div><strong>自然语言自动调度</strong><span class="workspace-auto-hint"> 系统会自动识别课程与任务</span></div>
+        <div class="workspace-toolbar-actions">
+          <button id="toggle-context" class="button secondary" type="button" aria-expanded="true">任务详情</button>
+          <button id="new-session" class="text-button" type="button">新建会话</button>
+        </div>
+      </header>
+
+      <section id="conversation" class="workspace-conversation">
+        <div id="welcome" class="workspace-welcome">
+          <p class="eyebrow">AI LEARNING WORKSPACE</p>
+          <h1>今天想学习什么？</h1>
+          <p>一个输入框完成学习、教学与研究任务；系统自动组合内部 Agent 与本地课程资料</p>
+          <div class="prompt-grid">
+            <button type="button" data-capability="course_qa" data-prompt="为什么电容电压不能突变？" data-course="CT"><span class="capability-state">本地资料增强</span><strong>课程知识问答</strong><small>解释概念并展示真实课程依据</small></button>
+            <button type="button" data-capability="circuit_reasoning" data-prompt="一个10V电压源串联5Ω电阻，求回路电流。" data-course="CT"><span class="capability-state">电路分析</span><strong>电路题分析</strong><small>支持文字题与单张电路图</small></button>
+            <button type="button" data-capability="lesson_prep" data-prompt="请为电容电压连续性设计一份45分钟课堂教案，包含目标、流程和形成性评价。" data-course="CT"><span class="capability-state">内部 Agent</span><strong>教案设计</strong><small>结合课程资料生成可复核草稿</small></button>
+            <button type="button" data-capability="assignment_review" data-prompt="请初审这份作业：题目为10V电源串联5Ω电阻求电流，学生回答I=10/5=2A。指出正确部分、风险和反馈。" data-course="CT"><span class="capability-state">教师复核</span><strong>作业初审</strong><small>不自动给出正式成绩</small></button>
+            <button type="button" data-capability="academic_writing" data-prompt="请将“实验说明滤波器效果很好”改写为严谨学术表达；没有提供实验数据或文献，不得补充数值和引用。" data-course="AUTO"><span class="capability-state">事实约束</span><strong>学术写作</strong><small>改写并标出待核验声明</small></button>
+            <button type="button" data-capability="data_analysis" data-prompt="我想分析不同教学方法对成绩的影响，但还没有提供数据。请给出可复现的分析计划和限制。" data-course="AUTO"><span class="capability-state">数据边界</span><strong>数据分析</strong><small>无真实数据时只生成分析计划</small></button>
+          </div>
+        </div>
+        <div id="messages" class="message-list" aria-live="polite"></div>
+        <section id="answer-panel" class="workspace-answer" hidden>
+          <header class="answer-heading">
+            <div>
+              <span id="answer-status" class="answer-provider">正在执行</span>
+              <h2 id="answer-title">正在组织内部协作能力</h2>
+            </div>
+            <button id="answer-source-chip" class="source-chip" type="button">课程资料 0</button>
+          </header>
+          <div id="answer-text" class="markdown-view markdown-document"></div>
+          <div id="business-result" class="business-result"></div>
+          <div id="answer-notices" class="notice-stack"></div>
+          <div class="answer-actions">
+            <button id="copy-answer" type="button" class="text-button">复制回答</button>
+            <button id="toggle-sources" type="button" class="text-button">查看资料依据</button>
+            <button id="follow-up" type="button" class="text-button">继续追问</button>
+            <button id="reask" type="button" class="text-button">重新提问</button>
+          </div>
+          <details id="source-details" class="legacy-source-fallback" hidden>
+            <summary><span id="source-summary">参考课程资料 0</span></summary>
+            <div id="source-list"></div><div id="related-images"></div>
+          </details>
+        </section>
+      </section>
+
+      <form id="student-form" class="workspace-composer">
+        <div id="image-preview" class="upload-preview" hidden>
+          <img id="preview-image" alt="待上传题目图片预览"><span id="image-name"></span>
+          <button id="remove-image" type="button" aria-label="移除图片">移除</button>
+        </div>
+        <textarea id="question-input" maxlength="4000" rows="1" required aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
+        <div class="composer-controls">
+          <div class="composer-left">
+            <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option></select></label>
+            <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,application/json,application/pdf,.md,.txt,.csv,.json,.pdf"></label>
+            <details class="more-settings"><summary>高级选项</summary><div class="settings-popover"><label>回答深度<select id="depth-select"><option value="brief">简要</option><option value="standard" selected>标准</option><option value="deep">深入</option></select></label><label><input id="show-images" type="checkbox" checked> 显示教材图片</label></div></details>
+          </div>
+          <div class="composer-right"><span id="form-error" class="field-error" role="alert"></span><button id="stop-button" class="button secondary" type="button" disabled>停止</button><button id="send-button" class="send-button" type="submit" aria-label="发送问题">发送</button></div>
+        </div>
+      </form>
+    </section>
+
+    <aside id="context-panel" class="context-panel" aria-label="课程证据与执行信息">
+      <header class="context-header"><div><span>当前任务</span><strong id="context-task-title">等待提问</strong></div><button id="close-context" class="icon-button" type="button" aria-label="关闭任务详情">×</button></header>
+      <div class="context-tabs" role="tablist">
+        <button class="active" type="button" data-context-tab="evidence">资料依据</button>
+        <button type="button" data-context-tab="process">执行过程</button>
+        <button type="button" data-context-tab="info">回答信息</button>
+      </div>
+      <section id="context-evidence" class="context-view active" data-context-view="evidence"><div class="context-empty"><strong>资料会在这里出现</strong><p>仅展示真正进入当前任务的课程证据，或明确标记的方法参考。</p></div></section>
+      <section id="context-process" class="context-view" data-context-view="process" hidden></section>
+      <section id="context-info" class="context-view" data-context-view="info" hidden></section>
+    </aside>
+  </main>
+  <dialog id="image-dialog" class="image-dialog"><button id="close-image-dialog" class="icon-button" type="button" aria-label="关闭图片">×</button><img id="dialog-image" alt="教材图片大图"><p id="dialog-caption"></p></dialog>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js"></script>
+  <script src="/debug-assets/workspace.js"></script>
+</body>
+</html>

@@ -27,6 +27,29 @@
         }
       }
     },
+    "/api/v1/internal-agents": {
+      "get": {
+        "tags": [
+          "internal-agents"
+        ],
+        "summary": "List Internal Agents",
+        "operationId": "list_internal_agents_api_v1_internal_agents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Internal Agents Api V1 Internal Agents Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/status": {
       "get": {
         "tags": [
@@ -237,6 +260,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{session_id}/tasks": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List Session Tasks",
+        "operationId": "list_session_tasks_api_v1_sessions__session_id__tasks_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionTaskHistoryItem"
+                  },
+                  "title": "Response List Session Tasks Api V1 Sessions  Session Id  Tasks Get"
                 }
               }
             }
@@ -987,6 +1068,246 @@
         }
       }
     },
+    "/api/v1/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List Models",
+        "operationId": "list_models_api_v1_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Models Api V1 Models Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/health": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Model Health",
+        "operationId": "model_health_api_v1_models_health_get",
+        "parameters": [
+          {
+            "name": "live",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "是否发送真实极短模型请求",
+              "default": false,
+              "title": "Live"
+            },
+            "description": "是否发送真实极短模型请求"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Model Health Api V1 Models Health Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "通过本地 Supervisor 创建非阻塞对话任务",
+        "operationId": "create_chat_api_v1_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequestV2"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSubmission"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/stream": {
+      "post": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "创建对话任务并通过 SSE 推送既有任务事件",
+        "operationId": "stream_chat_api_v1_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequestV2"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/{task_id}": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "Get Chat Result",
+        "operationId": "get_chat_result_api_v1_chat__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_api_v1_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Capabilities Api V1 Capabilities Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows": {
+      "get": {
+        "tags": [
+          "orchestration"
+        ],
+        "summary": "Workflows",
+        "operationId": "workflows_api_v1_workflows_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowStatus"
+                  },
+                  "type": "array",
+                  "title": "Response Workflows Api V1 Workflows Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/debug/rag/status": {
       "get": {
         "tags": [
@@ -1423,6 +1744,140 @@
         }
       }
     },
+    "/api/v1/debug/execution/{task_id}": {
+      "get": {
+        "tags": [
+          "execution-debug"
+        ],
+        "summary": "Get Execution",
+        "operationId": "get_execution_api_v1_debug_execution__task_id__get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Execution Api V1 Debug Execution  Task Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/debug/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "development"
+        ],
+        "summary": "Get Trace",
+        "operationId": "get_trace_api_v1_debug_traces__trace_id__get",
+        "parameters": [
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Trace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Trace Api V1 Debug Traces  Trace Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluation/suites": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "List Suites",
+        "operationId": "list_suites_api_v1_evaluation_suites_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Suites Api V1 Evaluation Suites Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluation/reports/latest": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Latest Report",
+        "operationId": "latest_report_api_v1_evaluation_reports_latest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Latest Report Api V1 Evaluation Reports Latest Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -1508,6 +1963,44 @@
         ],
         "summary": "Student Page",
         "operationId": "student_page_student_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspace": {
+      "get": {
+        "tags": [
+          "student"
+        ],
+        "summary": "Workspace Page",
+        "operationId": "workspace_page_workspace_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/debug/execution": {
+      "get": {
+        "tags": [
+          "development"
+        ],
+        "summary": "Execution Debug Page",
+        "operationId": "execution_debug_page_debug_execution_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1749,6 +2242,194 @@
         ],
         "title": "AgentRequest"
       },
+      "AgentRequestV2": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 50000,
+            "title": "Message",
+            "default": ""
+          },
+          "input_type": {
+            "$ref": "#/components/schemas/InputType",
+            "default": "text"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileReference"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "course_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "intent_hint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrchestrationIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previous_answer_summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Answer Summary"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "debug": {
+            "type": "boolean",
+            "title": "Debug",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AgentRequestV2",
+        "description": "Public orchestration request; converted to the existing task contract."
+      },
+      "AgentResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExecutionStatus"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "course": {
+            "$ref": "#/components/schemas/CourseCode"
+          },
+          "intent": {
+            "$ref": "#/components/schemas/OrchestrationIntent"
+          },
+          "answer_text": {
+            "type": "string",
+            "title": "Answer Text"
+          },
+          "math_content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MathRichContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "structured_result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Structured Result"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "default": 0
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Elapsed Ms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "session_id",
+          "status",
+          "agent_id",
+          "course",
+          "intent",
+          "answer_text",
+          "trace_id",
+          "elapsed_ms"
+        ],
+        "title": "AgentResponse"
+      },
       "ArtifactRead": {
         "properties": {
           "id": {
@@ -1888,6 +2569,113 @@
         ],
         "title": "Body_upload_file_api_v1_files_post"
       },
+      "ChatSubmission": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "queued"
+          },
+          "stream_url": {
+            "type": "string",
+            "title": "Stream Url"
+          },
+          "result_url": {
+            "type": "string",
+            "title": "Result Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "session_id",
+          "task_id",
+          "trace_id",
+          "stream_url",
+          "result_url"
+        ],
+        "title": "ChatSubmission"
+      },
+      "Citation": {
+        "properties": {
+          "citation_id": {
+            "type": "string",
+            "title": "Citation Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "chapter": {
+            "type": "string",
+            "title": "Chapter",
+            "default": ""
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id",
+            "default": ""
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "citation_id",
+          "filename",
+          "source_ref"
+        ],
+        "title": "Citation"
+      },
       "CompareRequest": {
         "properties": {
           "question": {
@@ -1982,6 +2770,24 @@
           "question"
         ],
         "title": "CompareRequest"
+      },
+      "CourseCode": {
+        "type": "string",
+        "enum": [
+          "CT",
+          "AE",
+          "DE",
+          "SS",
+          "DSP",
+          "COMM",
+          "RF",
+          "EM",
+          "INFO",
+          "EMBEDDED",
+          "IC",
+          "UNKNOWN"
+        ],
+        "title": "CourseCode"
       },
       "DebugRunRequest": {
         "properties": {
@@ -2140,6 +2946,28 @@
         ],
         "title": "EventRead"
       },
+      "ExecutionMode": {
+        "type": "string",
+        "enum": [
+          "local",
+          "xingchen",
+          "hybrid",
+          "disabled"
+        ],
+        "title": "ExecutionMode"
+      },
+      "ExecutionStatus": {
+        "type": "string",
+        "enum": [
+          "success",
+          "partial",
+          "failed",
+          "skipped",
+          "timeout",
+          "fallback"
+        ],
+        "title": "ExecutionStatus"
+      },
       "FileRead": {
         "properties": {
           "id": {
@@ -2195,6 +3023,59 @@
           "created_at"
         ],
         "title": "FileRead"
+      },
+      "FileReference": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "default": ""
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "default": "application/octet-stream"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "default": 0
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "page_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Page Numbers"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_id"
+        ],
+        "title": "FileReference"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2272,17 +3153,33 @@
         ],
         "title": "HealthRead"
       },
+      "InputType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "image",
+          "pdf",
+          "mixed"
+        ],
+        "title": "InputType"
+      },
       "Intent": {
         "type": "string",
         "enum": [
           "unknown",
+          "follow_up_question",
           "solve_problem",
           "explain_concept",
           "verify_answer",
           "check_user_solution",
           "general_qa",
           "summarize_knowledge",
-          "learning_advice"
+          "learning_advice",
+          "check_simple_step",
+          "lesson_prep",
+          "assignment_review",
+          "academic_writing",
+          "data_analysis"
         ],
         "title": "Intent"
       },
@@ -2503,6 +3400,153 @@
           "chunk_count"
         ],
         "title": "KnowledgeSourceStatus"
+      },
+      "MathBlockType": {
+        "type": "string",
+        "enum": [
+          "inline",
+          "display",
+          "aligned",
+          "matrix",
+          "cases",
+          "equation_system",
+          "raw_text"
+        ],
+        "title": "MathBlockType"
+      },
+      "MathExpression": {
+        "properties": {
+          "expression_id": {
+            "type": "string",
+            "title": "Expression Id"
+          },
+          "latex": {
+            "type": "string",
+            "title": "Latex"
+          },
+          "block_type": {
+            "$ref": "#/components/schemas/MathBlockType"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "normalized": {
+            "type": "boolean",
+            "title": "Normalized",
+            "default": false
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status",
+            "default": "unchecked"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Variables"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expression_id",
+          "latex",
+          "block_type"
+        ],
+        "title": "MathExpression"
+      },
+      "MathRichContent": {
+        "properties": {
+          "plain_text": {
+            "type": "string",
+            "title": "Plain Text"
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/RichTextSegment"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "math_expressions": {
+            "items": {
+              "$ref": "#/components/schemas/MathExpression"
+            },
+            "type": "array",
+            "title": "Math Expressions"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plain_text",
+          "markdown"
+        ],
+        "title": "MathRichContent"
+      },
+      "MathSegmentType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "inline_math",
+          "display_math",
+          "code",
+          "table",
+          "html"
+        ],
+        "title": "MathSegmentType"
+      },
+      "OrchestrationIntent": {
+        "type": "string",
+        "enum": [
+          "solve_problem",
+          "explain_concept",
+          "follow_up_question",
+          "summarize_knowledge",
+          "learning_advice",
+          "check_simple_step",
+          "general_qa",
+          "lesson_prep",
+          "assignment_review",
+          "academic_writing",
+          "data_analysis",
+          "fallback",
+          "unknown"
+        ],
+        "title": "OrchestrationIntent"
       },
       "PrewarmRequest": {
         "properties": {
@@ -2780,6 +3824,40 @@
         ],
         "title": "RetrievalResult"
       },
+      "RichTextSegment": {
+        "properties": {
+          "segment_type": {
+            "$ref": "#/components/schemas/MathSegmentType"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "math": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MathExpression"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segment_type"
+        ],
+        "title": "RichTextSegment"
+      },
       "Scene": {
         "type": "string",
         "enum": [
@@ -2854,6 +3932,94 @@
           "updated_at"
         ],
         "title": "SessionRead"
+      },
+      "SessionTaskHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "intent": {
+            "type": "string",
+            "title": "Intent"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "fallback_used": {
+            "type": "boolean",
+            "title": "Fallback Used",
+            "default": false
+          },
+          "fallback_reason": {
+            "type": "string",
+            "title": "Fallback Reason",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "course_id",
+          "intent",
+          "status",
+          "provider",
+          "agent_id",
+          "question",
+          "answer",
+          "error_message",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "SessionTaskHistoryItem"
       },
       "TaskRead": {
         "properties": {
@@ -3074,6 +4240,60 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WorkflowStatus": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "execution_mode": {
+            "$ref": "#/components/schemas/ExecutionMode"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "flow_configured": {
+            "type": "boolean",
+            "title": "Flow Configured"
+          },
+          "local_handler_available": {
+            "type": "boolean",
+            "title": "Local Handler Available"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "last_health_check": {
+            "type": "string",
+            "title": "Last Health Check",
+            "default": "not_run"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_id",
+          "execution_mode",
+          "enabled",
+          "flow_configured",
+          "local_handler_available",
+          "available"
+        ],
+        "title": "WorkflowStatus"
       }
     }
   }
