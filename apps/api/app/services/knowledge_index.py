@@ -487,14 +487,13 @@ def audit_report_markdown(audit: AuditResult) -> str:
     lines.extend(
         [
             "",
-            "章节文件覆盖：CT 发现第一至第十三章及附录；AE 发现第一至第十一章；"
-            "DE 发现第一至第十一章和目录。未发现按章文件的明显编号缺口，"
-            "但章节内容完整性仍需按教材目录人工核对。",
+            "章节文件覆盖需按各课程教材目录人工核对；部分课程按章拆分 Markdown，"
+            "部分课程为上下册或整册 Markdown，不能仅凭文件名断言章节完整。",
             "",
             "## 3. 结构质量",
             "",
-            "- 三门课程均保留教材式章节 Markdown，适合按标题和段落切块。",
-            "- AE、DE 图片集中于教材 `images/`；CT 另有无编号图片和映射表。",
+            "- 各课程均保留教材式 Markdown，可按标题和段落切块。",
+            "- 图片主要集中于课程 `images/` 目录，个别课程另有无编号图片和映射表。",
             "- Markdown 中存在大量相对图片链接，可建立父文档和章节关系。",
             "- 未被 Markdown 引用的图片保留为孤立证据并进入人工关联队列。",
             "- PDF 与 ZIP 和已有 Markdown 并存，存在重复来源和索引重复风险。",
@@ -552,8 +551,8 @@ def audit_report_markdown(audit: AuditResult) -> str:
             "- 暂不索引：PDF、DOCX、ZIP 和无法 UTF-8 解码的文件。",
             "- 人工复核：孤立图片、失效链接、乱码、同名冲突、重复文件和来源不明内容。",
             "",
-            "当前 `multimodal_level = contextual_image_retrieval`，"
-            "没有实现真正的视觉向量检索。",
+            "本审计只确认上下文图片关联输入已就绪；真实文本/视觉向量是否可用，"
+            "以 RAG build 输出和运行时 health 为准。",
             "",
         ]
     )
@@ -561,12 +560,11 @@ def audit_report_markdown(audit: AuditResult) -> str:
         [
             "## 7. 现有系统与接入现状",
             "",
-            "- 实施前已有能力：本地 Markdown 只读扫描、`local_lexical_v2` BM25-like "
-            "词项检索、课程范围过滤与 `kb://` 引用；没有向量数据库、神经网络 "
-            "Embedding、图像向量或独立 RAG 框架。",
-            "- 当前首版能力：在既有检索服务内增加可替换文本向量适配器、"
-            "关键词与本地哈希向量混合排序、上下文图片关联，以及独立生成的 "
-            "Manifest、图片证据索引和增量缓存。",
+            "- 审计与基础检索能力：本地 Markdown 只读扫描、`local_lexical_v2` "
+            "词项检索、课程范围过滤与 `kb://` 引用。",
+            "- RAG 能力：在既有检索服务内使用可替换文本/图片向量适配器、"
+            "Qdrant、混合排序、上下文图片关联，以及独立生成的 Manifest、"
+            "图片证据索引和增量缓存；实际就绪状态以运行时 health 为准。",
             "- LEARN：本地问答链路已经实际调用知识库并返回来源；云端 LEARN 通过既有 "
             "`RetrievalContextPacket` 转成 `retrieved_context` 文本，再进入原有 "
             "Provider 请求，"

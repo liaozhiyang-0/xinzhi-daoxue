@@ -452,7 +452,7 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--with-cloud", action="store_true")
     preflight.set_defaults(handler=command_preflight)
     index = commands.add_parser("index", help="为本机课程资料构建 RAG 索引")
-    index.add_argument("--course", choices=("CT", "AE", "DE"))
+    index.add_argument("--course", choices=("CT", "AE", "DE", "SS", "DSP", "COMM"))
     index.add_argument("--text-only", action="store_true")
     index.set_defaults(handler=command_index)
     return parser

@@ -199,6 +199,9 @@ def test_cloud_failure_uses_agent_configured_local_fallback(tmp_path: Path) -> N
         knowledge_ct_path=tmp_path / "knowledge" / "CT",
         knowledge_ae_path=tmp_path / "knowledge" / "AE",
         knowledge_de_path=tmp_path / "knowledge" / "DE",
+        knowledge_ss_path=tmp_path / "knowledge" / "SS",
+        knowledge_dsp_path=tmp_path / "knowledge" / "DSP",
+        knowledge_comm_path=tmp_path / "knowledge" / "COMM",
         local_storage_path=tmp_path / "storage",
         _env_file=None,
     )

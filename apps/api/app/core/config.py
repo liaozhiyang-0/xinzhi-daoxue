@@ -151,7 +151,10 @@ class Settings(BaseSettings):
     knowledge_ct_path: Path = PROJECT_ROOT / "电路理论"
     knowledge_ae_path: Path = PROJECT_ROOT / "模电"
     knowledge_de_path: Path = PROJECT_ROOT / "数电"
-    knowledge_chunk_size_chars: int = Field(default=800, ge=300, le=4000)
+    knowledge_ss_path: Path = PROJECT_ROOT / "信号与系统版本一"
+    knowledge_dsp_path: Path = PROJECT_ROOT / "数字信号处理"
+    knowledge_comm_path: Path = PROJECT_ROOT / "通信原理"
+    knowledge_chunk_size_chars: int = Field(default=400, ge=300, le=4000)
     knowledge_chunk_overlap_chars: int = Field(default=150, ge=0, le=500)
     knowledge_default_top_k: int = Field(default=5, ge=1, le=20)
     knowledge_max_files_per_course: int = Field(default=1000, ge=1, le=10000)
@@ -201,6 +204,7 @@ class Settings(BaseSettings):
     qdrant_mode: Literal["local", "server"] = "local"
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: SecretStr = SecretStr("")
+    qdrant_trust_env: bool = False
     qdrant_local_path: Path = PROJECT_ROOT / "knowledge_indexes" / "qdrant"
     qdrant_text_collection: str = "xinzhi_kb_text_v2"
     qdrant_image_collection: str = "xinzhi_kb_image_v2"
@@ -312,6 +316,15 @@ class Settings(BaseSettings):
             "CT": self._resolve_local_placeholder(self.knowledge_ct_path, "电路理论"),
             "AE": self._resolve_local_placeholder(self.knowledge_ae_path, "模电"),
             "DE": self._resolve_local_placeholder(self.knowledge_de_path, "数电"),
+            "SS": self._resolve_local_placeholder(
+                self.knowledge_ss_path, "信号与系统版本一"
+            ),
+            "DSP": self._resolve_local_placeholder(
+                self.knowledge_dsp_path, "数字信号处理"
+            ),
+            "COMM": self._resolve_local_placeholder(
+                self.knowledge_comm_path, "通信原理"
+            ),
         }
 
     @staticmethod

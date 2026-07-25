@@ -20,7 +20,7 @@ class DebugRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(min_length=1, max_length=2000)
-    course_id: Literal["CT", "AE", "DE"] = "CT"
+    course_id: Literal["CT", "AE", "DE", "SS", "DSP", "COMM"] = "CT"
     intent: Literal[
         "general_qa",
         "explain_concept",
@@ -43,7 +43,9 @@ class CompareRequest(DebugRunRequest):
 
 
 class EvalRequest(BaseModel):
-    group: Literal["all", "CT", "AE", "DE", "boundary", "degradation"] = "all"
+    group: Literal[
+        "all", "CT", "AE", "DE", "SS", "DSP", "COMM", "boundary", "degradation"
+    ] = "all"
     allow_cloud: bool = False
     limit: int = Field(default=60, ge=1, le=60)
 

@@ -40,6 +40,31 @@ def test_rag_debug_run_reuses_local_rag_and_stores_trace(client) -> None:
     assert saved.json()["request_id"] == trace["request_id"]
 
 
+def test_rag_debug_forwards_cloud_policy_to_router(client, monkeypatch) -> None:
+    router = client.app.state.rag_debug.router
+    route = router.route
+    observed_options: dict[str, object] = {}
+
+    def capture_route(request):
+        observed_options.update(request.options)
+        return route(request)
+
+    monkeypatch.setattr(router, "route", capture_route)
+    response = client.post(
+        "/api/v1/debug/rag/run",
+        json={
+            "question": "解释卷积的定义。",
+            "course_id": "SS",
+            "intent": "explain_concept",
+            "use_rag": True,
+            "allow_cloud": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert observed_options["allow_cloud"] is True
+
+
 def test_rag_debug_compare_and_small_eval(client) -> None:
     comparison = client.post(
         "/api/v1/debug/rag/compare",

@@ -11,6 +11,15 @@ sources:
   DE:
     path_env: KNOWLEDGE_DE_PATH
     read_only: true
+  SS:
+    path_env: KNOWLEDGE_SS_PATH
+    read_only: true
+  DSP:
+    path_env: KNOWLEDGE_DSP_PATH
+    read_only: true
+  COMM:
+    path_env: KNOWLEDGE_COMM_PATH
+    read_only: true
 
 parsing:
   safe_text_extensions: [.md, .txt, .json, .csv]

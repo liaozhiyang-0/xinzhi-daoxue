@@ -7,7 +7,7 @@ param(
     [switch]$Reload,
     [switch]$RefreshDeps,
     [switch]$WithCloud,
-    [ValidateSet("CT", "AE", "DE")]
+    [ValidateSet("CT", "AE", "DE", "SS", "DSP", "COMM")]
     [string]$Course,
     [switch]$TextOnly
 )

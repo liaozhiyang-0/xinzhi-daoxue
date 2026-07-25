@@ -73,6 +73,7 @@ class QdrantVectorStoreAdapter:
         local_path: Path,
         text_collection: str,
         image_collection: str,
+        trust_env: bool = False,
     ) -> None:
         self.mode = mode
         self.url = url
@@ -80,6 +81,7 @@ class QdrantVectorStoreAdapter:
         self.local_path = local_path
         self.text_collection = text_collection
         self.image_collection = image_collection
+        self.trust_env = trust_env
         self._client: QdrantClient | None = None
         self._error: str | None = None
 
@@ -95,6 +97,7 @@ class QdrantVectorStoreAdapter:
                         url=self.url,
                         api_key=self.api_key or None,
                         timeout=30,
+                        trust_env=self.trust_env,
                     )
                 self._error = None
             except Exception as exc:

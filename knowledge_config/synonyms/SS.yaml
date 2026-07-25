@@ -1,0 +1,10 @@
+线性时不变系统:
+  - LTI
+卷积:
+  - convolution
+傅里叶变换:
+  - Fourier transform
+拉普拉斯变换:
+  - Laplace transform
+Z变换:
+  - z-transform

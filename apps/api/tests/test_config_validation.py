@@ -24,7 +24,7 @@ def test_missing_xingchen_fields_are_not_required() -> None:
     knowledge = result["knowledge"]
     assert isinstance(knowledge, dict)
     assert knowledge["enabled"] is True
-    assert set(knowledge["sources"]) == {"CT", "AE", "DE"}
+    assert set(knowledge["sources"]) == {"CT", "AE", "DE", "SS", "DSP", "COMM"}
 
 
 def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:

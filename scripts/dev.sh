@@ -51,6 +51,12 @@ knowledge_path="$(resolve_local_knowledge "模电")"
 [[ -n "$knowledge_path" ]] && export KNOWLEDGE_AE_PATH="$knowledge_path"
 knowledge_path="$(resolve_local_knowledge "数电")"
 [[ -n "$knowledge_path" ]] && export KNOWLEDGE_DE_PATH="$knowledge_path"
+knowledge_path="$(resolve_local_knowledge "信号与系统版本一")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_SS_PATH="$knowledge_path"
+knowledge_path="$(resolve_local_knowledge "数字信号处理")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_DSP_PATH="$knowledge_path"
+knowledge_path="$(resolve_local_knowledge "通信原理")"
+[[ -n "$knowledge_path" ]] && export KNOWLEDGE_COMM_PATH="$knowledge_path"
 
 docker compose up -d postgres redis minio
 (cd apps/api && ../../.venv/bin/python -m alembic upgrade head)

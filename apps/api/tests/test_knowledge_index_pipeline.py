@@ -14,7 +14,10 @@ from app.services.task_runner import TaskRunner
 
 
 def roots(tmp_path: Path) -> dict[str, Path]:
-    values = {course: tmp_path / course for course in ("CT", "AE", "DE")}
+    values = {
+        course: tmp_path / course
+        for course in ("CT", "AE", "DE", "SS", "DSP", "COMM")
+    }
     for root in values.values():
         root.mkdir()
     return values
@@ -54,7 +57,14 @@ def test_scanner_finds_courses_text_images_and_does_not_modify_sources(
 
     result = scanner(values).scan()
 
-    assert [item.course_id for item in result.courses] == ["CT", "AE", "DE"]
+    assert [item.course_id for item in result.courses] == [
+        "CT",
+        "AE",
+        "DE",
+        "SS",
+        "DSP",
+        "COMM",
+    ]
     assert len(result.manifest) == 2
     assert len(result.images) == 1
     assert result.images[0].parent_document_id is not None
@@ -261,6 +271,9 @@ def test_runtime_retrieval_is_course_scoped_and_returns_related_image(
         knowledge_ct_path=values["CT"],
         knowledge_ae_path=values["AE"],
         knowledge_de_path=values["DE"],
+        knowledge_ss_path=values["SS"],
+        knowledge_dsp_path=values["DSP"],
+        knowledge_comm_path=values["COMM"],
         knowledge_chunk_size_chars=300,
         _env_file=None,
     )
@@ -308,6 +321,9 @@ def test_retrieval_matrix_covers_course_concepts_methods_formulas_and_timing(
         knowledge_ct_path=values["CT"],
         knowledge_ae_path=values["AE"],
         knowledge_de_path=values["DE"],
+        knowledge_ss_path=values["SS"],
+        knowledge_dsp_path=values["DSP"],
+        knowledge_comm_path=values["COMM"],
         knowledge_chunk_size_chars=300,
         _env_file=None,
     )
@@ -347,6 +363,9 @@ def test_context_packet_numbers_evidence_and_formats_images(tmp_path: Path) -> N
         knowledge_ct_path=values["CT"],
         knowledge_ae_path=values["AE"],
         knowledge_de_path=values["DE"],
+        knowledge_ss_path=values["SS"],
+        knowledge_dsp_path=values["DSP"],
+        knowledge_comm_path=values["COMM"],
         knowledge_chunk_size_chars=300,
         _env_file=None,
     )

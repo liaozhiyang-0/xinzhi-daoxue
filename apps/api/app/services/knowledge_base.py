@@ -21,17 +21,14 @@ from app.contracts import (
 )
 from app.contracts.knowledge import KnowledgeCourseId, utc_now
 from app.core.config import Settings
+from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
 from app.services.knowledge_audit import (
     infer_content_type,
     markdown_image_references,
     stable_id,
 )
 
-COURSE_NAMES: dict[str, str] = {
-    "CT": "电路理论",
-    "AE": "模拟电子技术",
-    "DE": "数字电子技术",
-}
+COURSE_NAMES = KNOWLEDGE_COURSE_NAMES
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^\)]+\)")
 HTML_RE = re.compile(r"<[^>]+>")
@@ -139,7 +136,7 @@ def split_markdown(text: str, chunk_size: int, overlap: int) -> list[tuple[str, 
 
 
 class KnowledgeBaseService:
-    """Read-only lexical index for the three local Markdown course libraries."""
+    """Read-only lexical index for configured local Markdown course libraries."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings

@@ -244,7 +244,7 @@ agents:
       request_id: request_id
     capabilities:
       user_roles: [student, teacher]
-      courses: [CT, AE, DE]
+      courses: [CT, AE, DE, SS, DSP, COMM]
       intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
       input_modes: [text]
       supports_session_context: true
@@ -291,7 +291,7 @@ agents:
     priority: 90
     capabilities:
       user_roles: [student, teacher]
-      courses: [CT, AE, DE]
+      courses: [CT, AE, DE, SS, DSP, COMM]
       intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
       input_modes: [text]
       supports_session_context: true
@@ -648,7 +648,7 @@ routing:
     scene: learning
     retrieval_required: true
     provider_required: false
-  - course_ids: [CT, AE, DE]
+  - course_ids: [CT, AE, DE, SS, DSP, COMM]
     intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
     agent_id: LEARN_01_KNOWLEDGE_QA_V1
     scene: learning

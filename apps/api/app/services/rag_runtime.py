@@ -68,4 +68,5 @@ def create_vector_store(settings: Settings) -> QdrantVectorStoreAdapter:
         local_path=settings.qdrant_local_path,
         text_collection=settings.qdrant_text_collection,
         image_collection=settings.qdrant_image_collection,
+        trust_env=settings.qdrant_trust_env,
     )

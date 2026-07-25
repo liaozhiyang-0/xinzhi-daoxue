@@ -3,11 +3,9 @@ from __future__ import annotations
 import re
 import unicodedata
 
-COURSE_NAMES = {
-    "CT": "电路理论",
-    "AE": "模拟电子技术",
-    "DE": "数字电子技术",
-}
+from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+
+COURSE_NAMES = KNOWLEDGE_COURSE_NAMES
 POLITE_PREFIX = re.compile(
     r"^(?:请问|请帮我|帮我|麻烦(?:你)?|能否|可以(?:帮我)?)(?:解释|说明|分析|讲解|告诉我)?[，,：:\s]*"
 )

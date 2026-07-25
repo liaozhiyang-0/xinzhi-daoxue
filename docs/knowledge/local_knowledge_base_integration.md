@@ -2,8 +2,8 @@
 
 ## 数据边界
 
-- 原始 `电路理论`、`模电`、`数电` 目录保持原位。
-- Docker 以只读 bind mount 挂载到 `/knowledge/CT`、`/knowledge/AE`、`/knowledge/DE`。
+- 原始 `电路理论`、`模电`、`数电`、`信号与系统版本一`、`数字信号处理`、`通信原理` 目录保持原位。
+- Docker 以只读 bind mount 挂载到 `/knowledge/CT`、`/knowledge/AE`、`/knowledge/DE`、`/knowledge/SS`、`/knowledge/DSP`、`/knowledge/COMM`。
 - Git 和 Docker build context 不包含教材原文。
 - API 只读取 UTF-8 `.md`，不解压 ZIP、不执行文件、不解析 PDF、不读取图片像素。
 
@@ -39,8 +39,9 @@ POST /api/v1/knowledge/reload
 }
 ```
 
-课程编号为 `CT`（电路理论）、`AE`（模拟电子技术）、`DE`（数字电子技术）。响应不暴露
-宿主机绝对路径，只返回相对文档路径、片段、评分和 `kb://` 来源引用。
+课程编号为 `CT`（电路理论）、`AE`（模拟电子技术）、`DE`（数字电子技术）、
+`SS`（信号与系统）、`DSP`（数字信号处理）、`COMM`（通信原理）。响应不暴露宿主机
+绝对路径，只返回相对文档路径、片段、评分和 `kb://` 来源引用。
 
 ## 任务链路
 
@@ -60,7 +61,8 @@ TaskRunner 使用任务已保存的路由。`LEARN_01_KNOWLEDGE_QA_V1` 在不占
 3. `local_knowledge/` 空目录回退。
 
 可通过 `KNOWLEDGE_CT_HOST_PATH`、`KNOWLEDGE_AE_HOST_PATH`、
-`KNOWLEDGE_DE_HOST_PATH` 显式覆盖宿主机路径。
+`KNOWLEDGE_DE_HOST_PATH`、`KNOWLEDGE_SS_HOST_PATH`、
+`KNOWLEDGE_DSP_HOST_PATH`、`KNOWLEDGE_COMM_HOST_PATH` 显式覆盖宿主机路径。
 
 ## 当前限制
 

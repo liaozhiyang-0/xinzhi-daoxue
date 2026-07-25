@@ -13,7 +13,11 @@ def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
         description="保留旧索引并构建当前真实文本 Embedding 版本"
     )
-    value.add_argument("--course", action="append", choices=("CT", "AE", "DE"))
+    value.add_argument(
+        "--course",
+        action="append",
+        choices=("CT", "AE", "DE", "SS", "DSP", "COMM"),
+    )
     value.add_argument("--batch-size", type=int)
     value.add_argument("--dry-run", action="store_true")
     return value

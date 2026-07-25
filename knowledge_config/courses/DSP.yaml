@@ -1,0 +1,6 @@
+course_id: DSP
+course_name: 数字信号处理
+document_patterns:
+  - "**/*.md"
+chapter_aliases: {}
+excluded_paths: []

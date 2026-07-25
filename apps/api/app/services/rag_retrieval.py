@@ -15,6 +15,7 @@ from uuid import uuid4
 from app.contracts import KnowledgeHit, RelatedImage, RetrievalResult
 from app.contracts.knowledge import KnowledgeCourseId
 from app.core.config import Settings
+from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
 from app.services.knowledge_base import KnowledgeBaseService, tokenize
 from app.services.query_rewrite import rewrite_retrieval_query
 from app.services.rag_providers import (
@@ -800,9 +801,7 @@ class RAGRetrievalService:
             chunk_id=str(payload["chunk_id"]),
             document_id=str(payload.get("document_id", "")),
             course_id=KnowledgeCourseId(str(payload["course_id"])),
-            course_name={"CT": "电路理论", "AE": "模拟电子技术", "DE": "数字电子技术"}[
-                str(payload["course_id"])
-            ],
+            course_name=KNOWLEDGE_COURSE_NAMES[str(payload["course_id"])],
             chapter=str(payload.get("chapter", "UNKNOWN")),
             section=str(payload.get("parent_section", "")),
             document_path=str(payload.get("relative_path", "")),

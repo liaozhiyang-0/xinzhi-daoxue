@@ -15,6 +15,9 @@ COURSE_ROOTS = {
     "CT": PROJECT_ROOT / "电路理论",
     "AE": PROJECT_ROOT / "模电",
     "DE": PROJECT_ROOT / "数电",
+    "SS": PROJECT_ROOT / "信号与系统版本一",
+    "DSP": PROJECT_ROOT / "数字信号处理",
+    "COMM": PROJECT_ROOT / "通信原理",
 }
 
 

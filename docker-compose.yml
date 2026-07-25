@@ -100,7 +100,10 @@ services:
       KNOWLEDGE_CT_PATH: /knowledge/CT
       KNOWLEDGE_AE_PATH: /knowledge/AE
       KNOWLEDGE_DE_PATH: /knowledge/DE
-      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-800}
+      KNOWLEDGE_SS_PATH: /knowledge/SS
+      KNOWLEDGE_DSP_PATH: /knowledge/DSP
+      KNOWLEDGE_COMM_PATH: /knowledge/COMM
+      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-400}
       KNOWLEDGE_CHUNK_OVERLAP_CHARS: ${KNOWLEDGE_CHUNK_OVERLAP_CHARS:-150}
       KNOWLEDGE_DEFAULT_TOP_K: ${KNOWLEDGE_DEFAULT_TOP_K:-5}
       KNOWLEDGE_MAX_FILES_PER_COURSE: ${KNOWLEDGE_MAX_FILES_PER_COURSE:-1000}
@@ -115,6 +118,7 @@ services:
       RERANKER_DEVICE: ${RERANKER_DEVICE:-auto}
       QDRANT_MODE: server
       QDRANT_URL: http://qdrant:6333
+      QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
     volumes:
       - type: bind
         source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
@@ -127,6 +131,18 @@ services:
       - type: bind
         source: ${KNOWLEDGE_DE_HOST_PATH:-./local_knowledge/DE}
         target: /knowledge/DE
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_SS_HOST_PATH:-./local_knowledge/SS}
+        target: /knowledge/SS
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_DSP_HOST_PATH:-./local_knowledge/DSP}
+        target: /knowledge/DSP
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_COMM_HOST_PATH:-./local_knowledge/COMM}
+        target: /knowledge/COMM
         read_only: true
     ports:
       - "${API_PORT:-8000}:8000"

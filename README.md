@@ -41,6 +41,7 @@ PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docke
 .\xzd.cmd preflight                      # 会议前检查，不消耗云端额度
 .\xzd.cmd preflight -WithCloud           # 显式执行真实云端检查
 .\xzd.cmd index -Course CT -TextOnly     # 为本机 CT 教材构建文本索引
+.\xzd.cmd index -Course SS               # 增量构建 SS 文本与图片索引
 .\xzd.cmd start -Reload                  # 开发热重载
 ```
 
@@ -131,7 +132,7 @@ DASHSCOPE_API_KEY=
 - CT `solve_problem` 路由到 `SOLVER_CT_V1`；`XINGCHEN_ENABLED=true` 且配置完整时调用真实星辰，否则在未启用时使用明确标识的 Mock。
 - 星辰上游当前支持同步文字和单图片调用，不支持多图片、PDF 或上游流式调用。
 - CT 的 `check_user_solution` 和 `verify_answer` 直接复用冻结的 `SOLVER_CT_V1`；已移除从未发布的中间计划态 Agent，避免无效降级和额外 Flow 配置。
-- CT/AE/DE 的学习类意图优先使用云端 `LEARN_01_KNOWLEDGE_QA_V1`；未发布或未配置时降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。
+- CT/AE/DE/SS/DSP/COMM 的学习类意图统一进入带本地 RAG 的 `LEARN_01_KNOWLEDGE_QA_V1`；云端失败、未发布或未配置时降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。截至 2026-07-25，真实星辰工作流仍只接受 CT/AE/DE，SS/DSP/COMM 的云端答案质量状态为 `BLOCKED_BY_CLOUD_FLOW`，本地证据检索与回退不受影响。
 - 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的云端调度兜底；兜底不可用时返回 `unresolved`，不会自动送入 `SOLVER_CT_V1`。
 - 多图、PDF、空输入及 Agent 未声明的输入组合返回明确错误，不会静默丢弃附件。
 
@@ -143,6 +144,9 @@ DASHSCOPE_API_KEY=
 电路理论/  -> CT
 模电/      -> AE
 数电/      -> DE
+信号与系统版本一/ -> SS
+数字信号处理/     -> DSP
+通信原理/         -> COMM
 ```
 
 当前文本索引读取 UTF-8 Markdown；图片索引读取 JPG/JPEG/PNG/WEBP 原始像素。PDF、DOCX 和 ZIP 只登记元数据，不直接解析。原始教材、模型缓存和 Qdrant 数据目录均不提交 Git。
@@ -157,7 +161,7 @@ DASHSCOPE_API_KEY=
 |---|---|---|---|
 | CT | `solve_problem` | `SOLVER_CT_V1` | selected / Xingchen 或 Mock |
 | CT | `check_user_solution`、`verify_answer` | `SOLVER_CT_V1` | selected / Xingchen 或明确 Mock |
-| CT、AE、DE | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` → `LEARN_01_LOCAL_RETRIEVAL_V1` | cloud/local hybrid |
+| CT、AE、DE、SS、DSP、COMM | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` → `LEARN_01_LOCAL_RETRIEVAL_V1` | cloud/local hybrid；新三课云端暂受工作流限制 |
 | AE、DE | `solve_problem` | `UNRESOLVED` | unresolved，不使用 CT Solver |
 | 其他组合 | `ROUTER_01_FALLBACK_V1` 或 `UNRESOLVED` | cloud_fallback / unresolved |
 

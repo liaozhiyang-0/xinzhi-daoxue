@@ -149,9 +149,23 @@ $CircuitTheoryFolder = -join @(
 )
 $AnalogElectronicsFolder = -join @([char]0x6A21, [char]0x7535)
 $DigitalElectronicsFolder = -join @([char]0x6570, [char]0x7535)
+$SignalsAndSystemsFolder = -join @(
+    [char]0x4FE1, [char]0x53F7, [char]0x4E0E, [char]0x7CFB, [char]0x7EDF,
+    [char]0x7248, [char]0x672C, [char]0x4E00
+)
+$DigitalSignalProcessingFolder = -join @(
+    [char]0x6570, [char]0x5B57, [char]0x4FE1, [char]0x53F7, [char]0x5904,
+    [char]0x7406
+)
+$CommunicationPrinciplesFolder = -join @(
+    [char]0x901A, [char]0x4FE1, [char]0x539F, [char]0x7406
+)
 Set-KnowledgeHostPath "KNOWLEDGE_CT_HOST_PATH" $CircuitTheoryFolder
 Set-KnowledgeHostPath "KNOWLEDGE_AE_HOST_PATH" $AnalogElectronicsFolder
 Set-KnowledgeHostPath "KNOWLEDGE_DE_HOST_PATH" $DigitalElectronicsFolder
+Set-KnowledgeHostPath "KNOWLEDGE_SS_HOST_PATH" $SignalsAndSystemsFolder
+Set-KnowledgeHostPath "KNOWLEDGE_DSP_HOST_PATH" $DigitalSignalProcessingFolder
+Set-KnowledgeHostPath "KNOWLEDGE_COMM_HOST_PATH" $CommunicationPrinciplesFolder
 
 Write-Host "[xzd] Validating Docker Compose..."
 & $Docker compose config --quiet

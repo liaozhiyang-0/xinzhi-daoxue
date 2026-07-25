@@ -10,6 +10,9 @@ class KnowledgeCourseId(StrEnum):
     CIRCUIT_THEORY = "CT"
     ANALOG_ELECTRONICS = "AE"
     DIGITAL_ELECTRONICS = "DE"
+    SIGNALS_AND_SYSTEMS = "SS"
+    DIGITAL_SIGNAL_PROCESSING = "DSP"
+    COMMUNICATION_PRINCIPLES = "COMM"
 
 
 class KnowledgeSearchRequest(BaseModel):

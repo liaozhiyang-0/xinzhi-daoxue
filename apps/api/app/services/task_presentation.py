@@ -9,8 +9,9 @@ from app.contracts import (
     TaskPresentation,
     WorkflowContextBundle,
 )
+from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
 
-COURSE_LABELS = {"CT": "电路理论", "AE": "模拟电子技术", "DE": "数字电子技术"}
+COURSE_LABELS = KNOWLEDGE_COURSE_NAMES
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
     "LEARN_01_KNOWLEDGE_QA_V1": "知识问答",

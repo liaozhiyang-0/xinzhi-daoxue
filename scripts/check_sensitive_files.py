@@ -14,6 +14,9 @@ PROHIBITED_PATH_PARTS = {
     "电路理论",
     "模电",
     "数电",
+    "信号与系统版本一",
+    "数字信号处理",
+    "通信原理",
 }
 PROHIBITED_SUFFIXES = (".xingchen.raw.yml", ".xingchen.raw.yaml")
 SECRET_PATTERNS = {

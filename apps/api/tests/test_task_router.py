@@ -16,7 +16,7 @@ def request(course_id: str, intent: str) -> AgentRequest:
     )
 
 
-@pytest.mark.parametrize("course_id", ["CT", "AE", "DE"])
+@pytest.mark.parametrize("course_id", ["CT", "AE", "DE", "SS", "DSP", "COMM"])
 @pytest.mark.parametrize("intent", ["general_qa", "explain_concept"])
 def test_learning_routes_to_local_knowledge_agent(course_id: str, intent: str) -> None:
     decision = TaskRouter(AgentRegistry()).route(request(course_id, intent))

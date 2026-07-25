@@ -176,7 +176,15 @@ class XZDSupervisor:
         settings = self.router.settings
         if (
             settings.enable_local_knowledge_qa
-            and course in {CourseCode.CT, CourseCode.AE, CourseCode.DE}
+            and course
+            in {
+                CourseCode.CT,
+                CourseCode.AE,
+                CourseCode.DE,
+                CourseCode.SS,
+                CourseCode.DSP,
+                CourseCode.COMM,
+            }
             and intent
             in {
                 OrchestrationIntent.EXPLAIN_CONCEPT,

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.core.config import Settings  # noqa: E402
+from app.knowledge_catalog import KNOWLEDGE_COURSE_IDS  # noqa: E402
 from app.services.knowledge_base import KnowledgeBaseService  # noqa: E402
 from app.services.knowledge_index import (  # noqa: E402
     KnowledgeIndexBuilder,
@@ -25,7 +26,7 @@ from app.services.rag_runtime import (  # noqa: E402
     create_vector_store,
 )
 
-COURSE_CHOICES = ("CT", "AE", "DE")
+COURSE_CHOICES = KNOWLEDGE_COURSE_IDS
 
 
 def builder_from_settings(settings: Settings) -> KnowledgeIndexBuilder:

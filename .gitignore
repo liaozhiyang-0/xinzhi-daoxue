@@ -33,12 +33,21 @@ local_knowledge/*
 !local_knowledge/CT/
 !local_knowledge/AE/
 !local_knowledge/DE/
+!local_knowledge/SS/
+!local_knowledge/DSP/
+!local_knowledge/COMM/
 local_knowledge/CT/*
 local_knowledge/AE/*
 local_knowledge/DE/*
+local_knowledge/SS/*
+local_knowledge/DSP/*
+local_knowledge/COMM/*
 !local_knowledge/CT/.gitkeep
 !local_knowledge/AE/.gitkeep
 !local_knowledge/DE/.gitkeep
+!local_knowledge/SS/.gitkeep
+!local_knowledge/DSP/.gitkeep
+!local_knowledge/COMM/.gitkeep
 .minio/
 .local_inputs/
 .local_outputs/
@@ -49,6 +58,9 @@ local_knowledge/DE/*
 /电路理论/
 /模电/
 /数电/
+/信号与系统版本一/
+/数字信号处理/
+/通信原理/
 /知识库/
 
 # 本地知识库索引缓存包含教材正文和向量，全部由各机器本地生成，不提交。

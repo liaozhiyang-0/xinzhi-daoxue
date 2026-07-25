@@ -10,6 +10,7 @@ from app.services.knowledge_resources import resolve_course_resource
 from app.services.rag_index import IndexVersionInfo, MultimodalRAGIndexer
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.vector_store import QdrantVectorStoreAdapter
+from pytest import MonkeyPatch
 
 from tests.rag_fakes import (
     DeterministicFakeImageEmbeddingProvider,
@@ -19,7 +20,10 @@ from tests.rag_fakes import (
 
 
 def settings(tmp_path: Path) -> Settings:
-    roots = {course: tmp_path / course for course in ("CT", "AE", "DE")}
+    roots = {
+        course: tmp_path / course
+        for course in ("CT", "AE", "DE", "SS", "DSP", "COMM")
+    }
     for root in roots.values():
         root.mkdir()
     (roots["CT"] / "chapter.md").write_text(
@@ -37,6 +41,9 @@ def settings(tmp_path: Path) -> Settings:
         knowledge_ct_path=roots["CT"],
         knowledge_ae_path=roots["AE"],
         knowledge_de_path=roots["DE"],
+        knowledge_ss_path=roots["SS"],
+        knowledge_dsp_path=roots["DSP"],
+        knowledge_comm_path=roots["COMM"],
         knowledge_chunk_size_chars=300,
         knowledge_index_path=tmp_path / "indexes",
         qdrant_local_path=tmp_path / "qdrant",
@@ -57,6 +64,33 @@ def store_for(config: Settings) -> QdrantVectorStoreAdapter:
         text_collection=config.qdrant_text_collection,
         image_collection=config.qdrant_image_collection,
     )
+
+
+def test_server_qdrant_can_ignore_system_proxy(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeQdrantClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("app.services.vector_store.QdrantClient", FakeQdrantClient)
+    store = QdrantVectorStoreAdapter(
+        mode="server",
+        url="http://127.0.0.1:6333",
+        api_key="",
+        local_path=tmp_path / "qdrant",
+        text_collection="text",
+        image_collection="image",
+        trust_env=False,
+    )
+
+    assert store.client is not None
+    assert captured["trust_env"] is False
 
 
 def seed(store: QdrantVectorStoreAdapter) -> None:

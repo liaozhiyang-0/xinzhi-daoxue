@@ -9,7 +9,10 @@ def make_client(tmp_path: Path) -> TestClient:
     ct = tmp_path / "ct"
     ae = tmp_path / "ae"
     de = tmp_path / "de"
-    for path in (ct, ae, de):
+    ss = tmp_path / "ss"
+    dsp = tmp_path / "dsp"
+    comm = tmp_path / "comm"
+    for path in (ct, ae, de, ss, dsp, comm):
         path.mkdir()
     (ct / "chapter.md").write_text(
         "## 节点电压法\n节点电压法以独立节点电压作为未知量列写方程。",
@@ -31,6 +34,9 @@ def make_client(tmp_path: Path) -> TestClient:
         knowledge_ct_path=ct,
         knowledge_ae_path=ae,
         knowledge_de_path=de,
+        knowledge_ss_path=ss,
+        knowledge_dsp_path=dsp,
+        knowledge_comm_path=comm,
         knowledge_chunk_size_chars=300,
         knowledge_chunk_overlap_chars=20,
         rag_enabled=False,

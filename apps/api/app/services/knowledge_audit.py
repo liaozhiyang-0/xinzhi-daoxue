@@ -11,16 +11,14 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-COURSE_NAMES = {
-    "CT": "电路理论",
-    "AE": "模拟电子技术",
-    "DE": "数字电子技术",
-}
+from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+
+COURSE_NAMES = KNOWLEDGE_COURSE_NAMES
 TEXT_EXTENSIONS = {".md", ".txt", ".json", ".csv"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 ARCHIVE_EXTENSIONS = {".zip", ".7z", ".rar"}
-SUPPORTED_COURSES = frozenset({"CT", "AE", "DE"})
+SUPPORTED_COURSES = frozenset(COURSE_NAMES)
 MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 CHAPTER_RE = re.compile(r"第[一二三四五六七八九十百零〇0-9]+章")

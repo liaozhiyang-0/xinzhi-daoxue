@@ -11,7 +11,10 @@ def make_service(
     documents: dict[str, dict[str, str]],
     **overrides: object,
 ) -> KnowledgeBaseService:
-    roots = {course: tmp_path / course for course in ("CT", "AE", "DE")}
+    roots = {
+        course: tmp_path / course
+        for course in ("CT", "AE", "DE", "SS", "DSP", "COMM")
+    }
     for course, root in roots.items():
         root.mkdir()
         for relative, content in documents.get(course, {}).items():
@@ -23,6 +26,9 @@ def make_service(
         "knowledge_ct_path": roots["CT"],
         "knowledge_ae_path": roots["AE"],
         "knowledge_de_path": roots["DE"],
+        "knowledge_ss_path": roots["SS"],
+        "knowledge_dsp_path": roots["DSP"],
+        "knowledge_comm_path": roots["COMM"],
         "knowledge_chunk_size_chars": 300,
         "knowledge_chunk_overlap_chars": 100,
     }

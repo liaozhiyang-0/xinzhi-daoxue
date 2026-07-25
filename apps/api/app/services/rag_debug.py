@@ -130,6 +130,7 @@ class RAGDebugService:
                 ),
                 "include_images": bool(payload.get("include_images", False)),
                 "use_reranker": bool(payload.get("use_reranker", False)),
+                "allow_cloud": bool(payload.get("allow_cloud", False)),
             },
         )
         stage("request_received", "success", accepted, input_count=1)
