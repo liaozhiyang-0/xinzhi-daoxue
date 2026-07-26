@@ -1,0 +1,11 @@
+{
+  "case_id": "follow_up_inherits_course",
+  "input": {"message": "为什么上一问的电流方向要取负号？"},
+  "session_context": {"course_id": "CT", "intent": "solve_problem"},
+  "expected_course": "CT",
+  "expected_intent": "follow_up_question",
+  "expected_status": "success",
+  "required_keywords": ["参考方向"],
+  "forbidden_claims": ["改变参考方向"],
+  "reference_answer": "负号表示实际方向与选定参考方向相反。"
+}

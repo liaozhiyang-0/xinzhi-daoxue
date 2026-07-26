@@ -2,8 +2,8 @@
 
 ## 数据边界
 
-- 原始 `电路理论`、`模电`、`数电` 目录保持原位。
-- Docker 以只读 bind mount 挂载到 `/knowledge/CT`、`/knowledge/AE`、`/knowledge/DE`。
+- 原始 `电路理论`、`模电`、`数电`、`信号与系统版本一`、`数字信号处理`、`通信原理` 目录保持原位。
+- Docker 以只读 bind mount 挂载到 `/knowledge/CT`、`/knowledge/AE`、`/knowledge/DE`、`/knowledge/SS`、`/knowledge/DSP`、`/knowledge/COMM`。
 - Git 和 Docker build context 不包含教材原文。
 - API 只读取 UTF-8 `.md`，不解压 ZIP、不执行文件、不解析 PDF、不读取图片像素。
 
@@ -11,17 +11,21 @@
 
 ```text
 Markdown -> 标题分节 -> 定长重叠分块 -> 中英文词项索引
-         -> BM25 风格排序 -> 相对路径命中 -> kb:// 引用
+         -> 课程同义词与字段加权 -> 阈值/去重/多样性
+         -> RetrievalResult -> RetrievalContextPacket -> kb:// 引用
 ```
 
-索引为进程内只读索引，首次查询时延迟构建；开发环境可调用 reload。未来可在保持
-`KnowledgeHit` 合同不变的情况下替换为 PostgreSQL、向量数据库或独立检索服务。
+索引为进程内只读索引，首次查询时延迟构建；开发环境可调用 reload。当前模式名为
+`local_lexical_v2`，不声称 semantic 或 vector。`KnowledgeHit` 已保留 chunk、章节、评分分量、
+校验和与来源字段，未来可在合同稳定的前提下接入混合检索。
 
 ## API
 
 ```http
 GET  /api/v1/knowledge/sources
 POST /api/v1/knowledge/search
+POST /api/v1/knowledge/evaluate-query
+GET  /api/v1/knowledge/benchmark-summary
 POST /api/v1/knowledge/reload
 ```
 
@@ -35,16 +39,18 @@ POST /api/v1/knowledge/reload
 }
 ```
 
-课程编号为 `CT`（电路理论）、`AE`（模拟电子技术）、`DE`（数字电子技术）。响应不暴露
-宿主机绝对路径，只返回相对文档路径、片段、评分和 `kb://` 来源引用。
+课程编号为 `CT`（电路理论）、`AE`（模拟电子技术）、`DE`（数字电子技术）、
+`SS`（信号与系统）、`DSP`（数字信号处理）、`COMM`（通信原理）。响应不暴露宿主机
+绝对路径，只返回相对文档路径、片段、评分和 `kb://` 来源引用。
 
 ## 任务链路
 
-TaskRunner 从 `canonical_input.text/question/problem/query/prompt` 提取检索词，在不占用数据库
-连接的情况下执行检索，随后写入 `knowledge.retrieved` 事件。命中项进入
-`structured_result.knowledge`、`citations` 与 Artifact `source_refs`。
+TaskRunner 使用任务已保存的路由。`LEARN_01_KNOWLEDGE_QA_V1` 在不占用数据库连接的情况下
+执行本地检索和上下文构建，并写入 query_normalized、retrieved、context_built、insufficient
+和 retrieval_only_created 事件。命中项进入结构化结果、citations 与 Artifact `source_refs`。
 
-Mock Provider 仍明确是 Mock；知识库命中只证明检索链路可用，不代表已完成智能解题。
+`LEARN_01` 当前不调用 Provider；返回结果显式标记 retrieval_only。Mock Provider 仍只用于
+尚未发布真实 API 的解题链路。知识库命中不代表已完成智能解题。
 
 ## Docker 自动发现
 
@@ -55,7 +61,8 @@ Mock Provider 仍明确是 Mock；知识库命中只证明检索链路可用，�
 3. `local_knowledge/` 空目录回退。
 
 可通过 `KNOWLEDGE_CT_HOST_PATH`、`KNOWLEDGE_AE_HOST_PATH`、
-`KNOWLEDGE_DE_HOST_PATH` 显式覆盖宿主机路径。
+`KNOWLEDGE_DE_HOST_PATH`、`KNOWLEDGE_SS_HOST_PATH`、
+`KNOWLEDGE_DSP_HOST_PATH`、`KNOWLEDGE_COMM_HOST_PATH` 显式覆盖宿主机路径。
 
 ## 当前限制
 

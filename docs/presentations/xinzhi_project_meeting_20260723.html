@@ -1,0 +1,1926 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>芯智导学｜项目进展、架构与下一阶段计划</title>
+  <style>
+    :root {
+      --ink: #eff7ff;
+      --muted: #9bb0c5;
+      --dim: #64788c;
+      --bg: #071019;
+      --panel: #0d1a26;
+      --panel-2: #112333;
+      --line: rgba(159, 205, 235, 0.18);
+      --cyan: #42d7e7;
+      --blue: #6aa9ff;
+      --orange: #ffb35c;
+      --green: #6fdea8;
+      --red: #ff7b82;
+      --violet: #b99aff;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+      --radius: 20px;
+      --slide-pad: clamp(32px, 5vw, 76px);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 84% 15%, rgba(66, 215, 231, 0.12), transparent 26%),
+        radial-gradient(circle at 8% 88%, rgba(106, 169, 255, 0.11), transparent 28%),
+        linear-gradient(135deg, #060d14 0%, #09131d 50%, #071019 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.18;
+      background-image:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: linear-gradient(to bottom, black, transparent 90%);
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+    }
+
+    .deck {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      grid-template-rows: auto 1fr auto;
+      gap: 26px;
+      padding: var(--slide-pad);
+      isolation: isolate;
+    }
+
+    .slide.active {
+      display: grid;
+      animation: enter .36s cubic-bezier(.2,.7,.2,1);
+    }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(10px) scale(.994); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .slide::after {
+      content: attr(data-kicker);
+      position: absolute;
+      top: 24px;
+      right: var(--slide-pad);
+      color: var(--dim);
+      font-size: 12px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    .slide-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      padding-top: 10px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 9px;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 2px;
+      background: var(--cyan);
+      box-shadow: 0 0 16px rgba(66, 215, 231, .6);
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      max-width: 980px;
+      margin-bottom: 18px;
+      font-size: clamp(48px, 6.5vw, 92px);
+      line-height: .98;
+      letter-spacing: -.045em;
+      font-weight: 780;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 1.08;
+      letter-spacing: -.035em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: clamp(18px, 1.6vw, 24px);
+      line-height: 1.2;
+    }
+
+    .lead {
+      max-width: 900px;
+      margin-bottom: 0;
+      color: #c5d5e4;
+      font-size: clamp(18px, 2vw, 28px);
+      line-height: 1.55;
+    }
+
+    .subtle {
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .accent { color: var(--cyan); }
+    .warm { color: var(--orange); }
+    .good { color: var(--green); }
+    .risk { color: var(--red); }
+
+    .body {
+      min-height: 0;
+      align-self: stretch;
+      display: grid;
+      align-content: center;
+      gap: 22px;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      color: var(--dim);
+      font-size: 12px;
+      letter-spacing: .03em;
+    }
+
+    .brandline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-dot {
+      width: 9px;
+      height: 9px;
+      border: 2px solid var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(66, 215, 231, .55);
+    }
+
+    .grid-2, .grid-3, .grid-4 {
+      display: grid;
+      gap: 18px;
+    }
+
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card {
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(150deg, rgba(17,35,51,.92), rgba(10,24,36,.82));
+      box-shadow: 0 14px 44px rgba(0,0,0,.18);
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 54px;
+      height: 2px;
+      background: var(--tone, var(--cyan));
+    }
+
+    .card p:last-child,
+    .card ul:last-child {
+      margin-bottom: 0;
+    }
+
+    .card-index {
+      display: block;
+      margin-bottom: 18px;
+      color: var(--tone, var(--cyan));
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .16em;
+    }
+
+    .stat {
+      display: block;
+      margin: 2px 0 8px;
+      color: var(--ink);
+      font-size: clamp(32px, 4vw, 58px);
+      font-weight: 790;
+      letter-spacing: -.04em;
+      line-height: 1;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    ul.clean {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    ul.clean li {
+      position: relative;
+      padding-left: 20px;
+      color: #bfd0df;
+      line-height: 1.5;
+    }
+
+    ul.clean li::before {
+      content: "";
+      position: absolute;
+      top: .62em;
+      left: 0;
+      width: 7px;
+      height: 7px;
+      border: 1px solid var(--tone, var(--cyan));
+      border-radius: 2px;
+      transform: rotate(45deg);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.035);
+      color: #c4d4e2;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .pill::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--tone, var(--cyan));
+      box-shadow: 0 0 10px color-mix(in srgb, var(--tone, var(--cyan)) 70%, transparent);
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .title-slide {
+      grid-template-rows: 1fr auto;
+      align-items: center;
+    }
+
+    .title-slide .hero {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 22px;
+      align-content: center;
+      max-width: 1120px;
+    }
+
+    .title-slide .hero::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      right: -28vw;
+      top: 50%;
+      width: 520px;
+      height: 520px;
+      border: 1px solid rgba(66,215,231,.14);
+      border-radius: 50%;
+      transform: translateY(-50%);
+      box-shadow:
+        0 0 0 46px rgba(66,215,231,.025),
+        0 0 0 100px rgba(106,169,255,.02);
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .meta-row strong { color: var(--ink); }
+
+    .thesis {
+      display: grid;
+      grid-template-columns: .8fr 1.2fr;
+      gap: 26px;
+      align-items: center;
+    }
+
+    .big-quote {
+      padding: 26px 0;
+      color: var(--ink);
+      font-size: clamp(28px, 3.4vw, 50px);
+      line-height: 1.25;
+      font-weight: 720;
+      letter-spacing: -.025em;
+    }
+
+    .big-quote span {
+      color: var(--cyan);
+    }
+
+    .flow {
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    .flow-step {
+      flex: 1;
+      display: grid;
+      align-content: center;
+      min-height: 112px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(13,26,38,.78);
+      text-align: center;
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--tone, var(--cyan));
+      font-size: 17px;
+    }
+
+    .flow-step small {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .arrow {
+      align-self: center;
+      color: var(--dim);
+      font-size: 20px;
+    }
+
+    .timeline {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      padding-top: 24px;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      top: 5px;
+      left: 4%;
+      right: 4%;
+      height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--cyan), var(--green), var(--orange));
+      opacity: .65;
+    }
+
+    .milestone {
+      position: relative;
+      min-height: 214px;
+      padding: 24px 18px 18px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: rgba(13,26,38,.78);
+    }
+
+    .milestone::before {
+      content: "";
+      position: absolute;
+      top: -26px;
+      left: 18px;
+      width: 12px;
+      height: 12px;
+      border: 3px solid var(--bg);
+      border-radius: 50%;
+      background: var(--tone, var(--cyan));
+      box-shadow: 0 0 16px color-mix(in srgb, var(--tone, var(--cyan)) 60%, transparent);
+    }
+
+    .milestone b {
+      color: var(--tone, var(--cyan));
+      font-size: 12px;
+      letter-spacing: .1em;
+    }
+
+    .milestone h3 { margin-top: 12px; }
+
+    .milestone p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .stack {
+      display: grid;
+      gap: 10px;
+      max-width: 1050px;
+      margin: 0 auto;
+    }
+
+    .layer {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 20px;
+      align-items: center;
+      min-height: 66px;
+      padding: 12px 18px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--tone, var(--cyan));
+      border-radius: 14px;
+      background: linear-gradient(90deg, rgba(17,35,51,.92), rgba(10,24,36,.68));
+    }
+
+    .layer strong {
+      color: var(--tone, var(--cyan));
+      font-size: 14px;
+      letter-spacing: .08em;
+    }
+
+    .layer span {
+      color: #c3d3e0;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(13,26,38,.72);
+      font-size: 14px;
+    }
+
+    .matrix th, .matrix td {
+      padding: 14px 16px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .matrix th:last-child, .matrix td:last-child { border-right: 0; }
+    .matrix tr:last-child td { border-bottom: 0; }
+
+    .matrix th {
+      color: var(--cyan);
+      background: rgba(66,215,231,.055);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .matrix td {
+      color: #c2d1de;
+      line-height: 1.45;
+    }
+
+    .matrix td:first-child {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .panel-title h3 { margin: 0; }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .pipeline-item {
+      position: relative;
+      min-height: 196px;
+      padding: 22px 17px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(13,26,38,.8);
+    }
+
+    .pipeline-item:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      right: -17px;
+      color: var(--cyan);
+      font-size: 20px;
+      transform: translateY(-50%);
+    }
+
+    .pipeline-item strong {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--tone, var(--cyan));
+      font-size: 16px;
+    }
+
+    .pipeline-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .owner {
+      display: inline-flex;
+      margin-top: 16px;
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.055);
+      color: #d7e4ef;
+      font-size: 11px;
+    }
+
+    .division-card {
+      min-height: 290px;
+    }
+
+    .division-card .role {
+      display: block;
+      margin: 6px 0 14px;
+      color: var(--tone, var(--cyan));
+      font-size: 18px;
+      font-weight: 750;
+    }
+
+    .deliverable {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: #d2deea;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .roadmap {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .week {
+      position: relative;
+      min-height: 230px;
+      padding: 22px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(13,26,38,.78);
+    }
+
+    .week b {
+      color: var(--tone, var(--cyan));
+      font-size: 12px;
+      letter-spacing: .12em;
+    }
+
+    .week h3 {
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .week p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .week .gate {
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      color: #d2e0ec;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .decision-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(13,26,38,.76);
+    }
+
+    .decision .num {
+      color: var(--cyan);
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .decision strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .decision small {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .decision .tag {
+      padding: 6px 9px;
+      border-radius: 9px;
+      background: rgba(255,179,92,.1);
+      color: var(--orange);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .closing {
+      display: grid;
+      grid-template-columns: 1.25fr .75fr;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .closing .manifesto {
+      font-size: clamp(32px, 4vw, 58px);
+      font-weight: 760;
+      line-height: 1.2;
+      letter-spacing: -.035em;
+    }
+
+    .closing .manifesto span { color: var(--cyan); }
+
+    .next-actions {
+      display: grid;
+      gap: 12px;
+    }
+
+    .next-action {
+      padding: 15px 17px;
+      border-left: 3px solid var(--tone, var(--cyan));
+      border-radius: 0 12px 12px 0;
+      background: rgba(17,35,51,.68);
+      color: #cbd9e5;
+      line-height: 1.45;
+    }
+
+    .speaker-notes { display: none; }
+
+    .controls {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(7,16,25,.84);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      transform: translateX(-50%);
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .controls button {
+      display: grid;
+      place-items: center;
+      min-width: 36px;
+      height: 34px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .controls button:hover,
+    .controls button:focus-visible {
+      outline: none;
+      background: rgba(66,215,231,.1);
+      color: var(--cyan);
+    }
+
+    .counter {
+      min-width: 74px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .progress-track {
+      position: fixed;
+      z-index: 31;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255,255,255,.035);
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      box-shadow: 0 0 14px rgba(66,215,231,.45);
+      transition: width .28s ease;
+    }
+
+    .notes-panel, .help-panel {
+      position: fixed;
+      z-index: 40;
+      top: 24px;
+      right: 24px;
+      display: none;
+      width: min(440px, calc(100vw - 48px));
+      max-height: calc(100vh - 110px);
+      overflow: auto;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(7,16,25,.96);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .notes-panel.open, .help-panel.open { display: block; }
+
+    .notes-panel h3, .help-panel h3 {
+      color: var(--cyan);
+    }
+
+    .notes-content {
+      color: #c7d5e1;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .notes-content p:last-child { margin-bottom: 0; }
+
+    .help-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    kbd {
+      min-width: 34px;
+      padding: 4px 7px;
+      border: 1px solid var(--line);
+      border-bottom-color: rgba(255,255,255,.28);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--ink);
+      text-align: center;
+      box-shadow: 0 2px 0 rgba(0,0,0,.35);
+    }
+
+    body.overview {
+      overflow: auto;
+    }
+
+    body.overview .deck {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(340px, 1fr));
+      gap: 22px;
+      width: auto;
+      height: auto;
+      padding: 32px;
+    }
+
+    body.overview .slide {
+      position: relative;
+      inset: auto;
+      display: grid !important;
+      min-height: 56.25vw;
+      max-height: 440px;
+      padding: 28px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #09131d;
+      cursor: pointer;
+      transform-origin: top left;
+    }
+
+    body.overview .slide > * {
+      transform: scale(.56);
+      transform-origin: top left;
+      width: 178%;
+    }
+
+    body.overview .slide::after { display: none; }
+    body.overview .controls,
+    body.overview .progress-track { position: fixed; }
+
+    @media (max-width: 980px) {
+      :root { --slide-pad: 34px; }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .timeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .roadmap { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .flow { flex-wrap: wrap; }
+      .flow-step { min-width: 28%; }
+      .arrow { display: none; }
+      body.overview .deck { grid-template-columns: repeat(2, minmax(320px, 1fr)); }
+    }
+
+    @media (max-height: 820px) and (min-width: 701px) {
+      :root { --slide-pad: 32px; }
+      .slide { gap: 15px; }
+      .slide-head { padding-top: 2px; }
+      h2 { font-size: clamp(30px, 3.4vw, 48px); }
+      .body { gap: 14px; }
+      .card { padding: 17px 19px; }
+      .card-index { margin-bottom: 11px; }
+      .layer { min-height: 50px; padding: 8px 14px; }
+      .milestone { min-height: 178px; padding: 18px 15px 14px; }
+      .pipeline-item { min-height: 158px; padding: 17px 14px; }
+      .division-card { min-height: 248px; }
+      .week { min-height: 190px; padding: 17px 13px; }
+      .week .gate { left: 13px; right: 13px; bottom: 12px; }
+      .flow-step { min-height: 92px; padding: 12px; }
+      .big-quote { padding: 16px 0; }
+    }
+
+    @media (max-width: 700px) {
+      html, body { overflow: auto; }
+      .deck { height: auto; min-height: 100%; }
+      .slide, .slide.active {
+        position: relative;
+        display: none;
+        min-height: 100svh;
+      }
+      .slide.active { display: grid; }
+      .grid-2, .grid-3, .grid-4, .split, .thesis, .closing {
+        grid-template-columns: 1fr;
+      }
+      .timeline, .pipeline, .roadmap { grid-template-columns: 1fr; }
+      .pipeline-item:not(:last-child)::after { display: none; }
+      .layer { grid-template-columns: 1fr; gap: 6px; }
+      .matrix { font-size: 12px; }
+      .matrix th, .matrix td { padding: 10px 8px; }
+      .controls { bottom: 10px; }
+      body.overview .deck { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      @page { size: 13.333in 7.5in; margin: 0; }
+      html, body {
+        width: auto;
+        height: auto;
+        overflow: visible;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      body { background: #071019; }
+      .deck { height: auto; }
+      .slide {
+        position: relative;
+        display: grid !important;
+        width: 13.333in;
+        height: 7.5in;
+        page-break-after: always;
+        break-after: page;
+        padding: .55in .65in;
+        animation: none !important;
+      }
+      .controls, .progress-track, .notes-panel, .help-panel { display: none !important; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .001ms !important;
+        transition-duration: .001ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="progress-track" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+
+  <main class="deck" id="deck" aria-live="polite">
+    <section class="slide title-slide active" data-title="封面" data-kicker="PROJECT REVIEW · 2026.07">
+      <div class="hero">
+        <div class="eyebrow">芯智导学 · 阶段组会</div>
+        <h1>从“可运行平台”走向<br><span class="accent">可验证的教学系统</span></h1>
+        <p class="lead">项目进度、技术架构、现阶段边界，以及以知识库和真实测试集为核心的下一阶段计划</p>
+        <div class="meta-row">
+          <span><strong>汇报人：</strong>项目组发言人</span>
+          <span><strong>日期：</strong>2026 年 7 月 23 日</span>
+          <span><strong>建议时长：</strong>20–25 分钟</span>
+        </div>
+      </div>
+      <div class="footer">
+        <div class="brandline"><span class="brand-dot"></span>芯智导学 · 电子信息课程群多智能体平台</div>
+        <span>01 / 21 · 按 <strong>?</strong> 查看操作说明</span>
+      </div>
+      <aside class="speaker-notes">
+        <p>大家好，今天我汇报“芯智导学”当前阶段的完整进展。我的重点不是逐个展示页面，而是回答四个问题：我们已经建成了什么、系统为什么这样设计、哪些能力已经有工程证据、下一阶段四个人具体怎么协作。</p>
+        <p>这次汇报的核心判断是：平台骨架和主要执行链已经基本形成，下一阶段不应继续横向堆功能，而要把知识库质量和真实测试集做深，让系统从“能跑”进入“可验证、可迭代”。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="一页结论" data-kicker="01 · EXECUTIVE SUMMARY">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">先说结论</div>
+          <h2>项目已经跨过“框架搭建期”</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-4">
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="card-index">01 · PLATFORM</span>
+            <h3>统一平台链路已形成</h3>
+            <p class="subtle">FastAPI、任务生命周期、自动路由、Supervisor、RAG、内部 Agent、模型与静态前端已经接成一条主链。</p>
+          </article>
+          <article class="card" style="--tone: var(--blue)">
+            <span class="card-index">02 · CAPABILITY</span>
+            <h3>多类学习任务可运行</h3>
+            <p class="subtle">覆盖通用问答、多学科求解、知识问答、备课、作业初审、学术写作、数据分析和学习闭环。</p>
+          </article>
+          <article class="card" style="--tone: var(--green)">
+            <span class="card-index">03 · GOVERNANCE</span>
+            <h3>质量与可靠性开始闭环</h3>
+            <p class="subtle">已有 HIGH_RISK 校验、引用校验、幂等、重试、租约、指标、评测 schema 和报告框架。</p>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <span class="card-index">04 · NEXT</span>
+            <h3>下一步从“功能”转向“证据”</h3>
+            <p class="subtle">重点不再是增加按钮，而是完善知识库、制作真实测试集，并用稳定评测推动模型和流程改进。</p>
+          </article>
+        </div>
+        <div class="big-quote">我们现在缺的不是另一套架构，<span>而是高质量知识与可信评测。</span></div>
+      </div>
+      <footer class="footer"><span>阶段判断</span><span>02 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>这一页是整场汇报的摘要。我们已经不是一个只有想法或 Demo 的项目：统一任务链、路由、RAG、求解、前端和数据库都已经存在。</p>
+        <p>但“功能存在”不等于“教育质量可靠”。下一阶段真正决定项目上限的是两个数据资产：一是经过治理的课程知识库，二是有来源、有参考解、有评分规则的真实测试集。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="项目定位" data-kicker="02 · PRODUCT POSITION">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">我们在做什么</div>
+          <h2>一个面向电子信息课程群的<br>多智能体学习与教学平台</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="thesis">
+          <div>
+            <div class="big-quote">用户只需要描述任务，系统负责<span>识别、取证、求解、校验与学习反馈。</span></div>
+            <div class="chips">
+              <span class="pill" style="--tone: var(--cyan)">学生学习</span>
+              <span class="pill" style="--tone: var(--blue)">教师备课</span>
+              <span class="pill" style="--tone: var(--green)">专业求解</span>
+              <span class="pill" style="--tone: var(--violet)">研究辅助</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="flow">
+              <div class="flow-step" style="--tone: var(--blue)"><strong>自然语言输入</strong><small>问题、课程提示、图片或附件</small></div>
+              <span class="arrow">→</span>
+              <div class="flow-step" style="--tone: var(--cyan)"><strong>自动编排</strong><small>课程、意图、风险和能力选择</small></div>
+              <span class="arrow">→</span>
+              <div class="flow-step" style="--tone: var(--green)"><strong>证据与工具</strong><small>RAG、计算器、SymPy、单位校验</small></div>
+              <span class="arrow">→</span>
+              <div class="flow-step" style="--tone: var(--orange)"><strong>结构化结果</strong><small>回答、引用、质量状态和学习动作</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="footer"><span>产品目标：一个输入，多能力协同</span><span>03 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>产品形态上，我们坚持学生端只有一个自然语言入口。学生不需要理解 Agent ID、Provider、Flow ID，也不应当承担技术选择。</p>
+        <p>系统内部先识别课程和任务，再判断是否需要知识库、专业工具、模型或受控云端工作流，最后把复杂过程压缩成学生能够理解的回答、证据和后续学习动作。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="阶段进度" data-kicker="03 · PROGRESS">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">建设轨迹</div>
+          <h2>五个阶段，逐步从单点能力走向系统闭环</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="timeline">
+          <article class="milestone" style="--tone: var(--blue)">
+            <b>STAGE 0</b>
+            <h3>冻结基线</h3>
+            <p>保留 SOLVER_CT_V1 的已验证能力、节点清单和回归边界。</p>
+          </article>
+          <article class="milestone" style="--tone: var(--cyan)">
+            <b>STAGE 1</b>
+            <h3>平台骨架</h3>
+            <p>FastAPI、合同、数据库、存储、Mock Provider 与容器基础设施。</p>
+          </article>
+          <article class="milestone" style="--tone: var(--green)">
+            <b>STAGE 1.5–1.6</b>
+            <h3>任务与路由</h3>
+            <p>异步 TaskRunner、SSE、取消重试、AgentRegistry、本地 RAG。</p>
+          </article>
+          <article class="milestone" style="--tone: var(--violet)">
+            <b>STAGE 2.1–2.2</b>
+            <h3>能力扩展</h3>
+            <p>星辰兼容、多工作流、国产模型、内部 Agent、多学科 Solver。</p>
+          </article>
+          <article class="milestone" style="--tone: var(--orange)">
+            <b>CURRENT</b>
+            <h3>质量闭环</h3>
+            <p>知识版本、质量门、学习闭环、可靠性、可观测和评测框架。</p>
+          </article>
+        </div>
+      </div>
+      <footer class="footer"><span>策略：增量演进，不重建第二套系统</span><span>04 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>项目演进一直遵循“保留已验证能力、逐层补齐工程边界”的策略。我们没有推倒重来，也没有为了新功能再建一个平行任务系统。</p>
+        <p>最近一轮重点是把原来偏功能性的系统，补上知识版本、学习记录、任务幂等、执行指标和真实评测框架，为下一阶段的数据工作做准备。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="总体架构" data-kicker="04 · ARCHITECTURE">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">总体结构</div>
+          <h2>一个 FastAPI 单体承载七层能力</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="stack">
+          <div class="layer" style="--tone: var(--cyan)"><strong>展示层</strong><span>Workspace / Student / Demo / System / RAG、Agent、Execution Debug / 本地 KaTeX</span></div>
+          <div class="layer" style="--tone: var(--blue)"><strong>API 与任务层</strong><span>REST + SSE / Session / TaskCreation / TaskExecutor / TaskRunner / Cancel / Retry / History</span></div>
+          <div class="layer" style="--tone: var(--violet)"><strong>编排层</strong><span>AgentRegistry / TaskRouter / XZD Supervisor / Internal Agent Hub / LangGraph</span></div>
+          <div class="layer" style="--tone: var(--green)"><strong>专业能力层</strong><span>CT、AE、DE、SS CoursePack / CapabilityPack / Calculator / SymPy / Unit Checker</span></div>
+          <div class="layer" style="--tone: var(--orange)"><strong>知识与模型层</strong><span>Knowledge lifecycle / BGE + BM25 + SigLIP2 + Qdrant + RRF / Spark + Qwen / Xingchen baseline</span></div>
+          <div class="layer" style="--tone: var(--red)"><strong>治理与评测层</strong><span>HIGH_RISK / Citation / Quality Gate / Trace / Metrics / Evaluation Runner / Rubric / Reports</span></div>
+          <div class="layer" style="--tone: #aebdca"><strong>基础设施层</strong><span>PostgreSQL / Redis / MinIO / Qdrant / SQLAlchemy / Alembic / Docker Compose</span></div>
+        </div>
+      </div>
+      <footer class="footer"><span>活动代码主要位于 apps/api/app</span><span>05 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>从架构上看，现在是一个有清晰分层的 FastAPI 单体。选择单体不是能力不足，而是当前团队规模和验证阶段下更容易保证一致性。</p>
+        <p>核心边界是：展示层不直接调用模型；所有任务通过 API 和 TaskRunner；RAG、模型和工具作为能力被编排；治理与评测横向覆盖整个执行链。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="统一任务链" data-kicker="05 · EXECUTION CHAIN">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">系统主干</div>
+          <h2>所有正式能力复用同一条任务链</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step" style="--tone: var(--blue)"><strong>01 · 创建</strong><small>POST /api/v1/tasks<br>校验、路由、写入 queued</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--cyan)"><strong>02 · 调度</strong><small>TaskExecutor<br>非阻塞提交</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--violet)"><strong>03 · 规划</strong><small>Registry + Router<br>执行计划与云端授权</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--green)"><strong>04 · 执行</strong><small>内部 Agent / RAG / Solver / Provider</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--orange)"><strong>05 · 治理</strong><small>质量门、引用、公式、Presentation</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--red)"><strong>06 · 返回</strong><small>DB + Event + SSE<br>历史和学习动作</small></div>
+        </div>
+        <div class="grid-3">
+          <div class="card"><h3>非阻塞</h3><p class="subtle">任务创建立即返回 202，模型调用不占用创建请求线程。</p></div>
+          <div class="card"><h3>可恢复</h3><p class="subtle">事件 sequence、SSE 重连、历史任务、取消、受限重试与幂等。</p></div>
+          <div class="card"><h3>可替换</h3><p class="subtle">当前 LocalTaskExecutor 可在未来替换为队列，而不改变 API 合同。</p></div>
+        </div>
+      </div>
+      <footer class="footer"><span>原则：不复制 TaskRunner，不复制 RAG，不复制 Provider</span><span>06 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>这一页是理解系统最关键的一页。所有正式能力都从同一个任务入口进入，不管是知识问答、专业求解还是备课。</p>
+        <p>这样做的价值是：每个能力天然拥有同样的会话、事件、取消、重试、指标、证据和历史。未来如果需要分布式队列，只替换 TaskExecutor 边界，而不是重写业务。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="能力矩阵" data-kicker="06 · CAPABILITY MAP">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">当前能力</div>
+          <h2>从“单一电路求解”扩展到多场景协同</h2>
+        </div>
+      </header>
+      <div class="body">
+        <table class="matrix">
+          <thead>
+            <tr><th>场景</th><th>核心能力</th><th>主要实现</th><th>当前边界</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>通用问答</td><td>随机问题兜底、续写防截断</td><td>GENERAL_QUESTION_V1 + ModelService</td><td>默认不调用星辰</td></tr>
+            <tr><td>专业求解</td><td>CT / AE / DE / SS 统一入口</td><td>Academic Solver + CoursePack + Tools</td><td>题设不足时不补造条件</td></tr>
+            <tr><td>课程知识</td><td>检索、证据、引用、解释</td><td>Knowledge QA + local RAG</td><td>资料不足必须明确说明</td></tr>
+            <tr><td>教学辅助</td><td>教案、作业初审</td><td>内部 Agent + 同任务 RAG</td><td>不伪造课程资料</td></tr>
+            <tr><td>研究辅助</td><td>学术写作、数据分析解释</td><td>内部 Agent + Model routes</td><td>无数据时只给方法计划</td></tr>
+            <tr><td>学习闭环</td><td>错题、提示、检查、变式、掌握度</td><td>LearningLoop + Workspace</td><td>复杂等价与多解题待扩展</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <footer class="footer"><span>学生端一个输入，内部自动选路</span><span>07 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>能力层面已经不再局限于电路理论。专业求解覆盖四个核心课程包，教学和研究类任务由内部 Agent 承担，随机问题也有通用问答兜底。</p>
+        <p>同时每项能力都保留明确边界。例如资料不足不会伪造引用，题设不完整不会编造条件，研究任务没有数据时不会生成假的分析结果。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="专业求解与质量门" data-kicker="07 · SOLVER & QUALITY">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">专业求解</div>
+          <h2>统一 Solver + 课程差异 + 风险分级校验</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="split">
+          <article class="card" style="--tone: var(--cyan)">
+            <div class="panel-title"><h3>统一部分</h3><span class="pill">ACADEMIC_PROBLEM_SOLVER</span></div>
+            <ul class="clean">
+              <li>同一 AcademicProblemSolverGraph</li>
+              <li>同一 SolverResult 结构化输出</li>
+              <li>共享计算器、SymPy 和单位检查</li>
+              <li>长回答截断检测与受控续写</li>
+              <li>知识证据与最终引用分离</li>
+            </ul>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <div class="panel-title"><h3>课程与风险差异</h3><span class="pill" style="--tone: var(--orange)">CT / AE / DE / SS</span></div>
+            <ul class="clean" style="--tone: var(--orange)">
+              <li>CoursePack 声明题型、能力和验证规则</li>
+              <li>FAST / STANDARD / HIGH_RISK 执行路径</li>
+              <li>数值、单位、方向、边界与二次审查</li>
+              <li>质量门失败时 success 降为 partial</li>
+              <li>SOLVER_CT_V1 保留为冻结基线</li>
+            </ul>
+          </article>
+        </div>
+        <div class="flow">
+          <div class="flow-step"><strong>问题建模</strong><small>课程、题型、条件、风险</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>工具与模型</strong><small>确定性工具优先参与</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>HIGH_RISK</strong><small>更严格验证协议</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>Quality Gate</strong><small>结构、证据和课程规则</small></div>
+        </div>
+      </div>
+      <footer class="footer"><span>目标：模型给出候选答案，系统负责约束可信边界</span><span>08 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>多学科求解不是给每门课复制一套流程，而是共享一个求解图，通过 CoursePack 表达课程差异。</p>
+        <p>高风险题会增加更严格的校验。质量门不允许模型自己“认可自己”，而是检查结构、单位、方向、证据和课程规则。没有通过时，结果会降级为 partial，而不是强行显示成功。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="知识与 RAG" data-kicker="08 · KNOWLEDGE">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">知识增强</div>
+          <h2>链路已经具备，下一步要提升“数据质量”</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="pipeline">
+          <div class="pipeline-item" style="--tone: var(--blue)"><strong>资料审计</strong><p>只读扫描、标题、章节、格式、图片关系、重复和质量问题。</p></div>
+          <div class="pipeline-item" style="--tone: var(--cyan)"><strong>版本治理</strong><p>DocumentManifest、内容 hash、版本、active 状态与来源 URI。</p></div>
+          <div class="pipeline-item" style="--tone: var(--green)"><strong>语义切块</strong><p>chunk provenance、文档版本、active/history 分离。</p></div>
+          <div class="pipeline-item" style="--tone: var(--violet)"><strong>多路检索</strong><p>BGE dense + BM25 + SigLIP2 + Qdrant + RRF + reranker。</p></div>
+          <div class="pipeline-item" style="--tone: var(--orange)"><strong>证据校验</strong><p>充分度、上下文、引用合法性、stale 与 unsupported 状态。</p></div>
+        </div>
+        <div class="grid-2">
+          <article class="card" style="--tone: var(--green)">
+            <h3 class="good">已经完成</h3>
+            <p class="subtle">索引与检索技术链、文档版本、失败保护、证据包、引用验证和调试页面已经建立。</p>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <h3 class="warm">仍然欠缺</h3>
+            <p class="subtle">真实资料的完整清洗、章节体系、知识点标签、图文关系、基准查询和教师级内容复核。</p>
+          </article>
+        </div>
+      </div>
+      <footer class="footer"><span>RAG 命中不等于答案正确；证据必须可追溯</span><span>09 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>知识库的技术链已经比较完整：扫描、版本、切块、向量和词法检索、融合重排、引用校验都有对应模块。</p>
+        <p>但目前最大的短板不是算法，而是内容资产。课程资料是否完整、章节是否规范、知识点是否准确、图片和正文是否关联，这些都需要人工参与。下一阶段的重点就是把“技术可用”变成“知识可信”。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="学习闭环与前端" data-kicker="09 · LEARNING LOOP">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">面向学生</div>
+          <h2>回答不再是终点，而是下一次学习的起点</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="flow">
+          <div class="flow-step" style="--tone: var(--blue)"><strong>得到回答</strong><small>答案、步骤、证据、公式</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--cyan)"><strong>学习动作</strong><small>错题 / 提示 / 检查 / 变式</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--green)"><strong>状态更新</strong><small>知识点掌握度与置信度</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step" style="--tone: var(--orange)"><strong>继续练习</strong><small>关联知识与可验证变式</small></div>
+        </div>
+        <div class="grid-3">
+          <article class="card"><h3>Workspace</h3><p class="subtle">单输入自动路由、历史恢复、滚动、SSE、证据展开、KaTeX 公式。</p></article>
+          <article class="card"><h3>学习数据</h3><p class="subtle">错题记录、练习尝试、学习交互、知识点状态和幂等动作。</p></article>
+          <article class="card"><h3>保守边界</h3><p class="subtle">仅生成可确定验证的变式；复杂符号等价和多解题暂不冒进。</p></article>
+        </div>
+      </div>
+      <footer class="footer"><span>学生端隐藏 Provider、Flow ID 和内部 Agent ID</span><span>10 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>前端现在不仅展示答案，还能围绕一次任务继续学习。六个动作包括加入错题、获取提示、检查答案、生成变式、关联知识和标记掌握。</p>
+        <p>这里我们保持保守：当前答案检查主要覆盖步骤、数值、单位和方向，变式只支持能够确定性生成参考答案的题型。不能验证的题目不会伪装成可用练习。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="工程治理" data-kicker="10 · ENGINEERING">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">工程化</div>
+          <h2>可靠性、可观测与评测框架已经接入主链</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-3">
+          <article class="card" style="--tone: var(--blue)">
+            <span class="card-index">RELIABILITY</span>
+            <h3>任务可靠性</h3>
+            <ul class="clean">
+              <li>用户级幂等键</li>
+              <li>有限次数重试</li>
+              <li>owner / lease / heartbeat</li>
+              <li>取消时间与失败分类</li>
+            </ul>
+          </article>
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="card-index">OBSERVABILITY</span>
+            <h3>执行可观测</h3>
+            <ul class="clean">
+              <li>trace id 与脱敏节点</li>
+              <li>耗时、模型调用和 token</li>
+              <li>fallback、检索与引用指标</li>
+              <li>慢任务和延迟分布</li>
+            </ul>
+          </article>
+          <article class="card" style="--tone: var(--green)">
+            <span class="card-index">EVALUATION</span>
+            <h3>统一评测</h3>
+            <ul class="clean">
+              <li>case schema + rubric</li>
+              <li>provenance 与隐私边界</li>
+              <li>本地 / Mock / 真实模型 / 星辰</li>
+              <li>JSON/Markdown 报告比较</li>
+            </ul>
+          </article>
+        </div>
+        <div class="card" style="--tone: var(--orange)">
+          <strong class="warm">关键原则：</strong>
+          <span class="subtle">HTTP 200、Provider 完成、Mock 通过、synthetic 样例通过，都不能被描述为真实学科质量通过。</span>
+        </div>
+      </div>
+      <footer class="footer"><span>所有指标都必须绑定真实执行链</span><span>11 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>工程治理方面，我们增加了任务幂等、租约、心跳、失败分类和重试边界；执行页面能够看到耗时、模型调用、token、fallback 和检索情况。</p>
+        <p>评测框架也已经具备四种模式，但必须强调：框架存在不等于真实评测已经完成。当前公开样例主要是 synthetic，真实题和人工参考解仍是下一阶段工作。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="当前证据" data-kicker="11 · EVIDENCE">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">我们有什么证据</div>
+          <h2>本地工程验证充分，真实质量证据仍需补齐</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-4">
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="stat">593</span>
+            <span class="label">当前目录收录的可发布文件<br>579 活动 / 14 历史隔离</span>
+          </article>
+          <article class="card" style="--tone: var(--green)">
+            <span class="stat">440</span>
+            <span class="label">最近一次分批本地 Pytest 通过<br>0 failed</span>
+          </article>
+          <article class="card" style="--tone: var(--blue)">
+            <span class="stat">15</span>
+            <span class="label">因真实模型、API Key 或集成环境<br>被明确跳过</span>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <span class="stat">1 / 1</span>
+            <span class="label">隔离 synthetic 执行链 smoke<br>不代表真实准确率</span>
+          </article>
+        </div>
+        <div class="split">
+          <article class="card" style="--tone: var(--green)">
+            <h3 class="good">已验证的层</h3>
+            <p class="subtle">合同、路由、任务、迁移、SSE、RAG 边界、学习闭环、静态检查、配置和敏感文件治理。</p>
+          </article>
+          <article class="card" style="--tone: var(--red)">
+            <h3 class="risk">不能过度声明的层</h3>
+            <p class="subtle">真实模型答案质量、真实星辰质量、完整 PostgreSQL 实机迁移、真实学生可用性和真实课程准确率。</p>
+          </article>
+        </div>
+      </div>
+      <footer class="footer"><span>数据为最近一次本地验证快照，不等于云端验收</span><span>12 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>这里需要对进度做一个诚实区分。工程层面已经有较完整的自动测试和静态检查，最近一次本地验证是 440 个测试通过、15 个真实集成项跳过。</p>
+        <p>但是我们不能把这些数字说成学科准确率。没有真实课程题、人工参考解和受控真实模型运行，就不能得出“回答质量已经达到某个水平”的结论。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="下一阶段总目标" data-kicker="12 · NEXT PHASE">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">工作重心调整</div>
+          <h2>下一阶段：两条主线，一个闭环</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="split">
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="card-index">TRACK A · KNOWLEDGE</span>
+            <h3>继续完善知识库</h3>
+            <ul class="clean">
+              <li>完整资料清单与授权边界</li>
+              <li>章节、知识点、图文关系与版本治理</li>
+              <li>清洗、切块、索引和检索基准</li>
+              <li>引用可追溯与内容质量复核</li>
+            </ul>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <span class="card-index">TRACK B · EVALUATION</span>
+            <h3>制作真实测试集</h3>
+            <ul class="clean" style="--tone: var(--orange)">
+              <li>真实来源、去标识化和不可发布边界</li>
+              <li>参考解、关键步骤、数值单位和容差</li>
+              <li>双人复核 rubric 与错误类型</li>
+              <li>本地基线 → 真实模型小批量 → 回归</li>
+            </ul>
+          </article>
+        </div>
+        <div class="big-quote">用真实测试暴露问题，<span>用知识库与流程改进解决问题，</span>再回到同一测试集验证。</div>
+      </div>
+      <footer class="footer"><span>闭环：数据 → 评测 → 诊断 → 修复 → 回归</span><span>13 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>下一阶段我建议只抓两条主线。第一条是把知识库从“能索引”做到“内容可信、引用可追溯”；第二条是制作真实测试集，让我们能够客观知道系统在哪些题型、课程和风险点上失败。</p>
+        <p>两条线不是独立的：真实测试会暴露知识缺口，知识库改进后必须回到同一测试集验证，形成可重复的工程闭环。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="知识库工作包" data-kicker="13 · KNOWLEDGE WORKSTREAM">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">重点方向 A</div>
+          <h2>知识库：从“文件集合”升级为“可治理证据系统”</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="pipeline">
+          <div class="pipeline-item" style="--tone: var(--blue)">
+            <strong>1. 资产盘点</strong>
+            <p>课程、来源、版本、授权、格式、章节与缺失范围。</p>
+            <span class="owner">产出：manifest</span>
+          </div>
+          <div class="pipeline-item" style="--tone: var(--cyan)">
+            <strong>2. 内容治理</strong>
+            <p>标题、OCR、公式、图片、重复、知识点和人工批准。</p>
+            <span class="owner">产出：质量清单</span>
+          </div>
+          <div class="pipeline-item" style="--tone: var(--green)">
+            <strong>3. 索引工程</strong>
+            <p>语义切块、版本、embedding、active/history 和失败保护。</p>
+            <span class="owner">产出：可复现索引</span>
+          </div>
+          <div class="pipeline-item" style="--tone: var(--violet)">
+            <strong>4. 检索基准</strong>
+            <p>真实查询、应命中文档、跨课程污染和图文检索。</p>
+            <span class="owner">产出：benchmark</span>
+          </div>
+          <div class="pipeline-item" style="--tone: var(--orange)">
+            <strong>5. 引用验收</strong>
+            <p>支持结论、定位有效、版本新鲜度和无证据拒答。</p>
+            <span class="owner">产出：验收报告</span>
+          </div>
+        </div>
+        <div class="card">
+          <strong class="accent">优先顺序：</strong>
+          <span class="subtle">先做 CT、AE、DE、SS 四门核心课程的最小可信闭环，再扩展到更多课程；先保证文本证据，再逐步提升电路图和公式图像。</span>
+        </div>
+      </div>
+      <footer class="footer"><span>原始资料只读；所有修订通过配置覆盖层</span><span>14 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>知识库工作可以拆成五个可验收的工作包。第一步不是直接调 embedding 参数，而是盘点资料和授权；第二步做内容治理；第三步才是索引。</p>
+        <p>之后必须建立检索 benchmark，最后验收引用是否真的支持结论。建议先聚焦四门核心课程，做出小而可信的闭环，再扩大规模。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="真实测试集工作包" data-kicker="14 · REAL EVALUATION SET">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">重点方向 B</div>
+          <h2>真实测试集：每一道题都要有来源、答案与判分依据</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-4">
+          <article class="card" style="--tone: var(--blue)">
+            <span class="card-index">SOURCE</span>
+            <h3>来源与授权</h3>
+            <p class="subtle">公开、授权或私有；记录 provenance、用途和 publishable 状态。</p>
+          </article>
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="card-index">REFERENCE</span>
+            <h3>参考答案</h3>
+            <p class="subtle">关键步骤、公式、数值、单位、方向、容差和允许的等价表达。</p>
+          </article>
+          <article class="card" style="--tone: var(--green)">
+            <span class="card-index">RUBRIC</span>
+            <h3>人工评分规则</h3>
+            <p class="subtle">路由、结构、推理、数值、单位、引用、安全和禁止错误。</p>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <span class="card-index">REVIEW</span>
+            <h3>双人复核</h3>
+            <p class="subtle">出题人与复核人分离；争议题标记，不强行进入正式集合。</p>
+          </article>
+        </div>
+        <div class="flow">
+          <div class="flow-step"><strong>采集</strong><small>去标识化</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>结构化</strong><small>EvaluationCase</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>双审</strong><small>答案 + rubric</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>基线</strong><small>本地确定性</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>小批实测</strong><small>真实模型 / 星辰</small></div>
+          <span class="arrow">→</span>
+          <div class="flow-step"><strong>回归</strong><small>失败分层</small></div>
+        </div>
+      </div>
+      <footer class="footer"><span>私有真实题不得进入 Git；synthetic 不冒充真实</span><span>15 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>真实测试集的关键不是题目数量，而是每道题有没有完整证据。每个 case 都要记录来源、参考解、判分 rubric、容差和禁止错误。</p>
+        <p>为避免自我确认，出题人和复核人要分离。存在争议的题先放入候选区，不应为了凑数量进入正式集合。真实模型测试要小批量、可追踪、控制费用。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="建议验收指标" data-kicker="15 · PROPOSED SCORECARD">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">建议讨论并冻结</div>
+          <h2>把“做得差不多”改成可度量的验收线</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-4">
+          <article class="card" style="--tone: var(--cyan)">
+            <span class="stat">4 × 25</span>
+            <span class="label">建议首批真实专业题<br>CT / AE / DE / SS 共 100 题</span>
+          </article>
+          <article class="card" style="--tone: var(--blue)">
+            <span class="stat">≥ 95%</span>
+            <span class="label">建议正式集课程与任务路由通过率</span>
+          </article>
+          <article class="card" style="--tone: var(--green)">
+            <span class="stat">≥ 90%</span>
+            <span class="label">建议可判定题数值、单位与方向综合通过率</span>
+          </article>
+          <article class="card" style="--tone: var(--orange)">
+            <span class="stat">0</span>
+            <span class="label">隐私泄露、伪造引用、跨课程严重污染</span>
+          </article>
+        </div>
+        <div class="card" style="--tone: var(--orange)">
+          <strong class="warm">说明：</strong>
+          <span class="subtle">以上是下一阶段的建议验收门槛，不是当前成绩。组会确认后应写入 rubric 和 milestone，并固定版本，避免测试后再改标准。</span>
+        </div>
+      </div>
+      <footer class="footer"><span>先定义成功，再开始优化</span><span>16 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>为了让下一阶段可管理，我提出一组建议指标，请大家讨论后冻结。首批真实专业题建议每门核心课程 25 题，总计 100 题，重点保证质量而不是一次做很大。</p>
+        <p>路由、数值单位和安全边界分别设置验收线。这里特别强调，这些是建议目标，不是当前成绩。目标一旦确认，应先写入 rubric，再开始运行和优化。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="四人分工" data-kicker="16 · TEAM OWNERSHIP">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">四人协作</div>
+          <h2>按可交付结果分工，而不是按文件夹分工</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="grid-4">
+          <article class="card division-card" style="--tone: var(--blue)">
+            <span class="card-index">组员 A</span>
+            <span class="role">平台集成与架构负责人</span>
+            <ul class="clean">
+              <li>Task/API/DB/迁移边界</li>
+              <li>任务可靠性与执行指标</li>
+              <li>跨模块集成和发布门禁</li>
+            </ul>
+            <div class="deliverable"><strong>交付：</strong>稳定主分支、迁移演练、集成清单、CI 验收</div>
+          </article>
+          <article class="card division-card" style="--tone: var(--cyan)">
+            <span class="card-index">组员 B</span>
+            <span class="role">知识库工程负责人</span>
+            <ul class="clean">
+              <li>资料盘点、manifest 与清洗</li>
+              <li>章节/知识点/图文关系</li>
+              <li>切块、索引、检索 benchmark</li>
+            </ul>
+            <div class="deliverable"><strong>交付：</strong>四课程知识清单、版本化索引、检索质量报告</div>
+          </article>
+          <article class="card division-card" style="--tone: var(--orange)">
+            <span class="card-index">组员 C</span>
+            <span class="role">真实测试集负责人</span>
+            <ul class="clean" style="--tone: var(--orange)">
+              <li>题目来源与去标识化</li>
+              <li>参考解、rubric 和错误标签</li>
+              <li>双人复核与报告比较</li>
+            </ul>
+            <div class="deliverable"><strong>交付：</strong>100 题候选集、双审记录、正式测试集版本</div>
+          </article>
+          <article class="card division-card" style="--tone: var(--green)">
+            <span class="card-index">组员 D</span>
+            <span class="role">产品体验与评测执行负责人</span>
+            <ul class="clean" style="--tone: var(--green)">
+              <li>Workspace 与学习闭环</li>
+              <li>评测运行、失败归因和看板</li>
+              <li>端到端演示与用户反馈</li>
+            </ul>
+            <div class="deliverable"><strong>交付：</strong>可演示前端、评测报告、E2E 场景与问题清单</div>
+          </article>
+        </div>
+      </div>
+      <footer class="footer"><span>建议互审：A ↔ D，B ↔ C；重大 schema 四人共同确认</span><span>17 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>四个人的分工建议按照可交付结果来划分。A 负责平台主链和集成；B 负责知识资产；C 负责真实测试集；D 负责产品体验、评测执行和演示。</p>
+        <p>为了避免知识库和测试集互相自证，B 和 C 要交叉复核；平台与前端由 A 和 D 互审。涉及 EvaluationCase、知识 metadata 和 API 的 schema 变化，四个人共同确认。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="协作接口" data-kicker="17 · COLLABORATION CONTRACT">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">减少返工</div>
+          <h2>四组工作通过明确的“接口产物”连接</h2>
+        </div>
+      </header>
+      <div class="body">
+        <table class="matrix">
+          <thead>
+            <tr><th>提供方</th><th>接口产物</th><th>使用方</th><th>完成定义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>A 平台</td><td>稳定 API、migration、运行命令、trace 字段</td><td>B / C / D</td><td>本地可复现，合同与 OpenAPI 同步</td></tr>
+            <tr><td>B 知识库</td><td>manifest、active chunks、检索 benchmark、citation</td><td>A / C / D</td><td>来源可追溯、版本可重建、无跨课污染</td></tr>
+            <tr><td>C 测试集</td><td>EvaluationCase、reference、rubric、provenance</td><td>A / B / D</td><td>双审完成、隐私检查、正式/候选分离</td></tr>
+            <tr><td>D 产品评测</td><td>E2E 场景、失败报告、用户反馈、演示脚本</td><td>A / B / C</td><td>问题可复现、trace 可定位、回归有结果</td></tr>
+          </tbody>
+        </table>
+        <div class="grid-3">
+          <article class="card"><h3>每周一次基线冻结</h3><p class="subtle">固定代码 commit、知识版本、测试集版本和配置指纹。</p></article>
+          <article class="card"><h3>失败先归因再修改</h3><p class="subtle">区分路由、知识、模型、工具、格式、前端和基础设施。</p></article>
+          <article class="card"><h3>所有结论带证据</h3><p class="subtle">命令、case ID、trace ID、报告路径或人工复核记录。</p></article>
+        </div>
+      </div>
+      <footer class="footer"><span>协作原则：版本化输入，结构化交付，可复现验收</span><span>18 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>分工之后最容易出现的问题是接口不清。例如测试集已经变了，但平台还在用旧 schema；知识索引更新了，却没有版本号。</p>
+        <p>所以建议每周冻结一次完整基线：代码、知识库、测试集和配置都要有版本。任何失败先归因，不能看到分数下降就直接调 prompt。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="六周路线图" data-kicker="18 · ROADMAP">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">建议节奏</div>
+          <h2>六周完成第一轮真实质量闭环</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="roadmap">
+          <article class="week" style="--tone: var(--blue)">
+            <b>WEEK 1</b><h3>冻结标准</h3><p>明确课程范围、schema、rubric、授权和角色。</p><div class="gate">Gate：基线与任务清单</div>
+          </article>
+          <article class="week" style="--tone: var(--cyan)">
+            <b>WEEK 2</b><h3>资料与题目盘点</h3><p>完成四课程 manifest；首批真实题进入候选区。</p><div class="gate">Gate：来源与隐私检查</div>
+          </article>
+          <article class="week" style="--tone: var(--green)">
+            <b>WEEK 3</b><h3>清洗与双审</h3><p>知识 metadata、参考解、rubric 和错误标签。</p><div class="gate">Gate：50 题双审</div>
+          </article>
+          <article class="week" style="--tone: var(--violet)">
+            <b>WEEK 4</b><h3>索引与本地基线</h3><p>重建版本化索引；运行本地确定性和 Mock。</p><div class="gate">Gate：100 题候选</div>
+          </article>
+          <article class="week" style="--tone: var(--orange)">
+            <b>WEEK 5</b><h3>小批真实运行</h3><p>按课程和风险抽样调用真实模型，控制费用。</p><div class="gate">Gate：失败分层报告</div>
+          </article>
+          <article class="week" style="--tone: var(--red)">
+            <b>WEEK 6</b><h3>修复与验收</h3><p>知识、路由、工具和前端修复；全量回归。</p><div class="gate">Gate：v1 质量报告</div>
+          </article>
+        </div>
+      </div>
+      <footer class="footer"><span>路线图为建议版本，组会确认后进入迭代计划</span><span>19 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>六周路线图的目的，是让知识库和测试集并行推进，并在第五周之前不急于大规模调用真实模型。</p>
+        <p>前四周主要建立数据资产和本地基线；第五周只做小批真实运行，得到失败分层；第六周修复并形成第一版真实质量报告。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="风险与决策" data-kicker="19 · RISKS & DECISIONS">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">本次组会需要确认</div>
+          <h2>五个决策决定下一阶段能否顺利推进</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="decision-list">
+          <div class="decision"><span class="num">01</span><div><strong>课程范围</strong><small>第一批是否冻结为 CT、AE、DE、SS 四门核心课程？</small></div><span class="tag">需确认</span></div>
+          <div class="decision"><span class="num">02</span><div><strong>数据来源与授权</strong><small>哪些题目和资料可用于私有评测，谁负责记录授权？</small></div><span class="tag">高优先级</span></div>
+          <div class="decision"><span class="num">03</span><div><strong>验收门槛</strong><small>是否采用 100 题首批目标与建议质量线？</small></div><span class="tag">需冻结</span></div>
+          <div class="decision"><span class="num">04</span><div><strong>真实调用预算</strong><small>每周可接受的模型/星辰调用次数、Token 与费用上限？</small></div><span class="tag">需授权</span></div>
+          <div class="decision"><span class="num">05</span><div><strong>姓名与责任人</strong><small>将 A/B/C/D 替换为组员姓名，确认互审关系和每周交付。</small></div><span class="tag">会后生效</span></div>
+        </div>
+      </div>
+      <footer class="footer"><span>未确认的数据边界，不进入真实运行</span><span>20 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>这五个问题需要在组会上确认，否则后续容易反复。尤其是数据来源和真实调用预算，必须先确定授权边界。</p>
+        <p>最后还需要把 A、B、C、D 替换成真实姓名，并确认每个人的交付物和互审对象。分工不是口头约定，建议会后直接写入迭代看板。</p>
+      </aside>
+    </section>
+
+    <section class="slide" data-title="结束页" data-kicker="20 · CLOSE">
+      <header class="slide-head">
+        <div>
+          <div class="eyebrow">总结</div>
+          <h2>下一阶段的关键词：可信、可测、可复现</h2>
+        </div>
+      </header>
+      <div class="body">
+        <div class="closing">
+          <div class="manifesto">平台骨架已经形成。<br>现在要用<span>高质量知识库</span>和<span>真实测试集</span>，把每一次改进变成可以证明的进步。</div>
+          <div class="next-actions">
+            <div class="next-action" style="--tone: var(--cyan)"><strong>今天：</strong>确认课程范围、四人分工和验收线</div>
+            <div class="next-action" style="--tone: var(--blue)"><strong>48 小时内：</strong>冻结 schema、目录和首周任务</div>
+            <div class="next-action" style="--tone: var(--green)"><strong>一周后：</strong>提交首批 manifest、真实题候选和基线报告</div>
+          </div>
+        </div>
+      </div>
+      <footer class="footer"><div class="brandline"><span class="brand-dot"></span>谢谢 · 讨论与确认</div><span>21 / 21</span></footer>
+      <aside class="speaker-notes">
+        <p>最后总结：我们已经有一个可以继续演进的平台，下一步不是继续堆叠更多入口，而是让知识可信、结果可测、过程可复现。</p>
+        <p>如果今天能够确认课程范围、分工和验收线，48 小时内就可以冻结 schema 和首周任务，一周后给出第一批知识 manifest、真实题候选和本地基线。</p>
+      </aside>
+    </section>
+  </main>
+
+  <nav class="controls" aria-label="演示控制">
+    <button type="button" id="prevBtn" aria-label="上一页" title="上一页（←）">←</button>
+    <span class="counter" id="counter">1 / 21</span>
+    <button type="button" id="nextBtn" aria-label="下一页" title="下一页（→ / 空格）">→</button>
+    <button type="button" id="overviewBtn" aria-label="总览" title="总览（O）">▦</button>
+    <button type="button" id="notesBtn" aria-label="演讲备注" title="演讲备注（N）">N</button>
+    <button type="button" id="fullscreenBtn" aria-label="全屏" title="全屏（F）">⛶</button>
+    <button type="button" id="printBtn" aria-label="打印或导出 PDF" title="打印或导出 PDF">⎙</button>
+    <button type="button" id="helpBtn" aria-label="帮助" title="帮助（?）">?</button>
+  </nav>
+
+  <aside class="notes-panel" id="notesPanel" aria-label="演讲备注">
+    <h3 id="notesTitle">演讲备注</h3>
+    <div class="notes-content" id="notesContent"></div>
+  </aside>
+
+  <aside class="help-panel" id="helpPanel" aria-label="操作说明">
+    <h3>操作说明</h3>
+    <div class="help-grid">
+      <kbd>→</kbd><span>下一页；也可使用空格或 PageDown</span>
+      <kbd>←</kbd><span>上一页；也可使用 PageUp</span>
+      <kbd>Home</kbd><span>跳到首页</span>
+      <kbd>End</kbd><span>跳到末页</span>
+      <kbd>O</kbd><span>打开/关闭所有幻灯片总览</span>
+      <kbd>N</kbd><span>显示/隐藏当前页演讲备注</span>
+      <kbd>F</kbd><span>进入/退出浏览器全屏</span>
+      <kbd>?</kbd><span>显示/隐藏本说明</span>
+      <kbd>Esc</kbd><span>关闭备注、帮助或总览</span>
+    </div>
+  </aside>
+
+  <script>
+    (() => {
+      const slides = Array.from(document.querySelectorAll(".slide"));
+      const progressBar = document.getElementById("progressBar");
+      const counter = document.getElementById("counter");
+      const notesPanel = document.getElementById("notesPanel");
+      const notesTitle = document.getElementById("notesTitle");
+      const notesContent = document.getElementById("notesContent");
+      const helpPanel = document.getElementById("helpPanel");
+      let current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+      let touchStartX = null;
+
+      function updateNotes() {
+        const note = slides[current].querySelector(".speaker-notes");
+        notesTitle.textContent = `${current + 1}. ${slides[current].dataset.title}｜演讲备注`;
+        notesContent.innerHTML = note ? note.innerHTML : "<p>本页暂无备注。</p>";
+      }
+
+      function showSlide(index, updateHash = true) {
+        current = (index + slides.length) % slides.length;
+        slides.forEach((slide, i) => {
+          slide.classList.toggle("active", i === current);
+          slide.setAttribute("aria-hidden", i === current ? "false" : "true");
+        });
+        counter.textContent = `${current + 1} / ${slides.length}`;
+        progressBar.style.width = `${((current + 1) / slides.length) * 100}%`;
+        document.title = `${slides[current].dataset.title}｜芯智导学阶段组会`;
+        updateNotes();
+        if (updateHash) history.replaceState(null, "", `#${current + 1}`);
+      }
+
+      function closePanels() {
+        notesPanel.classList.remove("open");
+        helpPanel.classList.remove("open");
+      }
+
+      function toggleOverview(force) {
+        const target = typeof force === "boolean" ? force : !document.body.classList.contains("overview");
+        document.body.classList.toggle("overview", target);
+        closePanels();
+        if (!target) showSlide(current);
+      }
+
+      function toggleNotes() {
+        helpPanel.classList.remove("open");
+        updateNotes();
+        notesPanel.classList.toggle("open");
+      }
+
+      function toggleHelp() {
+        notesPanel.classList.remove("open");
+        helpPanel.classList.toggle("open");
+      }
+
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.();
+        } else {
+          document.exitFullscreen?.();
+        }
+      }
+
+      document.getElementById("prevBtn").addEventListener("click", () => showSlide(current - 1));
+      document.getElementById("nextBtn").addEventListener("click", () => showSlide(current + 1));
+      document.getElementById("overviewBtn").addEventListener("click", () => toggleOverview());
+      document.getElementById("notesBtn").addEventListener("click", toggleNotes);
+      document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
+      document.getElementById("printBtn").addEventListener("click", () => window.print());
+      document.getElementById("helpBtn").addEventListener("click", toggleHelp);
+
+      slides.forEach((slide, index) => {
+        slide.addEventListener("click", () => {
+          if (document.body.classList.contains("overview")) {
+            current = index;
+            toggleOverview(false);
+          }
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        const key = event.key;
+        if (key === "ArrowRight" || key === "PageDown" || key === " ") {
+          event.preventDefault();
+          if (!document.body.classList.contains("overview")) showSlide(current + 1);
+        } else if (key === "ArrowLeft" || key === "PageUp") {
+          event.preventDefault();
+          if (!document.body.classList.contains("overview")) showSlide(current - 1);
+        } else if (key === "Home") {
+          event.preventDefault(); showSlide(0);
+        } else if (key === "End") {
+          event.preventDefault(); showSlide(slides.length - 1);
+        } else if (key.toLowerCase() === "o") {
+          toggleOverview();
+        } else if (key.toLowerCase() === "n") {
+          toggleNotes();
+        } else if (key.toLowerCase() === "f") {
+          toggleFullscreen();
+        } else if (key === "?") {
+          toggleHelp();
+        } else if (key === "Escape") {
+          closePanels();
+          if (document.body.classList.contains("overview")) toggleOverview(false);
+        }
+      });
+
+      document.addEventListener("touchstart", (event) => {
+        touchStartX = event.changedTouches[0]?.clientX ?? null;
+      }, { passive: true });
+
+      document.addEventListener("touchend", (event) => {
+        if (touchStartX === null || document.body.classList.contains("overview")) return;
+        const delta = (event.changedTouches[0]?.clientX ?? touchStartX) - touchStartX;
+        if (Math.abs(delta) > 60) showSlide(current + (delta < 0 ? 1 : -1));
+        touchStartX = null;
+      }, { passive: true });
+
+      window.addEventListener("hashchange", () => {
+        const next = Number(location.hash.slice(1)) - 1;
+        if (Number.isInteger(next) && next >= 0 && next < slides.length) showSlide(next, false);
+      });
+
+      showSlide(current, false);
+    })();
+  </script>
+</body>
+</html>

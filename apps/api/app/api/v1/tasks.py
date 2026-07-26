@@ -10,11 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentRequest
 from app.contracts.api import EventRead, TaskRead
+from app.contracts.conversation import ConversationContextBundle
 from app.core.errors import NotFoundError
 from app.dependencies import get_db, get_provider
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
+from app.repositories.sessions import SessionRepository
+from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
 from app.services.task_creation_service import TaskCreationService
 from app.services.task_query_service import TaskQueryService
@@ -29,6 +32,17 @@ TERMINAL_STATUSES = {
 
 def task_read(task: TaskModel) -> TaskRead:
     model = TaskRead.model_validate(task)
+    payload = dict(model.input_content)
+    options = dict(payload.get("options") or {})
+    for key in (
+        "conversation_context",
+        "recent_messages",
+        "active_memories",
+        "working_state",
+    ):
+        options.pop(key, None)
+    payload["options"] = options
+    model.input_content = payload
     artifacts = task.__dict__.get("artifacts")
     model.artifact_ids = [artifact.id for artifact in artifacts or []]
     return model
@@ -46,9 +60,49 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    task = await TaskCreationService(db, provider.provider_name).create_queued(data)
-    request.app.state.task_runner.submit(task.id)
+    session = await SessionRepository(db).get(data.session_id)
+    if session is not None:
+        data = SessionContextService(request.app.state.settings).apply(session, data)
+        bundle = await request.app.state.context_assembly.assemble(
+            db,
+            session_id=data.session_id,
+            user_id=data.user_id,
+            current_message_id=None,
+            course_id=(
+                session.course_id
+                if data.course_id.upper() in {"", "AUTO", "UNKNOWN"}
+                else data.course_id
+            ),
+            task_family=data.intent.value,
+            agent_id="router",
+        )
+        data = _with_conversation_context(data, bundle)
+    decision = request.app.state.task_router.route(data)
+    task = await TaskCreationService(
+        db, provider.provider_name, request.app.state.settings
+    ).create_queued(data, route=decision)
+    if task.status == TaskStatus.QUEUED:
+        request.app.state.task_executor.submit(task.id)
     return task_read(task)
+
+
+def _with_conversation_context(
+    data: AgentRequest, bundle: ConversationContextBundle
+) -> AgentRequest:
+    options = dict(data.options)
+    options.update(
+        {
+            "conversation_context": bundle.model_dump(mode="json"),
+            "conversation_summary": bundle.safe_prompt_text(),
+            "recent_messages": [
+                item.model_dump(mode="json") for item in bundle.recent_messages[-6:]
+            ],
+            "active_memories": list(bundle.active_memories),
+            "working_state": bundle.working_state.model_dump(mode="json"),
+            "context_cache_status": bundle.cache_status,
+        }
+    )
+    return data.model_copy(update={"options": options})
 
 
 @router.get("/{task_id}", response_model=TaskRead)

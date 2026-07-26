@@ -1,0 +1,52 @@
+schema_version: "1"
+profiles:
+  router_fallback_v1:
+    status: success
+    answer_text: 开发态路由Mock已生成确定性目标，仅用于协议联调。
+    confidence: 0.8
+    business_data:
+      target_agent_id: LEARN_01_KNOWLEDGE_QA_V1
+      confidence: 0.8
+      reason: 根据课程与意图执行本地确定性示例路由。
+
+  teach_lesson_prep_v1:
+    status: success
+    answer_text: 开发态备课Mock已生成结构化教学方案骨架。
+    business_data:
+      learning_objectives: [明确核心概念, 能够完成基础应用]
+      prerequisites: [先修知识检查]
+      lesson_flow: [导入, 讲解, 练习, 总结]
+      activities: [概念辨析, 分组练习]
+      assessment: [形成性检查]
+      homework: [基础巩固题]
+
+  teach_assignment_review_v1:
+    status: success
+    answer_text: 开发态作业评阅Mock仅展示评阅协议，不代表正式评分。
+    business_data:
+      score_suggestion: null
+      rubric_breakdown: []
+      errors: []
+      feedback: 请按评分量规进行人工复核。
+      review_required: true
+
+  research_academic_writing_v1:
+    status: success
+    answer_text: 开发态学术写作Mock仅提供结构，不生成虚构引用。
+    business_data:
+      outline: [研究问题, 方法, 结果, 讨论]
+      draft: ""
+      revision_notes: [补充可核验来源后再撰写]
+      citation_checks: []
+      unsupported_claims: [所有未提供来源的事实性陈述]
+
+  research_data_analysis_v1:
+    status: success
+    answer_text: 开发态数据分析Mock只返回分析计划，不生成虚构数值。
+    business_data:
+      analysis_status: plan
+      method_selection: 待根据字段类型与研究问题选择。
+      analysis_steps: [检查数据字典, 数据质量审计, 选择方法, 验证假设]
+      metrics: []
+      limitations: [未提供真实数据，不执行数值计算]
+      reproducibility_notes: [记录输入版本、参数与随机种子]

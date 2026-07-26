@@ -38,6 +38,9 @@ resolve_knowledge_path() {
 export KNOWLEDGE_CT_HOST_PATH="${KNOWLEDGE_CT_HOST_PATH:-$(resolve_knowledge_path "电路理论" "$repo_root/local_knowledge/CT")}"
 export KNOWLEDGE_AE_HOST_PATH="${KNOWLEDGE_AE_HOST_PATH:-$(resolve_knowledge_path "模电" "$repo_root/local_knowledge/AE")}"
 export KNOWLEDGE_DE_HOST_PATH="${KNOWLEDGE_DE_HOST_PATH:-$(resolve_knowledge_path "数电" "$repo_root/local_knowledge/DE")}"
+export KNOWLEDGE_SS_HOST_PATH="${KNOWLEDGE_SS_HOST_PATH:-$(resolve_knowledge_path "信号与系统版本一" "$repo_root/local_knowledge/SS")}"
+export KNOWLEDGE_DSP_HOST_PATH="${KNOWLEDGE_DSP_HOST_PATH:-$(resolve_knowledge_path "数字信号处理" "$repo_root/local_knowledge/DSP")}"
+export KNOWLEDGE_COMM_HOST_PATH="${KNOWLEDGE_COMM_HOST_PATH:-$(resolve_knowledge_path "通信原理" "$repo_root/local_knowledge/COMM")}"
 
 docker compose config --quiet
 docker compose up -d --build --wait

@@ -1,0 +1,1 @@
+{"case_id":"CT_RET_001","course_id":"CT","query":"戴维南定理的等效电阻如何求","expected_sources":[{"document_path":"课本/基础篇/3-重置md/第四章.md","chapter":"4.5 戴维南定理与诺顿定理","required":true}],"forbidden_courses":["AE","DE"],"tags":["theorem","equivalent_circuit"],"review_status":"draft"}

@@ -1,0 +1,33 @@
+course_id: CT
+course_name: 电路理论
+document_patterns:
+  - "**/*.md"
+chapter_aliases:
+  戴维南定理: 戴维宁定理
+retrieval_topic_boosts:
+  - name: series_resonance_characteristics
+    query_terms:
+      - 串联谐振
+      - 电压谐振
+    query_context_terms:
+      - 特征
+      - 特性
+      - 阻抗
+      - 功率因数
+      - 电压
+      - 电流
+    evidence_terms:
+      - 感抗和容抗互消
+      - 呈阻性
+      - 电压和电流同相
+      - 阻抗角
+      - 串联谐振
+    preferred_content_types:
+      - concept
+      - formula
+    evidence_term_boost: 0.001
+    content_type_boost: 0.006
+    max_boost: 0.008
+excluded_paths:
+  - "**/映射表.md"
+  - "**/目录.md"

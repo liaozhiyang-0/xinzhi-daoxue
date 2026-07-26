@@ -1,15 +1,657 @@
-agents:
-  SOLVER_CT_V1:
-    provider: xingchen
-    workflow_version: "1.0.0"
-    course_pack: course_ct_v1
+scenes:
+  dispatch:
+    enabled: true
+  learning:
+    enabled: true
+  teaching:
+    enabled: true
+    publication_status: published
+  research:
+    enabled: true
+    publication_status: published
+  infrastructure:
     enabled: false
-    publication_status: not_published
-    supports_streaming: false
-    default_timeout_seconds: 120
+    publication_status: planned
+
+session_context:
+  status: in_progress
+  route_source: session_context
+  long_term_memory: false
+
+agents:
+  DISPATCH_LOCAL_FAST_V1:
+    scene: dispatch
+    provider: local
+    enabled: true
+    publication_status: local
+    mode: routing_only
+    course_ids: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    supports: [text]
+
+  ROUTER_01_FALLBACK_V1:
+    display_name: 模糊任务调度
+    version: "1.0"
+    schema_version: "1"
+    scene: dispatch
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_FALLBACK_ROUTER_FLOW_ID
+      timeout_seconds: 45
+      max_retries: 0
+      parser_type: json
+      output_schema: router_01_v1
+    enabled: true
+    publication_status: published
+    mode: routing_only
+    execution_mode: hybrid
+    local_handler: app.orchestrator.supervisor.XZDSupervisor
+    priority: 100
+    input_mapping:
+      AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 8000}
+    output_mapping:
+      target_agent_id: {target: business_data.target_agent_id, parser: identity}
+      confidence: {target: confidence, parser: float}
+      reason_codes: {target: business_data.reason_codes, parser: list_json}
+      course_id: {target: course_id, parser: identity}
+      intent: {target: intent, parser: identity}
+      task_subtype: {target: business_data.task_subtype, parser: identity}
+      needs_clarification: {target: business_data.needs_clarification, parser: identity}
+    capabilities:
+      user_roles: [student, teacher, researcher, admin]
+      courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+      intents: [unknown]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [workflow_prompt]
+      optional: [user_role, course_id, intent, input_mode, available_agents, candidate_agents, local_confidence, conversation_summary, previous_agent, previous_intent]
+    retrieval_policy:
+      enabled: false
+      policy_name: router_no_rag
+      mode: no_rag
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 0
+      generation_injection: false
     fallback:
-      provider: mock
-      when:
-        - xingchen_disabled
-        - xingchen_not_configured
-        - xingchen_not_published
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: router_only
+    renderer_type: router_only
+    development:
+      mock_enabled: true
+      mock_profile: router_fallback_v1
+      mock_latency_ms: 20
+
+  ACADEMIC_PROBLEM_SOLVER:
+    display_name: 通用多学科专业问题求解
+    version: "1.0"
+    schema_version: "1.0"
+    scene: learning
+    provider:
+      type: local
+      timeout_seconds: 120
+      max_retries: 0
+      parser_type: json
+      output_schema: academic_solution_v1
+    enabled: true
+    publication_status: local
+    route_when_unconfigured: true
+    mode: local_graph
+    execution_mode: local
+    graph_name: academic_problem_solver
+    local_handler: app.services.academic_solver_service.AcademicProblemSolverService
+    priority: 95
+    task_families: [ACADEMIC_SOLVING]
+    required_capabilities: []
+    input_mapping:
+      text: {source: text, transform: string, max_length: 12000}
+    capabilities:
+      user_roles: [student, teacher, researcher]
+      courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+      intents: [solve_problem]
+      input_modes:
+        [text, single_image, text_and_single_image, multi_image, text_and_multi_image]
+      supports_session_context: true
+      supports_images: true
+    input_contract:
+      required: [text]
+      optional: [image, previous_answer_summary]
+    retrieval_policy:
+      enabled: true
+      policy_name: academic_solver_domain_context
+      mode: method_only_rag
+      course_required: true
+      text_top_k: 3
+      image_top_k: 2
+      reranker: conditional
+      allowed_content_types: [method, formula, concept, common_error, worked_example]
+      context_max_chars: 6000
+      generation_injection: true
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: generic
+    renderer_type: generic
+
+  SOLVER_CT_V1:
+    display_name: 电路理论求解
+    version: "1.0"
+    schema_version: "1"
+    scene: learning
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_SOLVER_CT_FLOW_ID
+      timeout_seconds: 300
+      max_retries: 0
+      parser_type: json
+      output_schema: solver_ct_v1
+    enabled: true
+    publication_status: published
+    route_when_unconfigured: true
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.agents.solver_ct.local_graph.LocalCircuitSolverGraph
+    priority: 90
+    task_families: [ACADEMIC_SOLVING]
+    graph_name: academic_problem_solver
+    input_mapping:
+      AGENT_USER_INPUT: {source: text, transform: string, max_length: 12000}
+      USER_INPUT_image: {source: image, transform: string}
+    capabilities:
+      user_roles: [student, teacher]
+      courses: [CT]
+      intents: [solve_problem]
+      input_modes: [text, single_image, text_and_single_image]
+      supports_session_context: false
+      supports_images: true
+    input_contract:
+      required: [text]
+      optional: [image]
+    retrieval_policy:
+      enabled: true
+      policy_name: solver_ct_method_reference
+      mode: method_only_rag
+      course_required: true
+      text_top_k: 2
+      image_top_k: 2
+      reranker: off
+      allowed_content_types: [method, formula, concept, common_error]
+      context_max_chars: 2000
+      generation_injection: false
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: solver_ct
+    renderer_type: solver_ct
+
+  LEARN_01_KNOWLEDGE_QA_V1:
+    display_name: 课程知识问答
+    version: "1.0"
+    schema_version: "1"
+    scene: learning
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_KNOWLEDGE_QA_FLOW_ID
+      timeout_seconds: 300
+      max_retries: 0
+      parser_type: json_or_fixed_line
+      parser_options:
+        ordered_fields:
+          - status
+          - course_id
+          - intent
+          - answer
+          - key_points_json
+          - source_references_json
+          - warnings_json
+          - confidence
+          - parse_status
+          - request_id
+      output_schema: learn_01_v1
+    enabled: true
+    publication_status: published
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.services.knowledge_qa_service.KnowledgeQAService
+    priority: 95
+    task_families: [KNOWLEDGE_QA]
+    input_mapping:
+      text: AGENT_USER_INPUT
+      question: question
+      course_id: course_id
+      intent: intent
+      retrieved_context: retrieved_context
+      previous_answer_summary: previous_answer_summary
+      conversation_summary: conversation_summary
+      response_depth: response_depth
+      request_id: request_id
+    output_mapping:
+      status: status
+      course_id: course_id
+      intent: intent
+      answer: answer
+      key_points: key_points_json
+      source_references: source_references_json
+      warnings: warnings_json
+      confidence: confidence
+      parse_status: parse_status
+      request_id: request_id
+    capabilities:
+      user_roles: [student, teacher]
+      courses: [CT, AE, DE, SS, DSP, COMM]
+      intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [question, course_id, intent, request_id]
+      optional: [retrieved_context, previous_answer_summary, conversation_summary, response_depth]
+    retrieval_policy:
+      enabled: true
+      policy_name: learn_knowledge_qa
+      mode: text_rag
+      course_required: true
+      text_top_k: 3
+      image_top_k: 2
+      reranker: conditional
+      allowed_content_types: [chapter_summary, concept, formula, method, mixed, unknown]
+      context_max_chars: 6000
+      generation_injection: true
+    fallback:
+      type: agent
+      handler: local_retrieval_answer
+      target_agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
+      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, cloud_failed_status, open_circuit, not_configured]
+    validator_type: learn_qa
+    renderer_type: learn_qa
+
+  LEARN_01_LOCAL_RETRIEVAL_V1:
+    display_name: 本地课程知识检索
+    version: "1.0"
+    schema_version: "2"
+    scene: learning
+    provider:
+      type: local
+      timeout_seconds: 30
+      max_retries: 0
+      parser_type: plain_text
+      output_schema: local_retrieval_v1
+    enabled: true
+    publication_status: local
+    mode: retrieval_only
+    task_families: [KNOWLEDGE_QA]
+    execution_mode: local
+    local_handler: app.services.knowledge_qa_service.KnowledgeQAService
+    priority: 90
+    capabilities:
+      user_roles: [student, teacher]
+      courses: [CT, AE, DE, SS, DSP, COMM]
+      intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_mapping:
+      text: {source: text, transform: string, max_length: 12000}
+    input_contract:
+      required: [text]
+      optional: [conversation_summary, previous_answer_summary]
+    retrieval_policy:
+      enabled: true
+      policy_name: local_retrieval
+      mode: text_rag
+      course_required: true
+      text_top_k: 5
+      image_top_k: 2
+      reranker: conditional
+      allowed_content_types: [chapter_summary, concept, formula, method, mixed, unknown]
+      context_max_chars: 6000
+      generation_injection: true
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: learn_qa
+    renderer_type: learn_qa
+
+  GENERAL_QUESTION_V1:
+    display_name: 通用问题解答
+    version: "1.0"
+    schema_version: "1"
+    scene: learning
+    provider:
+      type: local
+      timeout_seconds: 120
+      max_retries: 0
+      parser_type: plain_text
+      output_schema: general_question_v1
+    enabled: true
+    publication_status: local
+    route_when_unconfigured: true
+    mode: local_model
+    execution_mode: local
+    local_handler: app.services.general_question_service.GeneralQuestionService
+    priority: 10
+    task_families: [FALLBACK]
+    capabilities:
+      user_roles: [student, teacher, researcher, admin]
+      courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC, UNKNOWN]
+      intents: [general_qa, unknown]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_mapping:
+      text: {source: text, transform: string, max_length: 12000}
+    input_contract:
+      required: [text]
+      optional: [conversation_summary, previous_answer_summary, response_depth]
+    retrieval_policy:
+      enabled: false
+      policy_name: general_question_no_rag
+      mode: no_rag
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 0
+      generation_injection: false
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: generic
+    renderer_type: generic
+
+  TEACH_01_LESSON_PREP_V1:
+    display_name: 智能备课
+    version: "1.0"
+    schema_version: "1"
+    scene: teaching
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_LESSON_PREP_FLOW_ID
+      timeout_seconds: 45
+      max_retries: 0
+      parser_type: json
+      output_schema: teach_01_v1
+    enabled: true
+    publication_status: published
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    priority: 80
+    capabilities:
+      user_roles: [teacher]
+      courses: [CT, AE, DE]
+      intents: [lesson_prep]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [workflow_prompt, course_id]
+      optional: [topic, student_level, class_duration, lesson_count, teaching_goals, prerequisites, retrieved_context, available_resources, special_constraints, response_depth, request_id]
+    input_mapping:
+      AGENT_USER_INPUT:
+        source: workflow_prompt
+        transform: string
+        max_length: 12000
+      course_id:
+        source: course_id
+        transform: string
+      retrieved_context:
+        source: retrieved_context
+        transform: retrieval_context
+        max_length: 12000
+      request_id:
+        source: request_id
+        transform: string
+    output_mapping:
+      status: {target: status, parser: identity}
+      answer: {target: answer_text, parser: identity}
+      learning_objectives: {target: business_data.learning_objectives, parser: list_json}
+      prerequisites: {target: business_data.prerequisites, parser: list_json}
+      lesson_flow: {target: business_data.lesson_flow, parser: identity}
+      worked_examples: {target: business_data.worked_examples, parser: list_json}
+      activities: {target: business_data.activities, parser: list_json}
+      formative_assessment: {target: business_data.formative_assessment, parser: list_json}
+      homework: {target: business_data.homework, parser: identity}
+      teacher_notes: {target: business_data.teacher_notes, parser: list_json}
+      source_references: {target: source_references, parser: list_json}
+      warnings: {target: warnings, parser: list_json}
+      confidence: {target: confidence, parser: float}
+      request_id: {target: request_id, parser: identity}
+    retrieval_policy:
+      enabled: true
+      policy_name: teach_lesson_prep
+      mode: multimodal_rag
+      course_required: true
+      text_top_k: 5
+      image_top_k: 3
+      reranker: off
+      allowed_content_types: [chapter_summary, concept, method, worked_example]
+      context_max_chars: 12000
+      generation_injection: true
+    fallback:
+      type: template
+      handler: static_template
+      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, open_circuit, not_configured]
+    validator_type: lesson_prep
+    renderer_type: lesson_prep
+    development:
+      mock_enabled: true
+      mock_profile: teach_lesson_prep_v1
+      mock_latency_ms: 30
+  TEACH_02_ASSIGNMENT_REVIEW_V1:
+    display_name: 作业批改
+    version: "1.0"
+    schema_version: "1"
+    scene: teaching
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_ASSIGNMENT_REVIEW_FLOW_ID
+      timeout_seconds: 45
+      max_retries: 0
+      parser_type: json_or_fixed_line
+      output_schema: teach_02_v1
+    enabled: true
+    publication_status: published
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    priority: 80
+    input_mapping:
+      AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
+    output_mapping:
+      status: {target: status, parser: identity}
+      answer: {target: answer_text, parser: identity}
+      score_suggestion: {target: business_data.score_suggestion, parser: float}
+      rubric_breakdown: {target: business_data.rubric_breakdown, parser: identity}
+      correct_parts: {target: business_data.correct_parts, parser: list_json}
+      errors: {target: business_data.errors, parser: list_json}
+      teacher_feedback: {target: business_data.teacher_feedback, parser: identity}
+      review_required: {target: business_data.review_required, parser: identity}
+      warnings: {target: warnings, parser: list_json}
+      confidence: {target: confidence, parser: float}
+      request_id: {target: request_id, parser: identity}
+    capabilities:
+      user_roles: [teacher]
+      courses: [CT, AE, DE]
+      intents: [assignment_review]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [workflow_prompt]
+      optional: [assignment_text, student_answer, reference_answer, rubric, maximum_score, retrieved_context, teacher_requirements, response_depth, request_id]
+    retrieval_policy:
+      enabled: true
+      policy_name: teach_assignment_review
+      mode: text_rag
+      course_required: true
+      text_top_k: 3
+      image_top_k: 0
+      reranker: off
+      allowed_content_types: [formula, method, common_error]
+      context_max_chars: 6000
+      generation_injection: false
+    fallback:
+      type: review
+      handler: manual_review
+      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+    validator_type: assignment_review
+    renderer_type: assignment_review
+    development:
+      mock_enabled: true
+      mock_profile: teach_assignment_review_v1
+      mock_latency_ms: 25
+  RESEARCH_02_ACADEMIC_WRITING_V1:
+    display_name: 学术写作
+    version: "1.0"
+    schema_version: "1"
+    scene: research
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_ACADEMIC_WRITING_FLOW_ID
+      timeout_seconds: 45
+      max_retries: 0
+      parser_type: json_or_fixed_line
+      output_schema: research_02_v1
+    enabled: true
+    publication_status: published
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    priority: 70
+    input_mapping:
+      AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
+    output_mapping:
+      status: {target: status, parser: identity}
+      answer: {target: answer_text, parser: identity}
+      outline: {target: business_data.outline, parser: identity}
+      revised_text: {target: business_data.revised_text, parser: identity}
+      revision_notes: {target: business_data.revision_notes, parser: list_json}
+      citation_check: {target: business_data.citation_check, parser: identity}
+      unsupported_claims: {target: business_data.unsupported_claims, parser: list_json}
+      warnings: {target: warnings, parser: list_json}
+      confidence: {target: confidence, parser: float}
+      request_id: {target: request_id, parser: identity}
+    capabilities:
+      user_roles: [researcher, teacher, student]
+      courses: [CT, AE, DE]
+      intents: [academic_writing]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [workflow_prompt]
+      optional: [writing_task, document_type, target_audience, target_venue, source_text, trusted_sources, citation_context, style_requirements, language, conversation_summary, request_id]
+    retrieval_policy:
+      enabled: false
+      policy_name: trusted_source_context
+      mode: external_source_context
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 12000
+      generation_injection: false
+    fallback:
+      type: review
+      handler: manual_review
+      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+    validator_type: academic_writing
+    renderer_type: academic_writing
+    development:
+      mock_enabled: true
+      mock_profile: research_academic_writing_v1
+      mock_latency_ms: 25
+  RESEARCH_03_DATA_ANALYSIS_V1:
+    display_name: 数据分析
+    version: "1.0"
+    schema_version: "1"
+    scene: research
+    provider:
+      type: xingchen
+      flow_env_key: XINGCHEN_DATA_ANALYSIS_FLOW_ID
+      timeout_seconds: 45
+      max_retries: 0
+      parser_type: json_or_fixed_line
+      output_schema: research_03_v1
+    enabled: true
+    publication_status: published
+    mode: provider
+    execution_mode: hybrid
+    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    priority: 75
+    input_mapping:
+      AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
+    output_mapping:
+      status: {target: status, parser: identity}
+      answer: {target: answer_text, parser: identity}
+      analysis_status: {target: business_data.analysis_status, parser: identity}
+      data_quality: {target: business_data.data_quality, parser: identity}
+      method_selection: {target: business_data.method_selection, parser: identity}
+      analysis_steps: {target: business_data.analysis_steps, parser: list_json}
+      metrics: {target: business_data.metrics, parser: identity}
+      result_interpretation: {target: business_data.result_interpretation, parser: identity}
+      limitations: {target: business_data.limitations, parser: list_json}
+      reproducibility_requirements: {target: business_data.reproducibility_requirements, parser: list_json}
+      warnings: {target: warnings, parser: list_json}
+      confidence: {target: confidence, parser: float}
+      request_id: {target: request_id, parser: identity}
+    capabilities:
+      user_roles: [researcher, teacher, student]
+      courses: [CT, AE, DE]
+      intents: [data_analysis]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_contract:
+      required: [workflow_prompt]
+      optional: [research_question, study_design, data_description, variable_definitions, sample_size, missing_data_summary, provided_results, analysis_goal, constraints, software_environment, trusted_context, request_id]
+    retrieval_policy:
+      enabled: false
+      policy_name: analysis_data_context
+      mode: data_context_only
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 12000
+      generation_injection: false
+    fallback:
+      type: plan
+      handler: planned_response
+      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+    validator_type: data_analysis
+    renderer_type: data_analysis
+    development:
+      mock_enabled: true
+      mock_profile: research_data_analysis_v1
+      mock_latency_ms: 25
+
+routing:
+  - course_ids: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    intents: [solve_problem]
+    agent_id: ACADEMIC_PROBLEM_SOLVER
+    scene: learning
+    retrieval_required: true
+    provider_required: false
+  - course_ids: [CT]
+    intents: [check_user_solution, verify_answer]
+    agent_id: ACADEMIC_PROBLEM_SOLVER
+    scene: learning
+    retrieval_required: true
+    provider_required: false
+  - course_ids: [CT, AE, DE, SS, DSP, COMM]
+    intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
+    agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
+    scene: learning
+    retrieval_required: true
+    provider_required: false

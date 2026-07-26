@@ -1,4 +1,6 @@
-from sqlalchemy import func, select
+from typing import cast
+
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -26,7 +28,16 @@ class TaskRepository:
             query = query.options(selectinload(TaskModel.artifacts))
         if for_update:
             query = query.with_for_update()
-        return await self.session.scalar(query)
+        return cast(TaskModel | None, await self.session.scalar(query))
+
+    async def get_by_idempotency_key(
+        self, user_id: str, idempotency_key: str
+    ) -> TaskModel | None:
+        query = select(TaskModel).where(
+            TaskModel.user_id == user_id,
+            TaskModel.idempotency_key == idempotency_key,
+        )
+        return cast(TaskModel | None, await self.session.scalar(query))
 
     async def next_event_sequence(self, task_id: str) -> int:
         value = await self.session.scalar(
@@ -53,3 +64,16 @@ class TaskRepository:
             .order_by(TaskEventModel.sequence)
         )
         return list((await self.session.scalars(query)).all())
+
+    async def list_by_session(
+        self, session_id: str, *, limit: int = 50
+    ) -> list[TaskModel]:
+        query = (
+            select(TaskModel)
+            .where(TaskModel.session_id == session_id)
+            .order_by(desc(TaskModel.created_at))
+            .limit(limit)
+        )
+        tasks = list((await self.session.scalars(query)).all())
+        tasks.reverse()
+        return tasks

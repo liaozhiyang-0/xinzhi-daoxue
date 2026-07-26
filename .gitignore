@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+.env.local
+.env.*.local
+*.secret
 .venv/
 venv/
 __pycache__/
@@ -12,6 +15,10 @@ __pycache__/
 htmlcov/
 evaluation/circuit_theory/results/*
 !evaluation/circuit_theory/results/.gitkeep
+evaluation/cache/*
+evaluation/reports/*
+evaluation/private_cases/**
+!evaluation/private_cases/README.md
 node_modules/
 dist/
 build/
@@ -21,18 +28,28 @@ target/
 .DS_Store
 *.log
 *.db
+.pytest-tmp*/
 local_storage/
 local_knowledge/*
 !local_knowledge/README.md
 !local_knowledge/CT/
 !local_knowledge/AE/
 !local_knowledge/DE/
+!local_knowledge/SS/
+!local_knowledge/DSP/
+!local_knowledge/COMM/
 local_knowledge/CT/*
 local_knowledge/AE/*
 local_knowledge/DE/*
+local_knowledge/SS/*
+local_knowledge/DSP/*
+local_knowledge/COMM/*
 !local_knowledge/CT/.gitkeep
 !local_knowledge/AE/.gitkeep
 !local_knowledge/DE/.gitkeep
+!local_knowledge/SS/.gitkeep
+!local_knowledge/DSP/.gitkeep
+!local_knowledge/COMM/.gitkeep
 .minio/
 .local_inputs/
 .local_outputs/
@@ -43,3 +60,20 @@ local_knowledge/DE/*
 /电路理论/
 /模电/
 /数电/
+/信号与系统版本一/
+/数字信号处理/
+/通信原理/
+/知识库/
+
+# 本地知识库索引缓存包含教材正文和向量，全部由各机器本地生成，不提交。
+/knowledge_indexes/
+/model_cache/
+
+# 防止误在仓库根目录再次 clone 后把嵌套仓库及其中的 .env 提交。
+/xinzhi-daoxue/
+
+# 本地凭据、证书和临时导出。
+*.pem
+*.p12
+*.pfx
+*.key

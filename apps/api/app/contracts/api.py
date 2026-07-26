@@ -21,8 +21,43 @@ class SessionRead(BaseModel):
     user_id: str
     course_id: str
     title: str
+    title_source: str
+    archived_at: datetime | None
+    last_message_at: datetime | None
+    message_count: int
+    session_revision: int
+    parent_session_id: str | None
+    branch_from_message_id: str | None
+    memory_enabled: bool
+    auto_memory_enabled: bool
+    context_compaction_enabled: bool
     created_at: datetime
     updated_at: datetime
+
+
+class SessionUpdate(BaseModel):
+    user_id: str
+    title: str | None = Field(default=None, max_length=255)
+    course_id: str | None = Field(default=None, max_length=32)
+    memory_enabled: bool | None = None
+    auto_memory_enabled: bool | None = None
+    context_compaction_enabled: bool | None = None
+
+
+class SessionTaskHistoryItem(BaseModel):
+    id: str
+    course_id: str
+    intent: str
+    status: TaskStatus
+    provider: str
+    agent_id: str
+    question: str
+    answer: str
+    error_message: str | None
+    fallback_used: bool = False
+    fallback_reason: str = ""
+    created_at: datetime
+    completed_at: datetime | None
 
 
 class TaskRead(BaseModel):
@@ -36,12 +71,23 @@ class TaskRead(BaseModel):
     status: TaskStatus
     provider: str
     agent_id: str
+    route_status: str
+    route_reason: str
     input_content: dict[str, Any]
     result_content: dict[str, Any] | None
     error_message: str | None
     parent_task_id: str | None
     attempt: int
     cancellation_requested: bool
+    idempotency_key: str | None
+    max_attempts: int
+    execution_owner: str | None
+    lease_expires_at: datetime | None
+    heartbeat_at: datetime | None
+    cancel_requested_at: datetime | None
+    failure_category: str | None
+    user_message_id: str | None
+    assistant_message_id: str | None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None

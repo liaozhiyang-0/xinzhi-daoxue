@@ -1,0 +1,9 @@
+{
+  "case_id": "knowledge_qa_capacitor_voltage",
+  "input": {"message": "为什么电容电压不能突变？"},
+  "expected_course": "CT",
+  "expected_intent": "explain_concept",
+  "required_keywords": ["电容", "连续"],
+  "forbidden_claims": ["电容电压总是等于零"],
+  "reference_answer": "电容电压连续性由有限电流条件下 i=C du/dt 决定。"
+}

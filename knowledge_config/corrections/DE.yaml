@@ -1,0 +1,13 @@
+rules:
+  - original: "小一缟"
+    replacement: "小结"
+    document_path: "教材/数电_第七章.md"
+    scope: heading_exact
+    reason: "疑似 OCR 标题噪声，待对照 PDF 人工确认"
+    review_status: draft
+  - original: "蜀歌题"
+    replacement: "习题"
+    document_path: "教材/数电_第七章.md"
+    scope: heading_exact
+    reason: "疑似 OCR 标题噪声，待对照 PDF 人工确认"
+    review_status: draft

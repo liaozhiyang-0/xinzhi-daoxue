@@ -1,0 +1,60 @@
+cases:
+  - case_id: BOUNDARY_UNREADABLE_001
+    title: 题目完全不可读
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: boundary
+    input_type: text
+    message: "### ???"
+    structured_input: {can_continue: false, extraction_confidence: 0.1}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [CONDITIONAL]
+    expected_statuses: [failed, partial]
+    forbidden_claims: [计算结果为]
+    tags: [boundary, unreadable]
+
+  - case_id: BOUNDARY_MISSING_001
+    title: 关键参数缺失
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: boundary
+    input_type: text
+    message: 求放大器增益，但没有给出任何电路参数。
+    structured_input:
+      critical_missing_info: [{field: 电路参数}]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [CONDITIONAL]
+    expected_statuses: [partial]
+    required_keywords: [信息不足]
+    forbidden_claims: [默认增益为10]
+    tags: [boundary, insufficient]
+
+  - case_id: BOUNDARY_COURSE_CONFLICT_001
+    title: 课程提示冲突
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: boundary
+    input_type: text
+    message: 这是一道模拟电子技术理想运放题，请计算反相增益。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [FAST, STANDARD]
+    expected_statuses: [partial, success]
+    tags: [boundary, course_conflict]
+
+  - case_id: BOUNDARY_QA_NOT_SOLVER_001
+    title: 普通知识问答不得进入求解器
+    course: DE
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: boundary
+    input_type: text
+    message: 什么是触发器？请解释概念，不需要计算。
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    forbidden_tools: [linear_equation_solver, sympy_solver]
+    tags: [boundary, misroute]

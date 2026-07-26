@@ -112,9 +112,7 @@ def variable_names(value: Any) -> tuple[str, ...]:
     return tuple(sorted(name for name in names if len(name) <= 100))
 
 
-def node_variables(
-    node: dict[str, Any], keys: tuple[str, ...]
-) -> tuple[str, ...]:
+def node_variables(node: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, ...]:
     for key in keys:
         if key in node:
             return variable_names(node[key])
@@ -200,20 +198,14 @@ def public_edges(
     mapping = {node.raw_id: node.public_id for node in nodes}
     result: list[tuple[str, str]] = []
     for edge in raw_edges:
-        source = edge_end(
-            edge, ("source", "sourceId", "source_id", "from", "fromNode")
-        )
-        target = edge_end(
-            edge, ("target", "targetId", "target_id", "to", "toNode")
-        )
+        source = edge_end(edge, ("source", "sourceId", "source_id", "from", "fromNode"))
+        target = edge_end(edge, ("target", "targetId", "target_id", "to", "toNode"))
         if source in mapping and target in mapping:
             result.append((mapping[source], mapping[target]))
     return result
 
 
-def cycle_nodes(
-    nodes: list[PublicNode], edges: list[tuple[str, str]]
-) -> list[str]:
+def cycle_nodes(nodes: list[PublicNode], edges: list[tuple[str, str]]) -> list[str]:
     graph: dict[str, list[str]] = defaultdict(list)
     for source, target in edges:
         graph[source].append(target)

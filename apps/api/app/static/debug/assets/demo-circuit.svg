@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="360" viewBox="0 0 720 360" role="img" aria-labelledby="title desc">
+  <title id="title">电路理论演示图</title><desc id="desc">一个十伏电压源串联五欧姆电阻的闭合回路示意图</desc>
+  <rect width="720" height="360" fill="#f7f9fb"/><g fill="none" stroke="#17334d" stroke-width="6" stroke-linecap="round"><path d="M145 95h205m120 0h105v170H145v-65"/><path d="M145 95v55"/><path d="M115 150h60m-45 40h30"/><path d="M350 95l18-30 24 60 24-60 24 60 30-30"/></g><g fill="#17334d" font-family="system-ui,sans-serif" font-size="24"><text x="86" y="180">10 V</text><text x="370" y="50">5 Ω</text><text x="280" y="315">会议演示用串联电路</text></g>
+</svg>

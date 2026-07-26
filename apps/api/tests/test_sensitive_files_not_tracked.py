@@ -39,6 +39,9 @@ def test_local_textbook_directories_are_ignored() -> None:
             "电路理论/sample.md",
             "模电/sample.md",
             "数电/sample.md",
+            "信号与系统版本一/sample.md",
+            "数字信号处理/sample.md",
+            "通信原理/sample.md",
         ],
         cwd=root,
         check=True,
@@ -47,4 +50,11 @@ def test_local_textbook_directories_are_ignored() -> None:
         encoding="utf-8",
     )
     ignored = set(result.stdout.splitlines())
-    assert ignored == {"电路理论/sample.md", "模电/sample.md", "数电/sample.md"}
+    assert ignored == {
+        "电路理论/sample.md",
+        "模电/sample.md",
+        "数电/sample.md",
+        "信号与系统版本一/sample.md",
+        "数字信号处理/sample.md",
+        "通信原理/sample.md",
+    }

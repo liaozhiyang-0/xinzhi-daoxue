@@ -1,0 +1,146 @@
+cases:
+  - case_id: CT_CAPACITOR_001
+    title: 电容电压连续性概念
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: first_order
+    difficulty: easy
+    input_type: text
+    message: 为什么电容电压不能突变？
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [电容]
+    forbidden_claims: [电容电压可以瞬间任意改变]
+    tags: [concept]
+
+  - case_id: CT_KCL_001
+    title: 简单KCL方程
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: kcl_kvl
+    difficulty: easy
+    input_type: text
+    message: 使用KCL求节点电压，已知方程2*x=4。
+    structured_input:
+      equations_given: [2*x=4]
+      target_quantities: [{name: x}]
+      extraction_confidence: 0.95
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST]
+    expected_tools: [linear_equation_solver]
+    reference_values: {x: 2}
+    numeric_tolerance: 0.000001
+    tags: [numeric, tool]
+
+  - case_id: CT_NODE_001
+    title: 节点电压法
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    difficulty: medium
+    input_type: text
+    message: 用节点电压法列方程并求节点电压，方程3*v=12。
+    structured_input:
+      equations_given: [3*v=12]
+      target_quantities: [{name: v}]
+      extraction_confidence: 0.9
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    expected_tools: [linear_equation_solver]
+    reference_values: {v: 4}
+    numeric_tolerance: 0.000001
+    tags: [numeric, tool]
+
+  - case_id: CT_FIRST_ORDER_001
+    title: 一阶RC电路
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: first_order
+    difficulty: medium
+    input_type: text
+    message: 求RC一阶电路的零状态响应，并说明时间常数。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [一阶]
+    required_steps: [时间常数]
+    tags: [transient]
+
+  - case_id: CT_PHASOR_001
+    title: 正弦稳态相量
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: sinusoidal_steady_state
+    difficulty: medium
+    input_type: text
+    message: 用相量法分析正弦稳态电路，说明阻抗与参考方向。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    required_keywords: [相量]
+    forbidden_claims: [忽略参考方向]
+    tags: [phasor]
+
+  - case_id: CT_POWER_001
+    title: 电阻功率计算
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    difficulty: easy
+    input_type: text
+    message: 已知电阻电压u=10V、电流i=2A，按关联参考方向求吸收功率。
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    reference_values: {P: 20 W}
+    required_keywords: [功率]
+    tags: [numeric]
+
+  - case_id: CT_CONTROLLED_001
+    title: 受控源方向冲突
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: controlled_source
+    difficulty: hard
+    input_type: text
+    message: 分析含受控源的复杂电路，但题干中两处受控源参考方向互相冲突。
+    structured_input:
+      source_conflicts: [{description: 受控源参考方向不一致}]
+      extraction_confidence: 0.45
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [HIGH_RISK]
+    expected_statuses: [partial]
+    required_keywords: [不确定性标记]
+    forbidden_claims: [方向已经确定]
+    tags: [high_risk, conflict]
+
+  - case_id: CT_INSUFFICIENT_001
+    title: 复杂电路关键参数缺失
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: controlled_source
+    difficulty: boundary
+    input_type: text
+    message: 求含受控源电路的输出电压，但没有给出控制系数。
+    structured_input:
+      critical_missing_info: [{field: 受控源控制系数}]
+      extraction_confidence: 0.7
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [CONDITIONAL]
+    expected_statuses: [partial]
+    required_keywords: [信息不足]
+    forbidden_claims: [控制系数取1]
+    tags: [insufficient]

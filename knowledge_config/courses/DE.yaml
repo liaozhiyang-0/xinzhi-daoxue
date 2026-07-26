@@ -1,0 +1,30 @@
+course_id: DE
+course_name: 数字电子技术
+document_patterns:
+  - "**/*.md"
+chapter_aliases: {}
+retrieval_topic_boosts:
+  - name: schmitt_hysteresis_mechanism
+    query_terms:
+      - 施密特
+      - 斯密特
+      - Schmitt
+    query_context_terms:
+      - 回差
+      - 迟滞
+      - 滞回
+      - 阈值
+    evidence_terms:
+      - 正反馈
+      - 回差电压
+      - 正向阈值
+      - 负向阈值
+      - 两个不同的阈值
+    preferred_content_types:
+      - concept
+      - formula
+    evidence_term_boost: 0.001
+    content_type_boost: 0.007
+    max_boost: 0.008
+excluded_paths:
+  - "**/*目录.md"

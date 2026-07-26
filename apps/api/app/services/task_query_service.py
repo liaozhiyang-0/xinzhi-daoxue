@@ -21,3 +21,8 @@ class TaskQueryService:
         if await self.repository.get(task_id) is None:
             raise NotFoundError("任务不存在", details={"task_id": task_id})
         return await self.repository.list_events(task_id, after=after)
+
+    async def list_for_session(
+        self, session_id: str, *, limit: int = 50
+    ) -> list[TaskModel]:
+        return await self.repository.list_by_session(session_id, limit=limit)

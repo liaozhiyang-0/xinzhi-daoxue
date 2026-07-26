@@ -1,0 +1,102 @@
+:root {
+  color-scheme: light;
+  --bg-primary: #f5f7f8;
+  --bg-secondary: #eef2f3;
+  --bg-sidebar: #f8f9fa;
+  --bg-elevated: #ffffff;
+  --bg-code: #17202d;
+  --text-primary: #172528;
+  --text-secondary: #516064;
+  --text-muted: #7d8a8e;
+  --border-subtle: #e2e7e8;
+  --border-strong: #c9d1d3;
+  --accent: #126e74;
+  --accent-hover: #0c565b;
+  --accent-soft: #e2f1f1;
+  --success: #227a4b;
+  --success-soft: #e8f5ed;
+  --warning: #9a6200;
+  --warning-soft: #fff3d6;
+  --danger: #b33a32;
+  --danger-soft: #fbecea;
+  --info: #315f9d;
+  --info-soft: #eaf0f8;
+  --mock: #7354a4;
+  --mock-soft: #f0eafb;
+  --shadow-sm: 0 1px 2px rgb(23 32 43 / 5%), 0 6px 20px rgb(23 32 43 / 4%);
+  --radius-sm: 7px;
+  --radius-md: 12px;
+  --radius-lg: 15px;
+  --content-max-width: 1180px;
+  --reading-max-width: 840px;
+  --sidebar-width: 232px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 68px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --font-ui: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #11161c;
+  --bg-secondary: #171d24;
+  --bg-sidebar: #151b22;
+  --bg-elevated: #1c232c;
+  --bg-code: #0d1218;
+  --text-primary: #edf1f5;
+  --text-secondary: #b8c2cd;
+  --text-muted: #8592a0;
+  --border-subtle: #2c3540;
+  --border-strong: #46515f;
+  --accent: #64b4cd;
+  --accent-hover: #82c7da;
+  --accent-soft: #173744;
+  --success: #73c594;
+  --success-soft: #173526;
+  --warning: #e0ae54;
+  --warning-soft: #3b2d16;
+  --danger: #ed8179;
+  --danger-soft: #3e211f;
+  --info: #8eb6e7;
+  --info-soft: #1c3049;
+  --mock: #b39adb;
+  --mock-soft: #302541;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 24px rgb(0 0 0 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --bg-primary: #11161c;
+    --bg-secondary: #171d24;
+    --bg-sidebar: #151b22;
+    --bg-elevated: #1c232c;
+    --bg-code: #0d1218;
+    --text-primary: #edf1f5;
+    --text-secondary: #b8c2cd;
+    --text-muted: #8592a0;
+    --border-subtle: #2c3540;
+    --border-strong: #46515f;
+    --accent: #64b4cd;
+    --accent-hover: #82c7da;
+    --accent-soft: #173744;
+    --success: #73c594;
+    --success-soft: #173526;
+    --warning: #e0ae54;
+    --warning-soft: #3b2d16;
+    --danger: #ed8179;
+    --danger-soft: #3e211f;
+    --info: #8eb6e7;
+    --info-soft: #1c3049;
+    --mock: #b39adb;
+    --mock-soft: #302541;
+  }
+}

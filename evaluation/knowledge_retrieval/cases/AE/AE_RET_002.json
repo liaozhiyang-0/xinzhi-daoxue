@@ -1,0 +1,1 @@
+{"case_id":"AE_RET_002","course_id":"AE","query":"负反馈放大电路有哪四种基本组态","expected_sources":[{"document_path":"教材/7-第七章.md","chapter":"负反馈放大电路","required":true}],"forbidden_courses":["CT","DE"],"tags":["negative_feedback","topology"],"review_status":"draft"}

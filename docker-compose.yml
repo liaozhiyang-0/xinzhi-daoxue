@@ -1,3 +1,6 @@
+# 固定 Compose 项目名与卷名，确保换目录、重新克隆和重启 Docker 后仍复用同一套数据。
+name: xinzhi-daoxue
+
 services:
   postgres:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
@@ -50,6 +53,16 @@ services:
       retries: 10
     restart: unless-stopped
 
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    container_name: xzd-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - xzd_qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -70,21 +83,42 @@ services:
       DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-mock}
       ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-true}
       XINGCHEN_ENABLED: ${XINGCHEN_ENABLED:-false}
-      XINGCHEN_PUBLICATION_STATUS: ${XINGCHEN_PUBLICATION_STATUS:-not_published}
-      XINGCHEN_BASE_URL: ${XINGCHEN_BASE_URL:-}
+      XINGCHEN_PUBLICATION_STATUS: ${XINGCHEN_PUBLICATION_STATUS:-published}
+      XINGCHEN_BASE_URL: ${XINGCHEN_BASE_URL:-https://xingchen-api.xf-yun.com}
+      XINGCHEN_WORKFLOW_PATH: ${XINGCHEN_WORKFLOW_PATH:-/workflow/v1/chat/completions}
+      XINGCHEN_UPLOAD_PATH: ${XINGCHEN_UPLOAD_PATH:-/workflow/v1/upload_file}
       XINGCHEN_API_KEY: ${XINGCHEN_API_KEY:-}
-      XINGCHEN_SOLVER_CT_WORKFLOW_ID: ${XINGCHEN_SOLVER_CT_WORKFLOW_ID:-}
+      XINGCHEN_API_SECRET: ${XINGCHEN_API_SECRET:-}
+      XINGCHEN_SOLVER_CT_FLOW_ID: ${XINGCHEN_SOLVER_CT_FLOW_ID:-}
+      XINGCHEN_UID: ${XINGCHEN_UID:-local-demo-user}
+      XINGCHEN_TIMEOUT_SECONDS: ${XINGCHEN_TIMEOUT_SECONDS:-300}
+      XINGCHEN_USE_LOCAL_KB_CONTEXT: ${XINGCHEN_USE_LOCAL_KB_CONTEXT:-true}
+      XINGCHEN_BOT_ID: ${XINGCHEN_BOT_ID:-}
       LOCAL_STORAGE_FALLBACK: ${LOCAL_STORAGE_FALLBACK:-true}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/local_storage}
       KNOWLEDGE_ENABLED: ${KNOWLEDGE_ENABLED:-true}
       KNOWLEDGE_CT_PATH: /knowledge/CT
       KNOWLEDGE_AE_PATH: /knowledge/AE
       KNOWLEDGE_DE_PATH: /knowledge/DE
-      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-1200}
+      KNOWLEDGE_SS_PATH: /knowledge/SS
+      KNOWLEDGE_DSP_PATH: /knowledge/DSP
+      KNOWLEDGE_COMM_PATH: /knowledge/COMM
+      KNOWLEDGE_CHUNK_SIZE_CHARS: ${KNOWLEDGE_CHUNK_SIZE_CHARS:-400}
       KNOWLEDGE_CHUNK_OVERLAP_CHARS: ${KNOWLEDGE_CHUNK_OVERLAP_CHARS:-150}
       KNOWLEDGE_DEFAULT_TOP_K: ${KNOWLEDGE_DEFAULT_TOP_K:-5}
       KNOWLEDGE_MAX_FILES_PER_COURSE: ${KNOWLEDGE_MAX_FILES_PER_COURSE:-1000}
       KNOWLEDGE_MAX_FILE_SIZE_MB: ${KNOWLEDGE_MAX_FILE_SIZE_MB:-5}
+      RAG_ENABLED: ${RAG_ENABLED:-true}
+      TEXT_EMBEDDING_MODEL: ${TEXT_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      TEXT_EMBEDDING_REVISION: ${TEXT_EMBEDDING_REVISION:-7999e1d3359715c523056ef9478215996d62a620}
+      TEXT_EMBEDDING_DEVICE: ${TEXT_EMBEDDING_DEVICE:-auto}
+      IMAGE_EMBEDDING_MODEL: ${IMAGE_EMBEDDING_MODEL:-google/siglip2-base-patch16-224}
+      IMAGE_EMBEDDING_DEVICE: ${IMAGE_EMBEDDING_DEVICE:-auto}
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_DEVICE: ${RERANKER_DEVICE:-auto}
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
     volumes:
       - type: bind
         source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
@@ -98,6 +132,18 @@ services:
         source: ${KNOWLEDGE_DE_HOST_PATH:-./local_knowledge/DE}
         target: /knowledge/DE
         read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_SS_HOST_PATH:-./local_knowledge/SS}
+        target: /knowledge/SS
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_DSP_HOST_PATH:-./local_knowledge/DSP}
+        target: /knowledge/DSP
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_COMM_HOST_PATH:-./local_knowledge/COMM}
+        target: /knowledge/COMM
+        read_only: true
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -107,6 +153,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      qdrant:
+        condition: service_started
     healthcheck:
       test:
         [
@@ -122,5 +170,10 @@ services:
 
 volumes:
   xzd_postgres_data:
+    name: xinzhi-daoxue_xzd_postgres_data
   xzd_redis_data:
+    name: xinzhi-daoxue_xzd_redis_data
   xzd_minio_data:
+    name: xinzhi-daoxue_xzd_minio_data
+  xzd_qdrant_data:
+    name: xinzhi-daoxue_xzd_qdrant_data

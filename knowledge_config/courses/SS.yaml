@@ -1,0 +1,7 @@
+course_id: SS
+course_name: 信号与系统
+document_patterns:
+  - "**/*.md"
+chapter_aliases:
+  LTI: 线性时不变系统
+excluded_paths: []

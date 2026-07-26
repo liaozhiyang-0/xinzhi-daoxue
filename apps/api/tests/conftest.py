@@ -14,6 +14,7 @@ os.environ["APP_ENV"] = "test"
 os.environ["DEFAULT_AGENT_PROVIDER"] = "mock"
 os.environ["ALLOW_MOCK_FALLBACK"] = "true"
 os.environ["XINGCHEN_ENABLED"] = "false"
+os.environ["RAG_ENABLED"] = "false"
 
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -38,14 +39,16 @@ class ApiHelper:
         task_id: str | None = None,
         options: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        intent: str = "solve_problem",
+        user_role: str = "student",
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "session_id": session_id,
             "user_id": "user-test",
-            "user_role": "student",
+            "user_role": user_role,
             "scene": "solving",
             "course_id": "CT",
-            "intent": "solve_problem",
+            "intent": intent,
             "canonical_input": {"text": "求电阻两端电压"},
             "attachments": attachments or [],
             "context_refs": [],
@@ -62,6 +65,8 @@ class ApiHelper:
         task_id: str | None = None,
         options: dict[str, Any] | None = None,
         attachments: list[dict[str, Any]] | None = None,
+        intent: str = "solve_problem",
+        user_role: str = "student",
     ) -> dict[str, Any]:
         response = self.client.post(
             "/api/v1/tasks",
@@ -70,6 +75,8 @@ class ApiHelper:
                 task_id=task_id,
                 options=options,
                 attachments=attachments,
+                intent=intent,
+                user_role=user_role,
             ),
         )
         assert response.status_code == 202, response.text
@@ -104,8 +111,16 @@ def settings(tmp_path: Path) -> Settings:
         minio_endpoint="127.0.0.1:1",
         default_agent_provider="mock",
         allow_mock_fallback=True,
+        xingchen_publication_status="published",
+        knowledge_ct_path=tmp_path / "knowledge" / "CT",
+        knowledge_ae_path=tmp_path / "knowledge" / "AE",
+        knowledge_de_path=tmp_path / "knowledge" / "DE",
+        knowledge_ss_path=tmp_path / "knowledge" / "SS",
+        knowledge_dsp_path=tmp_path / "knowledge" / "DSP",
+        knowledge_comm_path=tmp_path / "knowledge" / "COMM",
         local_storage_path=tmp_path / "storage",
         sse_heartbeat_seconds=0.02,
+        _env_file=None,
     )
 
 

@@ -1,0 +1,27 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>执行调试 · 芯智导学</title>
+  <link rel="stylesheet" href="/debug-assets/design-tokens.css"><link rel="stylesheet" href="/debug-assets/app-shell.css"><link rel="stylesheet" href="/debug-assets/components.css"><link rel="stylesheet" href="/debug-assets/execution-v2.css">
+</head>
+<body><aside id="app-sidebar" class="app-sidebar"></aside><header id="app-topbar" class="app-topbar"></header>
+<main class="app-main execution-main">
+  <header class="execution-hero"><div><p class="eyebrow">EXECUTION TRACE</p><h1>统一执行调试</h1><p>在一个任务中核对路由、证据、工作流、引用与耗时；详细数据仅在选择标签后渲染。</p></div><a class="button secondary" href="/workspace">返回任务工作台</a></header>
+  <section id="execution-metrics" class="debug-section"><h2>最近执行概览</h2><p>正在读取脱敏聚合指标…</p></section>
+  <section class="trace-loader"><label for="task-id">任务 ID</label><input id="task-id" placeholder="输入 task_…，或自动读取最近一次任务"><button id="load-execution" class="button" type="button">载入执行链</button></section>
+  <div id="execution-notice" aria-live="polite"></div>
+  <section id="execution-console" hidden data-tabs>
+    <header id="execution-summary" class="execution-summary"></header>
+    <nav class="execution-tabs" aria-label="执行调试标签">
+      <button class="active" type="button" data-tab-target="overview">任务概览</button><button type="button" data-tab-target="route">路由与计划</button><button type="button" data-tab-target="retrieval">检索与证据</button><button type="button" data-tab-target="workflow">工作流调用</button><button type="button" data-tab-target="citation">引用与结果</button><button type="button" data-tab-target="performance">性能</button>
+    </nav>
+    <section class="execution-panel" data-tab-panel="overview"><div id="overview-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="route" hidden><div id="route-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="retrieval" hidden><div id="retrieval-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="workflow" hidden><div id="workflow-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="citation" hidden><div id="citation-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="performance" hidden><div id="performance-panel"></div></section>
+  </section>
+</main><div id="toast-region" class="toast-region" aria-live="polite"></div><script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js"></script><script src="/debug-assets/execution.js"></script></body>
+</html>

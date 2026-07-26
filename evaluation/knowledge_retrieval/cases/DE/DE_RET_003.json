@@ -1,0 +1,1 @@
+{"case_id":"DE_RET_003","course_id":"DE","query":"CMOS 传输门的结构和工作原理","expected_sources":[{"document_path":"教材/数电_第三章.md","chapter":"3.2.4 CMOS 传输门","required":true}],"forbidden_courses":["CT","AE"],"tags":["cmos","transmission_gate"],"review_status":"draft"}

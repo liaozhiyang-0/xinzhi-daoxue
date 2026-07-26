@@ -1,0 +1,1 @@
+{"case_id":"DE_RET_002","course_id":"DE","query":"怎样用卡诺图化简逻辑函数","expected_sources":[{"document_path":"教材/数电_第二章.md","chapter":"卡诺图化简法","required":true}],"forbidden_courses":["CT","AE"],"tags":["karnaugh_map","logic_minimization"],"review_status":"draft"}

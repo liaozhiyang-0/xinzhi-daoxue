@@ -1,0 +1,22 @@
+[
+  {"case_id":"fraction_simple","input":"1/2","expected_latex":"\\frac{1}{2}","mode":"inline"},
+  {"case_id":"fraction_nested","input":"1/(1+s)","expected_latex":"\\frac{1}{1+s}","mode":"inline"},
+  {"case_id":"derivative_first","input":"dvdt","expected_latex":"\\frac{dv}{dt}","mode":"inline"},
+  {"case_id":"derivative_second","input":"d2vdt2","expected_latex":"\\frac{d^2v}{dt^2}","mode":"display"},
+  {"case_id":"partial_first","input":"∂f/∂x","expected_latex":"\\frac{\\partial f}{\\partial x}","mode":"inline"},
+  {"case_id":"integral_definite","input":"\\int_0^1 t^2\\,dt","expected_latex":"\\int_0^1 t^2\\,dt","mode":"display"},
+  {"case_id":"integral_infinite","input":"∫0∞ v²(t)dt","expected_latex":"\\int_0^\\infty v^2(t)\\,dt","mode":"display"},
+  {"case_id":"integral_double","input":"\\iint_D f(x,y)\\,dx\\,dy","expected_latex":"\\iint_D f(x,y)\\,dx\\,dy","mode":"display"},
+  {"case_id":"sum_finite","input":"Σk=0^n ak","expected_latex":"\\sum_{k=0}^{n} ak","mode":"display"},
+  {"case_id":"product_finite","input":"prod k=1 to n","expected_latex":"\\prod_{k=1}^{n}","mode":"display"},
+  {"case_id":"limit_infinite","input":"lim t->∞","expected_latex":"\\lim_{t\\to\\infty}","mode":"display"},
+  {"case_id":"matrix_2x2","input":[["-2","-4"],["1","0"]],"expected_latex":"\\begin{bmatrix}\n-2 & -4\\\\\n1 & 0\n\\end{bmatrix}","mode":"display"},
+  {"case_id":"matrix_3x3","input":[["1","0","0"],["0","1","0"],["0","0","1"]],"expected_latex":"\\begin{bmatrix}\n1 & 0 & 0\\\\\n0 & 1 & 0\\\\\n0 & 0 & 1\n\\end{bmatrix}","mode":"display"},
+  {"case_id":"determinant_2x2","input":"\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}","expected_latex":"\\begin{vmatrix}a&b\\\\c&d\\end{vmatrix}","mode":"display"},
+  {"case_id":"equation_system","input":"\\begin{cases}x+y=1,\\\\2x-y=3.\\end{cases}","expected_latex":"\\begin{cases}x+y=1,\\\\2x-y=3.\\end{cases}","mode":"display"},
+  {"case_id":"piecewise","input":"f(t)=\\begin{cases}0,&t<0,\\\\e^{-t},&t\\ge0.\\end{cases}","expected_latex":"f(t)=\\begin{cases}0,&t<0,\\\\e^{-t},&t\\ge0.\\end{cases}","mode":"display"},
+  {"case_id":"complex_rectangular","input":"3+j4","expected_latex":"3+j4","mode":"inline"},
+  {"case_id":"phasor_polar","input":"5∠30°","expected_latex":"5\\angle 30^\\circ","mode":"inline"},
+  {"case_id":"laplace_transform","input":"\\mathcal{L}\\{f(t)\\}","expected_latex":"\\mathcal{L}\\{f(t)\\}","mode":"inline"},
+  {"case_id":"convolution_integral","input":"\\int_{-\\infty}^{\\infty}x(\\tau)h(t-\\tau)\\,d\\tau","expected_latex":"\\int_{-\\infty}^{\\infty}x(\\tau)h(t-\\tau)\\,d\\tau","mode":"display"}
+]

@@ -1,0 +1,1 @@
+{"case_id":"CT_RET_004","course_id":"CT","query":"正弦稳态电路为什么使用相量模型","expected_sources":[{"document_path":"课本/基础篇/3-重置md/第十章.md","chapter":"正弦稳态响应的相量分析","required":true}],"forbidden_courses":["AE","DE"],"tags":["phasor","sinusoidal_steady_state"],"review_status":"draft"}

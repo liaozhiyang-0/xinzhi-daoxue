@@ -5,7 +5,19 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROHIBITED_PATH_PARTS = {".local_inputs", ".local_outputs", "local_storage"}
+PROHIBITED_PATH_PARTS = {
+    ".local_inputs",
+    ".local_outputs",
+    "knowledge_indexes",
+    "local_storage",
+    "model_cache",
+    "电路理论",
+    "模电",
+    "数电",
+    "信号与系统版本一",
+    "数字信号处理",
+    "通信原理",
+}
 PROHIBITED_SUFFIXES = (".xingchen.raw.yml", ".xingchen.raw.yaml")
 SECRET_PATTERNS = {
     "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -25,11 +37,7 @@ def tracked_files() -> list[Path]:
         check=True,
         capture_output=True,
     )
-    return [
-        ROOT / item.decode("utf-8")
-        for item in result.stdout.split(b"\0")
-        if item
-    ]
+    return [ROOT / item.decode("utf-8") for item in result.stdout.split(b"\0") if item]
 
 
 def scan(paths: list[Path]) -> list[str]:
@@ -41,8 +49,8 @@ def scan(paths: list[Path]) -> list[str]:
         if parts & PROHIBITED_PATH_PARTS or lowered.endswith(PROHIBITED_SUFFIXES):
             findings.append(f"prohibited_path:{relative.as_posix()}")
             continue
-        if relative.name == ".env":
-            findings.append("tracked_env:.env")
+        if relative.name.startswith(".env") and relative.name != ".env.example":
+            findings.append(f"tracked_env:{relative.as_posix()}")
             continue
         try:
             text = path.read_text(encoding="utf-8")

@@ -1,6 +1,7 @@
 # 架构文档索引
 
-- `00_stage_0_1_scope.md`：当前本地阶段 0—1.5 的实施范围与明确边界。
-- `02_xinzhi_multi_agent_platform_plan_v1.0.md`：长期总体架构文档。
+- `../local_orchestration_architecture.md`：当前本地多智能体编排架构。
+- `../architecture_migration_audit.md`：从旧平台编排向本地中枢迁移的现状审计。
+- `web_ui_architecture.md`：当前原生 Web UI 与后端路由关系。
 
-当前仓库中的 `02` 文件是已有架构基线。用户尚未在本轮附件中提供所述“完整总体架构 Markdown”原文；收到原文后应保留版本历史并按原文恢复，不得由开发者猜测补写。
+阶段 0—2.2 的历史范围快照已迁入 `archive_legacy/docs/`，不再作为当前实现依据。

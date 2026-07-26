@@ -1,0 +1,53 @@
+version: 1
+multimodal_level: contextual_image_retrieval
+
+sources:
+  CT:
+    path_env: KNOWLEDGE_CT_PATH
+    read_only: true
+  AE:
+    path_env: KNOWLEDGE_AE_PATH
+    read_only: true
+  DE:
+    path_env: KNOWLEDGE_DE_PATH
+    read_only: true
+  SS:
+    path_env: KNOWLEDGE_SS_PATH
+    read_only: true
+  DSP:
+    path_env: KNOWLEDGE_DSP_PATH
+    read_only: true
+  COMM:
+    path_env: KNOWLEDGE_COMM_PATH
+    read_only: true
+
+parsing:
+  safe_text_extensions: [.md, .txt, .json, .csv]
+  image_extensions: [.jpg, .jpeg, .png, .gif, .webp, .bmp, .svg]
+  binary_documents_metadata_only: [.pdf, .docx]
+  archives_metadata_only: [.zip, .7z, .rar]
+  chunk_size_chars: 1200
+  chunk_overlap_chars: 150
+
+retrieval:
+  mode: hybrid_local_v1
+  course_filter_required: true
+  keyword_weight: 1.0
+  local_vector_weight: 1.5
+  image_context_weight: 0.4
+  minimum_score: 0.35
+  maximum_hits_per_document: 2
+  learn_01_top_k: 3
+  solver_ct_top_k: 2
+
+images:
+  strategy: context_text_plus_metadata_plus_parent_document
+  visual_embedding_enabled: false
+  model_descriptions_enabled: false
+  preserve_source_path: true
+
+incremental:
+  checksum_algorithm: sha256
+  stable_document_id_fields: [course_id, relative_path]
+  reuse_unchanged_chunks: true
+  mark_missing_sources_inactive: true

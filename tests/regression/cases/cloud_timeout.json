@@ -1,0 +1,10 @@
+{
+  "case_id": "xingchen_timeout_fallback",
+  "input": {"message": "为什么电容电压不能突变？", "course_hint": "CT"},
+  "expected_course": "CT",
+  "expected_intent": "explain_concept",
+  "expected_status": "partial",
+  "required_keywords": ["本地"],
+  "forbidden_claims": ["星辰调用成功"],
+  "reference_answer": "云端失败时应保留本地检索结果并隐藏堆栈。"
+}

@@ -1,0 +1,21 @@
+cases:
+  - case_id: SYN_RELIABILITY_001
+    title: 本地任务幂等回归样例
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    difficulty: boundary
+    input_type: text
+    input_source: synthetic
+    message: "一个10V电压源串联5Ω电阻，求回路电流。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD]
+    expected_statuses: [success, partial]
+    judge_type: rule
+    tags: [synthetic_template, not_official, task_reliability]
+    provenance:
+      source_type: synthetic
+      source_name: repository_sample
+      publishable: true

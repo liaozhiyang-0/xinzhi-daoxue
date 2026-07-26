@@ -1,3 +1,4 @@
+from app.agents import AgentRegistry
 from app.contracts import ProviderAvailability
 from app.core.config import Settings
 from app.providers.base import AgentProvider
@@ -5,12 +6,12 @@ from app.providers.mock import MockAgentProvider
 from app.providers.xingchen import XingchenCloudProvider
 
 
-def get_agent_provider(settings: Settings) -> AgentProvider:
-    if settings.default_agent_provider == "mock":
+def get_agent_provider(
+    settings: Settings, registry: AgentRegistry | None = None
+) -> AgentProvider:
+    if not settings.xingchen_enabled:
         return MockAgentProvider()
-    if settings.allow_mock_fallback:
-        return MockAgentProvider()
-    return XingchenCloudProvider(settings)
+    return XingchenCloudProvider(settings, registry=registry)
 
 
 def get_provider_availability(
@@ -18,8 +19,8 @@ def get_provider_availability(
 ) -> ProviderAvailability:
     if provider.provider_name == "mock":
         reason = (
-            "SOLVER_CT 外部 API 尚未发布，当前仅提供本地 Mock 闭环"
-            if settings.default_agent_provider == "xingchen"
+            "XINGCHEN_ENABLED=false，SOLVER_CT 当前使用本地 Mock"
+            if not settings.xingchen_enabled
             else None
         )
         return ProviderAvailability(
@@ -28,9 +29,18 @@ def get_provider_availability(
             reason=reason,
             publication_status="local_only",
         )
+    available = (
+        any(
+            provider.registry.is_runtime_available(agent.agent_id, settings)
+            for agent in provider.registry.list_agents()
+            if agent.provider == "xingchen"
+        )
+        if isinstance(provider, XingchenCloudProvider)
+        else settings.xingchen_runtime_available
+    )
     return ProviderAvailability(
         provider_name="xingchen",
-        available=False,
-        reason="SOLVER_CT 外部 API 尚未发布",
+        available=available,
+        reason=None if available else "没有已配置且已发布的星辰 Agent",
         publication_status=settings.xingchen_publication_status,
     )

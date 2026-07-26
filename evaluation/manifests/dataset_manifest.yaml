@@ -1,0 +1,14 @@
+schema_version: "1.0"
+datasets:
+  - id: repository_synthetic_cases
+    location: evaluation/cases
+    source_type: synthetic
+    publishable: true
+    official_score_eligible: false
+    note: 仓库样例和回归用例不代表真实模型质量或官方评测结论。
+  - id: local_private_cases
+    location: evaluation/private_cases
+    source_type: private
+    publishable: false
+    official_score_eligible: true
+    note: 仅在获得授权并完成去标识化后用于本地评测。

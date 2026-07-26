@@ -1,0 +1,1 @@
+{"case_id":"CT_RET_005","course_id":"CT","query":"耦合电感的同名端和互感电压如何判断","expected_sources":[{"document_path":"课本/基础篇/3-重置md/第十三章.md","chapter":"耦合电感","required":true}],"forbidden_courses":["AE","DE"],"tags":["mutual_inductance","coupled_inductor"],"review_status":"draft"}

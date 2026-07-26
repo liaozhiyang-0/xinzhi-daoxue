@@ -1,0 +1,84 @@
+cases:
+  - case_id: QA_CT_001
+    title: CT节点电压法知识问答
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 节点电压法列方程的一般步骤是什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [节点]
+    tags: [knowledge_qa, citation]
+
+  - case_id: QA_CT_002
+    title: CT戴维南定理知识问答
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 戴维南等效电路的基本定义是什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [戴维南]
+    tags: [knowledge_qa, citation]
+
+  - case_id: QA_AE_001
+    title: AE理想运放知识问答
+    course: AE
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 理想运算放大器的虚短与虚断分别表示什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [运放]
+    tags: [knowledge_qa, citation]
+
+  - case_id: QA_AE_002
+    title: AE负反馈知识问答
+    course: AE
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 负反馈对放大电路稳定性的主要影响是什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [反馈]
+    tags: [knowledge_qa, citation]
+
+  - case_id: QA_DE_001
+    title: DE组合逻辑知识问答
+    course: DE
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 组合逻辑电路与时序逻辑电路的主要区别是什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [逻辑]
+    tags: [knowledge_qa, citation]
+
+  - case_id: QA_SS_001
+    title: SS卷积知识问答
+    course: SS
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    difficulty: easy
+    input_type: text
+    message: 卷积在LTI系统分析中的意义是什么？
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [卷积]
+    tags: [knowledge_qa, citation]

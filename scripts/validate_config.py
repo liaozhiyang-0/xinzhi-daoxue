@@ -8,7 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.core.config import Settings  # noqa: E402
+from app.agents import AgentRegistry  # noqa: E402
+from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # noqa: E402
 
 
 def safe_status(value: str, *, required: bool) -> str:
@@ -18,6 +19,7 @@ def safe_status(value: str, *, required: bool) -> str:
 
 
 def validate(settings: Settings) -> dict[str, object]:
+    registry = AgentRegistry()
     return {
         "valid": True,
         "app_env": settings.app_env,
@@ -34,14 +36,44 @@ def validate(settings: Settings) -> dict[str, object]:
             ),
         },
         "provider": {
-            "requested": settings.default_agent_provider,
+            "requested": "xingchen" if settings.xingchen_enabled else "mock",
             "allow_mock_fallback": settings.allow_mock_fallback,
             "publication_status": settings.xingchen_publication_status,
-            "runtime_configuration_required": False,
-            "xingchen_api_key": "not_required",
-            "xingchen_base_url": "not_required",
-            "xingchen_workflow_id": "not_required",
+            "runtime_configuration_required": settings.xingchen_enabled,
+            "runtime_available": settings.xingchen_runtime_available,
+            "xingchen_credentials": (
+                "configured"
+                if settings.xingchen_api_key.get_secret_value()
+                and settings.xingchen_api_secret.get_secret_value()
+                else "missing"
+                if settings.xingchen_enabled
+                else "not_required"
+            ),
+            "xingchen_base_url": safe_status(
+                settings.xingchen_base_url, required=settings.xingchen_enabled
+            ),
+            "xingchen_workflow_id": safe_status(
+                settings.xingchen_solver_ct_flow_id,
+                required=settings.xingchen_enabled,
+            ),
+            "timeout_seconds": settings.xingchen_timeout_seconds,
+            "timeout_max_seconds": XINGCHEN_TIMEOUT_MAX_SECONDS,
+            "use_local_kb_context": settings.xingchen_use_local_kb_context,
         },
+        "agents": [
+            {
+                "agent_id": agent.agent_id,
+                "enabled": agent.enabled,
+                "publication_status": agent.publication_status,
+                "flow_configured": bool(
+                    registry.resolve_flow_id(agent.agent_id, settings)
+                ),
+                "runtime_available": registry.is_runtime_available(
+                    agent.agent_id, settings
+                ),
+            }
+            for agent in registry.list_agents()
+        ],
         "uploads": {
             "max_size_mb": settings.max_upload_size_mb,
             "local_fallback": settings.local_storage_fallback,

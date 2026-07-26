@@ -1,0 +1,6 @@
+course_id: COMM
+course_name: 通信原理
+document_patterns:
+  - "**/*.md"
+chapter_aliases: {}
+excluded_paths: []

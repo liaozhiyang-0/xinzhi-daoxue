@@ -1,409 +1,343 @@
 # 芯智导学：电子信息课程群多智能体平台
 
-## 1. 项目简介
+芯智导学当前是一个本地可运行的电子信息课程群多智能体编排中枢。本地负责协议、路由、状态、RAG 与专业工具；讯飞 Spark-X2 与阿里云百炼千问提供统一文本/多模态模型服务；既有星辰工作流继续作为已验证能力、基线与故障回退。所有扩展复用现有 FastAPI、TaskRouter、TaskRunner、数据库、SSE 与上传链路。
 
-芯智导学面向电子信息课程群，构建以题图识别与分步解题为核心，兼顾课程知识问答、学习反馈、学习规划和教师分析的垂类大模型系统。项目采用“自研教学业务系统 + 科大讯飞星辰 Agent + 星火 MaaS 平台”的混合架构，将课程知识库、题库、学生学习记录和智能体能力结合，为学生提供可追溯的导学服务，为教师提供学情洞察与教学改进建议。
+需要继续修改代码时，先阅读 [代码级开发手册](docs/developer_code_navigation.md)。它按 API、任务执行、路由、Solver、RAG、模型、学习闭环、数据库、前端、评测和测试梳理了真实调用链，并提供常见微调任务的入口索引。逐个文件的职责见 [仓库逐文件目录](docs/repository_file_catalog.md)。
 
-## 2. 第一版目标
+专业求解入口现统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。`SOLVER_CT_V1` 保留为 CT 云端冻结基线和回退，不再作为本地核心。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_consolidation_audit.md`。
 
-第一版聚焦可演示、可验证、可扩展的最小闭环，重点完成识图解题、课程知识问答、学习反馈与简单纠错、学习建议和教师端学情看板。系统暂不追求完整教务系统能力，而是优先打通课程资料组织、Agent 调用、题图解题流程、学习记录沉淀和教师分析展示链路。
+## 组员统一启动（Windows）
 
-## 3. 核心功能
+只需要安装 **Python 3.11-3.13、Git 和 Docker Desktop**。克隆仓库、启动 Docker Desktop 后，在仓库根目录执行：
 
-- 题图识别与分步解题：面向电路图、题目截图和图形化课程题目，完成结构提取、方法选择、关键方程和分步计算。
-- 课程知识问答：围绕电路理论、模拟电子、数字电子、集成电路等课程知识点回答问题。
-- 学习反馈与简单纠错：结合错因标签给出公式适用条件、易错提醒和轻量错因提示。
-- 学习规划：结合问答记录、题图解题记录和薄弱知识点生成阶段性复习建议。
-- 教师端学情看板：展示高频问题、错题类型、薄弱知识点和活跃度统计。
-- 教学建议生成：基于班级学情为教师生成教学改进建议。
+```powershell
+.\xzd.cmd doctor
+.\xzd.cmd start
+```
 
-## 4. 技术路线
+日常使用无需重复输入命令：双击仓库根目录的 `打开芯智导学.cmd` 即可。它会复用统一启动器，在服务就绪后自动打开 `http://127.0.0.1:8000/workspace`；如果服务已经运行，则只打开工作台，不会再启动一套重复进程。这个入口默认不执行星辰云端 Preflight。
+
+`start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。
+
+业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。文字分类、检索改写、知识回答和专业解题优先使用科大讯飞 Spark，Qwen 主要承担视觉任务、结构化归一化和模型故障兜底。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`、`ENABLE_XINGCHEN_FALLBACK=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true`，并在需要时显式启用星辰回退，才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
+
+PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：
 
 ```text
-前端：Vue3 + TypeScript + Element Plus + ECharts
-业务后端：Spring Boot / FastAPI
-智能体开发：科大讯飞星辰 Agent 开发平台
-模型训练：科大讯飞星火 MaaS 大模型微调平台
-数据库：MySQL / PostgreSQL
+统一首页  http://localhost:8000/
+学生端    http://localhost:8000/student
+演示中心  http://localhost:8000/demo?presentation=1
+系统状态  http://localhost:8000/system
+```
+
+停止 Web 请在运行窗口按 `Ctrl+C`；再停止基础容器：
+
+```powershell
+.\xzd.cmd stop
+```
+
+常用命令：
+
+```powershell
+.\xzd.cmd status                         # 查看容器和 API 状态
+.\xzd.cmd preflight                      # 会议前检查，不消耗云端额度
+.\xzd.cmd preflight -WithCloud           # 显式执行真实云端检查
+.\xzd.cmd index -Course CT -TextOnly     # 为本机 CT 教材构建文本索引
+.\xzd.cmd index -Course SS               # 增量构建 SS 文本与图片索引
+.\xzd.cmd start -Reload                  # 开发热重载
+```
+
+真实星辰凭据只填写在各自机器的 `.env` 中；Git 只保存空值模板 [.env.example](.env.example)。本地教材、向量索引、上传文件和模型缓存均被 Git 忽略。完整组员说明见 [团队快速使用指南](docs/deployment/team_quick_start.md)。
+
+## 当前技术栈
+
+```text
+API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
+数据库：PostgreSQL（测试使用 SQLite）
 缓存：Redis
-文件存储：MinIO
-部署：Docker Compose，后续支持 Kubernetes
-协作平台：语雀 + GitHub
+文件存储：MinIO（开发环境允许本地回退）
+迁移：SQLAlchemy 2 / Alembic
+调试界面：FastAPI 静态 HTML / CSS / JavaScript
+部署：Docker Compose
+检索：BGE dense + BM25 sparse + SigLIP2 visual + Qdrant + RRF + BGE reranker
 ```
 
-## 5. 系统架构
+早期 Spring Boot、MySQL、Vue3 和 MaaS 微调方案已经移除。仓库只保留当前 FastAPI 多智能体平台、检索评测、运行文档与本地课程资料入口。
 
-系统采用分层架构：用户层负责学生和教师入口；前端应用层承载交互页面；自研业务服务层负责账号、课程、题库、学习记录、统计和 Agent 编排；星辰 Agent 层负责识图解题、课程问答、学习规划和教师分析，其中错题诊断能力简化为课程问答内的纠错提示；星火 MaaS 层负责图文解题样例、批量推理、模型评估和后续可选微调；数据与知识层沉淀课程资料、题库、错因标签和学情数据；运维部署层提供容器化和反向代理能力。
+## 数学公式渲染
 
-## 6. 项目目录说明
+任务结果保留兼容 `answer`/`answer_text`，并可携带结构化 `math_content`。后端在最终输出阶段统一规范化 `$...$` 与 `$$...$$`，优先使用结构化公式字段；前端复用唯一的本地 KaTeX 渲染链，非法公式会降级显示原始 LaTeX，代码、URL、日期和 JSON 不参与转换。协议、安全边界、扩展方式与验收样本见 [数学公式渲染链路](docs/math_rendering_pipeline.md)。
+
+## 渐进式本地编排
 
 ```text
-docs/              项目定位、范围、架构、路线、演示和团队分工文档
-course_materials/  电子信息与集成电路课程群知识库骨架
-knowledge_base/    知识库规划、课程目录、题库和错题样例
-platform_stack/    识图解题核心定位下的平台工作栈文档
-frontend/          前端说明与页面原型
-backend/           后端接口与 Agent API 调用设计
-database/          数据库设计与初始化 SQL
-deploy/            Docker Compose 与 Nginx 部署模板
-assets/            图片、截图和演示素材目录
+Web -> FastAPI -> XZD_SUPERVISOR -> existing TaskRunner
+                              |-> Model Registry -> Model Service
+                              |                    |-> Spark-X2
+                              |                    `-> Qwen text/vision
+                              |-> local RAG
+                              |-> calculator / SymPy / unit checker
+                              `-> Xingchen workflows (baseline/fallback)
 ```
 
-课程知识库采用统一结构：
+新版 `POST /api/v1/chat` 会创建原有非阻塞任务，不会建立第二套任务队列。`GET /api/v1/capabilities` 与 `GET /api/v1/workflows` 可查看本地/星辰迁移状态；开发态可通过 `GET /api/v1/debug/traces/{trace_id}` 查看脱敏节点摘要。
 
-```text
-course_materials/
-├── 00_knowledge_base_guide.md
-├── 01_circuit_theory/
-├── ...
-├── 25_power_semiconductor_ic/
-└── _legacy/
+## 国产模型配置
+
+首次配置可复制模板；Windows PowerShell 使用：
+
+```powershell
+Copy-Item .env.example .env
 ```
 
-每门课程目录包含 `README.md`、`00_course_overview.md`、`chapters/`、`questions/` 和 `wrong_cases/`，用于后续分批建设章节知识、典型题型和错题诊断样例。
-
-## 7. 快速开始
-
-### 7.1 克隆仓库
-
-```bash
-git clone https://github.com/liaozhiyang-0/xinzhi-daoxue.git
-cd xinzhi-daoxue
-```
-
-### 7.2 准备环境变量
+Linux/macOS 使用：
 
 ```bash
 cp .env.example .env
 ```
 
-请只在本地 `.env` 中填写数据库、Redis、MinIO、星辰 Agent 和星火 MaaS 的真实配置，不要将 `.env` 提交到 Git。
+基础调用只需在本机 `.env` 填写两个字段，不能提交该文件：
 
-### 7.3 查看项目文档
-
-```bash
-# 项目定位与范围
-docs/01_project_positioning.md
-docs/02_first_version_scope.md
-
-# 系统架构与技术路线
-docs/03_system_architecture.md
-docs/04_technical_route.md
-
-# 平台工作栈、接口和数据库设计
-platform_stack/
-backend/api_design.md
-database/database_schema.md
+```env
+IFLYTEK_SPARK_API_KEY=
+DASHSCOPE_API_KEY=
 ```
 
-### 7.4 初始化数据库结构
+`IFLYTEK_SPARK_API_KEY` 填写讯飞 Spark-X2 HTTP APIPassword（或控制台要求的 AK:SK 形式）；`DASHSCOPE_API_KEY` 填写阿里云百炼 API Key。使用百炼业务空间专属地址时才需要额外设置 `DASHSCOPE_WORKSPACE_ID`，并可显式覆盖 `DASHSCOPE_BASE_URL`。
 
-第一版优先使用 MySQL。数据库建表语句位于：
+模型角色：`spark-x` 负责复杂推理与 RAG 答案生成；`qwen3.7-plus` 负责复杂图片/电路图；`qwen3.6-flash` 负责快速视觉任务；`qwen3.5-flash` 负责分类、改写与结构化任务。配置与真实连通性检查：
 
-```bash
-database/init.sql
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --config-only
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --provider iflytek
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --provider dashscope
+.\.venv\Scripts\python.exe scripts\smoke_test_models.py --vision .\path\to\test.png
 ```
 
-示例执行方式：
+服务启动后也可访问 `GET /api/v1/models` 和 `GET /api/v1/models/health?live=false`；只有显式使用 `live=true` 才产生极短真实调用。Key 为空不会阻止 FastAPI 启动，本地 RAG 与星辰工作流仍保持独立运行。401 应检查 Key/地域，404 应检查模型名、Base URL 与业务空间；图片超限和模型超时会返回统一、脱敏错误。完整说明见 [模型 API 配置](docs/model_api_configuration.md)。
 
-```bash
-mysql -h localhost -P 3306 -u root -p xinzhi_daoxue < database/init.sql
-```
+模型层已注册 9 个从属内部 Agent，覆盖课程/意图分类、RAG 查询改写、电路规划与图片提取、备课、作业初审、学术写作和数据分析。它们复用统一 ModelService，并保持 `subordinate_only`，不会建立第二套顶层任务路由。已通过专项测试的备课、作业初审、学术写作和数据分析 Agent 已接入原有 `POST /api/v1/tasks`；备课复用同一次任务的本地 RAG 上下文。`/student` 与 `/workspace` 采用单输入自动路由，只展示能力和知识增强状态，不显示 Provider、Flow ID 或原始 Agent ID。`GET /api/v1/internal-agents` 只查看本地注册和配置状态；真实批量评测使用 `scripts/evaluate_model_agents.py`，先以 `--dry-run` 检查，再用 `--agent` 或 `--case` 小批量执行以控制 Token。
 
-### 7.5 部署模板
+开发态真实 Embedding 不可用时可显式启用旧哈希兼容层；生产环境不会静默回退。
 
-`deploy/docker-compose.yml` 是早期方案留档；阶段 0—1.5 的可运行环境以根目录
-`docker-compose.yml`、`apps/api/Dockerfile` 和 `scripts/docker_dev.*` 为准，
-已覆盖 PostgreSQL、Redis、MinIO 与 FastAPI 的构建、健康检查和依赖启动顺序。
+## 已完成阶段
 
-## 8. 第一版演示链路
+- 阶段 0：冻结 `SOLVER_CT_V1` 基线、节点清单、发布检查和回归评测结构。
+- 阶段 1：建立 FastAPI、统一 Agent 合同、Mock Provider、数据库、文件存储和 Docker Compose。
+- 阶段 1.5：实现 HTTP 202、TaskRunner、递增事件 sequence、SSE 重连、取消、重试和本地调试页。
+- 阶段 1.6：增加配置驱动的 AgentRegistry/TaskRouter、路由持久化、三课程检索元数据、v1/v2 评测闭环、RetrievalContextPacket 和 `LEARN_01_KNOWLEDGE_QA_V1`。
+- 阶段 2.1：固化 `SOLVER_CT_V1` 的讯飞星辰 `stream=false` 文字/单图片调用、统一回答字段，并将 `/debug` 更新为一页式演示界面。
+- 阶段 2.2：统一注册 dispatch、learning、teaching、research、infrastructure 场景；所有星辰 Agent 复用一个 Provider 和注册表输入映射，计划态工作流不阻塞启动。
 
-第一版演示围绕“学生学习闭环 + 教师学情反馈”展开：
+## 当前能力边界
 
-1. 学生选择课程和知识点，例如“模拟电子技术 / MOS 管工作区”。
-2. 学生在智能问答区输入问题，系统调用课程问答 Agent 返回概念、公式、步骤和易错点。
-3. 学生上传题图或电路图，系统调用识图解题 Agent 输出题目识别、电路结构、关键方程、分步计算和易错提醒。
-4. 学生追问某一步或提交自己的推导，课程问答 Agent 给出公式条件说明和简单纠错提示。
-5. 系统根据问答记录、题图解题记录和错因提示生成学习建议，给出优先知识点、每日任务和掌握检查标准。
-6. 教师进入看板查看高频问题、错因标签分布、薄弱知识点和学生活跃度。
-7. 教师调用教学建议生成接口，获得课堂讲解、作业补充和后续观察指标建议。
+- CT `solve_problem` 路由到 `SOLVER_CT_V1`；`XINGCHEN_ENABLED=true` 且配置完整时调用真实星辰，否则在未启用时使用明确标识的 Mock。
+- 星辰上游当前支持同步文字和单图片调用，不支持多图片、PDF 或上游流式调用。
+- CT 的 `check_user_solution` 和 `verify_answer` 直接复用冻结的 `SOLVER_CT_V1`；已移除从未发布的中间计划态 Agent，避免无效降级和额外 Flow 配置。
+- CT/AE/DE/SS/DSP/COMM 的学习类意图统一进入带本地 RAG 的 `LEARN_01_KNOWLEDGE_QA_V1`；云端失败、未发布或未配置时降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。截至 2026-07-25，真实星辰工作流仍只接受 CT/AE/DE，SS/DSP/COMM 的云端答案质量状态为 `BLOCKED_BY_CLOUD_FLOW`，本地证据检索与回退不受影响。
+- 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的云端调度兜底；兜底不可用时返回 `unresolved`，不会自动送入 `SOLVER_CT_V1`。
+- 本地 `ACADEMIC_PROBLEM_SOLVER` 支持有序多图：简单图片批次先拼接为一张组合图，复杂批次逐图识别、汇总后再解题；PDF、空输入及 Agent 未声明的输入组合仍返回明确错误。
 
-对应文档：
+## 本地知识库
 
-- 学生端原型：`frontend/prototype/student_page.md`
-- 教师端原型：`frontend/prototype/teacher_dashboard.md`
-- 演示计划：`docs/05_demo_plan.md`
-- 后端接口：`backend/api_design.md`
-- 平台工作栈：`platform_stack/README.md`
-
-## 9. 课程知识库规划
-
-本项目知识库面向电子信息课程群与集成电路专业方向课程群建设，采用“课程群 → 课程 → 章节 → 知识单元 → 典型题型 → 错题模式 → 学习路径”的组织方式。
-
-课程体系包括：
-
-### 电子信息公共主干课程
-
-- 电路理论
-- 模拟电子技术
-- 数字电子技术
-- 信号与系统
-- 数字信号处理
-- 通信原理
-- 高频电子线路
-- 电磁场与电磁波
-- 信息论与编码
-- 嵌入式系统
-
-### 集成电路专业核心课程
-
-- 半导体物理
-- 半导体器件 / 微电子器件
-- 集成电路制造工艺
-- CMOS 数字集成电路设计
-- 模拟集成电路设计
-- 数字集成电路设计 / ASIC 设计基础
-- 集成电路版图设计
-- 集成电路测试
-- 先进封装与测试
-- EDA 技术与芯片设计流程
-- Verilog / SystemVerilog
-- FPGA 与数字系统设计
-- 片上系统 SoC 设计
-- 射频集成电路设计
-- 功率半导体与功率集成电路
-
-知识库规划文件位于 `knowledge_base/`，课程资料骨架位于 `course_materials/`。当前阶段只建立目录和模板，不展开具体课程知识。
-
-## 10. 当前开发阶段
-
-当前处于项目初始化与方案设计阶段，已完成基础仓库结构、项目文档、课程知识库骨架、Agent 设计、接口设计、数据库设计和部署模板。后续开发应以第一版闭环为边界，优先完成可演示的端到端流程。
-
-## 11. 后续计划
-
-1. 优先补充 P0 课程的课程总览、章节目录、典型题型框架和错题模式框架。
-2. 将 `_legacy/` 中可复用的旧知识点资料逐步迁移到新的课程知识库结构。
-3. 接入星辰 Agent 并验证识图解题、课程问答、规划和分析链路。
-4. 实现前端学生端与教师端原型页面。
-5. 实现业务后端 API、数据存储和统计逻辑。
-6. 构建 MaaS 图文解题样例、批量推理与离线评估流程。
-7. 准备演示数据、答辩材料和部署环境。
-
----
-
-## 12. 本地阶段 0—1.5 工程基线
-
-本仓库用于建设“芯智导学”电子信息课程群多智能体平台。原有轻量 MVP 所积累的课程知识库、Prompt、测试案例、演示资料和只读历史资料继续保留；当前新增阶段 0—1 的本地工程基线，不推翻已经在讯飞星辰平台跑通的 `SOLVER_CT_电路理论专业解题_v1.0`。
-
-## 当前完成阶段
-
-- 阶段 0：冻结 SOLVER_CT v1.0 基线、性能观测、节点清单模板、已知问题、发布清单与回归评测结构。
-- 阶段 1：建立 FastAPI API 壳层、统一 Agent 协议、Mock Provider、星辰未发布边界、数据库模型、文件存储、Docker Compose、脚本、测试与 CI。
-- 阶段 1.5：任务创建改为 HTTP 202 非阻塞模式，增加 TaskRunner、递增事件 sequence、SSE 重连、取消、重试、调试页、评测脚手架、请求 ID 和敏感文件扫描。
-- `SOLVER_CT` 尚未发布外部 API。本阶段不会发起真实星辰 HTTP 请求，也不要求填写星辰 API 配置。
-
-总体架构见 `docs/architecture/02_xinzhi_multi_agent_platform_plan_v1.0.md`。
-
-## 目录结构
+本地只读输入为：
 
 ```text
-apps/
-  api/                       FastAPI、SQLAlchemy、Alembic 与测试
-  worker/                    后续异步 Worker 预留
-agent_configs/
-  registry.yaml              Agent 注册表
-  course_packs/              课程包配置
-  workflows/                 工作流元数据
-docs/
-  architecture/              总体架构
-  baseline/                  SOLVER_CT 冻结基线
-  deployment/                本地开发说明
-evaluation/circuit_theory/   电路理论回归评测结构
-scripts/                     Windows 与 Linux/macOS 脚本
-archive_legacy/              原有历史资料，只读保留
-.local_inputs/               本地原始输入，Git/Docker 忽略
-.local_outputs/              本地日志与验证输出，Git/Docker 忽略
+电路理论/  -> CT
+模电/      -> AE
+数电/      -> DE
+信号与系统版本一/ -> SS
+数字信号处理/     -> DSP
+通信原理/         -> COMM
 ```
 
-仓库中已有的课程资料、知识库、题库和用户新增中文资料目录不属于阶段 0—1 的重写范围。
+当前文本索引读取 UTF-8 Markdown；图片索引读取 JPG/JPEG/PNG/WEBP 原始像素。PDF、DOCX 和 ZIP 只登记元数据，不直接解析。原始教材、模型缓存和 Qdrant 数据目录均不提交 Git。
 
-## 环境要求
+正式 RAG 使用真实 BGE 文本 Embedding、SigLIP2 视觉 Embedding、Qdrant 命名向量、原有 BM25 分支、RRF 融合和可配置 BGE reranker。生产链路不再包含哈希或随机伪 Embedding；模型失败会明确进入 degraded/failed。完整配置与实测结果见 `docs/knowledge/multimodal_rag_integration_guide.md` 和 `docs/reviews/multimodal_rag_implementation_report.md`。
 
-- Windows 11 PowerShell 或 Linux/macOS shell。
-- 推荐 Python 3.11 或 3.12。
-- Docker Desktop 或 Docker Engine + Compose v2。
-- Git 和 GitHub CLI（仅发布时需要）。
+元数据覆盖层位于 `knowledge_config/`；自动发现的 OCR 清洗项保持 `review_status: draft`，运行时只应用人工批准项，不修改原始 Markdown。
 
-## Windows PowerShell 启动
+## 任务路由
 
-如系统限制脚本执行，优先只对当前 PowerShell 进程放行：
+| course_id | intent | agent_id | 状态 |
+|---|---|---|---|
+| CT | `solve_problem` | `SOLVER_CT_V1` | selected / Xingchen 或 Mock |
+| CT | `check_user_solution`、`verify_answer` | `SOLVER_CT_V1` | selected / Xingchen 或明确 Mock |
+| CT、AE、DE、SS、DSP、COMM | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` → `LEARN_01_LOCAL_RETRIEVAL_V1` | cloud/local hybrid；新三课云端暂受工作流限制 |
+| AE、DE | `solve_problem` | `UNRESOLVED` | unresolved，不使用 CT Solver |
+| 其他组合 | `ROUTER_01_FALLBACK_V1` 或 `UNRESOLVED` | cloud_fallback / unresolved |
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\dev.ps1
-```
+路由定义在 `agent_configs/registry.yaml`。路由场景、来源、置信度、目标 Agent、降级关系和原始 Agent 写入现有任务输入、结果与事件 JSON，不新增数据库迁移。路由置信度只表示路由判断，不表示答案正确率。
 
-脚本会创建 `.venv`、安装依赖、从 `.env.example` 创建 `.env`、启动 PostgreSQL/Redis/MinIO、执行 Alembic migration 并启动 API。
+## 快速开始
 
-## Docker Compose 启动
+### 配置并验证星辰同步调用
 
-Windows 可直接使用自动适配脚本。它会在缺少 Docker Desktop 时通过
-winget 安装、启动 Docker Engine、创建 `.env`、校验 Compose、构建镜像并等待
-全部服务健康：
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\docker_dev.ps1
-```
-
-停止服务但保留数据卷：
-
-```powershell
-.\scripts\docker_down.ps1
-```
-
-也可以手动执行：
+不要把 Key 或 Secret 发到聊天中。先复制配置文件，再仅在当前 worktree 的 `.env` 中填入新轮换的凭据：
 
 ```powershell
 Copy-Item .env.example .env
-docker compose config
-docker compose up -d --build --wait
+notepad .env
 ```
 
-开发默认密码只用于本机，部署到共享环境前必须修改。
+至少设置：
 
-## 手动启动 API
+```env
+XINGCHEN_ENABLED=true
+XINGCHEN_API_KEY=<API_KEY>
+XINGCHEN_API_SECRET=<API_SECRET>
+XINGCHEN_SOLVER_CT_FLOW_ID=<FLOW_ID>
+# 其余已启用工作流按需配置；空值不会阻止服务启动
+# XINGCHEN_KNOWLEDGE_QA_FLOW_ID=<FLOW_ID>
+# XINGCHEN_FALLBACK_ROUTER_FLOW_ID=<FLOW_ID>
+XINGCHEN_UID=local-demo-user
+XINGCHEN_TIMEOUT_SECONDS=300
+XINGCHEN_USE_LOCAL_KB_CONTEXT=true
+```
+
+先确认真实响应：
+
+```powershell
+python scripts/xingchen_smoke_test.py
+```
+
+成功后启动本地服务：
+
+```powershell
+.\scripts\docker_dev.ps1
+```
+
+打开 `http://localhost:8000/debug`，切换文字题或图片题后从同一个按钮提交。页面显示场景、课程、意图、路由来源、目标 Agent、Flow 是否配置、知识库命中、Provider、状态、耗时和完整回答。纯文字 `SOLVER_CT` 题检索最多 2 条方法参考；云端学习问答最多 3 条；图片题跳过本地检索。
+
+`XINGCHEN_TIMEOUT_SECONDS` 默认 300 秒，允许范围为 30～600 秒。超过 600 秒的配置会在服务启动时被拒绝，避免同步请求无限占用本地任务执行器。
+
+图片输入要求：
+
+- 学生 Workspace 可一次选择最多 8 张 PNG/JPG/JPEG/WEBP；默认不把多图传给星辰。
+- 本地学术求解器默认在图片数不超过 4、总像素和长宽比满足配置时拼接；否则逐图调用视觉模型，再使用文本模型合并条件后解题。
+- `SOLVER_CT_V1` 的星辰冻结基线仍只支持单张图片，不支持 PDF 或多图。
+- 星辰工作流开始节点必须存在名称完全一致、类型为 `Image` 的 `USER_INPUT_image` 参数。
+- `USER_INPUT_image` 必须连接到 OCR 或图像理解节点；修改工作流后需要重新发布 API，并在绑定页面点击“更新绑定”。
+- 图片上传成功后，任务结果的 `structured_result.input_type` 为 `single_image` 或 `text_and_single_image`。
+
+### Windows PowerShell
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Copy-Item .env.example .env
+.\scripts\docker_dev.ps1
+```
+
+### 手动 API
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e "apps/api[dev]"
 Copy-Item .env.example .env
 Set-Location apps/api
-$env:DATABASE_URL="postgresql+asyncpg://xzd_user:xzd_password@localhost:5432/xzd"
-$env:REDIS_URL="redis://localhost:6379/0"
-$env:MINIO_ENDPOINT="localhost:9000"
 ..\..\.venv\Scripts\python.exe -m alembic upgrade head
 Set-Location ../..
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/api --reload
 ```
 
-## 测试与代码质量
-
-```powershell
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe -m mypy apps/api/app
-.\.venv\Scripts\python.exe -m pytest
-```
-
-或运行：
-
-```powershell
-.\scripts\check.ps1
-```
-
-CI 使用 Python 3.12、SQLite 与 Mock Provider，不读取真实星辰秘密。
-
-## API
-
-- 健康检查：`http://localhost:8000/health`
-- v1 健康检查：`http://localhost:8000/api/v1/health`
-- Swagger：`http://localhost:8000/docs`
-- 本地调试台：`http://localhost:8000/debug`
-- OpenAPI：`http://localhost:8000/openapi.json`
-
-主要接口：
+## API 与调试页
 
 ```text
 POST /api/v1/sessions
-GET  /api/v1/sessions/{session_id}
 POST /api/v1/tasks
 GET  /api/v1/tasks/{task_id}
 GET  /api/v1/tasks/{task_id}/events
 GET  /api/v1/tasks/{task_id}/stream
-POST /api/v1/tasks/{task_id}/retry
 POST /api/v1/tasks/{task_id}/cancel
-POST /api/v1/files
-GET  /api/v1/files/{file_id}
-GET  /api/v1/artifacts/{artifact_id}
-GET  /debug
-```
-
-## Mock Provider
-
-`.env` 默认配置：
-
-```env
-DEFAULT_AGENT_PROVIDER=mock
-ALLOW_MOCK_FALLBACK=true
-XINGCHEN_ENABLED=false
-```
-
-Mock 结果始终包含 `provider=mock` 和 `mock_result` 警告，不代表真实星辰输出，适用于本地开发、测试和演示。
-
-## 星辰 Provider 状态
-
-当前统一状态：
-
-```text
-publication_status: not_published
-runtime_available: false
-```
-
-`XingchenCloudProvider` 当前只保留接口边界并抛出 `NotPublishedError`，代码不会构造或发送真实 HTTP 请求。`.env.example` 中的星辰字段只是未来占位，本阶段无需填写。
-
-## 数据库迁移
-
-```powershell
-.\scripts\init_db.ps1
-```
-
-或：
-
-```powershell
-Set-Location apps/api
-..\..\.venv\Scripts\python.exe -m alembic upgrade head
-```
-
-## 安全说明
-
-- `.env` 已被 `.gitignore` 忽略，只提交 `.env.example`。
-- 不在代码和 Compose 文件中保存真实 API Key 或生产密码。
-- 日志不输出完整 API Key、数据库密码或默认完整学生隐私数据。
-- 上传文件只允许 png、jpg、jpeg、pdf、md、txt，不执行上传内容。
-- 上传同时校验扩展名、MIME、空文件、大小、路径穿越和 SHA-256。
-- 原始星辰 YAML 只允许放入 `.local_inputs/`，不得提交。
-- 本地默认密码必须在共享部署前修改。
-
-## 当前未实现
-
-- 真实讯飞星辰协议和 SOLVER_CT 云端调用。
-- 原始 YAML 的真实 SHA-256、节点数和连线数（本轮附件未提供 YAML）。
-- 用户所述完整总体架构原文恢复（本轮附件未提供原文）。
-- 完整 LangGraph、多智能体编排和 RAGFlow。
-- Celery/分布式 Worker。
-- 完整学生端、教师端、科研端。
-- Kubernetes。
-
-## 后续阶段
-
-1. 工作流发布后接入真实 `SOLVER_CT`。
-2. 完成本地到星辰的端到端调用与真实回归测试。
-3. 在现有 `/debug` 基础上迭代最小调试页面。
-4. 开始 `LEARN_01` 课程知识问答。
-
-## 本地知识库接入
-
-阶段 1.5 已支持以只读方式使用同目录下的 `电路理论`、`模电`、`数电` 教材目录。
-原始 PDF、图片和 Markdown 不进入 Git 或 Docker 镜像；Docker 启动脚本会自动发现目录，
-API 对 Markdown 建立进程内中文词项索引。
-
-```http
+POST /api/v1/tasks/{task_id}/retry
 GET  /api/v1/knowledge/sources
 POST /api/v1/knowledge/search
+POST /api/v1/knowledge/evaluate-query
+POST /api/v1/knowledge/rag-search
+GET  /api/v1/knowledge/health
+GET  /api/v1/knowledge/images/{course_id}/{relative_path}
+GET  /api/v1/knowledge/documents/{course_id}/{relative_path}
+GET  /api/v1/knowledge/benchmark-summary
 POST /api/v1/knowledge/reload
+GET  /api/v1/agents/status
+GET  /api/v1/agents
+POST /api/v1/chat
+POST /api/v1/chat/stream
+GET  /api/v1/chat/{task_id}
+GET  /api/v1/capabilities
+GET  /api/v1/workflows
+GET  /api/v1/internal-agents
+GET  /api/v1/debug/traces/{trace_id}
+GET  /debug
+GET  /debug/rag
+GET  /debug/agents
+GET  /student
 ```
 
-调试页 `http://localhost:8000/debug` 已增加知识库检索入口。详细的数据审计与接入边界见：
+`http://localhost:8000/debug` 是原生 HTML/CSS/JavaScript 一页式演示界面。文字和图片共用 `POST /api/v1/tasks`，并通过 SSE 展示“正在识别、正在求解、正在整理答案”等步骤；真实星辰、Mock 和本地结果使用不同标识。
 
-- `docs/knowledge/local_knowledge_base_assessment.md`
-- `docs/knowledge/local_knowledge_base_integration.md`
+`http://localhost:8000/debug/agents` 用于开发态Agent注册、映射预览、Mock和契约检查；`http://localhost:8000/workspace`（`/student` 同入口）是正式学生端，支持自然语言自动路由和本地学术求解器多图输入。
+
+## 检索评测
+
+CT、AE、DE 各有 5 条、合计 15 条真实章节查询草稿。它们仍需人工审核，不称为正式 benchmark。
+
+```powershell
+python evaluation/knowledge_retrieval/scripts/validate_cases.py
+python evaluation/knowledge_retrieval/scripts/run_retrieval_benchmark.py --mode baseline_lexical_v1
+python evaluation/knowledge_retrieval/scripts/run_retrieval_benchmark.py --mode local_lexical_v2
+python evaluation/knowledge_retrieval/scripts/compare_runs.py evaluation/knowledge_retrieval/results/baseline_lexical_v1.json evaluation/knowledge_retrieval/results/local_lexical_v2.json
+```
+
+真实对比见 `docs/reports/retrieval_baseline_comparison.md`。
+
+多学科正式执行链评测使用同一 TaskRunner，默认不发送付费请求：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --validate-only
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --offline
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --case-id CT_KCL_001 --offline
+.\.venv\Scripts\python.exe scripts\run_evaluation.py --live --confirm-paid --course CT --max-cases 3
+```
+
+报告输出到 `evaluation/reports/latest.json` 和 `latest.md`。评测只读 API 默认由
+`ENABLE_EVALUATION_API=false` 关闭，且不提供 HTTP 付费执行入口。
+
+## 质量检查
+
+```powershell
+ruff check .
+mypy apps/api/app
+pytest
+python evaluation/knowledge_retrieval/scripts/validate_cases.py
+python evaluation/knowledge_retrieval/scripts/run_retrieval_benchmark.py
+python scripts/export_openapi.py
+python scripts/check_sensitive_files.py
+docker compose config
+git diff --check
+```
+
+## 当前架构与历史隔离
+
+- 当前本地编排架构：`docs/local_orchestration_architecture.md`
+- 迁移审计：`docs/architecture_migration_audit.md`
+- Agent 注册表：`docs/agent_registry.md`
+- 模型 API 配置：`docs/model_api_configuration.md`
+- 历史阶段快照：`archive_legacy/docs/`，不参与运行、测试或 Docker 构建。
+
+## 下一阶段
+
+1. 人工审核 15 条检索案例、3 条 OCR 清洗草稿和 AE 两条未召回案例。
+2. 使用真实课程图片人工验收千问视觉回答质量与成本。
+3. 依据人工审核后的评测集继续优化轻量词项/混合检索，保持 `KnowledgeHit` 与 `RetrievalContextPacket` 合同稳定。
+4. 将进程内 TaskRunner 和索引按规模需求迁移为独立 Worker/检索服务，不改变统一任务入口。
+# Agent Runtime Foundation v1
+
+平台现已在原有 `POST /api/v1/tasks` 单一执行链上支持消息级历史、多轮上下文、
+会话标题/搜索/归档、WorkingState、Token 预算、版本化摘要、Redis/内存上下文
+缓存和显式长期记忆。自动记忆默认关闭，`SOLVER_CT_V1` 与星辰默认授权策略未变。
+
+架构与部署说明：
+
+- [Agent Runtime Foundation](docs/architecture/agent_runtime_foundation.md)
+- [会话与长期记忆部署指南](docs/deployment/conversation_memory_guide.md)
