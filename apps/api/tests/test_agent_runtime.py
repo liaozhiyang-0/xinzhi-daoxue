@@ -221,11 +221,13 @@ def test_cloud_failure_uses_agent_configured_local_fallback(tmp_path: Path) -> N
                 "scene": "learning",
                 "course_id": "CT",
                 "intent": "general_qa",
+                "user_role": "admin",
                 "canonical_input": {"question": "解释KCL"},
-                    "options": {
-                        "allow_cloud": True,
-                        "mock_force_failure": True,
-                    },
+                "options": {
+                    "allow_cloud": True,
+                    "debug_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+                    "mock_force_failure": True,
+                },
             },
         )
         assert created.status_code == 202

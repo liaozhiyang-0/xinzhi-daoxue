@@ -50,7 +50,13 @@ VALID_OUTPUT_FIELD_PARSERS = {
     "float",
     "float_string",
 }
-VALID_INPUT_MODES = {"text", "single_image", "text_and_single_image"}
+VALID_INPUT_MODES = {
+    "text",
+    "single_image",
+    "text_and_single_image",
+    "multi_image",
+    "text_and_multi_image",
+}
 VALID_EXECUTION_MODES = {"local", "xingchen", "hybrid", "disabled"}
 VALID_VALIDATORS = {
     "generic",

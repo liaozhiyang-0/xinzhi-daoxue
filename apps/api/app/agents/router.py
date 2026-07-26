@@ -127,6 +127,34 @@ class TaskRouter:
         score_gap = best.score - runner_up.score
         intent = AGENT_INTENT.get(best.agent_id, request.intent.value)
         explicit_intent = request.intent != Intent.UNKNOWN
+        general_without_course = (
+            input_type == "text"
+            and not request.attachments
+            and not explicit_intent
+            and "course_unspecified_default_context" in course_reasons
+            and best.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+            and confidence <= 0.72
+            and any(code.startswith("keywords:") for code in best.reason_codes)
+            and all(
+                code.startswith("keywords:")
+                for code in best.reason_codes
+            )
+        )
+        if general_without_course:
+            general_decision = self._general_question_decision(
+                request=request,
+                course_id=course_id,
+                input_type=input_type,
+                confidence=confidence,
+                candidates=candidates,
+                course_reasons=course_reasons,
+                material_extraction=material.model_dump(mode="json"),
+                reason="未识别到课程领域，使用通用问题回答能力直接作答",
+                route_source="local_general_direct",
+                extra_reason_codes=["general_question_without_course_context"],
+            )
+            if general_decision is not None:
+                return general_decision
         strong_conflict = runner_up.score >= 0.70 and not scored.requires_pipeline
         direct = explicit_intent or (
             not strong_conflict
@@ -194,40 +222,20 @@ class TaskRouter:
             if self._cloud_allowed(request)
             else "cloud_router_not_authorized"
         )
-        general = self.registry.get(GENERAL_QUESTION_AGENT_ID)
-        if (
-            input_type == "text"
-            and general.enabled
-            and self.registry.is_runtime_available(general.agent_id, self.settings)
-        ):
-            decision = self._decision_for_target(
-                general.agent_id,
-                request,
-                course_id=course_id,
-                intent=Intent.GENERAL_QA.value,
-                input_type=input_type,
-                confidence=max(confidence, 0.35),
-            )
-            return decision.model_copy(
-                update={
-                    "reason": "专用能力路由置信度不足，使用通用问题回答能力",
-                    "route_source": "local_general_fallback",
-                    "route_confidence": max(confidence, 0.35),
-                    "candidate_agents": candidates,
-                    "reason_codes": course_reasons
-                    + [cloud_reason, "general_question_fallback"],
-                    "local_confidence": confidence,
-                    "availability": self._availability(
-                        general.agent_id,
-                        course_id,
-                        input_type,
-                        Intent.GENERAL_QA.value,
-                    ),
-                    "material_extraction": material.model_dump(mode="json"),
-                    "inferred_user_role": request.user_role.value,
-                    "visited_agents": [general.agent_id],
-                }
-            )
+        general_decision = self._general_question_decision(
+            request=request,
+            course_id=course_id,
+            input_type=input_type,
+            confidence=confidence,
+            candidates=candidates,
+            course_reasons=course_reasons,
+            material_extraction=material.model_dump(mode="json"),
+            reason="专用能力路由置信度不足，使用通用问题回答能力",
+            route_source="local_general_fallback",
+            extra_reason_codes=[cloud_reason, "general_question_fallback"],
+        )
+        if general_decision is not None:
+            return general_decision
         return RouteDecision(
             agent_id="UNRESOLVED",
             scene=request.scene.value,
@@ -254,6 +262,56 @@ class TaskRouter:
             ),
             material_extraction=material.model_dump(mode="json"),
             inferred_user_role=request.user_role.value,
+        )
+
+    def _general_question_decision(
+        self,
+        *,
+        request: AgentRequest,
+        course_id: str,
+        input_type: str,
+        confidence: float,
+        candidates: list[RouteCandidate],
+        course_reasons: list[str],
+        material_extraction: dict[str, Any],
+        reason: str,
+        route_source: str,
+        extra_reason_codes: list[str],
+    ) -> RouteDecision | None:
+        general = self.registry.get(GENERAL_QUESTION_AGENT_ID)
+        if (
+            input_type != "text"
+            or not general.enabled
+            or not self.registry.is_runtime_available(general.agent_id, self.settings)
+        ):
+            return None
+        route_confidence = max(confidence, 0.35)
+        decision = self._decision_for_target(
+            general.agent_id,
+            request,
+            course_id=course_id,
+            intent=Intent.GENERAL_QA.value,
+            input_type=input_type,
+            confidence=route_confidence,
+        )
+        return decision.model_copy(
+            update={
+                "reason": reason,
+                "route_source": route_source,
+                "route_confidence": route_confidence,
+                "candidate_agents": candidates,
+                "reason_codes": course_reasons + extra_reason_codes,
+                "local_confidence": confidence,
+                "availability": self._availability(
+                    general.agent_id,
+                    course_id,
+                    input_type,
+                    Intent.GENERAL_QA.value,
+                ),
+                "material_extraction": material_extraction,
+                "inferred_user_role": request.user_role.value,
+                "visited_agents": [general.agent_id],
+            }
         )
 
     def _candidate_models(
@@ -683,7 +741,7 @@ class TaskRouter:
             if item.content_type.startswith("image/")
         ]
         if len(images) > 1:
-            raise AgentInputNotSupportedError("任务输入仅支持单张图片")
+            return "text_and_multi_image" if has_text else "multi_image"
         if has_text and images:
             return "text_and_single_image"
         if images:

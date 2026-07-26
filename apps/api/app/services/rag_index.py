@@ -127,17 +127,21 @@ class MultimodalRAGIndexer:
         same_version = prior.get("index_version") == version.version_id
         recreate = force_vectors or not same_version
         if not dry_run:
+            # Never delete the last usable collections before a replacement build
+            # has succeeded. Same-dimension rebuilds overwrite points in place;
+            # dimension changes fail safely and retain the prior collection/state.
             self.vector_store.ensure_collections(
                 version.text_dimension,
                 version.image_dimension,
-                recreate=recreate,
+                recreate=False,
             )
         prior_text = prior.get("text_checksums", {}) if same_version else {}
         prior_images = prior.get("image_checksums", {}) if same_version else {}
         chunks = [
             item
             for item in load_jsonl(self.chunk_path)
-            if (course_id is None or item.get("course_id") == course_id)
+            if item.get("is_active", True)
+            and (course_id is None or item.get("course_id") == course_id)
             and (relative_file is None or item.get("relative_path") == relative_file)
         ]
         images = [
@@ -206,6 +210,14 @@ class MultimodalRAGIndexer:
                     "text_checksums": text_checksums,
                     "image_checksums": image_checksums,
                     "failed_images": failed_images,
+                    "failed_documents": sorted(
+                        {
+                            str(item.get("parent_document_id", ""))
+                            for item in failed_images
+                            if item.get("parent_document_id")
+                        }
+                    ),
+                    "last_successful_build_at": datetime.now(UTC).isoformat(),
                     "text_point_count": len(text_checksums),
                     "image_point_count": len(image_checksums),
                 },

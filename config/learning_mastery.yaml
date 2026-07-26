@@ -1,0 +1,10 @@
+version: 1
+initial_score: 0.50
+initial_confidence: 0.20
+correct_delta: 0.12
+partial_delta: 0.04
+incorrect_delta: -0.10
+hint_delta: -0.02
+mastered_delta: 0.18
+confidence_step: 0.08
+mastered_threshold: 0.80

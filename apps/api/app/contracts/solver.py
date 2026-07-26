@@ -95,7 +95,67 @@ class SolutionPatch(BaseModel):
     verification_issue_ids: list[str] = Field(default_factory=list)
 
 
-class AcademicSolutionResult(BaseModel):
+class SolverFinalAnswer(BaseModel):
+    """Structured companion to the legacy plain-text ``final_answer`` field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str = ""
+    unit: str | None = None
+    conclusion: str = ""
+    confidence: float = Field(default=0, ge=0, le=1)
+
+
+class SolverVerification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["pass", "partial", "fail", "not_checked"] = "not_checked"
+    checks: list[dict[str, Any]] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
+class SolverKnowledgeEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    citation_status: Literal[
+        "valid",
+        "partially_supported",
+        "unsupported",
+        "stale",
+        "invalid_locator",
+        "missing_source",
+        "not_applicable",
+    ] = "not_applicable"
+    cited_chunk_ids: list[str] = Field(default_factory=list)
+    unsupported_conclusions: list[str] = Field(default_factory=list)
+
+
+class QualityCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str
+    status: Literal["pass", "fail", "warn", "not_applicable"]
+    message: str
+    deterministic: bool = True
+
+
+class QualityGateResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["pass", "partial", "fail"]
+    checks: list[QualityCheck] = Field(default_factory=list)
+    blocked_reasons: list[str] = Field(default_factory=list)
+    applied_course_rules: list[str] = Field(default_factory=list)
+
+
+class SolverResult(BaseModel):
+    """Unified solver result while retaining the stable v1 response fields.
+
+    ``final_answer`` intentionally remains text because it is consumed by the
+    current API, Workspace and the frozen SOLVER_CT_V1 adapter. New consumers
+    should prefer ``final_answer_detail`` for machine-readable output.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["success", "partial", "failed", "unsupported"]
@@ -129,3 +189,11 @@ class AcademicSolutionResult(BaseModel):
     patch_count: int = Field(default=0, ge=0)
     patched_sections: list[str] = Field(default_factory=list)
     remaining_issues: list[str] = Field(default_factory=list)
+    final_answer_detail: SolverFinalAnswer | None = None
+    verification: SolverVerification | None = None
+    knowledge_evidence: SolverKnowledgeEvidence | None = None
+    quality_gate: QualityGateResult | None = None
+
+
+# Backward-compatible public name used by existing providers and tests.
+AcademicSolutionResult = SolverResult

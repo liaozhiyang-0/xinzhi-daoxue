@@ -161,6 +161,14 @@ class NodeTrace(BaseModel):
     workflow_id: str = ""
     retry_count: int = Field(default=0, ge=0)
     error_type: str = ""
+    task_id: str = ""
+    trace_id: str = ""
+    agent_id: str = ""
+    course_id: str = ""
+    intent: str = ""
+    token_usage: dict[str, int] = Field(default_factory=dict)
+    fallback_used: bool = False
+    sanitized_summary: str = ""
 
 
 class ChatSubmission(BaseModel):

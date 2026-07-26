@@ -32,9 +32,10 @@ def test_rag_debug_run_reuses_local_rag_and_stores_trace(client) -> None:
     assert response.status_code == 200, response.text
     trace = response.json()
     assert trace["trace_id"].startswith("debug_rag_")
-    assert trace["route"]["original_agent_id"] == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert trace["route"]["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert trace["route"]["original_agent_id"] is None
     assert trace["final"]["provider"] == "local"
-    assert trace["final"]["fallback_used"] is True
+    assert trace["final"]["fallback_used"] is False
     saved = client.get(f"/api/v1/debug/rag/traces/{trace['trace_id']}")
     assert saved.status_code == 200
     assert saved.json()["request_id"] == trace["request_id"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -13,6 +14,70 @@ class KnowledgeCourseId(StrEnum):
     SIGNALS_AND_SYSTEMS = "SS"
     DIGITAL_SIGNAL_PROCESSING = "DSP"
     COMMUNICATION_PRINCIPLES = "COMM"
+
+
+class DocumentManifest(BaseModel):
+    """Portable document identity and lifecycle metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    document_version: str = "v1"
+    course_id: str
+    source_file: str
+    source_relative_path: str
+    content_hash: str
+    title: str = "UNKNOWN"
+    chapter: str = "UNKNOWN"
+    page_count: int | None = Field(default=None, ge=0)
+    content_type: str = "unknown"
+    language: str = "unknown"
+    source_updated_at: datetime | None = None
+    indexed_at: datetime | None = None
+    is_active: bool = True
+
+    @field_validator("source_relative_path")
+    @classmethod
+    def require_relative_path(cls, value: str) -> str:
+        normalized = value.replace("\\", "/")
+        if normalized.startswith("/") or ":/" in normalized:
+            raise ValueError("source_relative_path 必须是相对路径")
+        return normalized
+
+
+class KnowledgeChunk(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chunk_id: str
+    document_id: str
+    document_version: str = "v1"
+    course_id: str
+    chapter: str = "UNKNOWN"
+    section_path: list[str] = Field(default_factory=list)
+    page_number: int | None = Field(default=None, ge=1)
+    content_type: str = "unknown"
+    text: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    is_active: bool = True
+
+
+class CitationSupport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    citation_id: str
+    status: Literal[
+        "valid",
+        "partially_supported",
+        "unsupported",
+        "stale",
+        "invalid_locator",
+        "missing_source",
+    ]
+    document_id: str | None = None
+    document_version: str | None = None
+    chunk_id: str | None = None
+    supported_conclusions: list[str] = Field(default_factory=list)
+    unsupported_conclusions: list[str] = Field(default_factory=list)
 
 
 class KnowledgeSearchRequest(BaseModel):

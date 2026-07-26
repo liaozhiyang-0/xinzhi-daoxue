@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from app.contracts import (
@@ -13,7 +13,9 @@ from app.contracts import (
     RunMetrics,
 )
 from app.contracts.solver import AcademicProblem
+from app.core.config import Settings
 from app.core.errors import AppError
+from app.multimodal import MultiImageComposer, PreparedImageBatch, SourceImage
 from app.orchestrator.graphs import AcademicProblemSolverGraph
 from app.orchestrator.state import new_graph_state
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
@@ -157,29 +159,43 @@ class AcademicProblemSolverService:
             or not self._model_route_available(task_type)
         ):
             return problem, {}
-        encoded: list[ImageInput] = []
         try:
-            for item in images:
-                data = await self.storage.read(item.storage_key)
-                encoded.append(
-                    ImageInput(
-                        source_type="base64",
-                        value=(
-                            f"data:{item.content_type};base64,"
-                            f"{base64.b64encode(data).decode('ascii')}"
-                        ),
-                        mime_type=item.content_type,
-                        filename=item.filename,
-                    )
+            sources = [
+                SourceImage(
+                    filename=item.filename,
+                    mime_type=item.content_type,
+                    data=await self.storage.read(item.storage_key),
+                )
+                for item in images
+            ]
+            settings = getattr(self.model_service, "settings", None)
+            if not isinstance(settings, Settings):
+                settings = Settings.model_validate({"app_env": "test"})
+            prepared = await asyncio.to_thread(
+                MultiImageComposer(settings).prepare,
+                sources,
+            )
+            if prepared.strategy == "per_image":
+                return await self._extract_images_individually(
+                    request=request,
+                    problem=problem,
+                    prepared=prepared,
+                    filenames=[item.filename for item in images],
+                    task_type=task_type,
                 )
             pack = self.graph.courses.get(problem.course)
             response = await self.model_service.analyze_images_for_task(
                 task_type,
                 prompt=(
                     pack.build_extraction_prompt(problem)
+                    + (
+                        " 这是按原始顺序拼接的组合图，每个区域标有 Image 编号；"
+                        if prepared.strategy == "stitched"
+                        else ""
+                    )
                     + " 只输出可观察到的实体、关系、标注和不确定项，不补造参数。"
                 ),
-                images=encoded,
+                images=list(prepared.images),
                 request_id=str(request.options.get("request_id", "")) or None,
                 json_mode=False,
             )
@@ -210,12 +226,232 @@ class AcademicProblemSolverService:
             ),
             {
                 "status": "completed",
+                "strategy": prepared.strategy,
                 "provider": response.provider,
                 "model": response.model,
                 "elapsed_ms": response.elapsed_ms,
-                "image_count": len(encoded),
+                "image_count": len(images),
+                "source_image_count": len(images),
+                "model_image_count": len(prepared.images),
+                "model_calls": 1,
+                "composite_width": prepared.composite_width,
+                "composite_height": prepared.composite_height,
             },
         )
+
+    async def _extract_images_individually(
+        self,
+        *,
+        request: AgentRequest,
+        problem: AcademicProblem,
+        prepared: PreparedImageBatch,
+        filenames: list[str],
+        task_type: str,
+    ) -> tuple[AcademicProblem, dict[str, Any]]:
+        model_service = self.model_service
+        assert model_service is not None
+        settings = getattr(model_service, "settings", None)
+        concurrency = (
+            settings.multi_image_fallback_concurrency
+            if isinstance(settings, Settings)
+            else 2
+        )
+        semaphore = asyncio.Semaphore(concurrency)
+        pack = self.graph.courses.get(problem.course)
+
+        async def extract_one(index: int, image: ImageInput) -> dict[str, Any]:
+            async with semaphore:
+                try:
+                    response = await model_service.analyze_images_for_task(
+                        task_type,
+                        prompt=(
+                            pack.build_extraction_prompt(problem)
+                            + f" 当前是第 {index}/{prepared.source_count} 张图，"
+                            "请保留跨图衔接所需的节点名、题号、方向、参数和不确定项；"
+                            "只描述可观察内容，不补造参数。"
+                        ),
+                        images=[image],
+                        request_id=(
+                            str(request.options.get("request_id", "")) or None
+                        ),
+                        json_mode=False,
+                    )
+                except AppError as exc:
+                    return {
+                        "index": index,
+                        "filename": filenames[index - 1],
+                        "status": "failed",
+                        "error_type": exc.code,
+                        "content": "",
+                    }
+                return {
+                    "index": index,
+                    "filename": filenames[index - 1],
+                    "status": "completed",
+                    "provider": response.provider,
+                    "model": response.model,
+                    "elapsed_ms": response.elapsed_ms,
+                    "content": response.content[:12_000],
+                }
+
+        executions = await asyncio.gather(
+            *(
+                extract_one(index, image)
+                for index, image in enumerate(prepared.images, start=1)
+            )
+        )
+        completed = [item for item in executions if item["status"] == "completed"]
+        failed = [item for item in executions if item["status"] == "failed"]
+        if not completed:
+            return (
+                problem.model_copy(
+                    update={
+                        "uncertain_info": [
+                            *problem.uncertain_info,
+                            {"description": "多图逐图识别全部失败"},
+                        ]
+                    }
+                ),
+                {
+                    "status": "failed",
+                    "strategy": "per_image",
+                    "fallback_reason": prepared.fallback_reason,
+                    "image_count": prepared.source_count,
+                    "source_image_count": prepared.source_count,
+                    "model_image_count": len(prepared.images),
+                    "model_calls": len(prepared.images),
+                    "individual_executions": [
+                        {key: value for key, value in item.items() if key != "content"}
+                        for item in executions
+                    ],
+                },
+            )
+
+        extracted_text = "\n\n".join(
+            f"[Image {item['index']} · {item['filename']}]\n{item['content']}"
+            for item in completed
+        )
+        summary, summary_execution = await self._summarize_image_extractions(
+            request=request,
+            problem=problem,
+            extracted_text=extracted_text,
+        )
+        visual_summary = summary[:50_000]
+        uncertain = [
+            *problem.uncertain_info,
+            {"description": "多图内容由逐图视觉识别后合并，需以原图为准"},
+        ]
+        if failed:
+            uncertain.append(
+                {
+                    "description": (
+                        f"{len(failed)} 张图片未完成识别，当前解答可能缺少条件"
+                    )
+                }
+            )
+        model_names = list(
+            dict.fromkeys(
+                str(item.get("model", ""))
+                for item in completed
+                if item.get("model")
+            )
+        )
+        provider_names = list(
+            dict.fromkeys(
+                str(item.get("provider", ""))
+                for item in completed
+                if item.get("provider")
+            )
+        )
+        summary_calls = int(summary_execution.get("model_calls", 0))
+        return (
+            problem.model_copy(
+                update={
+                    "problem_text": (
+                        f"{problem.problem_text}\n\n[多图内容汇总]\n{visual_summary}"
+                    )[:50_000],
+                    "uncertain_info": uncertain,
+                }
+            ),
+            {
+                "status": "partial" if failed else "completed",
+                "strategy": "per_image",
+                "fallback_reason": prepared.fallback_reason,
+                "image_count": prepared.source_count,
+                "source_image_count": prepared.source_count,
+                "model_image_count": len(prepared.images),
+                "model_calls": len(prepared.images) + summary_calls,
+                "provider": (
+                    provider_names[0] if len(provider_names) == 1 else "multiple"
+                ),
+                "model": model_names[0] if len(model_names) == 1 else "multiple",
+                "providers": provider_names,
+                "models": model_names,
+                "individual_executions": [
+                    {key: value for key, value in item.items() if key != "content"}
+                    for item in executions
+                ],
+                "summary_execution": summary_execution,
+            },
+        )
+
+    async def _summarize_image_extractions(
+        self,
+        *,
+        request: AgentRequest,
+        problem: AcademicProblem,
+        extracted_text: str,
+    ) -> tuple[str, dict[str, Any]]:
+        assert self.model_service is not None
+        settings = getattr(self.model_service, "settings", None)
+        max_chars = (
+            settings.multi_image_summary_max_chars
+            if isinstance(settings, Settings)
+            else 24_000
+        )
+        if not self._model_route_available("multi_image_summary"):
+            return extracted_text[:max_chars], {
+                "status": "skipped",
+                "reason": "summary_model_unavailable",
+                "model_calls": 0,
+            }
+        try:
+            response = await self.model_service.generate_for_task(
+                "multi_image_summary",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你负责合并多张题目图片的逐图识别结果。只整理题目事实，"
+                            "按图片顺序恢复跨图关系、题号、条件和待求量；不解题、"
+                            "不补造缺失参数，冲突和不确定项必须保留。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"课程：{problem.course}\n"
+                            f"用户问题：{problem.problem_text[:4000]}\n"
+                            f"逐图结果：\n{extracted_text[:max_chars]}"
+                        ),
+                    },
+                ],
+                request_id=str(request.options.get("request_id", "")) or None,
+                extra_options={"max_tokens": 2048},
+            )
+        except AppError as exc:
+            return extracted_text[:max_chars], {
+                "status": "failed",
+                "error_type": exc.code,
+                "model_calls": 1,
+            }
+        return response.content.strip(), {
+            "status": "completed",
+            "provider": response.provider,
+            "model": response.model,
+            "elapsed_ms": response.elapsed_ms,
+            "model_calls": 1,
+        }
 
     async def _generate_with_model(
         self, problem: AcademicProblem, result: Any, *, request_id: str

@@ -12,6 +12,8 @@ from app.api.v1 import (
     health,
     internal_agents,
     knowledge,
+    learning,
+    memories,
     models,
     orchestration,
     sessions,
@@ -27,6 +29,8 @@ api_router.include_router(tasks.router)
 api_router.include_router(files.router)
 api_router.include_router(artifacts.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(learning.router)
+api_router.include_router(memories.router)
 api_router.include_router(models.router)
 api_router.include_router(orchestration.router)
 api_router.include_router(debug_rag.router)

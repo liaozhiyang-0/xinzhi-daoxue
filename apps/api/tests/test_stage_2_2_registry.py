@@ -11,6 +11,7 @@ from app.core.errors import (
     RouteInvalidTargetError,
 )
 from app.providers.xingchen import XingchenCloudProvider
+from app.services.agent_runtime import AgentExecutionPlanner
 
 
 def test_registry_resolves_flow_and_unconfigured_agent_stays_unavailable() -> None:
@@ -43,6 +44,34 @@ def test_answer_check_routes_directly_to_solver_without_dead_intermediate() -> N
     assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
     assert decision.fallback_used is False
     assert decision.original_agent_id is None
+
+
+def test_multi_image_input_routes_to_local_academic_solver() -> None:
+    request = AgentRequest(
+        session_id="session",
+        user_id="user",
+        course_id="AUTO",
+        intent="unknown",
+        canonical_input={"text": ""},
+        attachments=[
+            AttachmentRef(
+                file_id=f"file-{index}",
+                filename=f"{index}.png",
+                content_type="image/png",
+                size_bytes=1,
+                storage_key=f"local:{index}.png",
+            )
+            for index in (1, 2)
+        ],
+    )
+
+    registry = AgentRegistry()
+    settings = Settings(_env_file=None)
+    decision = TaskRouter(registry, settings).route(request)
+    plan = AgentExecutionPlanner(registry, settings).build(decision, request)
+
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert plan.input_mode == "multi_image"
 
 
 def test_cloud_router_rejects_unknown_and_self_targets() -> None:

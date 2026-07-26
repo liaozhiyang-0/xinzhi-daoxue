@@ -30,6 +30,15 @@ class TaskRepository:
             query = query.with_for_update()
         return cast(TaskModel | None, await self.session.scalar(query))
 
+    async def get_by_idempotency_key(
+        self, user_id: str, idempotency_key: str
+    ) -> TaskModel | None:
+        query = select(TaskModel).where(
+            TaskModel.user_id == user_id,
+            TaskModel.idempotency_key == idempotency_key,
+        )
+        return cast(TaskModel | None, await self.session.scalar(query))
+
     async def next_event_sequence(self, task_id: str) -> int:
         value = await self.session.scalar(
             select(func.max(TaskEventModel.sequence)).where(

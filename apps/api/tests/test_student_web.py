@@ -42,6 +42,18 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "summary.agent_id" not in script.text
     assert "prefer_internal_agents: true" in script.text
     assert "allow_cloud: false" in script.text
+    assert 'id="image-input" type="file" multiple' in page.text
+    assert "async function uploadMaterials()" in script.text
+    assert "let pendingMaterialFiles = []" in script.text
+    assert "function appendMaterialFiles(files)" in script.text
+    assert 'id="preview-images"' in page.text
+    assert "20260723-multi2" in page.text
+    assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
+    assert "let pendingLearningFollowUp = null" in script.text
+    assert 'intent: requestedIntent' in script.text
+    assert "source_task_id: learningFollowUp?.source_task_id" in script.text
+    assert "pendingLearningFollowUp = result.follow_up_context || null" in script.text
+    assert "runtime1-learning1" in page.text
     assert 'audience: "student"' in script.text
     assert 'api("/api/v1/capabilities")' in script.text
     assert "/api/v1/sessions/${state.sessionId}/tasks?limit=50" in script.text
@@ -183,3 +195,41 @@ def test_student_single_image_task_uses_existing_attachment_contract(
 
     assert final["status"] == "completed"
     assert final["agent_id"] == "ACADEMIC_PROBLEM_SOLVER"
+
+
+def test_student_multi_image_task_reaches_existing_task_runner(api, client) -> None:
+    session = api.create_session()
+    attachments = []
+    for index in (1, 2):
+        upload = client.post(
+            "/api/v1/files",
+            data={"purpose": "student_solver_image"},
+            files={
+                "upload": (
+                    f"circuit-{index}.png",
+                    png_bytes(),
+                    "image/png",
+                )
+            },
+        )
+        file = upload.json()
+        attachment = {
+            key: file[key]
+            for key in (
+                "id",
+                "filename",
+                "content_type",
+                "size_bytes",
+                "storage_key",
+                "checksum_sha256",
+            )
+        }
+        attachment["file_id"] = attachment.pop("id")
+        attachments.append(attachment)
+
+    task = api.create_task(session["id"], attachments=attachments)
+    final = api.wait_for_task(task["id"])
+
+    assert final["status"] == "completed"
+    assert final["agent_id"] == "ACADEMIC_PROBLEM_SOLVER"
+    assert len(final["input_content"]["attachments"]) == 2

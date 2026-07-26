@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.contracts.agent import AgentRequest, AttachmentRef, UserRole, utc_now
+from app.contracts.conversation import ConversationContextBundle
 from app.contracts.knowledge import KnowledgeHit, RelatedImage, RetrievalContextPacket
 
 
@@ -41,6 +42,7 @@ class WorkflowContextBundle(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     index_version: str = ""
     trace_id: str = ""
+    conversation_context: ConversationContextBundle | None = None
 
     @classmethod
     def from_packet(
@@ -53,6 +55,7 @@ class WorkflowContextBundle(BaseModel):
         retrieval_policy: str,
         rag_mode: RAGInteractionMode,
         related_images: list[RelatedImage] | None = None,
+        conversation_context: ConversationContextBundle | None = None,
     ) -> WorkflowContextBundle:
         evidence_ids = [item.evidence_id for item in packet.evidence]
         return cls(
@@ -76,6 +79,7 @@ class WorkflowContextBundle(BaseModel):
             warnings=list(packet.warnings),
             index_version=packet.index_version,
             trace_id=packet.retrieval_trace_id,
+            conversation_context=conversation_context,
         )
 
 
@@ -153,6 +157,9 @@ class TaskRequestContext(BaseModel):
     previous_answer_summary: str = ""
     previous_business_summary: str = ""
     previous_evidence_ids: list[str] = Field(default_factory=list)
+    recent_messages: list[dict[str, Any]] = Field(default_factory=list)
+    active_memories: list[dict[str, Any]] = Field(default_factory=list)
+    working_state: dict[str, Any] = Field(default_factory=dict)
     task_subtype: str = ""
     has_attachment: bool = False
     has_image: bool = False
@@ -198,6 +205,17 @@ class TaskRequestContext(BaseModel):
             previous_evidence_ids=[
                 str(item) for item in options.get("previous_evidence_ids", [])
             ][:10],
+            recent_messages=[
+                dict(item)
+                for item in options.get("recent_messages", [])
+                if isinstance(item, dict)
+            ][:12],
+            active_memories=[
+                dict(item)
+                for item in options.get("active_memories", [])
+                if isinstance(item, dict)
+            ][:8],
+            working_state=dict(options.get("working_state", {})),
             task_subtype=str(options.get("task_subtype", "")),
             has_attachment=bool(request.attachments),
             has_image=any(

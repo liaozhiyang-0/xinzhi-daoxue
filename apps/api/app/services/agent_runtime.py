@@ -484,8 +484,13 @@ class AgentExecutionPlanner:
             and request.canonical_input[key].strip()
             for key in ("text", "question", "problem", "query", "prompt")
         )
+        image_count = sum(
+            item.content_type.startswith("image/") for item in request.attachments
+        )
+        if image_count > 1 and image_count == len(request.attachments):
+            return "text_and_multi_image" if has_text else "multi_image"
         if len(request.attachments) > 1:
-            raise AgentInputNotSupportedError("任务输入仅支持单张图片")
+            raise AgentInputNotSupportedError("多附件输入目前仅支持图片")
         if request.attachments and has_text:
             return "text_and_single_image"
         if request.attachments:

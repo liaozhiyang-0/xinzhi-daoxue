@@ -1,0 +1,113 @@
+dataset:
+  name: agent_runtime_foundation_v1
+  synthetic: true
+  not_for_official_scoring: true
+  description: 第一版会话上下文与受控记忆的虚构回归案例。
+metrics:
+  - history_integrity
+  - follow_up_resolution
+  - context_relevance
+  - compaction_fidelity
+  - memory_precision
+  - memory_governance
+  - cross_user_isolation
+  - latency_overhead
+cases:
+  - case_id: RUNTIME_FOLLOW_UP_001
+    title: 二轮指代追问
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: follow_up_question
+    message: 那电流呢？
+    structured_input: {turns: [求出电容电压, 那电流呢？]}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    notes: 应复用同一课程和题目上下文。
+    tags: [synthetic, not_official, agent_runtime, follow_up_resolution]
+  - case_id: RUNTIME_CORRECTION_001
+    title: 三轮参数纠正
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: follow_up_question
+    message: 纠正：电阻应为10欧姆
+    structured_input: {turns: [电阻为5欧姆, 求电流, 纠正：电阻应为10欧姆]}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    notes: 最新纠正应覆盖旧参数。
+    tags: [synthetic, not_official, agent_runtime, context_relevance]
+  - case_id: RUNTIME_COURSE_SWITCH_001
+    title: 跨课程切换
+    course: DE
+    task_family: KNOWLEDGE_QA
+    intent: explain_concept
+    message: 数字电路：解释JK触发器
+    structured_input: {turns: [电路理论：求节点电压, 数字电路：解释JK触发器]}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 不得继承上一道电路理论题的参数。
+    tags: [synthetic, not_official, agent_runtime, context_relevance]
+  - case_id: RUNTIME_COMPACTION_001
+    title: 长会话压缩
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: summarize_knowledge
+    message: 整理本会话
+    structured_input: {synthetic_turn_count: 20}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 摘要应保留目标、纠正和未完成项。
+    tags: [synthetic, not_official, agent_runtime, compaction_fidelity]
+  - case_id: RUNTIME_REMEMBER_001
+    title: 显式记住偏好
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: learning_advice
+    message: 记住公式都使用LaTeX
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 应创建active偏好记忆。
+    tags: [synthetic, not_official, agent_runtime, memory_precision]
+  - case_id: RUNTIME_FORGET_001
+    title: 显式忘记偏好
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: learning_advice
+    message: 忘记公式格式偏好
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 应软删除匹配记忆。
+    tags: [synthetic, not_official, agent_runtime, memory_governance]
+  - case_id: RUNTIME_MEMORY_CONFLICT_001
+    title: 记忆与当前输入冲突
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: learning_advice
+    message: 本轮请给完整推导
+    structured_input: {active_memory: 用户喜欢简短回答}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 当前输入优先，旧偏好不得覆盖本轮要求。
+    tags: [synthetic, not_official, agent_runtime, memory_governance]
+  - case_id: RUNTIME_ISOLATION_001
+    title: 跨用户隔离
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: general_qa
+    message: 用户B尝试读取用户A的会话
+    structured_input: {owner: user_a, reader: user_b}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 用户B不可读取用户A的消息或记忆。
+    tags: [synthetic, not_official, agent_runtime, cross_user_isolation]
+  - case_id: RUNTIME_RESTORE_001
+    title: 会话刷新恢复
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: general_qa
+    message: 刷新Workspace
+    structured_input: {expected_sequence: [1, 2, 3, 4]}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 应按sequence恢复用户可见消息。
+    tags: [synthetic, not_official, agent_runtime, history_integrity]
+  - case_id: RUNTIME_ARCHIVE_001
+    title: 会话归档后恢复
+    course: CT
+    task_family: KNOWLEDGE_QA
+    intent: general_qa
+    message: 恢复已归档会话
+    structured_input: {operations: [archive, restore]}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    notes: 最近列表应在归档时排除并在恢复后重新显示。
+    tags: [synthetic, not_official, agent_runtime, history_integrity]

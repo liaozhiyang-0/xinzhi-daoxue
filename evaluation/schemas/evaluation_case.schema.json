@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Xinzhi Evaluation Case",
+  "type": "object",
+  "required": ["case_id", "title", "course", "task_family", "intent", "message", "expected_agent"],
+  "properties": {
+    "case_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "course": {"type": "string"},
+    "task_family": {"type": "string"},
+    "intent": {"type": "string"},
+    "message": {"type": "string"},
+    "expected_agent": {"type": "string"},
+    "reference_solution": {"type": "object"},
+    "rubric": {"$ref": "evaluation_rubric.schema.json"},
+    "judge_type": {"enum": ["rule", "human", "model", "hybrid"]},
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "source_type": {"enum": ["synthetic", "licensed", "private", "public"]},
+        "publishable": {"type": "boolean"}
+      }
+    }
+  },
+  "additionalProperties": true
+}

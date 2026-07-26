@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -23,7 +24,14 @@ from app.contracts import (
     RouteStatus,
     WorkflowContextBundle,
 )
+from app.contracts.conversation import (
+    ConversationContextBundle,
+    MessageRole,
+    MessageStatus,
+)
+from app.contracts.solver import SolverResult
 from app.core.errors import AppError, NotConfiguredError, ProviderCancelledError
+from app.courses import CourseRegistry
 from app.models import AgentRunModel, ArtifactModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import SessionRepository, TaskRepository
@@ -33,6 +41,8 @@ from app.services.agent_result_governance import (
 )
 from app.services.agent_runtime import AgentExecutionPlanner
 from app.services.citation_validator import CitationValidator
+from app.services.context_assembly import ContextAssemblyService
+from app.services.conversation_message_service import ConversationMessageService
 from app.services.event_service import append_task_event
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
@@ -41,8 +51,11 @@ from app.services.knowledge_qa_service import (
     KnowledgeQAService,
 )
 from app.services.math_formatting_service import MathFormattingService
+from app.services.memory_service import MemoryService
 from app.services.rag_retrieval import RAGRetrievalService
+from app.services.session_compaction import SessionCompactionService
 from app.services.session_context import SessionContextService
+from app.services.solver_quality_gate import SolverQualityGateService
 from app.services.storage import StorageService
 from app.services.task_presentation import build_task_views
 
@@ -73,6 +86,10 @@ class TaskRunner:
         knowledge_qa: KnowledgeQAService,
         rag_retrieval: RAGRetrievalService | None = None,
         internal_agents: InternalAgentExecutionService | None = None,
+        course_registry: CourseRegistry | None = None,
+        *,
+        context_assembly: ContextAssemblyService | None = None,
+        session_compaction: SessionCompactionService | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -81,6 +98,10 @@ class TaskRunner:
         self.knowledge_qa = knowledge_qa
         self.rag_retrieval = rag_retrieval
         self.internal_agents = internal_agents
+        self.course_registry = course_registry
+        self.context_assembly = context_assembly
+        self.session_compaction = session_compaction
+        self.solver_quality_gate = SolverQualityGateService()
         self.citation_validator = CitationValidator()
         self.result_validators = AgentResultValidatorRegistry()
         self.business_renderers = BusinessResultRendererRegistry()
@@ -89,6 +110,7 @@ class TaskRunner:
             agent_registry, knowledge_base.settings
         )
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self.execution_owner = f"local-{uuid4().hex[:12]}"
 
     def submit(self, task_id: str) -> bool:
         existing = self._tasks.get(task_id)
@@ -110,6 +132,7 @@ class TaskRunner:
 
     async def run(self, task_id: str) -> None:
         request: AgentRequest
+        conversation_bundle: ConversationContextBundle | None = None
         started_at = utc_now()
         try:
             async with self.session_factory() as db:
@@ -135,6 +158,9 @@ class TaskRunner:
                 task.status = TaskStatus.RUNNING
                 task.started_at = started_at
                 task.updated_at = started_at
+                task.execution_owner = self.execution_owner
+                task.heartbeat_at = started_at
+                task.lease_expires_at = started_at + timedelta(seconds=60)
                 await append_task_event(
                     db,
                     task_id,
@@ -150,6 +176,19 @@ class TaskRunner:
                     data={"provider": active_provider},
                 )
                 request = AgentRequest.model_validate(task.input_content)
+                if self.context_assembly is not None:
+                    conversation_bundle = await self.context_assembly.assemble(
+                        db,
+                        session_id=task.session_id,
+                        user_id=task.user_id,
+                        current_message_id=task.user_message_id,
+                        course_id=task.course_id,
+                        task_family=task.intent,
+                        agent_id=task.agent_id,
+                    )
+                    request = self._with_conversation_context(
+                        request, conversation_bundle
+                    )
                 cloud_workflow_allowed = self._cloud_workflow_allowed(request)
                 decision = RouteDecision.model_validate(
                     request.options.get("_routing", {})
@@ -172,9 +211,7 @@ class TaskRunner:
                     self.provider.provider_name == "xingchen"
                     and not cloud_workflow_allowed
                 ):
-                    raise NotConfiguredError(
-                        "星辰调度未获本次请求授权，未发送外部请求"
-                    )
+                    raise NotConfiguredError("星辰调度未获本次请求授权，未发送外部请求")
                 dispatch_started = perf_counter()
                 dispatch_result = await self.provider.run(
                     agent_id, self._cloud_safe_request(request), stream=False
@@ -572,9 +609,7 @@ class TaskRunner:
                                 cloud_workflow_allowed
                                 and not (
                                     self.internal_agents is not None
-                                    and self.internal_agents.available(
-                                        writing.agent_id
-                                    )
+                                    and self.internal_agents.available(writing.agent_id)
                                 )
                             ),
                             route_source="sequential_pipeline",
@@ -771,9 +806,12 @@ class TaskRunner:
                 routing.get(
                     "cloud_status",
                     (
-                        "local_success"
-                        if result.provider in {"local", "local_agent"}
-                        else "cloud_success"
+                        "cloud_success"
+                        if (
+                            agent_definition.provider == "xingchen"
+                            and result.provider == "xingchen"
+                        )
+                        else "not_required"
                     ),
                 )
             )
@@ -783,6 +821,7 @@ class TaskRunner:
             result.fallback_reason = result.fallback_reason or str(
                 routing.get("fallback_reason", "")
             )
+            result = self._apply_solver_quality_gate(result, request, agent_id)
             if result.fallback_used and not result.fallback_reason:
                 result.fallback_reason = "route_cloud_unavailable"
             result_validation = self.result_validators.validate(
@@ -861,6 +900,26 @@ class TaskRunner:
                     task.created_at, started_at
                 )
                 result.metrics.provider_latency_ms = provider_latency_ms
+                result.metrics.total_latency_ms = total_latency_ms
+                result.metrics.route_latency_ms = 0
+                result.metrics.retrieval_latency_ms = result.retrieval_latency_ms
+                result.metrics.context_latency_ms = context_latency_ms
+                result.metrics.citation_latency_ms = citation_latency_ms
+                result.metrics.model_latency_ms = provider_latency_ms
+                result.metrics.verification_latency_ms = int(
+                    result_validation.latency_ms
+                )
+                result.metrics.retry_count = max(0, task.attempt - 1)
+                result.metrics.provider_used = result.provider
+                result.metrics.fallback_used = result.fallback_used
+                result.metrics.degraded_reason = result.fallback_reason
+                quality_gate = result.structured_result.get("quality_gate", {})
+                result.metrics.quality_status = (
+                    str(quality_gate.get("status", "not_checked"))
+                    if isinstance(quality_gate, dict)
+                    else "not_checked"
+                )
+                result.metrics.final_confidence = result.confidence
                 timings = {
                     "route_ms": 0,
                     "retrieval_ms": result.retrieval_latency_ms,
@@ -872,12 +931,16 @@ class TaskRunner:
                     "total_ms": total_latency_ms,
                 }
                 result.timings = timings
+                presentation_started = perf_counter()
                 presentation, execution_summary, evidence_view = build_task_views(
                     definition=workflow_definition,
                     result=result,
                     bundle=workflow_bundle,
                     routing=dict(routing),
                     timings=timings,
+                )
+                result.metrics.presentation_latency_ms = int(
+                    (perf_counter() - presentation_started) * 1000
                 )
                 result.structured_result.update(
                     {
@@ -916,17 +979,133 @@ class TaskRunner:
                     artifact.content["math_content"] = math_content.model_dump(
                         mode="json"
                     )
-                task.result_content = result.model_dump(mode="json")
                 task.agent_id = agent_id
                 task.provider = result.provider
                 task.status = TaskStatus.COMPLETED
                 task.completed_at = completed_at
                 task.updated_at = completed_at
-                session = await SessionRepository(db).get(task.session_id)
+                task.heartbeat_at = completed_at
+                task.lease_expires_at = None
+                session = await SessionRepository(db).get_for_user(
+                    task.session_id, task.user_id, for_update=True
+                )
                 if session is not None:
                     SessionContextService(self.knowledge_base.settings).update(
                         session, request, result
                     )
+                    assistant_message = await ConversationMessageService(
+                        db
+                    ).append_assistant_for_task(task, result, session=session)
+                    task.assistant_message_id = assistant_message.id
+                    memory_started = perf_counter()
+                    memory_writes = 0
+                    memory_action = "none"
+                    try:
+                        memory_writes, memory_action = await MemoryService(
+                            db
+                        ).process_explicit_intent(
+                            user_id=task.user_id,
+                            session_id=task.session_id,
+                            message_id=task.user_message_id or "",
+                            text=ConversationMessageService.question_text(request),
+                            course_id=task.course_id,
+                            memory_enabled=session.memory_enabled,
+                        )
+                        if memory_action in {"remembered", "forgotten"}:
+                            confirmation = (
+                                "已按你的要求保存这项偏好。"
+                                if memory_action == "remembered"
+                                else (
+                                    f"已忘记 {memory_writes} 项相关记忆。"
+                                    if memory_writes
+                                    else "没有找到需要忘记的匹配记忆。"
+                                )
+                            )
+                            await ConversationMessageService(db).append(
+                                session=session,
+                                user_id=task.user_id,
+                                role=MessageRole.SYSTEM_EVENT,
+                                status=MessageStatus.COMPLETED,
+                                content_text=confirmation,
+                                source_task_id=task.id,
+                                reply_to_message_id=task.user_message_id,
+                                metadata={
+                                    "course_id": task.course_id,
+                                    "memory_action": memory_action,
+                                },
+                            )
+                    except AppError:
+                        logger.info(
+                            "memory_write_rejected task_id=%s reason=policy",
+                            task.id,
+                        )
+                    memory_latency_ms = (perf_counter() - memory_started) * 1000
+                    compaction_count = 0
+                    compaction_latency_ms = 0.0
+                    if (
+                        self.session_compaction is not None
+                        and conversation_bundle is not None
+                    ):
+                        try:
+                            summary, compaction_latency_ms = (
+                                await self.session_compaction.compact_if_needed(
+                                    db,
+                                    session=session,
+                                    bundle=conversation_bundle,
+                                )
+                            )
+                            compaction_count = int(summary is not None)
+                        except Exception:
+                            logger.warning(
+                                "session_compaction_degraded task_id=%s",
+                                task.id,
+                                exc_info=True,
+                            )
+                    if conversation_bundle is not None:
+                        result.metrics = result.metrics.model_copy(
+                            update={
+                                "message_count": session.message_count,
+                                "recent_message_count": len(
+                                    conversation_bundle.recent_messages
+                                ),
+                                "older_message_count": len(
+                                    conversation_bundle.relevant_earlier_messages
+                                ),
+                                "session_summary_used": bool(
+                                    conversation_bundle.session_summary
+                                ),
+                                "summary_version": conversation_bundle.summary_version,
+                                "context_estimated_tokens": (
+                                    conversation_bundle.token_estimate
+                                ),
+                                "context_budget_tokens": conversation_bundle.budget,
+                                "context_budget_ratio": (
+                                    conversation_bundle.token_estimate
+                                    / max(1, conversation_bundle.budget)
+                                ),
+                                "context_trimmed": (
+                                    conversation_bundle.context_trimmed
+                                ),
+                                "compaction_count": compaction_count,
+                                "memory_enabled": session.memory_enabled,
+                                "memory_retrieval_count": len(
+                                    conversation_bundle.active_memories
+                                ),
+                                "memory_write_count": memory_writes,
+                                "context_cache_hit": (
+                                    conversation_bundle.cache_status == "hit"
+                                ),
+                                "context_cache_backend": (
+                                    conversation_bundle.cache_backend
+                                ),
+                                "context_build_latency_ms": (
+                                    conversation_bundle.build_latency_ms
+                                ),
+                                "compaction_latency_ms": compaction_latency_ms,
+                                "memory_latency_ms": memory_latency_ms,
+                            }
+                        )
+                task.result_content = result.model_dump(mode="json")
 
                 for artifact in result.artifacts:
                     db.add(
@@ -958,6 +1137,8 @@ class TaskRunner:
                         model_calls=result.metrics.model_calls,
                         tool_calls=result.metrics.tool_calls,
                         retrieval_calls=result.metrics.retrieval_calls,
+                        trace_id=result.trace_id or result.request_id or None,
+                        metrics_data=result.metrics.model_dump(mode="json"),
                         started_at=started_at,
                         completed_at=completed_at,
                     )
@@ -1090,6 +1271,43 @@ class TaskRunner:
                 "fallback_reason": "ct_course_pack_high_risk",
             }
         )
+
+    def _apply_solver_quality_gate(
+        self, result: AgentResult, request: AgentRequest, agent_id: str
+    ) -> AgentResult:
+        try:
+            definition = self.agent_registry.get(agent_id)
+        except KeyError:
+            return result
+        if (
+            self.course_registry is None
+            or "ACADEMIC_SOLVING" not in definition.task_families
+        ):
+            return result
+        structured = dict(result.structured_result)
+        payload = {
+            key: value
+            for key, value in structured.items()
+            if key in SolverResult.model_fields
+        }
+        payload.setdefault("status", structured.get("status", "partial"))
+        payload.setdefault("course", request.course_id)
+        payload.setdefault("problem_summary", self._knowledge_query(request)[:500])
+        payload.setdefault(
+            "final_answer", structured.get("final_answer", result.answer)
+        )
+        payload.setdefault(
+            "execution_path", structured.get("execution_path", "STANDARD")
+        )
+        try:
+            solver_result = SolverResult.model_validate(payload)
+        except ValueError:
+            return result
+        checked = self.solver_quality_gate.evaluate(
+            solver_result, self.course_registry.get(request.course_id)
+        )
+        structured.update(checked.model_dump(mode="json"))
+        return result.model_copy(update={"structured_result": structured})
 
     async def _retrieve_knowledge(
         self,
@@ -1340,6 +1558,25 @@ class TaskRunner:
         return request.model_copy(update={"options": options})
 
     @staticmethod
+    def _with_conversation_context(
+        request: AgentRequest, bundle: ConversationContextBundle
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options.update(
+            {
+                "conversation_context": bundle.model_dump(mode="json"),
+                "conversation_summary": bundle.safe_prompt_text(),
+                "recent_messages": [
+                    item.model_dump(mode="json")
+                    for item in bundle.recent_messages[-12:]
+                ],
+                "active_memories": list(bundle.active_memories),
+                "working_state": bundle.working_state.model_dump(mode="json"),
+            }
+        )
+        return request.model_copy(update={"options": options})
+
+    @staticmethod
     def _knowledge_query(request: AgentRequest) -> str:
         for key in ("text", "question", "problem", "query", "prompt"):
             value = request.canonical_input.get(key)
@@ -1356,9 +1593,17 @@ class TaskRunner:
             for item in request.attachments
             if item.content_type.startswith("image/")
         ]
-        if len(images) == len(request.attachments):
-            return request
         options = dict(request.options)
+        for key in (
+            "conversation_context",
+            "recent_messages",
+            "active_memories",
+            "working_state",
+        ):
+            options.pop(key, None)
+        options["conversation_summary"] = str(
+            options.get("conversation_summary", "")
+        )[:4000]
         options["local_only_attachments"] = [
             {
                 "file_id": item.file_id,
@@ -1512,6 +1757,8 @@ class TaskRunner:
         task.completed_at = now
         task.updated_at = now
         task.error_message = reason
+        task.failure_category = "cancelled"
+        task.lease_expires_at = None
         if task.started_at:
             db.add(
                 AgentRunModel(
@@ -1531,6 +1778,12 @@ class TaskRunner:
             agent_id=task.agent_id,
             data={"reason": reason},
         )
+        message = await ConversationMessageService(db).append_terminal_failure(
+            task,
+            status=MessageStatus.CANCELLED,
+            reason="任务已取消。",
+        )
+        task.assistant_message_id = message.id if message is not None else None
         await db.commit()
 
     async def _cancel_after_exception(self, task_id: str, reason: str) -> None:
@@ -1557,8 +1810,11 @@ class TaskRunner:
             now = utc_now()
             task.status = TaskStatus.FAILED
             task.error_message = message
+            task.failure_category = code
             task.completed_at = now
             task.updated_at = now
+            task.heartbeat_at = now
+            task.lease_expires_at = None
             db.add(
                 AgentRunModel(
                     task_id=task.id,
@@ -1578,6 +1834,16 @@ class TaskRunner:
                 AgentEventType.TASK_FAILED,
                 agent_id=task.agent_id,
                 data={"error_code": code},
+            )
+            message_model = await ConversationMessageService(
+                db
+            ).append_terminal_failure(
+                task,
+                status=MessageStatus.FAILED,
+                reason=message,
+            )
+            task.assistant_message_id = (
+                message_model.id if message_model is not None else None
             )
             await db.commit()
             logger.warning(

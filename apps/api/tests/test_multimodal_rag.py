@@ -325,3 +325,46 @@ def test_incremental_multimodal_index_reuses_unchanged_points(
     assert (second.text_points, second.image_points) == (0, 0)
     assert (second.reused_text_points, second.reused_image_points) == (1, 1)
     store.close()
+
+
+def test_failed_rebuild_preserves_previous_state_and_vectors(tmp_path: Path) -> None:
+    class LateFailTextProvider(DeterministicFakeTextEmbeddingProvider):
+        def embed_documents(self, texts):  # type: ignore[no-untyped-def]
+            raise RuntimeError("simulated embedding failure")
+
+    config = settings(tmp_path)
+    chunk_path = config.knowledge_index_path / "cache" / "knowledge_base_chunks.jsonl"
+    chunk_path.parent.mkdir(parents=True)
+    chunk_path.write_text(
+        '{"chunk_id":"ct-1","document_id":"doc-1","document_checksum":"sum-1",'
+        '"course_id":"CT","relative_path":"chapter.md","title":"method",'
+        '"chapter":"one","content_type":"method","chunk_index":1,'
+        '"text":"circuit method","source_uri":"kb://CT/chapter.md#chunk-1"}\n',
+        encoding="utf-8",
+    )
+    store = store_for(config)
+    first = MultimodalRAGIndexer(
+        config,
+        DeterministicFakeTextEmbeddingProvider(),
+        DeterministicFakeImageEmbeddingProvider(),
+        store,
+    )
+    first.build(include_images=False)
+    state_before = first.state_path.read_text(encoding="utf-8")
+    count_before = store.health()["text_vector_count"]
+
+    failing = MultimodalRAGIndexer(
+        config,
+        LateFailTextProvider(revision="test-v2"),
+        DeterministicFakeImageEmbeddingProvider(),
+        store,
+    )
+    try:
+        failing.build(include_images=False)
+    except RuntimeError as exc:
+        assert "simulated" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("rebuild should fail")
+    assert failing.state_path.read_text(encoding="utf-8") == state_before
+    assert store.health()["text_vector_count"] == count_before
+    store.close()

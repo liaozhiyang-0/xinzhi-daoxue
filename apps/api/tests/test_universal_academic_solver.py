@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from app.orchestrator.graphs import AcademicProblemSolverGraph
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.model_registry import ModelRegistry
 from app.tools import default_tool_registry
+from PIL import Image
 
 
 def graph() -> AcademicProblemSolverGraph:
@@ -21,6 +23,12 @@ def graph() -> AcademicProblemSolverGraph:
         default_capability_registry(),
         default_tool_registry(),
     )
+
+
+def safe_png_bytes(color: str = "white") -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (160, 100), color).save(output, format="PNG")
+    return output.getvalue()
 
 
 def test_course_registry_loads_first_wave_and_unknown_fallback() -> None:
@@ -33,12 +41,12 @@ def test_course_registry_loads_first_wave_and_unknown_fallback() -> None:
     assert registry.get("not-a-course").course_code == "UNKNOWN"
 
 
-def test_long_academic_route_prefers_qwen_with_spark_fallback() -> None:
+def test_academic_text_reasoning_prefers_spark_with_qwen_fallback() -> None:
     registry = ModelRegistry(Settings(app_env="test", _env_file=None))
     route = registry.get_route("academic_problem_solving")
 
-    assert route.primary == "qwen_vision_primary"
-    assert route.fallback == "spark_reasoner"
+    assert route.primary == "spark_reasoner"
+    assert route.fallback == "qwen_vision_primary"
 
 
 @pytest.mark.parametrize(
@@ -188,6 +196,7 @@ async def test_image_input_uses_vision_summary_without_storing_base64() -> None:
     class FakeModelService:
         registry = FakeRegistry()
         providers = {"fake": type("Provider", (), {"available": True})()}
+        settings = Settings(app_env="test", _env_file=None)
 
         @staticmethod
         async def analyze_images_for_task(
@@ -212,7 +221,7 @@ async def test_image_input_uses_vision_summary_without_storing_base64() -> None:
     class FakeStorage:
         @staticmethod
         async def read(_storage_key: str) -> bytes:
-            return b"safe-image-bytes"
+            return safe_png_bytes()
 
     service = AcademicProblemSolverService(
         graph(),
@@ -242,6 +251,195 @@ async def test_image_input_uses_vision_summary_without_storing_base64() -> None:
     assert result.structured_result["model_execution"]["model"] == "reasoner"
     assert "base64" not in str(result.structured_result).casefold()
     assert result.metrics.model_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_simple_multi_image_solver_stitches_before_vision_model() -> None:
+    class FakeRegistry:
+        @staticmethod
+        def get_route(_task_type: str) -> object:
+            return type("Route", (), {"primary": "model"})()
+
+        @staticmethod
+        def get_model(_alias: str) -> object:
+            return type("Definition", (), {"provider": "fake"})()
+
+        @staticmethod
+        def enabled(_definition: object) -> bool:
+            return True
+
+    class FakeModelService:
+        registry = FakeRegistry()
+        providers = {"fake": type("Provider", (), {"available": True})()}
+        settings = Settings(
+            app_env="test",
+            multi_image_stitch_max_images=4,
+            _env_file=None,
+        )
+
+        def __init__(self) -> None:
+            self.vision_image_counts: list[int] = []
+
+        async def analyze_images_for_task(
+            self, *_args: object, **kwargs: object
+        ) -> ModelResponse:
+            images = kwargs["images"]
+            self.vision_image_counts.append(len(images))
+            return ModelResponse(
+                provider="fake",
+                model="vision",
+                content="组合图包含连续的题干与电路图。",
+                elapsed_ms=5,
+            )
+
+        @staticmethod
+        async def generate_for_task(*_args: object, **_kwargs: object) -> ModelResponse:
+            return ModelResponse(
+                provider="fake",
+                model="reasoner",
+                content="根据组合图信息完成解答。",
+                elapsed_ms=7,
+            )
+
+    class FakeStorage:
+        @staticmethod
+        async def read(storage_key: str) -> bytes:
+            return safe_png_bytes("white" if storage_key.endswith("1") else "gray")
+
+    model_service = FakeModelService()
+    service = AcademicProblemSolverService(
+        graph(),
+        model_service,  # type: ignore[arg-type]
+        FakeStorage(),  # type: ignore[arg-type]
+    )
+    result = await service.run(
+        AgentRequest(
+            session_id="session",
+            user_id="user",
+            course_id="CT",
+            intent=Intent.SOLVE_PROBLEM,
+            canonical_input={"text": "结合两张图完成题目"},
+            attachments=[
+                AttachmentRef(
+                    file_id=str(index),
+                    filename=f"{index}.png",
+                    content_type="image/png",
+                    size_bytes=100,
+                    storage_key=f"local:{index}",
+                )
+                for index in (1, 2)
+            ],
+        )
+    )
+
+    execution = result.structured_result["vision_execution"]
+    assert execution["strategy"] == "stitched"
+    assert execution["source_image_count"] == 2
+    assert execution["model_image_count"] == 1
+    assert model_service.vision_image_counts == [1]
+    assert result.metrics.model_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_complex_multi_image_solver_recognizes_each_then_summarizes() -> None:
+    class FakeRegistry:
+        @staticmethod
+        def get_route(_task_type: str) -> object:
+            return type("Route", (), {"primary": "model"})()
+
+        @staticmethod
+        def get_model(_alias: str) -> object:
+            return type("Definition", (), {"provider": "fake"})()
+
+        @staticmethod
+        def enabled(_definition: object) -> bool:
+            return True
+
+    class FakeModelService:
+        registry = FakeRegistry()
+        providers = {"fake": type("Provider", (), {"available": True})()}
+        settings = Settings(
+            app_env="test",
+            multi_image_stitch_max_images=2,
+            multi_image_fallback_concurrency=2,
+            _env_file=None,
+        )
+
+        def __init__(self) -> None:
+            self.vision_image_counts: list[int] = []
+            self.text_task_types: list[str] = []
+
+        async def analyze_images_for_task(
+            self, *_args: object, **kwargs: object
+        ) -> ModelResponse:
+            images = kwargs["images"]
+            self.vision_image_counts.append(len(images))
+            return ModelResponse(
+                provider="fake",
+                model="vision",
+                content=f"识别结果 {len(self.vision_image_counts)}",
+                elapsed_ms=5,
+            )
+
+        async def generate_for_task(
+            self, task_type: str, **_kwargs: object
+        ) -> ModelResponse:
+            self.text_task_types.append(task_type)
+            content = (
+                "三张图按顺序组成完整题目。"
+                if task_type == "multi_image_summary"
+                else "根据多图汇总完成解答。"
+            )
+            return ModelResponse(
+                provider="fake",
+                model="reasoner",
+                content=content,
+                elapsed_ms=7,
+            )
+
+    class FakeStorage:
+        @staticmethod
+        async def read(storage_key: str) -> bytes:
+            colors = {"local:1": "white", "local:2": "gray", "local:3": "blue"}
+            return safe_png_bytes(colors[storage_key])
+
+    model_service = FakeModelService()
+    service = AcademicProblemSolverService(
+        graph(),
+        model_service,  # type: ignore[arg-type]
+        FakeStorage(),  # type: ignore[arg-type]
+    )
+    result = await service.run(
+        AgentRequest(
+            session_id="session",
+            user_id="user",
+            course_id="CT",
+            intent=Intent.SOLVE_PROBLEM,
+            canonical_input={"text": "结合三张图完成题目"},
+            attachments=[
+                AttachmentRef(
+                    file_id=str(index),
+                    filename=f"{index}.png",
+                    content_type="image/png",
+                    size_bytes=100,
+                    storage_key=f"local:{index}",
+                )
+                for index in (1, 2, 3)
+            ],
+        )
+    )
+
+    execution = result.structured_result["vision_execution"]
+    assert execution["strategy"] == "per_image"
+    assert execution["fallback_reason"] == "image_count_exceeds_stitch_limit"
+    assert execution["source_image_count"] == 3
+    assert execution["summary_execution"]["status"] == "completed"
+    assert model_service.vision_image_counts == [1, 1, 1]
+    assert model_service.text_task_types == [
+        "multi_image_summary",
+        "academic_problem_solving",
+    ]
+    assert result.metrics.model_calls == 5
 
 
 class FakeAcademicRegistry:

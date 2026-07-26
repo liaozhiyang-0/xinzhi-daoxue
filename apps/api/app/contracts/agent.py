@@ -110,6 +110,45 @@ class RunMetrics(BaseModel):
     retrieval_calls: int = Field(default=0, ge=0)
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
+    retrieval_latency_ms: int | None = Field(default=None, ge=0)
+    context_latency_ms: int | None = Field(default=None, ge=0)
+    citation_latency_ms: int | None = Field(default=None, ge=0)
+    fallback_used: bool = False
+    error_type: str | None = None
+    total_latency_ms: int | None = Field(default=None, ge=0)
+    first_token_latency_ms: int | None = Field(default=None, ge=0)
+    route_latency_ms: int | None = Field(default=None, ge=0)
+    rerank_latency_ms: int | None = Field(default=None, ge=0)
+    model_latency_ms: int | None = Field(default=None, ge=0)
+    verification_latency_ms: int | None = Field(default=None, ge=0)
+    presentation_latency_ms: int | None = Field(default=None, ge=0)
+    retry_count: int = Field(default=0, ge=0)
+    provider_used: str = ""
+    degraded_reason: str = ""
+    quality_status: str = "not_checked"
+    final_confidence: float | None = Field(default=None, ge=0, le=1)
+    message_count: int = Field(default=0, ge=0)
+    recent_message_count: int = Field(default=0, ge=0)
+    older_message_count: int = Field(default=0, ge=0)
+    session_summary_used: bool = False
+    summary_version: int = Field(default=0, ge=0)
+    context_estimated_tokens: int = Field(default=0, ge=0)
+    context_budget_tokens: int = Field(default=0, ge=0)
+    context_budget_ratio: float = Field(default=0, ge=0)
+    context_trimmed: bool = False
+    compaction_count: int = Field(default=0, ge=0)
+    memory_enabled: bool = False
+    memory_retrieval_count: int = Field(default=0, ge=0)
+    memory_write_count: int = Field(default=0, ge=0)
+    memory_candidate_count: int = Field(default=0, ge=0)
+    context_cache_hit: bool = False
+    context_cache_backend: str = "none"
+    context_build_latency_ms: float = Field(default=0, ge=0)
+    compaction_latency_ms: float = Field(default=0, ge=0)
+    memory_latency_ms: float = Field(default=0, ge=0)
+    prompt_cache_supported: bool = False
+    prompt_cache_read_tokens: int = Field(default=0, ge=0)
+    prompt_cache_write_tokens: int = Field(default=0, ge=0)
 
 
 class Artifact(BaseModel):

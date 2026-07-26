@@ -5,6 +5,37 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+EvaluationMode = Literal[
+    "offline",
+    "live",
+    "local_deterministic",
+    "local_mock",
+    "real_model",
+    "real_xingchen",
+]
+
+
+class EvaluationProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: Literal["synthetic", "licensed", "private", "public"] = "synthetic"
+    source_name: str = ""
+    license_or_authorization: str = ""
+    imported_at: str | None = None
+    publishable: bool = True
+
+
+class EvaluationRubric(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    routing: float = Field(default=1, ge=0)
+    structure: float = Field(default=1, ge=0)
+    reasoning: float = Field(default=1, ge=0)
+    numeric: float = Field(default=1, ge=0)
+    units: float = Field(default=1, ge=0)
+    citations: float = Field(default=1, ge=0)
+    safety: float = Field(default=1, ge=0)
+
 
 class FailureStage(StrEnum):
     INPUT_NORMALIZATION = "input_normalization"
@@ -87,6 +118,16 @@ class EvaluationCase(BaseModel):
     tags: list[str] = Field(default_factory=list)
     source: str | None = None
     notes: str | None = None
+    input_source: str = "synthetic"
+    expected_route: dict[str, Any] = Field(default_factory=dict)
+    required_knowledge_points: list[str] = Field(default_factory=list)
+    forbidden_errors: list[str] = Field(default_factory=list)
+    reference_solution: dict[str, Any] = Field(default_factory=dict)
+    tolerance: dict[str, float] = Field(default_factory=dict)
+    rubric: EvaluationRubric = Field(default_factory=EvaluationRubric)
+    judge_type: Literal["rule", "human", "model", "hybrid"] = "rule"
+    evidence_requirements: dict[str, Any] = Field(default_factory=dict)
+    provenance: EvaluationProvenance = Field(default_factory=EvaluationProvenance)
 
     @model_validator(mode="after")
     def validate_expectations(self) -> EvaluationCase:
@@ -129,13 +170,16 @@ class EvaluationResult(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     trace_id: str | None = None
     cache_key: str | None = None
+    dimension_scores: dict[str, float] = Field(default_factory=dict)
+    judge_type: str = "rule"
+    evaluation_mode: str = "offline"
 
 
 class SuiteReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "1.0"
-    mode: Literal["offline", "live"]
+    mode: EvaluationMode
     started_at: str
     completed_at: str
     filters: dict[str, Any] = Field(default_factory=dict)

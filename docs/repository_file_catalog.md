@@ -4,8 +4,8 @@
 > 因而不会读取或列出 `.env`、教材原文、向量索引、上传文件、数据库、模型缓存和测试临时文件。
 > 文件职责由路径、模块文档字符串、Markdown 标题和结构化文件顶层字段确定；它是导航清单，不替代源码。
 
-- 可发布文件总数：**566**
-- 活动文件：**552**
+- 可发布文件总数：**615**
+- 活动文件：**601**
 - 历史隔离文件：**14**
 - 重新生成：`python scripts/generate_repository_catalog.py`
 - 漂移检查：`python scripts/generate_repository_catalog.py --check`
@@ -21,18 +21,18 @@
 | `.gitignore` | 1 | 本地密钥、教材、索引、缓存、上传物与运行数据排除规则。 |
 | `agent_configs` | 4 | Agent 注册表、冻结工作流与课程包配置。 |
 | `AGENTS.md` | 1 | 仓库工程、安全、验证和发布约束。 |
-| `apps` | 307 | FastAPI 主应用、静态前端和 Worker 边界。 |
+| `apps` | 337 | FastAPI 主应用、静态前端和 Worker 边界。 |
 | `archive_legacy` | 14 | 退出活动架构的历史资料与代码隔离区。 |
-| `config` | 2 | 跨运行环境的基础配置。 |
+| `config` | 3 | 跨运行环境的基础配置。 |
 | `docker-compose.yml` | 1 | PostgreSQL、Redis、MinIO、Qdrant 与 API 的本地编排。 |
-| `docs` | 114 | 现行架构、运行、评测、知识库与验收文档。 |
-| `evaluation` | 51 | 可复现评测数据集、基线、模式与报告模板。 |
+| `docs` | 120 | 现行架构、运行、评测、知识库与验收文档。 |
+| `evaluation` | 59 | 可复现评测数据集、基线、模式与报告模板。 |
 | `knowledge_config` | 11 | 课程资料元数据、OCR 覆盖和分块策略。 |
 | `local_knowledge` | 4 | 可提交的小型示例知识与目录占位；非教材原文。 |
 | `pytest.ini` | 1 | 根目录 Pytest 发现与运行配置。 |
 | `README.md` | 1 | 项目入口说明、能力边界、配置和启动指引。 |
 | `ruff.toml` | 1 | Ruff 静态检查和格式规则。 |
-| `scripts` | 40 | 启动、诊断、迁移、索引、评测和发布辅助脚本。 |
+| `scripts` | 44 | 启动、诊断、迁移、索引、评测和发布辅助脚本。 |
 | `tests` | 5 | 仓库级配置和静态边界测试。 |
 | `xzd.cmd` | 1 | Windows CMD 统一启动器入口。 |
 | `xzd.ps1` | 1 | Windows PowerShell 统一启动器入口。 |
@@ -43,16 +43,16 @@
 
 | 扩展名 | 数量 |
 |---|---:|
-| `.py` | 282 |
-| `.md` | 99 |
+| `.py` | 316 |
+| `.md` | 105 |
 | `.png` | 38 |
-| `.json` | 35 |
-| `.yaml` | 23 |
+| `.json` | 37 |
+| `.yaml` | 29 |
 | `.woff2` | 20 |
 | `[无扩展名]` | 13 |
 | `.js` | 12 |
 | `.ps1` | 10 |
-| `.html` | 8 |
+| `.html` | 9 |
 | `.sh` | 8 |
 | `.css` | 7 |
 | `.cmd` | 2 |
@@ -131,6 +131,8 @@
 | `20260717_0002_task_lifecycle.py` | 活动 | 增量数据库迁移：20260717 0002 task lifecycle。 |
 | `20260717_0003_task_routing.py` | 活动 | 增量数据库迁移：20260717 0003 task routing。 |
 | `20260718_0004_student_context.py` | 活动 | 增量数据库迁移：20260718 0004 student context。 |
+| `20260722_0005_learning_reliability.py` | 活动 | 增量数据库迁移：20260722 0005 learning reliability。 |
+| `20260723_0006_agent_runtime_foundation.py` | 活动 | 增量数据库迁移：20260723 0006 agent runtime foundation。 |
 
 ### `apps/api/app`
 
@@ -177,7 +179,7 @@
 | `agents.py` | 活动 | Python 模块；定义 AgentDryRunRequest、_lifecycle_status、list_agent_status、show_agent、dry_run_agent。 |
 | `artifacts.py` | 活动 | Python 模块；定义 get_artifact。 |
 | `debug_agents.py` | 活动 | Python 模块；定义 AgentDebugRequest、AgentCompareRequest、_ensure_debug、_agent_request、_result_payload 等。 |
-| `debug_execution.py` | 活动 | Python 模块；定义 _redact、get_execution。 |
+| `debug_execution.py` | 活动 | Python 模块；定义 _redact、get_metrics_summary、get_execution。 |
 | `debug_rag.py` | 活动 | Python 模块；定义 DebugRunRequest、CompareRequest、EvalRequest、_default_prewarm_models、PrewarmRequest 等。 |
 | `debug_traces.py` | 活动 | Python 模块；定义 get_trace。 |
 | `evaluation.py` | 活动 | Python 模块；定义 _require_enabled、list_suites、latest_report。 |
@@ -185,11 +187,13 @@
 | `health.py` | 活动 | Python 模块；定义 health。 |
 | `internal_agents.py` | 活动 | Python 模块；定义 list_internal_agents。 |
 | `knowledge.py` | 活动 | Python 模块；定义 list_sources、search_knowledge、evaluate_query、rag_search、rag_health 等。 |
+| `learning.py` | 活动 | Python 模块；定义 learning_action、learning_states。 |
+| `memories.py` | 活动 | Python 模块；定义 list_memories、create_memory、update_memory、delete_memory、restore_memory 等。 |
 | `models.py` | 活动 | Python 模块；定义 list_models、model_health。 |
 | `orchestration.py` | 活动 | Python 模块；定义 _local_handler_available、_attachments、_submit、create_chat、stream_chat 等。 |
 | `router.py` | 活动 | Python 配置或执行模块。 |
-| `sessions.py` | 活动 | Python 模块；定义 create_session、get_session、_history_item、list_session_tasks。 |
-| `tasks.py` | 活动 | Python 模块；定义 task_read、create_task、get_task、get_task_events、retry_task 等。 |
+| `sessions.py` | 活动 | Python 模块；定义 create_session、list_sessions、search_sessions、get_session、update_session 等。 |
+| `tasks.py` | 活动 | Python 模块；定义 task_read、create_task、_with_conversation_context、get_task、get_task_events 等。 |
 
 ### `apps/api/app/capabilities`
 
@@ -205,9 +209,12 @@
 |---|---|---|
 | `__init__.py` | 活动 | Python 包边界与对外导出。 |
 | `agent.py` | 活动 | Python 模块；定义 utc_now、new_id、UserRole、Scene、Intent 等。 |
-| `api.py` | 活动 | Python 模块；定义 SessionCreate、SessionRead、SessionTaskHistoryItem、TaskRead、EventRead 等。 |
-| `knowledge.py` | 活动 | Python 模块；定义 KnowledgeCourseId、KnowledgeSearchRequest、RAGSearchRequest、RelatedImage、KnowledgeHit 等。 |
+| `api.py` | 活动 | Python 模块；定义 SessionCreate、SessionRead、SessionUpdate、SessionTaskHistoryItem、TaskRead 等。 |
+| `conversation.py` | 活动 | Python 模块；定义 MessageRole、MessageStatus、MessageVisibility、ConversationMessage、SessionWorkingState 等。 |
+| `knowledge.py` | 活动 | Python 模块；定义 KnowledgeCourseId、DocumentManifest、KnowledgeChunk、CitationSupport、KnowledgeSearchRequest 等。 |
+| `learning.py` | 活动 | Python 模块；定义 LearnerKnowledgeState、AnswerReviewResult、PracticeProblem、LearningActionRequest、LearningActionResponse。 |
 | `math_content.py` | 活动 | Python 模块；定义 MathBlockType、MathSegmentType、MathExpression、RichTextSegment、MathRichContent。 |
+| `memory.py` | 活动 | Python 模块；定义 MemoryType、MemoryStatus、MemoryScope、MemoryCreate、MemoryUpdate 等。 |
 | `model.py` | 活动 | Python 模块；定义 ModelUsage、ModelResponse、ProviderHealth、ImageInput、ModelStreamEvent。 |
 | `orchestration.py` | 活动 | Python 模块；定义 ExecutionStatus、InputType、ExecutionMode、TaskFamily、CourseCode 等。 |
 | `routing.py` | 活动 | Python 模块；定义 RouteStatus、RouteCandidate、RouteDecision。 |
@@ -247,7 +254,7 @@
 |---|---|---|
 | `__init__.py` | 活动 | Python 包边界与对外导出。 |
 | `cache.py` | 活动 | Python 模块；定义 EvaluationCache、evaluation_fingerprint。 |
-| `contracts.py` | 活动 | Python 模块；定义 FailureStage、EvaluationErrorType、EvaluationCase、EvaluationResult、SuiteReport。 |
+| `contracts.py` | 活动 | Python 模块；定义 EvaluationProvenance、EvaluationRubric、FailureStage、EvaluationErrorType、EvaluationCase 等。 |
 | `loader.py` | 活动 | Python 模块；定义 EvaluationCaseLoader。 |
 | `reporting.py` | 活动 | Python 模块；定义 build_statistics、write_report、render_markdown、_group_summary、_ratio 等。 |
 | `runner.py` | 活动 | Python 模块；定义 EvaluationRunner。 |
@@ -279,6 +286,7 @@
 | `__init__.py` | 活动 | Python 包边界与对外导出。 |
 | `file_parser.py` | 活动 | Python 模块；定义 detect_input_type。 |
 | `image_batch.py` | 活动 | Python 模块；定义 ImageItemResult、ImageBatchProcessor。 |
+| `image_composer.py` | 活动 | Python 模块；定义 SourceImage、PreparedImageBatch、MultiImageComposer。 |
 | `image_encoder.py` | 活动 | Python 模块；定义 ImageEncoder。 |
 | `pdf_processor.py` | 活动 | Python 模块；定义 PDFPage、PDFExtraction、PDFProcessor。 |
 | `result_merger.py` | 活动 | Python 模块；定义 merge_multimodal_results。 |
@@ -361,7 +369,10 @@
 |---|---|---|
 | `__init__.py` | 活动 | Python 包边界与对外导出。 |
 | `artifacts.py` | 活动 | Python 模块；定义 ArtifactRepository。 |
+| `conversations.py` | 活动 | Python 模块；定义 ConversationRepository。 |
 | `files.py` | 活动 | Python 模块；定义 FileRepository。 |
+| `memories.py` | 活动 | Python 模块；定义 MemoryRepository。 |
+| `runtime_context.py` | 活动 | Python 模块；定义 RuntimeContextRepository。 |
 | `sessions.py` | 活动 | Python 模块；定义 SessionRepository。 |
 | `tasks.py` | 活动 | Python 模块；定义 TaskRepository。 |
 
@@ -375,6 +386,10 @@
 | `agent_runtime.py` | 活动 | Python 模块；定义 MappedAgentInput、ParsedWorkflowOutput、AgentInputMapper、WorkflowOutputParserRegistry、AgentExecutionPlanner 等。 |
 | `agent_scaffold.py` | 活动 | Python 模块；定义 AgentScaffoldSpec、AgentScaffoldService。 |
 | `citation_validator.py` | 活动 | Python 模块；定义 CitationValidationResult、CitationValidator。 |
+| `context_assembly.py` | 活动 | Python 模块；定义 ContextAssemblyService。 |
+| `context_budget.py` | 活动 | Python 模块；定义 BudgetDecision、ContextBudgetManager。 |
+| `context_cache.py` | 活动 | Python 模块；定义 ContextAssemblyCache。 |
+| `conversation_message_service.py` | 活动 | Python 模块；定义 ConversationMessageService。 |
 | `course_pack.py` | 活动 | Python 模块；定义 load_course_pack。 |
 | `event_service.py` | 活动 | Python 模块；定义 append_task_event。 |
 | `general_question_service.py` | 活动 | Python 模块；定义 GeneralQuestionService。 |
@@ -386,10 +401,13 @@
 | `knowledge_index.py` | 活动 | Python 模块；定义 ChunkRecord、BuildResult、_split_long_block、markdown_blocks、semantic_chunks 等。 |
 | `knowledge_qa_service.py` | 活动 | Python 模块；定义 KnowledgeQAExecution、KnowledgeQAService。 |
 | `knowledge_resources.py` | 活动 | Python 模块；定义 resolve_course_resource、resolve_kb_image_uri。 |
+| `learning_loop.py` | 活动 | Python 模块；定义 LearningLoopService。 |
 | `math_formatting_service.py` | 活动 | Python 模块；定义 _ProcessedChunk、MathFormattingService。 |
 | `math_symbol_dictionary.py` | 活动 | Python 配置或执行模块。 |
+| `memory_service.py` | 活动 | Python 模块；定义 MemoryService。 |
 | `model_registry.py` | 活动 | Python 模块；定义 ModelDefinition、ModelRoute、ModelRegistry。 |
 | `model_service.py` | 活动 | Python 模块；定义 ModelService。 |
+| `practice_generation.py` | 活动 | Python 模块；定义 PracticeGenerationService。 |
 | `query_rewrite.py` | 活动 | Python 模块；定义 rewrite_retrieval_query。 |
 | `rag_debug.py` | 活动 | Python 模块；定义 utc_iso、DebugTraceStore、RAGDebugService。 |
 | `rag_index.py` | 活动 | Python 模块；定义 IndexVersionInfo、RAGBuildResult、load_jsonl、MultimodalRAGIndexer。 |
@@ -398,11 +416,17 @@
 | `rag_runtime.py` | 活动 | Python 模块；定义 create_text_embedding_provider、create_image_embedding_provider、create_reranker_provider、create_vector_store。 |
 | `request_materials.py` | 活动 | Python 模块；定义 RequestMaterialExtractor。 |
 | `retrieval_context.py` | 活动 | Python 模块；定义 EvidenceQuality、EvidenceQualityEvaluator、RetrievalContextService。 |
+| `runtime_safety.py` | 活动 | Python 模块；定义 sanitize_runtime_text、contains_sensitive_information。 |
+| `session_compaction.py` | 活动 | Python 模块；定义 SessionCompactionService。 |
 | `session_context.py` | 活动 | Python 模块；定义 SessionContextService。 |
 | `session_service.py` | 活动 | Python 模块；定义 SessionService。 |
+| `session_working_state.py` | 活动 | Python 模块；定义 SessionWorkingStateService。 |
+| `solver_quality_gate.py` | 活动 | Python 模块；定义 SolverQualityGateService。 |
 | `storage.py` | 活动 | Python 模块；定义 sanitize_filename、StorageService。 |
+| `student_answer_review.py` | 活动 | Python 模块；定义 _tokens、StudentAnswerReviewService。 |
 | `task_control_service.py` | 活动 | Python 模块；定义 TaskControlService。 |
 | `task_creation_service.py` | 活动 | Python 模块；定义 TaskCreationService。 |
+| `task_executor.py` | 活动 | Python 模块；定义 TaskExecutor、LocalTaskExecutor、QueueTaskExecutor。 |
 | `task_presentation.py` | 活动 | Python 模块；定义 build_task_views、_evidence_view、_execution_steps。 |
 | `task_query_service.py` | 活动 | Python 模块；定义 TaskQueryService。 |
 | `task_runner.py` | 活动 | Python 模块；定义 utc_now、elapsed_ms、TaskRunner。 |
@@ -495,6 +519,7 @@
 | `test_agent_registry.py` | 活动 | 回归测试：agent registry。 |
 | `test_agent_result_governance.py` | 活动 | 回归测试：agent result governance。 |
 | `test_agent_runtime.py` | 活动 | 回归测试：agent runtime。 |
+| `test_agent_runtime_foundation.py` | 活动 | 回归测试：agent runtime foundation。 |
 | `test_agent_scaffold.py` | 活动 | 回归测试：agent scaffold。 |
 | `test_attachment_contract.py` | 活动 | 回归测试：attachment contract。 |
 | `test_automatic_routing_fixture.py` | 活动 | 回归测试：automatic routing fixture。 |
@@ -525,7 +550,9 @@
 | `test_knowledge_api.py` | 活动 | 回归测试：knowledge api。 |
 | `test_knowledge_base_service.py` | 活动 | 回归测试：knowledge base service。 |
 | `test_knowledge_index_pipeline.py` | 活动 | 回归测试：knowledge index pipeline。 |
+| `test_knowledge_lifecycle.py` | 活动 | 回归测试：knowledge lifecycle。 |
 | `test_knowledge_qa_service.py` | 活动 | 回归测试：knowledge qa service。 |
+| `test_learning_loop.py` | 活动 | 回归测试：learning loop。 |
 | `test_legacy_cleanup.py` | 活动 | 回归测试：legacy cleanup。 |
 | `test_local_solver_graph.py` | 活动 | 回归测试：local solver graph。 |
 | `test_math_formatting_service.py` | 活动 | 回归测试：math formatting service。 |
@@ -548,6 +575,7 @@
 | `test_provider_factory.py` | 活动 | 回归测试：provider factory。 |
 | `test_query_normalization.py` | 活动 | 回归测试：query normalization。 |
 | `test_rag_debug_api.py` | 活动 | 回归测试：rag debug api。 |
+| `test_real_evaluation_framework.py` | 活动 | 回归测试：real evaluation framework。 |
 | `test_real_rag_models.py` | 活动 | 回归测试：real rag models。 |
 | `test_real_xingchen_learn.py` | 活动 | 回归测试：real xingchen learn。 |
 | `test_real_xingchen_solver.py` | 活动 | 回归测试：real xingchen solver。 |
@@ -559,6 +587,7 @@
 | `test_sensitive_files_not_tracked.py` | 活动 | 回归测试：sensitive files not tracked。 |
 | `test_sensitive_values_not_logged.py` | 活动 | 回归测试：sensitive values not logged。 |
 | `test_solver_not_used_for_ae_de.py` | 活动 | 回归测试：solver not used for ae de。 |
+| `test_solver_quality_gate.py` | 活动 | 回归测试：solver quality gate。 |
 | `test_spark_llm_provider.py` | 活动 | 回归测试：spark llm provider。 |
 | `test_sse_event_order.py` | 活动 | 回归测试：sse event order。 |
 | `test_sse_events.py` | 活动 | 回归测试：sse events。 |
@@ -570,6 +599,7 @@
 | `test_task_api.py` | 活动 | 回归测试：task api。 |
 | `test_task_cancel.py` | 活动 | 回归测试：task cancel。 |
 | `test_task_creation_is_non_blocking.py` | 活动 | 回归测试：task creation is non blocking。 |
+| `test_task_executor_reliability.py` | 活动 | 回归测试：task executor reliability。 |
 | `test_task_idempotency.py` | 活动 | 回归测试：task idempotency。 |
 | `test_task_presentation.py` | 活动 | 回归测试：task presentation。 |
 | `test_task_retry.py` | 活动 | 回归测试：task retry。 |
@@ -653,6 +683,7 @@
 
 | 文件 | 状态 | 功能 |
 |---|---|---|
+| `learning_mastery.yaml` | 活动 | 结构化配置或数据；顶层字段：version、initial_score、initial_confidence、correct_delta、partial_delta、incorrect_delta。 |
 | `model_routes.yaml` | 活动 | 结构化配置或数据；顶层字段：routes。 |
 | `models.yaml` | 活动 | 结构化配置或数据；顶层字段：models。 |
 
@@ -667,6 +698,7 @@
 | `architecture_migration_audit.md` | 活动 | 文档：架构迁移审计。 |
 | `capability_pack_design.md` | 活动 | 文档：CapabilityPack 设计。 |
 | `course_pack_design.md` | 活动 | 文档：CoursePack 设计。 |
+| `developer_code_navigation.md` | 活动 | 文档：芯智导学代码级开发手册。 |
 | `development_guide.md` | 活动 | 文档：Development Guide。 |
 | `evaluation_framework.md` | 活动 | 文档：多学科评测框架。 |
 | `high_risk_verification.md` | 活动 | 文档：HIGH_RISK 校验与局部补丁。 |
@@ -688,12 +720,13 @@
 
 | 文件 | 状态 | 功能 |
 |---|---|---|
-| `openapi.json` | 活动 | 结构化配置或数据；顶层字段：openapi、info、paths、components。 |
+| `openapi.json` | 活动 | 结构化配置或数据文件（内容需由对应加载器校验）。 |
 
 ### `docs/architecture`
 
 | 文件 | 状态 | 功能 |
 |---|---|---|
+| `agent_runtime_foundation.md` | 活动 | 文档：Agent Runtime Foundation v1。 |
 | `automatic_agent_routing_architecture.md` | 活动 | 文档：自然语言自动调度架构。 |
 | `multi_agent_runtime_architecture.md` | 活动 | 文档：多工作流本地运行架构。 |
 | `README.md` | 活动 | 文档：架构文档索引。 |
@@ -720,6 +753,7 @@
 | 文件 | 状态 | 功能 |
 |---|---|---|
 | `agent_debug_console_guide.md` | 活动 | 文档：Agent 接入控制台指南。 |
+| `conversation_memory_guide.md` | 活动 | 文档：会话与长期记忆部署指南。 |
 | `debug_console_ui_guide.md` | 活动 | 文档：Debug 控制台 UI 指南。 |
 | `debug_page.md` | 活动 | 文档：本地演示页面。 |
 | `execution_debug_console_guide.md` | 活动 | 文档：统一 Execution Debug 使用指南。 |
@@ -740,6 +774,18 @@
 | `web_design_system.md` | 活动 | 文档：芯智导学 Web 设计系统。 |
 | `workspace_ui_design.md` | 活动 | 文档：智能任务工作台 UI 设计。 |
 
+### `docs/evaluation`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `real_evaluation_dataset_guide.md` | 活动 | 文档：真实评测数据集接入指南。 |
+
+### `docs/implementation`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `learning_quality_loop.md` | 活动 | 文档：学习质量闭环实现说明。 |
+
 ### `docs/knowledge`
 
 | 文件 | 状态 | 功能 |
@@ -750,6 +796,12 @@
 | `local_knowledge_base_integration.md` | 活动 | 文档：本地知识库接入说明。 |
 | `multimodal_rag_integration_guide.md` | 活动 | 文档：多模态 RAG 集成指南。 |
 | `rag_debug_site_guide.md` | 活动 | 文档：芯智导学多模态 RAG 调试台使用指南。 |
+
+### `docs/presentations`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `xinzhi_project_meeting_20260723.html` | 活动 | 静态前端页面：芯智导学｜项目进展、架构与下一阶段计划。 |
 
 ### `docs/reports`
 
@@ -860,6 +912,12 @@
 | `de.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
 | `ss.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
 
+### `evaluation/cases/agent_runtime`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `synthetic_runtime.yaml` | 活动 | 结构化配置或数据；顶层字段：dataset、metrics、cases。 |
+
 ### `evaluation/cases/boundary`
 
 | 文件 | 状态 | 功能 |
@@ -871,6 +929,18 @@
 | 文件 | 状态 | 功能 |
 |---|---|---|
 | `electronic_courses.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
+
+### `evaluation/cases/learning_loop/CT`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `synthetic_learning.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
+
+### `evaluation/cases/task_reliability`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `synthetic_reliability.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
 
 ### `evaluation/circuit_theory`
 
@@ -990,11 +1060,36 @@
 | `summarize_results.py` | 活动 | Python 模块；定义 main。 |
 | `validate_cases.py` | 活动 | Python 模块；定义 validate_case、main。 |
 
+### `evaluation/manifests`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `dataset_manifest.yaml` | 活动 | 结构化配置或数据；顶层字段：schema_version、datasets。 |
+
 ### `evaluation/model_agents`
 
 | 文件 | 状态 | 功能 |
 |---|---|---|
 | `cases.yaml` | 活动 | 结构化配置或数据；顶层字段：cases。 |
+
+### `evaluation/private_cases`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `README.md` | 活动 | 文档：私有评测数据目录。 |
+
+### `evaluation/rubrics`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `default.yaml` | 活动 | 结构化配置或数据；顶层字段：version、description、weights。 |
+
+### `evaluation/schemas`
+
+| 文件 | 状态 | 功能 |
+|---|---|---|
+| `evaluation_case.schema.json` | 活动 | 结构化配置或数据；顶层字段：$schema、title、type、required、properties、additionalProperties。 |
+| `evaluation_rubric.schema.json` | 活动 | 结构化配置或数据；顶层字段：$schema、title、type、properties、additionalProperties。 |
 
 ### `knowledge_config`
 
@@ -1057,11 +1152,13 @@
 |---|---|---|
 | `__init__.py` | 活动 | Repository automation helpers that are importable by tests. |
 | `agent_cli.py` | 活动 | Python 模块；定义 _print、_summary、_dry_run、build_parser、_csv 等。 |
+| `benchmark_agent_runtime.py` | 活动 | Local synthetic benchmark for conversation-context overhead. |
 | `benchmark_auto_routing.py` | 活动 | Python 模块；定义 percentile_95、main。 |
 | `check.ps1` | 活动 | 跨平台运行脚本：check。 |
 | `check.sh` | 活动 | 跨平台运行脚本：check。 |
 | `check_environment.py` | 活动 | Python 模块；定义 main。 |
 | `check_sensitive_files.py` | 活动 | Python 模块；定义 tracked_files、scan、main。 |
+| `compare_evaluation_reports.py` | 活动 | Python 模块；定义 load、main。 |
 | `demo_cli.py` | 活动 | Python 模块；定义 request_json、preflight、_check_routes、_check_rag_status、_check_agent_status 等。 |
 | `dev.ps1` | 活动 | 跨平台运行脚本：dev。 |
 | `dev.sh` | 活动 | 跨平台运行脚本：dev。 |
@@ -1072,6 +1169,7 @@
 | `evaluate_model_agents.py` | 活动 | Python 模块；定义 parse_args、load_cases、run、validate_result、get_path 等。 |
 | `export_openapi.py` | 活动 | Python 模块；定义 export_openapi、main。 |
 | `generate_repository_catalog.py` | 活动 | Generate the deterministic, Git-scoped repository file catalog. |
+| `import_evaluation_cases.py` | 活动 | Python 模块；定义 load_rows、main。 |
 | `init_db.ps1` | 活动 | 跨平台运行脚本：init db。 |
 | `init_db.sh` | 活动 | 跨平台运行脚本：init db。 |
 | `inspect_xingchen_workflow.py` | 活动 | Python 模块；定义 PublicNode、first_value、find_named_list、sensitive_paths、private_content 等。 |
@@ -1081,7 +1179,7 @@
 | `move_orphan_images.py` | 活动 | Python 模块；定义 _is_within、_load_jsonl、collect_moves、execute、main。 |
 | `rag_cpu_profile.ps1` | 活动 | 跨平台运行脚本：rag cpu profile。 |
 | `rebuild_index.py` | 活动 | Python 配置或执行模块。 |
-| `run_evaluation.py` | 活动 | Python 模块；定义 parse_args、validate_paid_guard、validate_cases、evaluation_settings、run 等。 |
+| `run_evaluation.py` | 活动 | Python 模块；定义 parse_args、validate_paid_guard、validate_cases、_evaluation_schema_revision、evaluation_settings 等。 |
 | `run_regression.py` | 活动 | Python 模块；定义 main。 |
 | `run_web_ui_browser_acceptance.js` | 活动 | 静态前端交互逻辑：run web ui browser acceptance。 |
 | `smoke_test_models.py` | 活动 | Python 模块；定义 ResultRow、parser、response_row、run、text_call 等。 |
@@ -1094,6 +1192,7 @@
 | `test.sh` | 活动 | 跨平台运行脚本：test。 |
 | `validate_completed_workflows.py` | 活动 | Python 模块；定义 cases、run、main。 |
 | `validate_config.py` | 活动 | Python 模块；定义 safe_status、validate、main。 |
+| `validate_evaluation_cases.py` | 活动 | Python 模块；定义 main。 |
 | `xingchen_smoke_test.py` | 活动 | Python 模块；定义 run。 |
 
 ### `tests/regression/cases`

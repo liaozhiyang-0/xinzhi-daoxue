@@ -11,14 +11,24 @@ from app.contracts import (
     RouteStatus,
     new_id,
 )
+from app.contracts.conversation import MessageStatus
 from app.core.errors import ConflictError, NotFoundError
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
+from app.services.conversation_message_service import ConversationMessageService
 from app.services.event_service import append_task_event
 from app.services.task_creation_service import TaskCreationService
 
-RETRYABLE_STATUSES = {TaskStatus.FAILED, TaskStatus.CANCELLED}
+RETRYABLE_FAILURES = {
+    "background_task_error",
+    "model_provider_error",
+    "provider_error",
+    "provider_timeout",
+    "runner_shutdown",
+    "xingchen_connection_error",
+    "xingchen_timeout",
+}
 TERMINAL_STATUSES = {
     TaskStatus.COMPLETED,
     TaskStatus.FAILED,
@@ -36,14 +46,31 @@ class TaskControlService:
         original = await self.repository.get(task_id, for_update=True)
         if original is None:
             raise NotFoundError("任务不存在", details={"task_id": task_id})
-        if original.status not in RETRYABLE_STATUSES:
+        if original.status != TaskStatus.FAILED:
             raise ConflictError(
-                "只有 failed 或 cancelled 任务可以重试",
+                "只有可重试失败任务可以重试",
                 details={"status": original.status.value},
+            )
+        if original.failure_category not in RETRYABLE_FAILURES:
+            raise ConflictError(
+                "该错误类别不可重试",
+                details={"failure_category": original.failure_category},
+            )
+        if original.attempt >= original.max_attempts:
+            raise ConflictError(
+                "任务已达到最大尝试次数",
+                details={
+                    "attempt": original.attempt,
+                    "max_attempts": original.max_attempts,
+                },
             )
 
         payload = dict(original.input_content)
         payload["task_id"] = new_id("task")
+        options = dict(payload.get("options") or {})
+        options.pop("idempotency_key", None)
+        options["max_attempts"] = original.max_attempts
+        payload["options"] = options
         request = AgentRequest.model_validate(payload)
         route_context = request.options.get("_routing", {})
         new_task = await TaskCreationService(
@@ -66,6 +93,7 @@ class TaskControlService:
             ),
             parent_task_id=original.id,
             attempt=original.attempt + 1,
+            existing_user_message_id=original.user_message_id,
         )
         await append_task_event(
             self.db,
@@ -88,6 +116,7 @@ class TaskControlService:
             )
         if not task.cancellation_requested:
             task.cancellation_requested = True
+            task.cancel_requested_at = datetime.now(UTC)
             await append_task_event(
                 self.db,
                 task.id,
@@ -106,6 +135,14 @@ class TaskControlService:
                 agent_id=task.agent_id,
                 data={"reason": "queued task cancelled"},
             )
+            message = await ConversationMessageService(
+                self.db
+            ).append_terminal_failure(
+                task,
+                status=MessageStatus.CANCELLED,
+                reason="任务已取消。",
+            )
+            task.assistant_message_id = message.id if message is not None else None
         await self.provider.cancel(task.id)
         await self.db.commit()
         return task

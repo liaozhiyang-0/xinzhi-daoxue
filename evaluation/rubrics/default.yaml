@@ -1,0 +1,10 @@
+version: 1
+description: 默认规则评分权重；各 case 可显式覆盖。
+weights:
+  routing: 1.0
+  structure: 1.0
+  reasoning: 1.5
+  numeric: 1.5
+  units: 1.0
+  citations: 1.0
+  safety: 1.5

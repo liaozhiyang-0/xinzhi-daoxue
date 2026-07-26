@@ -9,6 +9,7 @@ from app.contracts.solver import AcademicProblem, AcademicSolutionResult, ToolRe
 from app.courses import CourseRegistry
 from app.orchestrator.state import XZDGraphState
 from app.services.high_risk_verification import HighRiskVerificationService
+from app.services.solver_quality_gate import SolverQualityGateService
 from app.tools import ToolRegistry
 
 ExecutionPath = Literal["FAST", "STANDARD", "HIGH_RISK", "CONDITIONAL", "FALLBACK"]
@@ -63,6 +64,7 @@ class AcademicProblemSolverGraph:
         self.capabilities = capabilities
         self.tools = tools
         self.high_risk_verifier = HighRiskVerificationService()
+        self.quality_gate = SolverQualityGateService()
         self._compiled = self._compile_langgraph()
 
     def run(
@@ -200,6 +202,7 @@ class AcademicProblemSolverGraph:
             )
         if path == "HIGH_RISK":
             result = self.verify_high_risk(normalized, result, tool_results)
+        result = self.quality_gate.evaluate(result, pack)
         if state is not None:
             state.update(
                 {

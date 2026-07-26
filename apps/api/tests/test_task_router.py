@@ -25,8 +25,9 @@ def test_learning_routes_to_local_knowledge_agent(course_id: str, intent: str) -
     assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert decision.retrieval_required is True
     assert decision.provider_required is False
-    assert decision.route_source == "local_degraded"
-    assert decision.original_agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert decision.route_source == "local_fast"
+    assert decision.original_agent_id is None
+    assert decision.fallback_used is False
 
 
 def test_ct_solve_routes_to_solver() -> None:

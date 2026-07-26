@@ -32,6 +32,7 @@ def _pack(
     *,
     status: str = "skeleton",
     fallback: CourseFallbackConfig = CourseFallbackConfig(),
+    verification_rules: tuple[str, ...] = (),
 ) -> BaseCoursePack:
     return BaseCoursePack(
         course_code=code,
@@ -39,6 +40,7 @@ def _pack(
         supported_problem_types=problem_types,
         supported_capabilities=capabilities,
         topic_keywords=keywords or {},
+        verification_rules=verification_rules,
         implementation_status=status,
         fallback=fallback,
     )
@@ -84,6 +86,13 @@ def default_course_registry() -> CourseRegistry:
             },
             status="implemented",
             fallback=CourseFallbackConfig("SOLVER_CT_V1", True),
+            verification_rules=(
+                "kcl_kvl_consistency",
+                "reference_direction",
+                "unit_consistency",
+                "initial_condition_continuity",
+                "power_energy_balance",
+            ),
         )
     )
     registry.register(
@@ -115,6 +124,12 @@ def default_course_registry() -> CourseRegistry:
                 "op_amp": ("运放", "运算放大器"),
             },
             status="basic",
+            verification_rules=(
+                "operating_region",
+                "small_signal_prerequisite",
+                "feedback_polarity",
+                "unit_consistency",
+            ),
         )
     )
     registry.register(
@@ -145,6 +160,12 @@ def default_course_registry() -> CourseRegistry:
                 "verilog_analysis": ("Verilog",),
             },
             status="basic",
+            verification_rules=(
+                "logic_equivalence",
+                "truth_table_coverage",
+                "state_transition_consistency",
+                "timing_condition",
+            ),
         )
     )
     registry.register(
@@ -174,6 +195,12 @@ def default_course_registry() -> CourseRegistry:
                 "laplace_transform": ("拉普拉斯",),
             },
             status="basic",
+            verification_rules=(
+                "transform_domain_condition",
+                "initial_final_value_condition",
+                "causality_stability",
+                "unit_consistency",
+            ),
         )
     )
     minimal = {

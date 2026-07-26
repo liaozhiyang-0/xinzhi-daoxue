@@ -23,4 +23,5 @@ def test_local_knowledge_qa_runs_through_unified_task_api(api, client) -> None:
     assert task["status"] == "completed"
     assert task["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert task["result_content"]["provider"] == "local"
+    assert task["result_content"]["cloud_status"] == "not_required"
     assert task["result_content"]["structured_result"]["mode"] == "retrieval_only"

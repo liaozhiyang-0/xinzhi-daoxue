@@ -14,13 +14,19 @@ class SessionContextService:
     def apply(self, session: SessionModel, request: AgentRequest) -> AgentRequest:
         stored = dict(session.context_data or {})
         previous_course = str(stored.get("active_course", "")).upper()
+        requested_course = request.course_id.upper()
+        effective_course = (
+            previous_course
+            if requested_course in {"", "AUTO", "UNKNOWN"} and previous_course
+            else requested_course
+        )
         switched = bool(
-            previous_course and previous_course != request.course_id.upper()
+            previous_course and previous_course != effective_course
         )
         options = dict(request.options)
         options.update(
             {
-                "active_course": request.course_id.upper(),
+                "active_course": effective_course,
                 "previous_course": previous_course,
                 "previous_intent": str(stored.get("previous_intent", "")),
                 "previous_agent": str(stored.get("previous_agent", "")),
@@ -31,7 +37,14 @@ class SessionContextService:
                     "" if switched else str(stored.get("previous_business_summary", ""))
                 ),
                 "conversation_summary": (
-                    "" if switched else str(stored.get("conversation_summary", ""))
+                    ""
+                    if switched
+                    else str(
+                        options.get(
+                            "conversation_summary",
+                            stored.get("conversation_summary", ""),
+                        )
+                    )
                 ),
                 "last_evidence_ids": (
                     [] if switched else list(stored.get("last_evidence_ids", []))[:10]

@@ -90,9 +90,24 @@ class ManifestEntry:
     warnings: tuple[str, ...]
     modified_time: str
     active: bool = True
+    document_version: str = "v1"
+    source_file: str = ""
+    source_relative_path: str = ""
+    content_hash: str = ""
+    page_count: int | None = None
+    source_updated_at: str = ""
+    indexed_at: str | None = None
+    is_active: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
+        payload["source_file"] = self.source_file or self.file_name
+        payload["source_relative_path"] = (
+            self.source_relative_path or self.relative_path
+        )
+        payload["content_hash"] = self.content_hash or self.checksum
+        payload["source_updated_at"] = self.source_updated_at or self.modified_time
+        payload["is_active"] = self.active
         payload["referenced_images"] = list(self.referenced_images)
         payload["referring_documents"] = list(self.referring_documents)
         payload["warnings"] = list(self.warnings)
@@ -437,6 +452,7 @@ class KnowledgeAuditScanner:
         self._apply_image_relationships(result, path_to_entry)
         self._add_duplicate_issues(result, checksum_to_paths, names)
         self._add_near_duplicate_issues(result)
+        self._apply_document_versions(result, previous_manifest)
         self._append_missing_previous(result, previous_manifest)
         result.manifest.sort(key=lambda item: (item.course_id, item.relative_path))
         result.images.sort(key=lambda item: (item.course_id, item.source_path))
@@ -538,6 +554,12 @@ class KnowledgeAuditScanner:
                 index_status=index_status,
                 warnings=tuple(dict.fromkeys(warnings)),
                 modified_time=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
+                source_file=path.name,
+                source_relative_path=relative,
+                content_hash=digest,
+                source_updated_at=datetime.fromtimestamp(
+                    stat.st_mtime, tz=UTC
+                ).isoformat(),
             ),
             references,
             issues,
@@ -816,6 +838,57 @@ class KnowledgeAuditScanner:
                     )
 
     @staticmethod
+    def _apply_document_versions(
+        result: AuditResult,
+        previous_manifest: Iterable[dict[str, Any]] | None,
+    ) -> None:
+        if previous_manifest is None:
+            return
+        previous = {
+            str(item.get("document_id", "")): item
+            for item in previous_manifest
+            if item.get("document_id")
+            and item.get("active", item.get("is_active", True))
+        }
+        updated: list[ManifestEntry] = []
+        retired: list[ManifestEntry] = []
+        for entry in result.manifest:
+            old = previous.get(entry.document_id)
+            if old is None:
+                updated.append(entry)
+                continue
+            old_version = str(old.get("document_version", "v1"))
+            old_checksum = str(old.get("checksum", old.get("content_hash", "")))
+            if old_checksum == entry.checksum:
+                updated.append(replace(entry, document_version=old_version))
+                continue
+            try:
+                next_number = int(old_version.removeprefix("v")) + 1
+            except ValueError:
+                next_number = 2
+            updated.append(replace(entry, document_version=f"v{next_number}"))
+            payload = dict(old)
+            payload.update({"active": False, "is_active": False})
+            try:
+                retired.append(
+                    ManifestEntry(
+                        **{
+                            **payload,
+                            "referenced_images": tuple(
+                                payload.get("referenced_images", [])
+                            ),
+                            "referring_documents": tuple(
+                                payload.get("referring_documents", [])
+                            ),
+                            "warnings": tuple(payload.get("warnings", [])),
+                        }
+                    )
+                )
+            except TypeError:
+                continue
+        result.manifest = [*updated, *retired]
+
+    @staticmethod
     def _append_missing_previous(
         result: AuditResult,
         previous_manifest: Iterable[dict[str, Any]] | None,
@@ -831,6 +904,7 @@ class KnowledgeAuditScanner:
             payload.update(
                 {
                     "active": False,
+                    "is_active": False,
                     "parse_status": "missing",
                     "quality_status": "unavailable",
                     "index_status": "do_not_index",

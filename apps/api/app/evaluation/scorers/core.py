@@ -125,7 +125,24 @@ class EvaluationScorer:
             citations_passed,
             safety_passed,
         )
-        score = round(sum(checks) / len(checks) * 100, 2)
+        dimension_scores = {
+            "routing": 100.0
+            if route_passed and course_passed and agent_passed
+            else 0.0,
+            "structure": 100.0 if structure_passed and execution_path_passed else 0.0,
+            "reasoning": 100.0 if answer_passed else 0.0,
+            "numeric": 100.0 if numeric_passed else 0.0,
+            "units": 100.0 if answer_passed else 0.0,
+            "citations": 100.0 if citations_passed else 0.0,
+            "safety": 100.0 if safety_passed and tools_passed else 0.0,
+        }
+        weights = case.rubric.model_dump()
+        weight_total = sum(float(value) for value in weights.values()) or 1.0
+        score = round(
+            sum(dimension_scores[key] * float(weights[key]) for key in weights)
+            / weight_total,
+            2,
+        )
         error_types = self._errors(
             route_passed=route_passed,
             course_passed=course_passed,
@@ -177,6 +194,8 @@ class EvaluationScorer:
             tool_calls=tool_calls,
             trace_id=trace_id,
             cache_key=cache_key,
+            dimension_scores=dimension_scores,
+            judge_type=case.judge_type,
         )
 
     @staticmethod

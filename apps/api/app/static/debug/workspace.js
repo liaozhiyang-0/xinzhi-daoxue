@@ -11,6 +11,10 @@ const courseLabels = {
 const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_writing: "学术写作", data_analysis: "数据分析" };
 const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_writing: "学术写作", data_analysis: "数据分析" };
 const ragLabels = { grounded_generation: "课程资料支撑", method_reference: "方法参考", reference_only: "资料参考", user_sources_only: "用户材料", data_context_only: "数据上下文", no_rag: "无需课程检索" };
+const maxMultiImageFiles = 8;
+let pendingMaterialFiles = [];
+let materialPreviewUrls = [];
+let pendingLearningFollowUp = null;
 const state = {
   sessionId: localStorage.getItem("xinzhi_student_session") || "",
   userId: localStorage.getItem("xinzhi_student_user") || `student_${crypto.randomUUID()}`,
@@ -21,6 +25,7 @@ const state = {
   evidence: [],
   currentTask: null,
   archivedTaskIds: new Set(),
+  showArchived: false,
 };
 localStorage.setItem("xinzhi_student_user", state.userId);
 
@@ -32,11 +37,64 @@ async function ensureSession(force = false) {
   if (state.sessionId && !force) return state.sessionId;
   const session = await api("/api/v1/sessions", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: state.userId, course_id: state.activeCourse === "AUTO" ? "CT" : state.activeCourse, title: "统一任务会话" }),
+    body: JSON.stringify({ user_id: state.userId, course_id: state.activeCourse === "AUTO" ? "CT" : state.activeCourse, title: "" }),
   });
   state.sessionId = session.id;
   localStorage.setItem("xinzhi_student_session", session.id);
+  await loadSessionList();
   return session.id;
+}
+
+function resetConversation() {
+  state.currentTask = null; state.archivedTaskIds.clear();
+  $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
+  renderEvidence([], {}); renderProcess([]); $("#context-info").replaceChildren();
+}
+
+async function newSession() {
+  state.sessionId = ""; localStorage.removeItem("xinzhi_student_session");
+  resetConversation(); await ensureSession(true); toast("已新建会话");
+}
+
+function sessionItem(session) {
+  const active = session.id === state.sessionId ? " active" : "";
+  const button = el("article", { class: `session-item${active}`, tabindex: "0", "data-session-id": session.id }, [
+    el("strong", { text: session.title || "新会话" }),
+    el("button", { class: "session-archive", type: "button", title: session.archived_at ? "恢复" : "归档", text: session.archived_at ? "↩" : "×" }),
+    el("small", { text: `${courseLabels[session.course_id] || session.course_id} · ${session.message_count || 0} 条消息` }),
+  ]);
+  button.addEventListener("click", async (event) => {
+    if (event.target.closest(".session-archive")) {
+      event.stopPropagation();
+      const action = session.archived_at ? "restore" : "archive";
+      await api(`/api/v1/sessions/${session.id}/${action}?user_id=${encodeURIComponent(state.userId)}`, { method: "POST" });
+      if (!session.archived_at && state.sessionId === session.id) await newSession();
+      await loadSessionList(); return;
+    }
+    state.sessionId = session.id; localStorage.setItem("xinzhi_student_session", session.id);
+    resetConversation(); await loadSessionHistory(); await loadSessionList();
+  });
+  button.querySelector("strong").addEventListener("dblclick", async (event) => {
+    event.stopPropagation();
+    const title = window.prompt("修改会话标题", session.title || "")?.trim();
+    if (!title || title === session.title) return;
+    await api(`/api/v1/sessions/${session.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: state.userId, title }),
+    });
+    await loadSessionList();
+  });
+  return button;
+}
+
+async function loadSessionList(query = "") {
+  const endpoint = query
+    ? `/api/v1/sessions/search?user_id=${encodeURIComponent(state.userId)}&q=${encodeURIComponent(query)}&include_archived=${state.showArchived}`
+    : `/api/v1/sessions?user_id=${encodeURIComponent(state.userId)}&include_archived=${state.showArchived}`;
+  try {
+    const sessions = await api(endpoint);
+    $("#session-list").replaceChildren(...sessions.map(sessionItem));
+  } catch (error) { $("#session-list").replaceChildren(el("p", { class: "context-empty", text: "会话列表暂不可用" })); }
 }
 
 function updateShell() {
@@ -267,27 +325,82 @@ function renderResult(task) {
 async function loadSessionHistory() {
   if (!state.sessionId) return;
   try {
-    const tasks = await api(`/api/v1/sessions/${state.sessionId}/tasks?limit=50`);
-    if (!tasks.length) return;
+    const messages = await api(`/api/v1/sessions/${state.sessionId}/messages?user_id=${encodeURIComponent(state.userId)}&limit=100`);
+    if (!messages.length) return;
     $("#welcome").hidden = true;
-    tasks.slice(0, -1).forEach((task) => {
-      addMessage(taskQuestion(task), "user", task.id);
-      archiveTaskAnswer(task);
+    messages.forEach((message) => {
+      if (message.role === "user") {
+        addMessage(message.content_text, "user", message.source_task_id || "");
+      } else if (message.role === "assistant") {
+        const body = el("div", { class: "message-body" }, [
+          el("span", { class: "message-meta", text: message.status === "completed" ? "已完成" : message.status }),
+          el("div", { class: "markdown-view" }),
+        ]);
+        renderMarkdown(body.lastElementChild, message.content_text);
+        $("#messages").append(el("article", { class: "conversation-message assistant", "data-task-id": message.source_task_id || "" }, [
+          el("span", { class: "message-role", text: "芯智导学" }), body,
+        ]));
+        if (message.source_task_id) state.archivedTaskIds.add(message.source_task_id);
+      } else if (message.role === "system_event") {
+        addMessage(message.content_text, "system", message.source_task_id || "");
+      }
     });
-    const latest = tasks[tasks.length - 1];
-    addMessage(taskQuestion(latest), "user", latest.id);
-    state.lastQuestion = taskQuestion(latest);
-    if (["created", "queued", "running"].includes(latest.status)) {
-      state.taskId = latest.id;
-      setBusy(true);
-      try { renderResult(await waitForTask(latest.id)); }
-      finally { state.taskId = ""; setBusy(false); }
-    } else {
-      renderResult(await api(`/api/v1/tasks/${latest.id}`));
+    const latest = messages[messages.length - 1];
+    state.lastQuestion = [...messages].reverse().find((item) => item.role === "user")?.content_text || "";
+    if (latest.role === "user" && latest.source_task_id) {
+      const latestTask = await api(`/api/v1/tasks/${latest.source_task_id}`);
+      if (["created", "queued", "running"].includes(latestTask.status)) {
+        state.taskId = latestTask.id;
+        setBusy(true);
+        try { renderResult(await waitForTask(latestTask.id)); }
+        finally { state.taskId = ""; setBusy(false); }
+      }
     }
   } catch (error) {
-    toast(`暂未恢复会话历史：${error.message}`);
+    try {
+      const tasks = await api(`/api/v1/sessions/${state.sessionId}/tasks?limit=50`);
+      tasks.forEach((task) => { addMessage(taskQuestion(task), "user", task.id); archiveTaskAnswer(task); });
+    } catch (_fallbackError) {
+      toast(`暂未恢复会话历史：${error.message}`);
+    }
   }
+}
+
+async function loadMemories() {
+  const [session, memories] = await Promise.all([
+    api(`/api/v1/sessions/${state.sessionId}?user_id=${encodeURIComponent(state.userId)}`),
+    api(`/api/v1/memories?user_id=${encodeURIComponent(state.userId)}`),
+  ]);
+  $("#memory-enabled").checked = session.memory_enabled;
+  $("#auto-memory-enabled").checked = session.auto_memory_enabled;
+  $("#memory-list").replaceChildren(...memories.map((memory) => {
+    const actions = el("div", {}, [
+      el("button", { type: "button", text: "编辑", "aria-label": "编辑记忆" }),
+      el("button", { type: "button", text: "删除", "aria-label": "删除记忆" }),
+    ]);
+    const row = el("article", { class: "memory-item" }, [
+      el("div", {}, [el("p", { text: memory.content }), el("small", { text: memory.source_session_id ? "来自会话" : "手动添加" })]),
+      actions,
+    ]);
+    actions.firstElementChild.addEventListener("click", async () => {
+      const content = window.prompt("编辑记忆", memory.content)?.trim();
+      if (!content || content === memory.content) return;
+      await api(`/api/v1/memories/${memory.memory_id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: state.userId, content }) });
+      await loadMemories();
+    });
+    actions.lastElementChild.addEventListener("click", async () => {
+      await api(`/api/v1/memories/${memory.memory_id}?user_id=${encodeURIComponent(state.userId)}`, { method: "DELETE" });
+      await loadMemories();
+    });
+    return row;
+  }));
+}
+
+async function updateMemorySettings() {
+  await api(`/api/v1/sessions/${state.sessionId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: state.userId, memory_enabled: $("#memory-enabled").checked, auto_memory_enabled: $("#auto-memory-enabled").checked }),
+  });
 }
 
 function renderBusinessView(view) {
@@ -302,16 +415,44 @@ function renderBusinessView(view) {
   });
 }
 
-async function uploadMaterial() {
-  const file = $("#image-input").files[0]; if (!file) return null;
+function selectedMaterialFiles() {
+  return [...pendingMaterialFiles];
+}
+
+function validateMaterialFiles(files) {
   const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"];
-  if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf)$/i.test(file.name)) throw new Error("暂不支持该材料类型");
-  if (file.size > 20 * 1024 * 1024) throw new Error("材料不能超过 20MB");
-  const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
-  const uploaded = await api("/api/v1/files", { method: "POST", body: form });
-  let extractedText = "";
-  if ((file.type.startsWith("text/") || file.type === "application/json" || /\.(md|txt|csv|json)$/i.test(file.name)) && file.size <= 2 * 1024 * 1024) extractedText = await file.text();
-  return { uploaded, extractedText, originalType: file.type };
+  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 张图片`);
+  if (files.length > 1 && files.some((file) => !file.type.startsWith("image/"))) throw new Error("多文件输入目前仅支持图片；文档材料请单独上传");
+  files.forEach((file) => {
+    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
+    if (file.size > 20 * 1024 * 1024) throw new Error(`材料不能超过 20MB：${file.name}`);
+  });
+}
+
+function materialFileKey(file) {
+  return [file.name, file.size, file.type, file.lastModified].join(":");
+}
+
+function appendMaterialFiles(files) {
+  const known = new Set(pendingMaterialFiles.map(materialFileKey));
+  const additions = files.filter((file) => !known.has(materialFileKey(file)));
+  const combined = [...pendingMaterialFiles, ...additions];
+  validateMaterialFiles(combined);
+  pendingMaterialFiles = combined;
+}
+
+async function uploadMaterials() {
+  const files = selectedMaterialFiles(); if (!files.length) return [];
+  validateMaterialFiles(files);
+  const materials = [];
+  for (const file of files) {
+    const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
+    const uploaded = await api("/api/v1/files", { method: "POST", body: form });
+    let extractedText = "";
+    if ((file.type.startsWith("text/") || file.type === "application/json" || /\.(md|txt|csv|json)$/i.test(file.name)) && file.size <= 2 * 1024 * 1024) extractedText = await file.text();
+    materials.push({ uploaded, extractedText, originalType: file.type });
+  }
+  return materials;
 }
 function attachmentRef(file) { return { file_id: file.id, filename: file.filename, content_type: file.content_type, size_bytes: file.size_bytes, storage_key: file.storage_key, checksum_sha256: file.checksum_sha256 }; }
 
@@ -327,31 +468,139 @@ async function waitForTask(id) {
 }
 
 function setBusy(busy) {
-  $("#send-button").disabled = busy; $("#stop-button").disabled = !busy; $("#question-input").disabled = busy;
+  $("#send-button").disabled = busy; $("#stop-button").disabled = !busy; $("#question-input").disabled = busy; $("#image-input").disabled = busy; $("#remove-image").disabled = busy;
 }
 
 async function submit(event) {
   event.preventDefault(); if (state.taskId) return;
   $("#form-error").textContent = "";
   const question = $("#question-input").value.trim(); const course = selectedCourse();
-  if (!question && !$("#image-input").files[0]) { $("#form-error").textContent = "请输入题目或上传图片"; return; }
+  const learningFollowUp = pendingLearningFollowUp;
+  const requestedCourse = learningFollowUp?.course_id || course;
+  const requestedIntent = learningFollowUp?.intent || "unknown";
+  const selectedFiles = selectedMaterialFiles();
+  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传图片"; return; }
   state.lastQuestion = question; setBusy(true); renderProcess([{ label: "正在理解你的需求", status: "running" }]);
   try {
-    await ensureSession(); state.activeCourse = course; localStorage.setItem("xinzhi_student_course", course); archiveCurrentAnswer(); if (question) addMessage(question);
-    const material = await uploadMaterial();
-    const canonical = { text: question }; if (material?.extractedText) canonical.uploaded_text = material.extractedText;
-    if (material?.originalType === "text/csv") canonical.data_description = material.extractedText;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: course, intent: "unknown", canonical_input: canonical, attachments: material ? [attachmentRef(material.uploaded)] : [], context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false } };
+    await ensureSession(); state.activeCourse = requestedCourse; localStorage.setItem("xinzhi_student_course", requestedCourse); archiveCurrentAnswer(); if (question) addMessage(question); else addMessage(`已上传 ${selectedFiles.length} 张题目图片`);
+    const materials = await uploadMaterials();
+    const canonical = { text: question };
+    const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
+    if (uploadedText) canonical.uploaded_text = uploadedText;
+    if (materials.length === 1 && materials[0].originalType === "text/csv") canonical.data_description = uploadedText;
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage(`已识别：${taskLabels[task.intent] || "待进一步判断"}${task.course_id ? ` · ${courseLabels[task.course_id] || task.course_id}` : ""}`, "system"); renderResult(await waitForTask(task.id));
+    pendingLearningFollowUp = null;
+    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage(`已识别：${taskLabels[task.intent] || "待进一步判断"}${task.course_id ? ` · ${courseLabels[task.course_id] || task.course_id}` : ""}`, "system"); renderResult(await waitForTask(task.id)); await loadSessionList();
     $("#question-input").value = ""; autoGrow(); clearImage();
   } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
   finally { state.taskId = ""; setBusy(false); }
 }
 
-function clearImage() { $("#image-input").value = ""; $("#image-preview").hidden = true; $("#preview-image").removeAttribute("src"); $("#image-name").textContent = ""; }
+function revokeMaterialPreviews() {
+  materialPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+  materialPreviewUrls = [];
+}
+function showMaterialPreview(files) {
+  revokeMaterialPreviews();
+  const previewList = $("#preview-images");
+  previewList.replaceChildren();
+  if (!files.length) {
+    $("#image-preview").hidden = true;
+    $("#image-name").textContent = "已选择 0 个材料";
+    return;
+  }
+  const imageCount = files.filter((file) => file.type.startsWith("image/")).length;
+  $("#image-name").textContent = imageCount === files.length
+    ? `已选择 ${imageCount} 张图片，可继续点击“添加材料”追加`
+    : `已选择 ${files.length} 个材料`;
+  files.forEach((file, index) => {
+    const item = document.createElement("div");
+    item.className = "upload-preview-item";
+    if (file.type.startsWith("image/")) {
+      const image = document.createElement("img");
+      const url = URL.createObjectURL(file);
+      materialPreviewUrls.push(url);
+      image.className = "upload-preview-thumb";
+      image.src = url;
+      image.alt = `${file.name} 预览`;
+      item.append(image);
+    } else {
+      const icon = document.createElement("span");
+      icon.className = "upload-preview-file-icon";
+      icon.textContent = "文件";
+      item.append(icon);
+    }
+    const meta = document.createElement("span");
+    meta.className = "upload-preview-meta";
+    const name = document.createElement("strong");
+    name.textContent = `${index + 1}. ${file.name}`;
+    const size = document.createElement("small");
+    size.textContent = `${Math.max(1, Math.round(file.size / 1024))} KB`;
+    meta.append(name, size);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-preview-item";
+    remove.setAttribute("aria-label", `移除 ${file.name}`);
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      pendingMaterialFiles.splice(index, 1);
+      showMaterialPreview(selectedMaterialFiles());
+    });
+    item.append(meta, remove);
+    previewList.append(item);
+  });
+  $("#image-preview").hidden = false;
+}
+function clearImage() {
+  pendingMaterialFiles = [];
+  revokeMaterialPreviews();
+  $("#image-input").value = "";
+  $("#preview-images").replaceChildren();
+  $("#image-preview").hidden = true;
+  $("#image-name").textContent = "已选择 0 个材料";
+}
 function autoGrow() { const input = $("#question-input"); input.style.height = "auto"; input.style.height = `${Math.min(input.scrollHeight, 180)}px`; }
 function applyParams() { if (params.get("course")) $("#course-select").value = params.get("course"); if (params.get("prompt")) $("#question-input").value = params.get("prompt"); }
+
+async function learningAction(action) {
+  if (!state.currentTask?.id) { toast("请先完成一道题或一次知识问答"); return; }
+  const studentAnswer = $("#question-input").value.trim();
+  if (action === "check_answer" && !studentAnswer) {
+    $("#question-input").placeholder = "在这里写下你的答案，再点击“检查我的答案”";
+    $("#question-input").focus(); toast("请先输入你的答案"); return;
+  }
+  try {
+    const result = await api("/api/v1/learning/actions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_task_id: state.currentTask.id,
+        user_id: state.userId,
+        action,
+        idempotency_key: `learn_${crypto.randomUUID()}`,
+        student_answer: studentAnswer,
+        payload: {},
+      }),
+    });
+    toast(result.message);
+    if (result.review) {
+      const feedback = (result.review.feedback || []).join("；") || result.review.status;
+      addMessage(`答案检查：${feedback}`, "system");
+      return;
+    }
+    const nextPrompt = result.practice?.status === "ready"
+      ? result.practice.problem_text
+      : result.follow_up_prompt;
+    if (nextPrompt) {
+      pendingLearningFollowUp = result.follow_up_context || null;
+      if (pendingLearningFollowUp?.course_id && $(`#course-select option[value="${pendingLearningFollowUp.course_id}"]`)) {
+        $("#course-select").value = pendingLearningFollowUp.course_id;
+      }
+      $("#question-input").value = nextPrompt; autoGrow();
+      $("#student-form").requestSubmit();
+    }
+  } catch (error) { toast(`学习动作未完成：${error.message}`); }
+}
 
 async function loadCapabilities() {
   try {
@@ -371,7 +620,7 @@ async function loadCapabilities() {
 
 window.addEventListener("DOMContentLoaded", () => {
   initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: "student" });
-  applyParams(); updateShell(); autoGrow(); loadCapabilities(); loadSessionHistory();
+  applyParams(); updateShell(); autoGrow(); loadCapabilities(); loadSessionHistory(); loadSessionList();
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
   all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; updateShell(); autoGrow(); $("#question-input").focus(); }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));
@@ -379,10 +628,32 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#question-input").addEventListener("input", autoGrow);
   $("#question-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#student-form").requestSubmit(); } });
   $("#course-select").addEventListener("change", () => { if ($("#course-select").value !== "AUTO") state.activeCourse = $("#course-select").value; updateShell(); });
-  $("#image-input").addEventListener("change", (event) => { const file = event.target.files[0]; if (!file) return clearImage(); $("#image-name").textContent = file.name; if (file.type.startsWith("image/")) { $("#preview-image").src = URL.createObjectURL(file); $("#preview-image").hidden = false; } else { $("#preview-image").hidden = true; } $("#image-preview").hidden = false; });
+  $("#image-input").addEventListener("change", (event) => {
+    const files = Array.from(event.target.files || []);
+    $("#form-error").textContent = "";
+    try { appendMaterialFiles(files); showMaterialPreview(selectedMaterialFiles()); }
+    catch (error) { $("#form-error").textContent = error.message; showMaterialPreview(selectedMaterialFiles()); }
+    event.target.value = "";
+  });
   $("#remove-image").addEventListener("click", clearImage);
   $("#stop-button").addEventListener("click", async () => { if (state.taskId) await api(`/api/v1/tasks/${state.taskId}/cancel`, { method: "POST" }); });
-  $("#new-session").addEventListener("click", () => { state.sessionId = ""; state.currentTask = null; state.archivedTaskIds.clear(); localStorage.removeItem("xinzhi_student_session"); $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false; renderEvidence([], {}); renderProcess([]); $("#context-info").replaceChildren(); toast("已新建本地会话"); });
+  $("#new-session").addEventListener("click", newSession);
+  $("#sidebar-new-session").addEventListener("click", newSession);
+  $("#session-search").addEventListener("input", (event) => loadSessionList(event.target.value.trim()));
+  $("#show-archived").addEventListener("click", async () => { state.showArchived = !state.showArchived; $("#show-archived").textContent = state.showArchived ? "最近会话" : "归档会话"; await loadSessionList($("#session-search").value.trim()); });
+  $("#open-memory").addEventListener("click", async () => { await ensureSession(); await loadMemories(); $("#memory-dialog").showModal(); });
+  $("#close-memory").addEventListener("click", () => $("#memory-dialog").close());
+  $("#memory-enabled").addEventListener("change", updateMemorySettings);
+  $("#auto-memory-enabled").addEventListener("change", updateMemorySettings);
+  $("#memory-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const content = $("#memory-input").value.trim(); if (!content) return;
+    await api("/api/v1/memories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: state.userId, memory_type: "preference", scope: "global", content }) });
+    $("#memory-input").value = ""; await loadMemories();
+  });
+  $("#forget-all").addEventListener("click", async () => {
+    await api("/api/v1/memories/forget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: state.userId, all_memories: true }) });
+    await loadMemories();
+  });
   $("#toggle-context").addEventListener("click", () => setContextOpen(document.body.classList.contains("context-closed")));
   $("#close-context").addEventListener("click", () => setContextOpen(false));
   $("#toggle-sources").addEventListener("click", () => selectContextTab("evidence"));
@@ -391,5 +662,6 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#copy-answer").addEventListener("click", async () => { await navigator.clipboard.writeText(state.lastAnswer); toast("回答已复制"); });
   $("#follow-up").addEventListener("click", () => { $("#question-input").focus(); $("#question-input").placeholder = "继续追问这一回答…"; });
   $("#reask").addEventListener("click", () => { $("#question-input").value = state.lastQuestion; autoGrow(); $("#question-input").focus(); });
+  all("[data-learning-action]").forEach((button) => button.addEventListener("click", () => learningAction(button.dataset.learningAction)));
   $("#close-image-dialog").addEventListener("click", () => $("#image-dialog").close());
 });

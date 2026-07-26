@@ -1,6 +1,6 @@
 # 芯智导学仓库完整梳理
 
-本文档描述当前可执行仓库的框架、功能、运行链、目录职责、数据边界和扩展方式。逐个可发布文件的功能见配套的 [仓库逐文件目录](repository_file_catalog.md)；该目录由脚本从 Git 可见范围生成，确保新增、删除或隔离文件后可以自动检查漂移。
+本文档描述当前可执行仓库的框架、功能、运行链、目录职责、数据边界和扩展方式。逐个可发布文件的功能见配套的 [仓库逐文件目录](repository_file_catalog.md)；准备继续 coding 时使用 [代码级开发手册](developer_code_navigation.md)，其中包含入口、调用链、配置点、常见修改路径和排错顺序。逐文件目录由脚本从 Git 可见范围生成，确保新增、删除或隔离文件后可以自动检查漂移。
 
 ## 1. 梳理范围与结论
 
@@ -75,7 +75,7 @@ flowchart LR
 
 1. 本地快速路由先判断课程、任务族、附件类型和风险级别。
 2. 多学科专业求解进入 `ACADEMIC_PROBLEM_SOLVER`；课程知识问答进入本地知识/RAG 链；教学与研究请求进入相应内部 Agent。
-3. 无法归入课程工作流的普通问题进入 `GENERAL_QUESTION_V1`，优先使用 Qwen 快速模型，必要时回退 Spark。
+3. 没有课程领域线索的日常常识、生活、语言和一般科普问题直接进入 `GENERAL_QUESTION_V1`，优先使用 Spark，自然简洁作答；Spark 不可用时才回退 Qwen 快速模型。
 4. 通用问答如果达到输出 Token 上限，会自动执行一次续写并合并，避免直接把半截答案作为完成结果。
 5. 低置信路由不再等同于“拒绝回答”；只有输入不完整、附件不支持或安全边界触发时才返回明确限制。
 
@@ -104,7 +104,7 @@ flowchart LR
 | 能力 | 状态 | 入口/实现 | 边界 |
 |---|---|---|---|
 | 学生统一工作台 | 活动 | `/workspace`、`workspace.*` | 单输入自动路由，隐藏内部实现名。 |
-| 学生简化页 | 活动 | `/student`、`student.*` | 支持文字、单图、历史与证据展示。 |
+| 学生简化入口 | 活动 | `/student` → `workspace.*` | 支持文字、多图、历史与证据展示。 |
 | 通用随机问答 | 活动 | `GENERAL_QUESTION_V1` | 不要求命中课程路由；默认不调用星辰。 |
 | 多学科专业求解 | 活动 | `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 共享图，不伪造缺失题设。 |
 | 电路冻结基线 | 保留 | `SOLVER_CT_V1` | 只作为已验证星辰文字/单图基线与回退。 |
@@ -175,7 +175,7 @@ xinzhi-daoxue/
 | `evaluation/` | 评测用例加载、缓存、评分、报告与运行器。 |
 | `integrations/` | 明确保留的第三方集成扩展点；当前没有独立运行逻辑。 |
 | `models/` | 数据库实体。 |
-| `multimodal/` | 图片输入解析、验证和多模态合同。 |
+| `multimodal/` | 图片输入解析、验证、多图拼接和复杂批次逐图降级合同。 |
 | `observability/` | 模型调用追踪与内存 TraceStore。 |
 | `orchestrator/` | Supervisor、GraphFactory、学术求解 LangGraph 和共享状态。 |
 | `providers/` | Agent、LLM、Embedding、Vision、Workflow 和 Mock Provider。 |
@@ -291,7 +291,19 @@ archive_legacy/apps/api/app/services/task_service.py
 - 新 SSE 事件：增加顺序、终态和重连回归测试。
 - 新知识数据：必须来自真实执行链或明确的只读课程资料，不能伪造引用、检索命中或云端结果。
 
-## 11. 已知风险与后续检查
+## 11. 学习质量闭环与可靠执行扩展
+
+本轮仍以 `POST /api/v1/tasks` 为唯一模型与 Agent 执行入口。在共享 `AcademicProblemSolverGraph` 末端增加确定性 `SolverQualityGateService`，以统一 `SolverResult` 保存结构化最终答案、验证、知识证据与质量门结论；CoursePack 只声明课程特有校验规则，不复制 Solver 图。`SOLVER_CT_V1` 的冻结代码、Prompt 与节点均未修改。
+
+知识层由只读扫描器生成带 `document_version`、相对来源、内容哈希和活动状态的 manifest。内容变化产生新版本和新 chunk id，旧版本及旧 chunk 进入非活动历史；RAG 只装载活动 chunk，失败的向量构建不覆盖上一次成功状态。
+
+学习动作通过 `/api/v1/learning/actions` 保存来源任务、错题、练习和知识点掌握状态。需要进一步生成的“提示、变式、关联讲解”只返回 follow-up prompt，由 Workspace 再提交到原任务 API，不在学习服务内直接调用 Provider。
+
+`TaskExecutor` 是 TaskRunner 前的稳定调度边界。当前 `LocalTaskExecutor` 保持原进程内行为，`QueueTaskExecutor` 仅作为显式未配置扩展点；任务表新增幂等键、最大尝试次数、执行所有者、租约、心跳、取消时间与失败分类。显式重试只接受可重试失败且不得超过 `max_attempts`。
+
+评测继续复用既有 `EvaluationRunner`，支持 `local_deterministic`、`local_mock`、`real_model`、`real_xingchen` 四种证据隔离模式。仓库样例标记为 synthetic/not_official；私有真实案例目录默认被 Git 忽略。
+
+## 12. 已知风险与后续检查
 
 - TaskRunner 当前是进程内执行器，适合本地和单实例；多实例部署前需要把执行权迁移到可靠队列，但不能改变现有任务协议。
 - 本地 BGE/SigLIP2/Reranker 首次下载和 CPU 推理成本较高；健康页的 200 不等同于所有模型已预热。
@@ -299,6 +311,17 @@ archive_legacy/apps/api/app/services/task_service.py
 - 评测报告应继续注明 local、Mock、模型 Provider、星辰 workflow 四种证据层级。
 - 每次目录变动后运行目录生成脚本并提交更新，防止本文档与实际仓库漂移。
 
-## 12. 逐文件索引
+## 13. 逐文件索引
 
 所有可发布子文件（包含源码、测试、脚本、配置、文档、截图、字体与历史隔离文件）都在 [repository_file_catalog.md](repository_file_catalog.md) 中逐目录列出，并为每个文件给出活动/隔离状态和功能摘要。
+# 会话运行时层
+
+会话运行时层位于 API 与已有 TaskRunner 之间，职责是将同一用户会话的消息、
+WorkingState、版本化摘要和显式长期记忆组装为临时
+`ConversationContextBundle`。它与 `RetrievalContextService` 分工：前者管理
+对话与偏好，后者仍是唯一 RAG 证据组装服务。两者只在原 TaskRunner 内汇合，
+不形成第二条聊天执行链。
+
+Context Cache 只缓存脱敏上下文结构和来源 ID，不缓存最终答案；Provider Prompt
+Cache 当前标记为不支持/未启用。`LearnerKnowledgeState` 继续是课程掌握事实来源，
+通用 Memory 不复制掌握度。

@@ -15,6 +15,16 @@ from app.contracts.agent import (
     UserRole,
     new_id,
 )
+from app.contracts.conversation import (
+    ContextMessage,
+    ConversationContextBundle,
+    ConversationMessage,
+    MessageRole,
+    MessageStatus,
+    MessageVisibility,
+    SessionSummaryRead,
+    SessionWorkingState,
+)
 from app.contracts.knowledge import (
     KnowledgeCourseId,
     KnowledgeHit,
@@ -32,6 +42,16 @@ from app.contracts.math_content import (
     MathRichContent,
     MathSegmentType,
     RichTextSegment,
+)
+from app.contracts.memory import (
+    ForgetRequest,
+    MemoryCreate,
+    MemoryMutationResult,
+    MemoryRead,
+    MemoryScope,
+    MemoryStatus,
+    MemoryType,
+    MemoryUpdate,
 )
 from app.contracts.model import (
     ImageInput,
@@ -146,4 +166,20 @@ __all__ = [
     "MathRichContent",
     "MathSegmentType",
     "RichTextSegment",
+    "ContextMessage",
+    "ConversationContextBundle",
+    "ConversationMessage",
+    "MessageRole",
+    "MessageStatus",
+    "MessageVisibility",
+    "SessionSummaryRead",
+    "SessionWorkingState",
+    "ForgetRequest",
+    "MemoryCreate",
+    "MemoryMutationResult",
+    "MemoryRead",
+    "MemoryScope",
+    "MemoryStatus",
+    "MemoryType",
+    "MemoryUpdate",
 ]

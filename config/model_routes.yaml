@@ -1,24 +1,25 @@
 routes:
-  course_classification: {primary: qwen_text_fast, fallback: spark_reasoner}
-  intent_classification: {primary: qwen_text_fast, fallback: spark_reasoner}
-  query_rewrite: {primary: qwen_text_fast, fallback: spark_reasoner}
-  retrieval_keyword_generation: {primary: qwen_text_fast, fallback: spark_reasoner}
+  course_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
+  intent_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
+  query_rewrite: {primary: spark_reasoner, fallback: qwen_text_fast}
+  retrieval_keyword_generation: {primary: spark_reasoner, fallback: qwen_text_fast}
   structured_output_normalization:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
-  knowledge_answer: {primary: spark_reasoner, fallback: qwen_vision_primary}
-  general_question_answer: {primary: qwen_text_fast, fallback: spark_reasoner}
+  knowledge_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
+  general_question_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
   simple_image_understanding: {primary: qwen_vision_fast, fallback: qwen_vision_primary}
   circuit_image_extraction:
     primary: qwen_vision_primary
     fallback: qwen_vision_fast
     options: {high_resolution: true}
+  multi_image_summary: {primary: spark_reasoner, fallback: qwen_text_fast}
   complex_circuit_reasoning:
     primary: spark_reasoner
     verifier: qwen_vision_primary
   academic_problem_solving:
-    primary: qwen_vision_primary
-    fallback: spark_reasoner
+    primary: spark_reasoner
+    fallback: qwen_vision_primary
     verifier: qwen_vision_primary
   lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
   assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}

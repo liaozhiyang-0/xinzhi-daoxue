@@ -1,0 +1,26 @@
+cases:
+  - case_id: SYN_LEARN_CT_001
+    title: 学生答案检查路由样例
+    course: CT
+    task_family: LEARNING_SUPPORT
+    intent: verify_answer
+    problem_type: power
+    difficulty: easy
+    input_type: text
+    input_source: synthetic
+    message: "题目为10V电压源串联5Ω电阻，学生写 I=2 但未写单位，请检查首个错误。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, FAST]
+    expected_statuses: [success, partial]
+    required_knowledge_points: [欧姆定律, 单位]
+    forbidden_errors: [补造题目条件]
+    reference_solution:
+      final_answer: "I=2 A"
+      first_error: unit
+    judge_type: rule
+    tags: [synthetic_template, not_official, learning_loop]
+    provenance:
+      source_type: synthetic
+      source_name: repository_sample
+      publishable: true

@@ -12,7 +12,7 @@ class EvaluationCaseLoader:
         self.root = root
 
     def load_all(self) -> list[EvaluationCase]:
-        paths = sorted(self.root.rglob("*.yaml"))
+        paths = sorted([*self.root.rglob("*.yaml"), *self.root.rglob("*.json")])
         if not paths:
             raise ValueError(f"未找到评测案例: {self.root}")
         cases: list[EvaluationCase] = []
@@ -20,10 +20,14 @@ class EvaluationCaseLoader:
         for path in paths:
             payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             values = payload.get("cases") if isinstance(payload, dict) else None
+            if isinstance(payload, dict) and "case_id" in payload:
+                values = [payload]
             if not isinstance(values, list):
                 raise ValueError(f"{path}: 顶层必须包含cases列表")
             for raw in values:
                 case = EvaluationCase.model_validate(raw)
+                if self.root.name == "cases" and "not_official" in case.tags:
+                    continue
                 if case.case_id in seen:
                     raise ValueError(f"重复case_id: {case.case_id}")
                 seen.add(case.case_id)

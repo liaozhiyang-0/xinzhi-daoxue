@@ -39,10 +39,17 @@ class ChunkRecord:
     text: str
     source_uri: str
     related_images: tuple[str, ...]
+    document_version: str = "v1"
+    section_path: tuple[str, ...] = ()
+    page_number: int | None = None
+    metadata: dict[str, object] | None = None
+    is_active: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["related_images"] = list(self.related_images)
+        payload["section_path"] = list(self.section_path)
+        payload["metadata"] = self.metadata or {}
         return payload
 
 
@@ -162,7 +169,11 @@ def semantic_chunks(
             )
         )
         chunk_id = stable_id(
-            "CHK", entry.course_id, entry.relative_path.casefold(), str(index)
+            "CHK",
+            entry.course_id,
+            entry.relative_path.casefold(),
+            entry.document_version,
+            str(index),
         )
         output.append(
             ChunkRecord(
@@ -184,6 +195,17 @@ def semantic_chunks(
                     f"{source_uri(entry.course_id, entry.relative_path)}#chunk-{index}"
                 ),
                 related_images=related,
+                document_version=entry.document_version,
+                section_path=tuple(
+                    item
+                    for item in (entry.inferred_chapter, current_title)
+                    if item and item != "UNKNOWN"
+                ),
+                metadata={
+                    "source_file": entry.source_file or entry.file_name,
+                    "source_relative_path": entry.relative_path,
+                    "content_hash": entry.checksum,
+                },
             )
         )
         overlap = content[-overlap_chars:].strip() if overlap_chars else ""
@@ -250,6 +272,9 @@ class KnowledgeIndexBuilder:
         self.roots = roots
         self.output_root = output_root
         self.chunk_cache_path = output_root / "cache" / "knowledge_base_chunks.jsonl"
+        self.chunk_history_path = (
+            output_root / "cache" / "knowledge_base_chunk_history.jsonl"
+        )
         self.manifest_path = output_root / "knowledge_base_manifest.jsonl"
         self.image_path = output_root / "knowledge_base_image_evidence.jsonl"
         self.issue_path = output_root / "knowledge_base_quality_issues.json"
@@ -370,7 +395,18 @@ class KnowledgeIndexBuilder:
             courses=selected,
         )
         if not dry_run:
-            self.write_outputs(audit, chunks, build_result)
+            active_checksums = {
+                entry.document_id: entry.checksum
+                for entry in audit.manifest
+                if entry.active
+            }
+            retired_chunks = [
+                {**item, "is_active": False}
+                for item in previous_chunks
+                if active_checksums.get(str(item.get("document_id", "")))
+                != str(item.get("document_checksum", ""))
+            ]
+            self.write_outputs(audit, chunks, build_result, retired_chunks)
         return audit, build_result
 
     def write_outputs(
@@ -378,11 +414,21 @@ class KnowledgeIndexBuilder:
         audit: AuditResult,
         chunks: Iterable[ChunkRecord],
         build_result: BuildResult,
+        retired_chunks: Iterable[dict[str, Any]] = (),
     ) -> None:
         self.output_root.mkdir(parents=True, exist_ok=True)
         write_jsonl(self.manifest_path, (item.to_dict() for item in audit.manifest))
         write_jsonl(self.image_path, (item.to_dict() for item in audit.images))
         write_jsonl(self.chunk_cache_path, (item.to_dict() for item in chunks))
+        existing_history = load_jsonl(self.chunk_history_path)
+        history_by_id = {
+            (
+                str(item.get("chunk_id", "")),
+                str(item.get("document_checksum", "")),
+            ): item
+            for item in [*existing_history, *retired_chunks]
+        }
+        write_jsonl(self.chunk_history_path, history_by_id.values())
         self.issue_path.write_text(
             json.dumps(
                 {
@@ -426,6 +472,13 @@ class KnowledgeIndexBuilder:
             text=str(raw["text"]),
             source_uri=str(raw["source_uri"]),
             related_images=tuple(str(item) for item in raw.get("related_images", [])),
+            document_version=str(raw.get("document_version", "v1")),
+            section_path=tuple(str(item) for item in raw.get("section_path", [])),
+            page_number=(int(raw["page_number"]) if raw.get("page_number") else None),
+            metadata=(
+                raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+            ),
+            is_active=bool(raw.get("is_active", True)),
         )
 
 

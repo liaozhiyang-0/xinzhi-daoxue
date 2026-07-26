@@ -23,6 +23,7 @@ from app.services.model_registry import ModelRegistry  # noqa: E402
 CASE_ROOT = ROOT / "evaluation" / "cases"
 REPORT_ROOT = ROOT / "evaluation" / "reports"
 CACHE_ROOT = ROOT / "evaluation" / "cache"
+MIGRATION_ROOT = ROOT / "apps" / "api" / "alembic" / "versions"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -31,6 +32,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     modes.add_argument("--validate-only", action="store_true")
     modes.add_argument("--offline", action="store_true")
     modes.add_argument("--live", action="store_true")
+    parser.add_argument(
+        "--mode",
+        choices=(
+            "local_deterministic",
+            "local_mock",
+            "real_model",
+            "real_xingchen",
+        ),
+    )
+    parser.add_argument(
+        "--suite",
+        choices=(
+            "academic_solver",
+            "knowledge_qa",
+            "learning_loop",
+            "task_reliability",
+            "boundary",
+        ),
+    )
     parser.add_argument("--confirm-paid", action="store_true")
     parser.add_argument("--course")
     parser.add_argument("--tag", action="append", default=[])
@@ -42,10 +62,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def validate_paid_guard(args: argparse.Namespace) -> None:
-    if args.live and not args.confirm_paid:
-        raise ValueError("--live 必须同时提供 --confirm-paid，未发送任何模型请求")
-    if args.confirm_paid and not args.live:
-        raise ValueError("--confirm-paid 只能与 --live 一起使用")
+    paid = args.live or args.mode in {"real_model", "real_xingchen"}
+    if paid and not args.confirm_paid:
+        raise ValueError("真实模型模式必须同时提供 --confirm-paid，未发送任何模型请求")
+    if args.confirm_paid and not paid:
+        raise ValueError("--confirm-paid 只能与真实模型模式一起使用")
     if args.max_cases is not None and args.max_cases < 1:
         raise ValueError("--max-cases 必须为正整数")
 
@@ -53,14 +74,19 @@ def validate_paid_guard(args: argparse.Namespace) -> None:
 def validate_cases(
     args: argparse.Namespace,
 ) -> tuple[list[EvaluationCase], dict[str, object]]:
-    loader = EvaluationCaseLoader(CASE_ROOT)
+    loader = EvaluationCaseLoader(CASE_ROOT / args.suite if args.suite else CASE_ROOT)
     all_cases = loader.load_all()
     selected = loader.filter(
         all_cases,
         course=args.course,
         tags=set(args.tag),
         case_id=args.case_id,
-        max_cases=(3 if args.live and args.max_cases is None else args.max_cases),
+        max_cases=(
+            3
+            if (args.live or args.mode in {"real_model", "real_xingchen"})
+            and args.max_cases is None
+            else args.max_cases
+        ),
     )
     if not selected:
         raise ValueError("筛选后没有评测案例")
@@ -83,9 +109,17 @@ def validate_cases(
     return selected, summary
 
 
+def _evaluation_schema_revision() -> str:
+    revisions = sorted(path.stem for path in MIGRATION_ROOT.glob("*.py"))
+    if not revisions:
+        raise ValueError("未找到数据库 migration，无法创建隔离评测库")
+    return revisions[-1].split("_", maxsplit=1)[0]
+
+
 def evaluation_settings(*, live: bool) -> Settings:
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-    database = CACHE_ROOT / ("live-evaluation.db" if live else "offline-evaluation.db")
+    mode_name = "live" if live else "offline"
+    database = CACHE_ROOT / f"{mode_name}-evaluation-{_evaluation_schema_revision()}.db"
     common: dict[str, Any] = {
         "app_env": "test",
         "test_database_url": f"sqlite+aiosqlite:///{database}",
@@ -120,8 +154,9 @@ async def run(args: argparse.Namespace) -> int:
         print(json.dumps(validation, ensure_ascii=False, indent=2))
         return 0 if validation["valid"] else 1
     cases = list(raw_cases)
-    mode = "live" if args.live else "offline"
-    app = create_app(evaluation_settings(live=args.live))
+    mode = args.mode or ("live" if args.live else "offline")
+    live = mode in {"live", "real_model", "real_xingchen"}
+    app = create_app(evaluation_settings(live=live))
     cache = EvaluationCache(
         CACHE_ROOT,
         fingerprint=evaluation_fingerprint(ROOT),
@@ -131,6 +166,8 @@ async def run(args: argparse.Namespace) -> int:
         "tags": args.tag,
         "case_id": args.case_id,
         "max_cases": 3 if args.live and args.max_cases is None else args.max_cases,
+        "suite": args.suite,
+        "mode": mode,
     }
     async with EvaluationRunner(
         app,

@@ -13,6 +13,21 @@
   <aside id="app-sidebar" class="app-sidebar"></aside>
   <header id="app-topbar" class="app-topbar"></header>
   <main class="workspace-shell">
+    <aside class="conversation-sidebar" aria-label="会话列表">
+      <header>
+        <strong>会话</strong>
+        <button id="sidebar-new-session" class="icon-button" type="button" aria-label="新建会话">＋</button>
+      </header>
+      <label class="conversation-search">
+        <span class="sr-only">搜索会话</span>
+        <input id="session-search" type="search" maxlength="100" placeholder="搜索会话">
+      </label>
+      <div id="session-list" class="session-list" aria-live="polite"></div>
+      <footer>
+        <button id="show-archived" class="text-button" type="button">归档会话</button>
+        <button id="open-memory" class="text-button" type="button">记忆设置</button>
+      </footer>
+    </aside>
     <section class="workspace-center">
       <header class="workspace-toolbar" aria-label="任务模式">
         <div><strong>自然语言自动调度</strong><span class="workspace-auto-hint"> 系统会自动识别课程与任务</span></div>
@@ -53,6 +68,12 @@
             <button id="toggle-sources" type="button" class="text-button">查看资料依据</button>
             <button id="follow-up" type="button" class="text-button">继续追问</button>
             <button id="reask" type="button" class="text-button">重新提问</button>
+            <button type="button" class="text-button" data-learning-action="add_wrong_answer">加入错题本</button>
+            <button type="button" class="text-button" data-learning-action="get_hint">给我提示</button>
+            <button type="button" class="text-button" data-learning-action="check_answer">检查我的答案</button>
+            <button type="button" class="text-button" data-learning-action="generate_variant">生成变式题</button>
+            <button type="button" class="text-button" data-learning-action="related_knowledge">讲解关联知识</button>
+            <button type="button" class="text-button" data-learning-action="mark_mastered">标记已掌握</button>
           </div>
           <details id="source-details" class="legacy-source-fallback" hidden>
             <summary><span id="source-summary">参考课程资料 0</span></summary>
@@ -63,14 +84,17 @@
 
       <form id="student-form" class="workspace-composer">
         <div id="image-preview" class="upload-preview" hidden>
-          <img id="preview-image" alt="待上传题目图片预览"><span id="image-name"></span>
-          <button id="remove-image" type="button" aria-label="移除图片">移除</button>
+          <div class="upload-preview-header">
+            <span id="image-name">已选择 0 个材料</span>
+            <button id="remove-image" type="button" aria-label="清空已选材料">清空</button>
+          </div>
+          <div id="preview-images" class="upload-preview-list" aria-live="polite"></div>
         </div>
-        <textarea id="question-input" maxlength="4000" rows="1" required aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
+        <textarea id="question-input" maxlength="4000" rows="1" aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
         <div class="composer-controls">
           <div class="composer-left">
-            <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option></select></label>
-            <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,application/json,application/pdf,.md,.txt,.csv,.json,.pdf"></label>
+            <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option><option value="SS">信号与系统</option><option value="DSP">数字信号处理</option><option value="COMM">通信原理</option></select></label>
+            <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" multiple accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,application/json,application/pdf,.md,.txt,.csv,.json,.pdf"></label>
             <details class="more-settings"><summary>高级选项</summary><div class="settings-popover"><label>回答深度<select id="depth-select"><option value="brief">简要</option><option value="standard" selected>标准</option><option value="deep">深入</option></select></label><label><input id="show-images" type="checkbox" checked> 显示教材图片</label></div></details>
           </div>
           <div class="composer-right"><span id="form-error" class="field-error" role="alert"></span><button id="stop-button" class="button secondary" type="button" disabled>停止</button><button id="send-button" class="send-button" type="submit" aria-label="发送问题">发送</button></div>
@@ -90,9 +114,19 @@
       <section id="context-info" class="context-view" data-context-view="info" hidden></section>
     </aside>
   </main>
+  <dialog id="memory-dialog" class="memory-dialog">
+    <header><div><strong>记忆设置</strong><p>只保存你明确要求记住的稳定偏好</p></div><button id="close-memory" class="icon-button" type="button" aria-label="关闭">×</button></header>
+    <div class="memory-switches">
+      <label><input id="memory-enabled" type="checkbox"> 启用长期记忆</label>
+      <label><input id="auto-memory-enabled" type="checkbox"> 自动记忆（默认关闭）</label>
+    </div>
+    <form id="memory-form"><input id="memory-input" maxlength="1000" placeholder="例如：公式使用 LaTeX"><button class="button secondary" type="submit">添加</button></form>
+    <div id="memory-list" class="memory-list"></div>
+    <button id="forget-all" class="text-button danger" type="button">清空全部记忆</button>
+  </dialog>
   <dialog id="image-dialog" class="image-dialog"><button id="close-image-dialog" class="icon-button" type="button" aria-label="关闭图片">×</button><img id="dialog-image" alt="教材图片大图"><p id="dialog-caption"></p></dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js"></script>
-  <script src="/debug-assets/workspace.js"></script>
+<script src="/debug-assets/workspace.js?v=20260723-multi2-runtime1-learning1"></script>
 </body>
 </html>

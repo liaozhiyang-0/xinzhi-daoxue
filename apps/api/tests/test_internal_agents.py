@@ -25,6 +25,7 @@ class FakeModelService:
         self, task_type: str, **kwargs: Any
     ) -> ModelResponse:
         self.calls.append({"task_type": task_type, **kwargs})
+        schema_name = getattr(kwargs.get("schema"), "__name__", "")
         payload = (
             {
                 "method": "mesh analysis",
@@ -35,7 +36,7 @@ class FakeModelService:
                 "needs_tool_verification": True,
                 "risk_level": "medium",
             }
-            if task_type == "structured_output_normalization"
+            if schema_name == "CircuitPlan"
             else {
                 "course": "CT",
                 "confidence": 0.9,
@@ -120,10 +121,13 @@ async def test_course_classifier_uses_model_service_and_schema() -> None:
     )
 
     assert result.structured_result["course"] == "CT"
-    assert result.total_tokens == 18
-    assert service.calls[0]["task_type"] == "course_classification"
+    assert result.total_tokens == 48
+    assert [call["task_type"] for call in service.calls] == [
+        "course_classification",
+        "structured_output_normalization",
+    ]
     assert service.calls[0]["extra_options"] == {"max_tokens": 96}
-    system_prompt = service.calls[0]["messages"][0]["content"]
+    system_prompt = service.calls[1]["messages"][0]["content"]
     assert "JSON Schema" in system_prompt
     assert '"course"' in system_prompt
 

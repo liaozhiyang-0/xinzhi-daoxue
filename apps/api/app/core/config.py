@@ -78,8 +78,8 @@ class Settings(BaseSettings):
     model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
     model_max_retries: int = Field(default=1, ge=0, le=1)
     model_global_max_concurrency: int = Field(default=6, ge=1, le=32)
-    spark_max_concurrency: int = Field(default=2, ge=1, le=16)
-    qwen_max_concurrency: int = Field(default=4, ge=1, le=32)
+    spark_max_concurrency: int = Field(default=4, ge=1, le=16)
+    qwen_max_concurrency: int = Field(default=2, ge=1, le=32)
     enable_model_cost_tracking: bool = True
     academic_solver_max_tokens: int = Field(default=4096, ge=1024, le=65536)
     academic_solver_max_continuations: int = Field(default=2, ge=0, le=4)
@@ -90,6 +90,18 @@ class Settings(BaseSettings):
     image_max_long_edge: int = Field(default=4096, ge=256, le=16384)
     image_auto_rotate: bool = True
     image_remove_exif: bool = True
+    multi_image_stitch_max_images: int = Field(default=4, ge=2, le=8)
+    multi_image_stitch_max_total_pixels: int = Field(
+        default=16_000_000, ge=1_000_000, le=100_000_000
+    )
+    multi_image_stitch_max_canvas_edge: int = Field(
+        default=4096, ge=1024, le=8192
+    )
+    multi_image_stitch_max_aspect_ratio: float = Field(
+        default=4.0, ge=1.5, le=20
+    )
+    multi_image_fallback_concurrency: int = Field(default=2, ge=1, le=4)
+    multi_image_summary_max_chars: int = Field(default=24_000, ge=2000, le=100_000)
 
     enable_spark_reasoner: bool = True
     enable_qwen_text_fast: bool = True
@@ -240,7 +252,7 @@ class Settings(BaseSettings):
     enable_evaluation_api: bool = False
     enable_local_knowledge_qa: bool = True
     enable_local_solver_ct: bool = False
-    enable_xingchen_fallback: bool = True
+    enable_xingchen_fallback: bool = False
 
     vision_enabled: bool = False
     vision_endpoint: str = ""
@@ -262,6 +274,20 @@ class Settings(BaseSettings):
     student_upload_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
     student_conversation_summary_chars: int = Field(default=800, ge=100, le=2000)
     student_previous_answer_chars: int = Field(default=600, ge=100, le=2000)
+
+    context_max_input_tokens: int = Field(default=16_000, ge=1_000, le=1_000_000)
+    context_reserved_output_tokens: int = Field(
+        default=4_096, ge=256, le=262_144
+    )
+    context_compaction_trigger_ratio: float = Field(default=0.70, ge=0.1, le=0.95)
+    context_recent_message_limit: int = Field(default=12, ge=2, le=100)
+    context_relevant_older_limit: int = Field(default=6, ge=0, le=50)
+    context_memory_limit: int = Field(default=8, ge=0, le=50)
+    context_summary_target_tokens: int = Field(default=1_200, ge=100, le=8_000)
+    context_summary_message_trigger: int = Field(default=24, ge=4, le=1_000)
+    context_cache_ttl_seconds: int = Field(default=300, ge=1, le=86_400)
+    context_cache_max_entries: int = Field(default=256, ge=1, le=10_000)
+    context_config_version: str = "conversation-v1"
 
     route_budget_ms: int = Field(default=50, ge=1, le=5000)
     normalization_budget_ms: int = Field(default=20, ge=1, le=5000)

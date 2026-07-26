@@ -2,6 +2,8 @@
 
 芯智导学当前是一个本地可运行的电子信息课程群多智能体编排中枢。本地负责协议、路由、状态、RAG 与专业工具；讯飞 Spark-X2 与阿里云百炼千问提供统一文本/多模态模型服务；既有星辰工作流继续作为已验证能力、基线与故障回退。所有扩展复用现有 FastAPI、TaskRouter、TaskRunner、数据库、SSE 与上传链路。
 
+需要继续修改代码时，先阅读 [代码级开发手册](docs/developer_code_navigation.md)。它按 API、任务执行、路由、Solver、RAG、模型、学习闭环、数据库、前端、评测和测试梳理了真实调用链，并提供常见微调任务的入口索引。逐个文件的职责见 [仓库逐文件目录](docs/repository_file_catalog.md)。
+
 专业求解入口现统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。`SOLVER_CT_V1` 保留为 CT 云端冻结基线和回退，不再作为本地核心。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_consolidation_audit.md`。
 
 ## 组员统一启动（Windows）
@@ -17,7 +19,7 @@
 
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。
 
-业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true` 才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
+业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。文字分类、检索改写、知识回答和专业解题优先使用科大讯飞 Spark，Qwen 主要承担视觉任务、结构化归一化和模型故障兜底。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`、`ENABLE_XINGCHEN_FALLBACK=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true`，并在需要时显式启用星辰回退，才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
 
 PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：
 
@@ -134,7 +136,7 @@ DASHSCOPE_API_KEY=
 - CT 的 `check_user_solution` 和 `verify_answer` 直接复用冻结的 `SOLVER_CT_V1`；已移除从未发布的中间计划态 Agent，避免无效降级和额外 Flow 配置。
 - CT/AE/DE/SS/DSP/COMM 的学习类意图统一进入带本地 RAG 的 `LEARN_01_KNOWLEDGE_QA_V1`；云端失败、未发布或未配置时降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。截至 2026-07-25，真实星辰工作流仍只接受 CT/AE/DE，SS/DSP/COMM 的云端答案质量状态为 `BLOCKED_BY_CLOUD_FLOW`，本地证据检索与回退不受影响。
 - 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的云端调度兜底；兜底不可用时返回 `unresolved`，不会自动送入 `SOLVER_CT_V1`。
-- 多图、PDF、空输入及 Agent 未声明的输入组合返回明确错误，不会静默丢弃附件。
+- 本地 `ACADEMIC_PROBLEM_SOLVER` 支持有序多图：简单图片批次先拼接为一张组合图，复杂批次逐图识别、汇总后再解题；PDF、空输入及 Agent 未声明的输入组合仍返回明确错误。
 
 ## 本地知识库
 
@@ -211,7 +213,9 @@ python scripts/xingchen_smoke_test.py
 
 图片输入要求：
 
-- 当前只支持单张 PNG/JPG/JPEG，仍不支持 PDF 和多图。
+- 学生 Workspace 可一次选择最多 8 张 PNG/JPG/JPEG/WEBP；默认不把多图传给星辰。
+- 本地学术求解器默认在图片数不超过 4、总像素和长宽比满足配置时拼接；否则逐图调用视觉模型，再使用文本模型合并条件后解题。
+- `SOLVER_CT_V1` 的星辰冻结基线仍只支持单张图片，不支持 PDF 或多图。
 - 星辰工作流开始节点必须存在名称完全一致、类型为 `Image` 的 `USER_INPUT_image` 参数。
 - `USER_INPUT_image` 必须连接到 OCR 或图像理解节点；修改工作流后需要重新发布 API，并在绑定页面点击“更新绑定”。
 - 图片上传成功后，任务结果的 `structured_result.input_type` 为 `single_image` 或 `text_and_single_image`。
@@ -272,7 +276,7 @@ GET  /student
 
 `http://localhost:8000/debug` 是原生 HTML/CSS/JavaScript 一页式演示界面。文字和图片共用 `POST /api/v1/tasks`，并通过 SSE 展示“正在识别、正在求解、正在整理答案”等步骤；真实星辰、Mock 和本地结果使用不同标识。
 
-`http://localhost:8000/debug/agents` 用于开发态Agent注册、映射预览、Mock和契约检查；`http://localhost:8000/student` 是正式学生端首版，只开放三门课程知识问答与CT文字/单图片解题。
+`http://localhost:8000/debug/agents` 用于开发态Agent注册、映射预览、Mock和契约检查；`http://localhost:8000/workspace`（`/student` 同入口）是正式学生端，支持自然语言自动路由和本地学术求解器多图输入。
 
 ## 检索评测
 
@@ -327,3 +331,13 @@ git diff --check
 2. 使用真实课程图片人工验收千问视觉回答质量与成本。
 3. 依据人工审核后的评测集继续优化轻量词项/混合检索，保持 `KnowledgeHit` 与 `RetrievalContextPacket` 合同稳定。
 4. 将进程内 TaskRunner 和索引按规模需求迁移为独立 Worker/检索服务，不改变统一任务入口。
+# Agent Runtime Foundation v1
+
+平台现已在原有 `POST /api/v1/tasks` 单一执行链上支持消息级历史、多轮上下文、
+会话标题/搜索/归档、WorkingState、Token 预算、版本化摘要、Redis/内存上下文
+缓存和显式长期记忆。自动记忆默认关闭，`SOLVER_CT_V1` 与星辰默认授权策略未变。
+
+架构与部署说明：
+
+- [Agent Runtime Foundation](docs/architecture/agent_runtime_foundation.md)
+- [会话与长期记忆部署指南](docs/deployment/conversation_memory_guide.md)

@@ -134,6 +134,28 @@ def test_registry_loads_models_and_routes() -> None:
         "qwen_text_fast",
     }
     assert registry.get_route("knowledge_answer").primary == "spark_reasoner"
+    for task_type in (
+        "course_classification",
+        "intent_classification",
+        "query_rewrite",
+        "retrieval_keyword_generation",
+        "knowledge_answer",
+        "general_question_answer",
+        "multi_image_summary",
+        "academic_problem_solving",
+        "lesson_prep",
+        "assignment_review",
+        "academic_writing",
+        "data_analysis_explanation",
+    ):
+        assert registry.get_route(task_type).primary == "spark_reasoner"
+    assert (
+        registry.get_route("structured_output_normalization").primary
+        == "qwen_text_fast"
+    )
+    assert registry.get_route("simple_image_understanding").primary.startswith(
+        "qwen_vision"
+    )
     assert registry.errors == []
 
 

@@ -22,6 +22,7 @@ class BaseCoursePack:
     supported_problem_types: tuple[str, ...]
     supported_capabilities: tuple[str, ...]
     topic_keywords: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    verification_rules: tuple[str, ...] = ()
     fallback: CourseFallbackConfig = CourseFallbackConfig()
     implementation_status: str = "skeleton"
 
@@ -75,5 +76,6 @@ class BaseCoursePack:
             "implementation_status": self.implementation_status,
             "supported_problem_types": list(self.supported_problem_types),
             "supported_capabilities": list(self.supported_capabilities),
+            "verification_rules": list(self.verification_rules),
             "fallback_agent_id": self.fallback.target_agent_id,
         }

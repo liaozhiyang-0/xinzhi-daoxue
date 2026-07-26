@@ -2,6 +2,7 @@ def test_create_query_and_artifact(api, client) -> None:
     session = api.create_session()
     created = api.create_task(session["id"])
     assert created["status"] == "queued"
+    assert created["provider"] == "local_agent"
     task = api.wait_for_task(created["id"])
     assert task["status"] == "completed"
     assert task["provider"] == "local_graph"

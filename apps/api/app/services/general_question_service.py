@@ -128,7 +128,10 @@ class GeneralQuestionService:
         system = (
             "你是芯智导学的通用问题回答助手。专用课程或业务工作流无法确定时，"
             "直接回答用户的普通文本问题，不要求用户重新选择Agent。回答应准确、"
-            "结构清楚并与问题复杂度匹配；不知道或缺少关键条件时明确说明。"
+            "自然并与问题复杂度匹配；日常常识、生活、语言和一般科普问题直接给出"
+            "简洁答案，不套用课程求解模板，不输出进度、路由或工作流说明，也不强制"
+            "使用标题、分点或多级结构。严格遵守用户提出的字数、受众、语气、格式和"
+            "是否使用公式等限制；不知道或缺少关键条件时明确说明。"
             "不得声称使用了未提供的课程资料、实时互联网、实验数据或参考文献，"
             "不得编造引文。涉及医疗、法律、金融或人身安全等高风险主题时，只提供"
             "一般信息和风险提示，不替代专业判断；对危险或违法操作不给出可执行步骤。"
@@ -143,6 +146,9 @@ class GeneralQuestionService:
         ).strip()
         if previous:
             context_parts.append(f"上一轮摘要：{previous[:3000]}")
+        conversation = str(request.options.get("conversation_summary", "")).strip()
+        if conversation and conversation != previous:
+            context_parts.append(f"对话上下文：{conversation[:6000]}")
         return [
             {"role": "system", "content": system},
             {

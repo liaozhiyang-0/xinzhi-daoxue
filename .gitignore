@@ -17,6 +17,8 @@ evaluation/circuit_theory/results/*
 !evaluation/circuit_theory/results/.gitkeep
 evaluation/cache/*
 evaluation/reports/*
+evaluation/private_cases/**
+!evaluation/private_cases/README.md
 node_modules/
 dist/
 build/

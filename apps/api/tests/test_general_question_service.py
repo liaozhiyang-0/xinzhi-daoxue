@@ -5,7 +5,9 @@ from typing import Any, cast
 import pytest
 from app.agents import AgentRegistry, TaskRouter
 from app.contracts import AgentRequest, Intent, ModelResponse, ModelUsage
+from app.core.config import Settings
 from app.services.general_question_service import GeneralQuestionService
+from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 
 
@@ -23,8 +25,8 @@ def response(
     content: str, *, finish_reason: str = "stop", elapsed_ms: int = 25
 ) -> ModelResponse:
     return ModelResponse(
-        provider="dashscope",
-        model="qwen3.5-flash",
+        provider="iflytek_spark",
+        model="spark-x",
         content=content,
         usage=ModelUsage(prompt_tokens=20, completion_tokens=30, total_tokens=50),
         elapsed_ms=elapsed_ms,
@@ -59,6 +61,34 @@ def test_low_confidence_text_routes_to_general_question_without_cloud() -> None:
     assert "general_question_fallback" in decision.reason_codes
 
 
+def test_general_question_model_route_prefers_spark() -> None:
+    route = ModelRegistry(Settings(_env_file=None)).get_route(
+        "general_question_answer"
+    )
+
+    assert route.primary == "spark_reasoner"
+    assert route.fallback == "qwen_text_fast"
+
+
+def test_daily_science_question_routes_to_general_question() -> None:
+    daily = request(
+        "请用不超过150字解释：为什么天空通常看起来是蓝色的？"
+        "要求面向高中生，不使用复杂公式。"
+    ).model_copy(
+        update={
+            "course_id": "UNKNOWN",
+            "intent": Intent.UNKNOWN,
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(daily)
+
+    assert decision.agent_id == "GENERAL_QUESTION_V1"
+    assert decision.provider_required is False
+    assert decision.retrieval_required is False
+    assert decision.cloud_router_invoked is False
+
+
 @pytest.mark.asyncio
 async def test_general_question_returns_model_answer_without_course_citation() -> None:
     fake = FakeGeneralModelService([response("电路理论通常可分为五个学习层次。")])
@@ -74,6 +104,9 @@ async def test_general_question_returns_model_answer_without_course_citation() -
     assert result.metrics.model_calls == 1
     assert fake.calls[0]["task_type"] == "general_question_answer"
     assert fake.calls[0]["extra_options"] == {"max_tokens": 4096}
+    system_prompt = fake.calls[0]["messages"][0]["content"]
+    assert "日常常识、生活、语言和一般科普问题直接给出简洁答案" in system_prompt
+    assert "严格遵守用户提出的字数、受众、语气、格式" in system_prompt
 
 
 @pytest.mark.asyncio

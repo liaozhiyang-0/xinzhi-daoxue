@@ -30,7 +30,14 @@ class EvaluationRunner:
         self,
         app: FastAPI,
         *,
-        mode: Literal["offline", "live"],
+        mode: Literal[
+            "offline",
+            "live",
+            "local_deterministic",
+            "local_mock",
+            "real_model",
+            "real_xingchen",
+        ],
         cache: EvaluationCache,
         report_root: Path,
         use_cache: bool = True,
@@ -89,6 +96,7 @@ class EvaluationRunner:
                 elapsed_ms=int((perf_counter() - started) * 1000),
                 trace_id=trace_id,
                 cache_key=cache_key,
+                mode=self.mode,
             )
             self.cache.save(cache_key, result)
             return result
@@ -101,6 +109,7 @@ class EvaluationRunner:
                 elapsed_ms=int((perf_counter() - started) * 1000),
                 trace_id=trace_id,
                 cache_key=cache_key,
+                mode=self.mode,
                 warning=f"{type(exc).__name__}: {str(exc)[:160]}",
             )
             self.cache.save(cache_key, result)
@@ -125,6 +134,7 @@ class EvaluationRunner:
             trace_id=trace_id,
             cache_key=cache_key,
         )
+        result = result.model_copy(update={"evaluation_mode": self.mode})
         self.cache.save(cache_key, result)
         return result
 
@@ -192,7 +202,7 @@ class EvaluationRunner:
                     "input_type": case.input_type,
                     "evaluation_case_id": case.case_id,
                     "evaluation_mode": self.mode,
-                    "allow_cloud": self.mode == "live",
+                    "allow_cloud": self.mode in {"live", "real_model", "real_xingchen"},
                 },
             },
         )
@@ -272,6 +282,7 @@ class EvaluationRunner:
         elapsed_ms: int,
         trace_id: str,
         cache_key: str,
+        mode: str,
         warning: str | None = None,
     ) -> EvaluationResult:
         return EvaluationResult(
@@ -295,4 +306,5 @@ class EvaluationRunner:
             elapsed_ms=elapsed_ms,
             trace_id=trace_id,
             cache_key=cache_key,
+            evaluation_mode=mode,
         )

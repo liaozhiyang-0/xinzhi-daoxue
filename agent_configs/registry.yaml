@@ -114,7 +114,8 @@ agents:
       user_roles: [student, teacher, researcher]
       courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
       intents: [solve_problem]
-      input_modes: [text, single_image, text_and_single_image]
+      input_modes:
+        [text, single_image, text_and_single_image, multi_image, text_and_multi_image]
       supports_session_context: true
       supports_images: true
     input_contract:
@@ -650,7 +651,7 @@ routing:
     provider_required: false
   - course_ids: [CT, AE, DE, SS, DSP, COMM]
     intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
-    agent_id: LEARN_01_KNOWLEDGE_QA_V1
+    agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
     scene: learning
     retrieval_required: true
     provider_required: false

@@ -30,10 +30,14 @@ from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
 from app.services.academic_solver_service import AcademicProblemSolverService
+from app.services.context_assembly import ContextAssemblyService
+from app.services.context_budget import ContextBudgetManager
+from app.services.context_cache import ContextAssemblyCache
 from app.services.general_question_service import GeneralQuestionService
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.knowledge_qa_service import KnowledgeQAService
+from app.services.learning_loop import LearningLoopService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from app.services.rag_debug import RAGDebugService
@@ -48,7 +52,9 @@ from app.services.retrieval_context import (
     EvidenceQualityEvaluator,
     RetrievalContextService,
 )
+from app.services.session_compaction import SessionCompactionService
 from app.services.storage import StorageService
+from app.services.task_executor import LocalTaskExecutor
 from app.services.task_runner import TaskRunner
 from app.tools import default_tool_registry
 
@@ -138,6 +144,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         trace_store,
         model_service=model_service,
     )
+    context_budget = ContextBudgetManager(app_settings)
+    context_cache = ContextAssemblyCache(app_settings)
+    context_assembly = ContextAssemblyService(
+        app_settings, context_cache, context_budget
+    )
+    session_compaction = SessionCompactionService(app_settings, context_budget)
     task_runner = TaskRunner(
         session_factory,
         provider,
@@ -146,7 +158,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         knowledge_qa,
         rag_retrieval,
         internal_agent_execution,
+        course_registry,
+        context_assembly=context_assembly,
+        session_compaction=session_compaction,
     )
+    learning_loop = LearningLoopService()
+    task_executor = LocalTaskExecutor(task_runner)
     rag_debug = RAGDebugService(
         app_settings,
         task_router,
@@ -189,11 +206,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.knowledge_qa = knowledge_qa
         app.state.rag_debug = rag_debug
         app.state.task_runner = task_runner
+        app.state.task_executor = task_executor
+        app.state.learning_loop = learning_loop
+        app.state.context_budget = context_budget
+        app.state.context_cache = context_cache
+        app.state.context_assembly = context_assembly
+        app.state.session_compaction = session_compaction
         if app_settings.app_env == "test":
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
         yield
-        await task_runner.shutdown()
+        await task_executor.shutdown()
+        await context_cache.close()
         close_provider = getattr(provider, "aclose", None)
         if close_provider is not None:
             await close_provider()
