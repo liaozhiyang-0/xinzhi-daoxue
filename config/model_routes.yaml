@@ -30,6 +30,13 @@ routes:
     primary: spark_reasoner
     verifier: qwen_vision_primary
   academic_problem_solving:
+    primary: qwen_vision_primary
+    fallback: spark_reasoner
+    verifier: qwen_vision_primary
+    options:
+      spark_response_transport: stream
+      spark_stream_total_timeout_seconds: 50
+  academic_problem_solving_simple:
     primary: spark_reasoner
     fallback: qwen_vision_primary
     verifier: qwen_vision_primary

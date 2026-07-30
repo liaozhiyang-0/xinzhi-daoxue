@@ -145,6 +145,24 @@ def test_runtime_policy_uses_rule_only_complexity_and_bounded_calls() -> None:
     assert SolverRuntimePolicy.classify(synthesis_problem) == ProblemComplexity.COMPLEX
     assert SolverRuntimePolicy.uses_extended_time_budget(ProblemComplexity.COMPLEX)
     assert not SolverRuntimePolicy.uses_extended_time_budget(ProblemComplexity.MEDIUM)
+    assert (
+        AcademicProblemSolverService._generation_task_type(ProblemComplexity.SIMPLE)
+        == "academic_problem_solving_simple"
+    )
+    assert (
+        AcademicProblemSolverService._generation_task_type(ProblemComplexity.MEDIUM)
+        == "academic_problem_solving_simple"
+    )
+    assert (
+        AcademicProblemSolverService._generation_task_type(ProblemComplexity.COMPLEX)
+        == "academic_problem_solving"
+    )
+    assert (
+        AcademicProblemSolverService._generation_task_type(
+            ProblemComplexity.HIGH_RISK
+        )
+        == "academic_problem_solving"
+    )
 
 
 def test_academic_solver_uses_extended_budget_only_for_complex_cases() -> None:

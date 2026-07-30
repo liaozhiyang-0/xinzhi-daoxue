@@ -52,6 +52,8 @@ class AcademicProblemSolverService:
 
     agent_id = "ACADEMIC_PROBLEM_SOLVER"
     completion_marker = "<!-- XZD_ACADEMIC_COMPLETE -->"
+    complex_model_task_type = "academic_problem_solving"
+    standard_model_task_type = "academic_problem_solving_simple"
 
     def __init__(
         self,
@@ -823,8 +825,9 @@ class AcademicProblemSolverService:
         allow_route_fallback: bool,
         knowledge_context: str = "",
     ) -> tuple[Any, dict[str, Any]]:
+        model_task_type = self._generation_task_type(complexity)
         if self.model_service is None or not self._model_route_available(
-            "academic_problem_solving"
+            model_task_type
         ):
             return result, {}
         if budget.finalization_required:
@@ -842,6 +845,7 @@ class AcademicProblemSolverService:
                     "status": "skipped",
                     "reason": "time_budget_exhausted",
                     "model_calls": 0,
+                    "task_type": model_task_type,
                 },
             )
         pack = self.graph.courses.get(problem.course)
@@ -903,7 +907,7 @@ class AcademicProblemSolverService:
         try:
             async with asyncio.timeout(call_timeout_seconds):
                 response = await self.model_service.generate_for_task(
-                    "academic_problem_solving",
+                    model_task_type,
                     messages=[
                         {
                             "role": "system",
@@ -926,12 +930,14 @@ class AcademicProblemSolverService:
             return self._generation_failure(
                 result,
                 "primary_model_time_budget_exhausted",
+                task_type=model_task_type,
             )
         except AppError as exc:
             return self._generation_failure(
                 result,
                 exc.code,
                 fallback_attempted=bool(exc.details.get("fallback_attempted")),
+                task_type=model_task_type,
             )
         except Exception:
             logger.exception(
@@ -941,6 +947,7 @@ class AcademicProblemSolverService:
             return self._generation_failure(
                 result,
                 "academic_model_unexpected_error",
+                task_type=model_task_type,
             )
         responses = [response]
         answer = response.content.strip()
@@ -988,7 +995,7 @@ class AcademicProblemSolverService:
                     continuation_options["_allow_route_fallback"] = False
                 async with asyncio.timeout(call_timeout):
                     response = await self.model_service.generate_for_task(
-                        "academic_problem_solving",
+                        model_task_type,
                         messages=[
                             {
                                 "role": "system",
@@ -1064,6 +1071,12 @@ class AcademicProblemSolverService:
             {
                 "status": "completed" if output_complete else "partial",
                 "output_status": output_status,
+                "task_type": model_task_type,
+                "routing_tier": (
+                    "complex_qwen_primary"
+                    if model_task_type == self.complex_model_task_type
+                    else "standard_spark_primary"
+                ),
                 "provider": response.provider,
                 "model": response.model,
                 "elapsed_ms": sum(item.elapsed_ms for item in responses),
@@ -1079,6 +1092,15 @@ class AcademicProblemSolverService:
                 **self._combined_fallback_metadata(responses),
             },
         )
+
+    @classmethod
+    def _generation_task_type(cls, complexity: ProblemComplexity) -> str:
+        if complexity in {
+            ProblemComplexity.COMPLEX,
+            ProblemComplexity.HIGH_RISK,
+        }:
+            return cls.complex_model_task_type
+        return cls.standard_model_task_type
 
     def _generation_limits(self) -> tuple[int, int, float]:
         if self.model_service is None:
@@ -1411,6 +1433,7 @@ class AcademicProblemSolverService:
         error_type: str,
         *,
         fallback_attempted: bool = False,
+        task_type: str | None = None,
     ) -> tuple[Any, dict[str, Any]]:
         return (
             result.model_copy(
@@ -1424,6 +1447,7 @@ class AcademicProblemSolverService:
             {
                 "status": "failed",
                 "error_type": error_type,
+                "task_type": task_type,
                 "model_calls": 2 if fallback_attempted else 1,
                 "fallback_count": 1 if fallback_attempted else 0,
                 "fallback_reason": error_type if fallback_attempted else None,

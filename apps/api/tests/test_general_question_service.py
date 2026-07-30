@@ -91,7 +91,10 @@ class AcademicThenGeneralModelService:
     ) -> ModelResponse:
         del kwargs
         self.calls.append(task_type)
-        if task_type == "academic_problem_solving":
+        if task_type in {
+            "academic_problem_solving",
+            "academic_problem_solving_simple",
+        }:
             raise RuntimeError("academic route unavailable")
         if task_type == "academic_direct_answer":
             return response(
@@ -445,6 +448,6 @@ def test_workspace_solver_failure_is_replaced_by_direct_model_answer(
         "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。"
     )
     assert model_service.calls == [
-        "academic_problem_solving",
+        "academic_problem_solving_simple",
         "academic_direct_answer",
     ]

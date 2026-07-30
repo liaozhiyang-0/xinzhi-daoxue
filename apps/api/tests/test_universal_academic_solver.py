@@ -41,12 +41,15 @@ def test_course_registry_loads_first_wave_and_unknown_fallback() -> None:
     assert registry.get("not-a-course").course_code == "UNKNOWN"
 
 
-def test_academic_text_reasoning_prefers_spark_with_qwen_fallback() -> None:
+def test_academic_reasoning_routes_by_problem_complexity() -> None:
     registry = ModelRegistry(Settings(app_env="test", _env_file=None))
-    route = registry.get_route("academic_problem_solving")
+    complex_route = registry.get_route("academic_problem_solving")
+    standard_route = registry.get_route("academic_problem_solving_simple")
 
-    assert route.primary == "spark_reasoner"
-    assert route.fallback == "qwen_vision_primary"
+    assert complex_route.primary == "qwen_vision_primary"
+    assert complex_route.fallback == "spark_reasoner"
+    assert standard_route.primary == "spark_reasoner"
+    assert standard_route.fallback == "qwen_vision_primary"
 
 
 @pytest.mark.parametrize(

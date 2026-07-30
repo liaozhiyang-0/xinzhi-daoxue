@@ -142,7 +142,7 @@ def test_registry_loads_models_and_routes() -> None:
         "knowledge_answer",
         "general_question_answer",
         "multi_image_summary",
-        "academic_problem_solving",
+        "academic_problem_solving_simple",
         "lesson_prep",
         "assignment_review",
         "academic_writing",
@@ -160,6 +160,9 @@ def test_registry_loads_models_and_routes() -> None:
     assert academic_vision.primary == "qwen_vision_primary"
     assert academic_vision.fallback == "qwen_vision_fast"
     assert academic_vision.options["high_resolution"] is True
+    complex_solver = registry.get_route("academic_problem_solving")
+    assert complex_solver.primary == "qwen_vision_primary"
+    assert complex_solver.fallback == "spark_reasoner"
     assert registry.errors == []
 
 
