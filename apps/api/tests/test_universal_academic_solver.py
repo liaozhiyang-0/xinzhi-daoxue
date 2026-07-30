@@ -254,7 +254,7 @@ async def test_image_input_uses_vision_summary_without_storing_base64() -> None:
 
 
 @pytest.mark.asyncio
-async def test_simple_multi_image_solver_stitches_before_vision_model() -> None:
+async def test_multi_image_solver_sends_ordered_originals_to_vision_model() -> None:
     class FakeRegistry:
         @staticmethod
         def get_route(_task_type: str) -> object:
@@ -333,15 +333,16 @@ async def test_simple_multi_image_solver_stitches_before_vision_model() -> None:
     )
 
     execution = result.structured_result["vision_execution"]
-    assert execution["strategy"] == "stitched"
+    assert execution["strategy"] == "ordered_multi_image"
     assert execution["source_image_count"] == 2
-    assert execution["model_image_count"] == 1
-    assert model_service.vision_image_counts == [1]
+    assert execution["model_image_count"] == 2
+    assert execution["original_order_preserved"] is True
+    assert model_service.vision_image_counts == [2]
     assert result.metrics.model_calls == 2
 
 
 @pytest.mark.asyncio
-async def test_complex_multi_image_solver_recognizes_each_then_summarizes() -> None:
+async def test_complex_multi_image_solver_uses_one_cross_image_vision_call() -> None:
     class FakeRegistry:
         @staticmethod
         def get_route(_task_type: str) -> object:
@@ -430,16 +431,13 @@ async def test_complex_multi_image_solver_recognizes_each_then_summarizes() -> N
     )
 
     execution = result.structured_result["vision_execution"]
-    assert execution["strategy"] == "per_image"
-    assert execution["fallback_reason"] == "image_count_exceeds_stitch_limit"
+    assert execution["strategy"] == "ordered_multi_image"
     assert execution["source_image_count"] == 3
-    assert execution["summary_execution"]["status"] == "completed"
-    assert model_service.vision_image_counts == [1, 1, 1]
-    assert model_service.text_task_types == [
-        "multi_image_summary",
-        "academic_problem_solving",
-    ]
-    assert result.metrics.model_calls == 5
+    assert execution["model_image_count"] == 3
+    assert execution["original_order_preserved"] is True
+    assert model_service.vision_image_counts == [3]
+    assert model_service.text_task_types == ["academic_problem_solving"]
+    assert result.metrics.model_calls == 2
 
 
 class FakeAcademicRegistry:

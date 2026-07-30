@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     academic_solver_complex_hard_deadline_seconds: float = Field(
         default=235, gt=0, le=240
     )
+    academic_solver_retrieval_timeout_seconds: float = Field(
+        default=30, gt=0, le=120
+    )
+    academic_solver_vision_timeout_seconds: float = Field(
+        default=60, gt=0, le=180
+    )
+    academic_solver_min_generation_seconds: float = Field(
+        default=90, gt=0, le=180
+    )
 
     upload_max_image_size_mb: int = Field(default=6, ge=1, le=50)
     upload_max_images: int = Field(default=8, ge=1, le=32)
@@ -112,6 +121,7 @@ class Settings(BaseSettings):
     )
     multi_image_stitch_max_canvas_edge: int = Field(default=4096, ge=1024, le=8192)
     multi_image_stitch_max_aspect_ratio: float = Field(default=4.0, ge=1.5, le=20)
+    multi_image_preserve_originals: bool = True
     multi_image_fallback_concurrency: int = Field(default=2, ge=1, le=4)
     multi_image_summary_max_chars: int = Field(default=24_000, ge=2000, le=100_000)
 

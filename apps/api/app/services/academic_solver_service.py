@@ -444,7 +444,7 @@ class AcademicProblemSolverService:
                 )
             pack = self.graph.courses.get(problem.course)
             async with asyncio.timeout(
-                budget.call_timeout_seconds(self._generation_limits()[2])
+                self._vision_call_timeout_seconds(budget, settings)
             ):
                 response = await self.model_service.analyze_images_for_task(
                     task_type,
@@ -453,7 +453,13 @@ class AcademicProblemSolverService:
                         + (
                             " 这是按原始顺序拼接的组合图，每个区域标有 Image 编号；"
                             if prepared.strategy == "stitched"
-                            else ""
+                            else (
+                                f" 以下是按用户上传顺序提供的 {prepared.source_count} "
+                                "张独立原图；必须同时阅读全部图片并恢复跨图题干、"
+                                "续页、图号、连接和条件关系，不得把任一图片孤立解释；"
+                                if prepared.strategy == "ordered_multi_image"
+                                else ""
+                            )
                         )
                         + self._visual_extraction_instruction()
                     ),
@@ -512,6 +518,9 @@ class AcademicProblemSolverService:
                 "source_image_count": len(images),
                 "model_image_count": len(prepared.images),
                 "model_calls": 1,
+                "original_order_preserved": (
+                    prepared.strategy == "ordered_multi_image"
+                ),
                 "composite_width": prepared.composite_width,
                 "composite_height": prepared.composite_height,
                 **self._fallback_metadata(response),
@@ -551,7 +560,7 @@ class AcademicProblemSolverService:
                     }
                 try:
                     async with asyncio.timeout(
-                        budget.call_timeout_seconds(self._generation_limits()[2])
+                        self._vision_call_timeout_seconds(budget, settings)
                     ):
                         response = await model_service.analyze_images_for_task(
                             task_type,
@@ -751,7 +760,7 @@ class AcademicProblemSolverService:
             }
         try:
             async with asyncio.timeout(
-                budget.call_timeout_seconds(self._generation_limits()[2])
+                self._vision_call_timeout_seconds(budget, settings)
             ):
                 response = await self.model_service.generate_for_task(
                     "multi_image_summary",
@@ -859,6 +868,12 @@ class AcademicProblemSolverService:
                     "旧结论或“修正前/修正后”两套答案；结论汇总必须与后文一致。"
                     "不得逐字复述题目，不要长篇讨论多个假设；若图中连接或端点"
                     "可辨认，必须按图作答，不得以无法获取原图为由拒答。"
+                ),
+                (
+                    "题目中标记为“图片结构化提取”或“多图内容汇总”的内容，"
+                    "是上游视觉模型已经从用户原图读取出的题目事实。你必须直接"
+                    "据此解题，不得声称图片无法查看、无法访问或要求用户重新上传；"
+                    "若视觉结果明确标记某个局部不确定，只指出该局部的最少不确定项。"
                 ),
                 (
                     "等价公式、分段式和统一式均可；画图题应至少给出可复现的节点、"
@@ -1078,6 +1093,23 @@ class AcademicProblemSolverService:
             ),
             int(settings.academic_solver_max_continuations),
             float(settings.academic_solver_timeout_seconds),
+        )
+
+    def _vision_call_timeout_seconds(
+        self,
+        budget: RequestTimeBudget,
+        settings: object,
+    ) -> float:
+        """Bound vision work while reserving time for the actual solver answer."""
+
+        runtime_settings = (
+            settings if isinstance(settings, Settings) else self._settings()
+        )
+        return budget.call_timeout_seconds(
+            float(runtime_settings.academic_solver_vision_timeout_seconds),
+            reserve_for_finalization_seconds=(
+                float(runtime_settings.academic_solver_min_generation_seconds) + 3
+            ),
         )
 
     @classmethod

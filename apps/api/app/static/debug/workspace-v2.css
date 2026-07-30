@@ -128,6 +128,11 @@
 .upload-preview-meta small { margin-top: 3px; color: var(--text-muted); font-size: 10px; }
 .upload-preview-item .remove-preview-item { width: 22px; height: 22px; padding: 0; border-radius: 50%; font-size: 16px; line-height: 1; }
 .upload-preview-item .remove-preview-item:hover { background: var(--danger-soft); }
+.message-image-gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.message-image-gallery button { overflow: hidden; width: 88px; height: 68px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-primary); cursor: zoom-in; }
+.message-image-gallery img { width: 100%; height: 100%; object-fit: cover; }
+.message-image-gallery button.image-load-failed::after { display: grid; height: 100%; place-items: center; padding: 6px; color: var(--text-muted); content: "原图不可用"; font-size: 10px; }
+.message-image-gallery button.image-load-failed img { display: none; }
 .context-panel { min-width: 0; overflow-y: auto; border-left: 1px solid var(--border-subtle); background: var(--bg-primary); transition: transform .2s ease, opacity .2s ease; }
 .workspace-page.context-closed .workspace-shell { grid-template-columns: var(--left-panel-width) 6px minmax(0, 1fr) 0 0; }
 .workspace-page.context-closed #right-resizer { visibility: hidden; pointer-events: none; }
@@ -189,6 +194,11 @@
 .evidence-images { display: flex; gap: 7px; margin-top: 9px; }
 .evidence-images button { padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .evidence-images img { width: 74px; height: 54px; border-radius: 6px; object-fit: cover; }
+.related-image-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.related-image-gallery button { overflow: hidden; min-height: 92px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-primary); cursor: zoom-in; }
+.related-image-gallery img { display: block; width: 100%; height: 110px; object-fit: contain; }
+.related-image-gallery button.image-load-failed::after { display: grid; min-height: 80px; place-items: center; padding: 8px; color: var(--text-muted); content: "图片暂时无法加载"; font-size: 11px; }
+.related-image-gallery button.image-load-failed img { display: none; }
 .process-list { display: grid; gap: 0; }
 .process-step { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 9px; min-height: 48px; }
 .process-step:not(:last-child)::after { content: ""; position: absolute; top: 21px; bottom: 0; left: 8px; width: 1px; background: var(--border-strong); }
@@ -217,6 +227,8 @@
 .document-page-toolbar button:disabled { cursor: not-allowed; opacity: .42; }
 .document-dialog-note { margin: 14px clamp(18px, 4vw, 48px) 0; padding: 9px 11px; border-radius: 8px; background: var(--warning-soft); color: var(--text-secondary); font-size: 12px; }
 .document-dialog-content { max-width: none; min-height: 220px; padding: 18px clamp(18px, 4vw, 48px) 48px; }
+.markdown-document .markdown-image { display: block; width: auto; max-width: 100%; max-height: 68vh; margin: 14px auto; border: 1px solid var(--border-subtle); border-radius: 8px; object-fit: contain; cursor: zoom-in; }
+.markdown-document .markdown-image.image-load-failed { min-width: min(100%, 320px); min-height: 120px; padding: 12px; background: var(--bg-secondary); color: var(--text-muted); object-fit: none; }
 .document-dialog-content.loading { display: grid; place-items: center; color: var(--text-muted); }
 @media (max-width: 1366px) { .workspace-shell { --left-panel-width: 220px; --right-panel-width: 320px; } .workspace-conversation { padding-inline: clamp(18px, 3vw, 38px); } }
 @media (max-width: 1180px) { .workspace-shell, .workspace-page.context-closed .workspace-shell { grid-template-columns: minmax(0, 1fr); } .workspace-resizer, .conversation-sidebar { display: none; } .context-panel { position: fixed; inset: 60px 0 0 auto; z-index: 45; width: min(380px, 94vw); box-shadow: -18px 0 46px rgb(23 32 43 / 16%); } .workspace-page.context-closed .context-panel { transform: translateX(100%); } }

@@ -134,6 +134,13 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
         document = client.get("/api/v1/knowledge/documents/CT/chapter.md")
         assert document.status_code == 200
         assert "text/markdown" in document.headers["content-type"]
+        chunk_page = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={"chunk": "chunk-1", "limit": 4000},
+        )
+        assert chunk_page.status_code == 200
+        assert chunk_page.json()["anchor_status"] == "matched"
+        assert r"$I=\frac{10}{5}=2A$" in chunk_page.json()["content"]
         traversal = client.get("/api/v1/knowledge/documents/CT/../.env")
         assert traversal.status_code in {400, 404}
 

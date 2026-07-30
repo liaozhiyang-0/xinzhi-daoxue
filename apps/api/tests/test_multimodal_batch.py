@@ -65,6 +65,7 @@ def test_simple_multi_image_batch_is_stitched_into_one_model_image() -> None:
             upload_max_image_size_mb=2,
             image_max_long_edge=1024,
             multi_image_stitch_max_canvas_edge=1024,
+            multi_image_preserve_originals=False,
             _env_file=None,
         )
     )
@@ -92,6 +93,7 @@ def test_complex_multi_image_batch_falls_back_to_ordered_individual_images() -> 
         Settings(
             app_env="test",
             multi_image_stitch_max_images=2,
+            multi_image_preserve_originals=False,
             _env_file=None,
         )
     )
@@ -118,13 +120,23 @@ def test_complex_multi_image_batch_falls_back_to_ordered_individual_images() -> 
 def test_composite_encoding_failure_falls_back_to_individual_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    composer = MultiImageComposer(Settings(app_env="test", _env_file=None))
+    composer = MultiImageComposer(
+        Settings(
+            app_env="test",
+            multi_image_preserve_originals=False,
+            _env_file=None,
+        )
+    )
     original_image_input = composer._image_input
 
-    def image_input_or_fail(image: Image.Image, filename: str):
+    def image_input_or_fail(
+        image: Image.Image,
+        filename: str,
+        preferred_mime_type: str = "image/jpeg",
+    ):
         if filename == "xzd-multi-image-composite.jpg":
             raise ImageProcessingError("composite too large")
-        return original_image_input(image, filename)
+        return original_image_input(image, filename, preferred_mime_type)
 
     monkeypatch.setattr(composer, "_image_input", image_input_or_fail)
     prepared = composer.prepare(
@@ -137,3 +149,23 @@ def test_composite_encoding_failure_falls_back_to_individual_images(
     assert prepared.strategy == "per_image"
     assert prepared.fallback_reason == "composite_output_exceeds_limit"
     assert [item.filename for item in prepared.images] == ["one.png", "two.png"]
+
+
+def test_multi_image_default_preserves_order_and_lossless_png_inputs() -> None:
+    composer = MultiImageComposer(Settings(app_env="test", _env_file=None))
+
+    prepared = composer.prepare(
+        [
+            SourceImage("wide.png", "image/png", image_bytes((1200, 120), "white")),
+            SourceImage("tall.png", "image/png", image_bytes((120, 1200), "gray")),
+        ]
+    )
+
+    assert prepared.strategy == "ordered_multi_image"
+    assert prepared.source_count == 2
+    assert [item.filename for item in prepared.images] == ["wide.png", "tall.png"]
+    assert all(item.mime_type == "image/png" for item in prepared.images)
+    assert all(
+        item.value.startswith("data:image/png;base64,")
+        for item in prepared.images
+    )

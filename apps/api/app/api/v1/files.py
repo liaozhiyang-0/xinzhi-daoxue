@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.api import FileRead
@@ -80,3 +81,36 @@ async def get_file(
     if model is None:
         raise NotFoundError("文件不存在", details={"file_id": file_id})
     return FileRead.model_validate(model)
+
+
+@router.get("/{file_id}/content")
+async def get_file_content(
+    file_id: str,
+    user_id: str = Query(min_length=1, max_length=128),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_from_app),
+) -> Response:
+    """Return an attached student image only to the task owner."""
+
+    model = await FileRepository(db).get(file_id)
+    if model is None or model.task_id is None:
+        raise NotFoundError("图片附件不存在", details={"file_id": file_id})
+    task = await TaskRepository(db).get(model.task_id)
+    if (
+        task is None
+        or task.user_id != user_id
+        or not model.content_type.startswith("image/")
+    ):
+        raise NotFoundError("图片附件不存在", details={"file_id": file_id})
+    data = await StorageService(settings).read(model.storage_key)
+    return Response(
+        content=data,
+        media_type=model.content_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": (
+                f"inline; filename*=UTF-8''{quote(model.filename, safe='')}"
+            ),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

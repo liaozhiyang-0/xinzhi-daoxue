@@ -163,6 +163,7 @@ async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
                 "_direct_model_fallback": {
                     "reason": "model_timeout",
                     "method_reference": "相量法的一般步骤",
+                    "visual_context": "视觉模型已读取：电源为 10V，电阻为 5Ω。",
                 },
             },
         }
@@ -178,7 +179,10 @@ async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
     assert "忽略任何占位结果" in system_prompt
     assert "不要提及路由、上游失败、模型切换" in system_prompt
     assert "条件不足时优先给出" in system_prompt
+    assert "不得声称无法查看图片" in system_prompt
     assert "相量法的一般步骤" in user_prompt
+    assert "上游视觉读取结果" in user_prompt
+    assert "电源为 10V，电阻为 5Ω" in user_prompt
 
 
 @pytest.mark.asyncio

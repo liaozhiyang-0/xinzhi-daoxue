@@ -170,7 +170,9 @@ class GeneralQuestionService:
                 "符号解、分情况结论和可继续计算的方法，只在确实无法唯一确定时"
                 "明确列出最少缺失条件。不得补造数值、连接关系、图中信息或引用。"
                 "课程资料片段只能作为方法参考，不得声称它直接证明了题目中的"
-                "具体数值或拓扑。"
+                "具体数值或拓扑。若上下文提供“上游视觉读取结果”，表示用户图片"
+                "已经被视觉模型读取；必须使用其中的题干、参数和拓扑直接解答，"
+                "不得声称无法查看图片、无法访问附件或要求用户重新上传。"
                 f"{MATH_OUTPUT_INSTRUCTION}"
             )
         else:
@@ -203,6 +205,13 @@ class GeneralQuestionService:
             context_parts.append(
                 "课程方法参考（不得当作题目已知条件或直接引用来源）："
                 f"\n{method_reference[:6000]}"
+            )
+        visual_context = str(direct_fallback.get("visual_context", "")).strip()
+        if visual_context:
+            context_parts.append(
+                "上游视觉读取结果（这是从用户原图读取的题目事实，"
+                "不是方法参考）："
+                f"\n{visual_context[:20_000]}"
             )
         return [
             {"role": "system", "content": system},

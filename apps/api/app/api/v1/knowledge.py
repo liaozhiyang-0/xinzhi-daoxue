@@ -254,6 +254,7 @@ async def knowledge_document_page(
     anchor: str = Query(default="", max_length=2000),
     chunk: str = Query(default="", max_length=64),
     normalize_math: bool = True,
+    knowledge_base: KnowledgeBaseService = Depends(get_knowledge_base),
 ) -> KnowledgeDocumentPage:
     try:
         if chunk and (
@@ -268,13 +269,32 @@ async def knowledge_document_page(
             text_only=True,
         )
         document = await asyncio.to_thread(target.read_text, encoding="utf-8")
+        chunk_anchor = ""
+        if offset is None and chunk:
+            source_ref = f"kb://{course_id}/{relative_path}#{chunk}"
+            chunk_anchor = await asyncio.to_thread(
+                lambda: knowledge_base.source_content(source_ref) or ""
+            )
         start, end, anchor_status = await asyncio.to_thread(
             _document_window,
             document,
             offset=offset,
             limit=limit,
-            anchor=anchor,
+            anchor=chunk_anchor or anchor,
         )
+        if (
+            offset is None
+            and chunk_anchor
+            and anchor_status == "not_found"
+            and anchor
+        ):
+            start, end, anchor_status = await asyncio.to_thread(
+                _document_window,
+                document,
+                offset=None,
+                limit=limit,
+                anchor=anchor,
+            )
         content = document[start:end]
         if normalize_math:
             content = await asyncio.to_thread(

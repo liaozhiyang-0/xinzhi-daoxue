@@ -18,6 +18,7 @@ const panelWidthStorage = {
 };
 let pendingMaterialFiles = [];
 let materialPreviewUrls = [];
+let conversationMaterialUrls = [];
 let pendingLearningFollowUp = null;
 const documentPageState = {
   item: null,
@@ -74,6 +75,8 @@ async function ensureSession(force = false) {
 }
 
 function resetConversation() {
+  conversationMaterialUrls.forEach((url) => URL.revokeObjectURL(url));
+  conversationMaterialUrls = [];
   state.currentTask = null; state.archivedTaskIds.clear();
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
   $("#teaching-loop-panel").hidden = true;
@@ -141,15 +144,57 @@ function scrollConversationToEnd(behavior = "smooth") {
   requestAnimationFrame(() => conversation.scrollTo({ top: conversation.scrollHeight, behavior }));
 }
 
-function addMessage(text, kind = "user", taskId = "") {
+function addMessage(text, kind = "user", taskId = "", files = []) {
   $("#welcome").hidden = true;
   const attrs = { class: `conversation-message ${kind}` };
   if (taskId) attrs["data-task-id"] = taskId;
-  $("#messages").append(el("article", attrs, [
+  const article = el("article", attrs, [
     el("span", { class: "message-role", text: kind === "user" ? "你" : "进度" }),
     el("p", { text }),
-  ]));
+  ]);
+  const imageFiles = files.filter((file) => file.type?.startsWith("image/"));
+  if (imageFiles.length) {
+    const gallery = el("div", { class: "message-image-gallery" });
+    imageFiles.forEach((file, index) => {
+      const url = URL.createObjectURL(file);
+      conversationMaterialUrls.push(url);
+      gallery.append(el("button", {
+        type: "button",
+        title: `查看 ${file.name}`,
+        onclick: () => openImage(url, `${index + 1}. ${file.name}`),
+      }, el("img", {
+        src: url,
+        alt: `${file.name} 原图`,
+      })));
+    });
+    article.append(gallery);
+  }
+  $("#messages").append(article);
   scrollConversationToEnd();
+  return article;
+}
+
+function appendStoredAttachmentImages(article, attachmentIds = []) {
+  if (!article || !attachmentIds.length) return;
+  const gallery = el("div", { class: "message-image-gallery" });
+  attachmentIds.forEach((fileId, index) => {
+    const src = `/api/v1/files/${encodeURIComponent(fileId)}/content?user_id=${encodeURIComponent(state.userId)}`;
+    const image = el("img", {
+      src,
+      alt: `题目原图 ${index + 1}`,
+      loading: "lazy",
+      decoding: "async",
+    });
+    image.addEventListener("error", () => {
+      image.closest("button")?.classList.add("image-load-failed");
+    }, { once: true });
+    gallery.append(el("button", {
+      type: "button",
+      title: `查看题目原图 ${index + 1}`,
+      onclick: () => openImage(src, `题目原图 ${index + 1}`),
+    }, image));
+  });
+  article.append(gallery);
 }
 
 function taskQuestion(task) {
@@ -183,6 +228,7 @@ function presentationFor(task, result) {
     provider_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
     xingchen_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
     not_configured: "该云端能力尚未配置，本次已切换到本地安全后备结果。",
+    academic_generation_direct_model: "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。",
   };
   return {
     ...raw,
@@ -232,10 +278,44 @@ function archiveCurrentAnswer() {
 }
 
 function imageUrl(uri) {
+  if (String(uri).startsWith("/api/v1/knowledge/images/")) return String(uri);
   if (!String(uri).startsWith("kb-image://")) return "";
   const rest = uri.slice(11); const slash = rest.indexOf("/");
   if (slash < 0) return "";
   return `/api/v1/knowledge/images/${encodeURIComponent(rest.slice(0, slash))}/${rest.slice(slash + 1).split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function normalizeRelativeKnowledgePath(documentPath, resourcePath) {
+  const clean = String(resourcePath || "").split(/[?#]/, 1)[0].replace(/\\/g, "/");
+  if (!clean || clean.startsWith("/") || /^[a-z]+:/i.test(clean)) return "";
+  const parts = [...String(documentPath || "").split("/").slice(0, -1), ...clean.split("/")];
+  const normalized = [];
+  parts.forEach((part) => {
+    if (!part || part === ".") return;
+    if (part === "..") normalized.pop();
+    else normalized.push(part);
+  });
+  return normalized.join("/");
+}
+
+function rewriteKnowledgeDocumentImages(markdown, page) {
+  return String(markdown || "").replace(
+    /!\[([^\]]*)\]\((<[^>]+>|[^)\s]+)(\s+"[^"]*")?\)/g,
+    (match, alt, rawTarget, title = "") => {
+      const target = String(rawTarget).replace(/^<|>$/g, "");
+      if (target.startsWith("kb-image://")) {
+        const src = imageUrl(target);
+        return src ? `![${alt}](${src}${title})` : match;
+      }
+      if (/^(?:https?:|data:image\/|\/api\/v1\/knowledge\/images\/)/i.test(target)) {
+        return match;
+      }
+      const relative = normalizeRelativeKnowledgePath(page.relative_path, target);
+      if (!relative) return match;
+      const src = imageUrl(`kb-image://${page.course_id}/${relative}`);
+      return src ? `![${alt}](${src}${title})` : match;
+    },
+  );
 }
 
 function knowledgeDocumentUrl(sourceRef) {
@@ -308,7 +388,23 @@ async function loadEvidenceDocumentPage(item, offset = null) {
     if (requestSequence !== documentPageState.requestSequence) return;
     documentPageState.previousOffset = page.previous_offset;
     documentPageState.nextOffset = page.next_offset;
-    renderMarkdown(content, page.content || "这部分原文没有可显示的文本。");
+    renderMarkdown(
+      content,
+      rewriteKnowledgeDocumentImages(
+        page.content || "这部分原文没有可显示的文本。",
+        page,
+      ),
+    );
+    all("img.markdown-image", content).forEach((image) => {
+      image.addEventListener("click", () => openImage(
+        image.currentSrc || image.src,
+        image.alt || item.title || "课程资料图片",
+      ));
+      image.addEventListener("error", () => {
+        image.classList.add("image-load-failed");
+        image.alt = `${image.alt || "课程资料图片"}（加载失败）`;
+      }, { once: true });
+    });
     content.classList.remove("loading");
     previous.disabled = page.previous_offset == null;
     next.disabled = page.next_offset == null;
@@ -415,9 +511,48 @@ function focusEvidence(id) {
   active?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function renderEvidence(items, presentation) {
+function relatedImageCard(images) {
+  const unique = [...new Map(
+    images
+      .filter((item) => imageUrl(item.resource_uri))
+      .map((item) => [item.resource_uri, item]),
+  ).values()];
+  if (!unique.length) return null;
+  const gallery = el("div", { class: "related-image-gallery" });
+  unique.forEach((item) => {
+    const src = imageUrl(item.resource_uri);
+    const image = el("img", {
+      src,
+      alt: item.caption || "检索到的教材图片",
+      loading: "lazy",
+      decoding: "async",
+    });
+    image.addEventListener("error", () => {
+      image.closest("button")?.classList.add("image-load-failed");
+    }, { once: true });
+    gallery.append(el("button", {
+      type: "button",
+      title: "打开教材图片",
+      onclick: () => openImage(src, item.caption || item.resource_uri),
+    }, image));
+  });
+  return el("article", { class: "evidence-card related-image-card" }, [
+    el("div", { class: "evidence-card-header" }, [
+      el("span", { class: "evidence-id", text: "图片资料" }),
+      el("span", { class: "evidence-role", text: `${unique.length} 张` }),
+    ]),
+    el("h3", { text: "检索到的教材原图" }),
+    el("small", { text: "点击缩略图查看完整图片" }),
+    gallery,
+  ]);
+}
+
+function renderEvidence(items, presentation, relatedImages = []) {
   state.evidence = items || [];
-  $("#context-evidence").replaceChildren(...(state.evidence.length ? state.evidence.map(evidenceCard) : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的课程依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
+  const cards = state.evidence.map(evidenceCard);
+  const imageCard = relatedImageCard(relatedImages);
+  if (imageCard) cards.push(imageCard);
+  $("#context-evidence").replaceChildren(...(cards.length ? cards : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的课程依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
 }
 
 function renderProcess(steps = []) {
@@ -550,7 +685,12 @@ function renderResult(task) {
   if (structured.teaching?.teaching_mode === "check_my_work") notices.push({ status: "warning", text: structured.teaching.diagnostic_scope });
   if (structured.student_attempt_review?.feedback?.length) notices.push({ status: "", text: structured.student_attempt_review.feedback.join("；") });
   $("#answer-notices").replaceChildren(...notices.map((item) => el("div", { class: `notice ${item.status}`, text: item.text })));
-  renderEvidence(evidence, presentation); renderProcess(presentation.execution_steps || []);
+  const relatedImages = [
+    ...(structured.related_images || []),
+    ...(result.related_images || []),
+    ...(structured.knowledge?.images || []),
+  ];
+  renderEvidence(evidence, presentation, relatedImages); renderProcess(presentation.execution_steps || []);
   renderContextUsage(result);
   const renderMs = performance.now() - renderStarted; localStorage.setItem("xinzhi_last_render_ms", renderMs.toFixed(1));
   renderInfo(task, result, summary, presentation, renderMs);
@@ -734,7 +874,8 @@ async function loadSessionHistory() {
     $("#welcome").hidden = true;
     messages.forEach((message) => {
       if (message.role === "user") {
-        addMessage(message.content_text, "user", message.source_task_id || "");
+        const article = addMessage(message.content_text, "user", message.source_task_id || "");
+        appendStoredAttachmentImages(article, message.attachment_ids || []);
       } else if (message.role === "assistant") {
         const body = el("div", { class: "message-body" }, [
           el("span", { class: "message-meta", text: message.status === "completed" ? "已完成" : message.status }),
@@ -768,7 +909,14 @@ async function loadSessionHistory() {
   } catch (error) {
     try {
       const tasks = await api(`/api/v1/sessions/${state.sessionId}/tasks?limit=50`);
-      tasks.forEach((task) => { addMessage(taskQuestion(task), "user", task.id); archiveTaskAnswer(task); });
+      tasks.forEach((task) => {
+        const article = addMessage(taskQuestion(task), "user", task.id);
+        appendStoredAttachmentImages(
+          article,
+          (task.input_content?.attachments || []).map((item) => item.file_id),
+        );
+        archiveTaskAnswer(task);
+      });
     } catch (_fallbackError) {
       toast(`暂未恢复会话历史：${error.message}`);
     }
@@ -919,7 +1067,7 @@ async function submit(event) {
     el("p", { text: "任务完成后会展示实际使用的消息、记忆和预算。" }),
   ]));
   try {
-    await ensureSession(); state.activeCourse = requestedCourse; localStorage.setItem("xinzhi_student_course", requestedCourse); archiveCurrentAnswer(); if (question) addMessage(question); else addMessage(`已上传 ${selectedFiles.length} 张题目图片`);
+    await ensureSession(); state.activeCourse = requestedCourse; localStorage.setItem("xinzhi_student_course", requestedCourse); archiveCurrentAnswer(); if (question) addMessage(question, "user", "", selectedFiles); else addMessage(`已上传 ${selectedFiles.length} 张题目图片`, "user", "", selectedFiles);
     const materials = await uploadMaterials();
     const canonical = { text: question };
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");

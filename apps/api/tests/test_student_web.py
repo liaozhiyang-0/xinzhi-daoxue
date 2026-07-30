@@ -59,8 +59,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260730-document-view-v4" in page.text
-    assert "ui-core.js?v=20260730-document-view-v4" in page.text
+    assert "20260730-image-runtime-v6" in page.text
+    assert "ui-core.js?v=20260730-image-runtime-v6" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -70,6 +70,12 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "function openEvidenceDocument(item)" in script.text
     assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
     assert "documentPageState.controller?.abort()" in script.text
+    assert "rewriteKnowledgeDocumentImages" in script.text
+    assert "relatedImageCard" in script.text
+    assert "academic_generation_direct_model" in script.text
+    assert "message-image-gallery" in script.text
+    assert "appendStoredAttachmentImages" in script.text
+    assert "/content?user_id=" in script.text
     assert "initializeResizablePanels()" in script.text
     assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
     assert "let pendingLearningFollowUp = null" in script.text
@@ -252,9 +258,21 @@ def test_student_single_image_task_uses_existing_attachment_contract(
 
     task = api.create_task(session["id"], attachments=[attachment])
     final = api.wait_for_task(task["id"])
+    content = client.get(
+        f"/api/v1/files/{file['id']}/content",
+        params={"user_id": "user-test"},
+    )
+    forbidden = client.get(
+        f"/api/v1/files/{file['id']}/content",
+        params={"user_id": "another-user"},
+    )
 
     assert final["status"] == "completed"
     assert final["agent_id"] == "ACADEMIC_PROBLEM_SOLVER"
+    assert content.status_code == 200
+    assert content.headers["content-type"] == "image/png"
+    assert content.content.startswith(b"\x89PNG")
+    assert forbidden.status_code == 404
 
 
 def test_student_multi_image_task_reaches_existing_task_runner(api, client) -> None:

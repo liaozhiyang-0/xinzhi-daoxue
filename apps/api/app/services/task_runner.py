@@ -1509,6 +1509,13 @@ class TaskRunner:
             ),
             "method_reference": method_reference[:6000],
         }
+        visual_context = result.structured_result.get("problem_summary")
+        if request.attachments and isinstance(visual_context, str):
+            normalized_visual_context = visual_context.strip()
+            if normalized_visual_context:
+                options["_direct_model_fallback"]["visual_context"] = (
+                    normalized_visual_context[:20_000]
+                )
         fallback_request = request.model_copy(update={"options": options})
         direct = await self.internal_agents.run(
             "GENERAL_QUESTION_V1",
@@ -1776,7 +1783,7 @@ class TaskRunner:
                         attachment.storage_key
                     )
             if self.rag_retrieval is not None:
-                result = await asyncio.to_thread(
+                retrieval = asyncio.to_thread(
                     self.rag_retrieval.search,
                     query_text=query,
                     query_image=image,
@@ -1797,6 +1804,13 @@ class TaskRunner:
                     ),
                     local_budget_ms=plan.budget.retrieval_p95_target_ms,
                 )
+                if agent_definition.agent_id == "ACADEMIC_PROBLEM_SOLVER":
+                    async with asyncio.timeout(
+                        self.knowledge_base.settings.academic_solver_retrieval_timeout_seconds
+                    ):
+                        result = await retrieval
+                else:
+                    result = await retrieval
                 return result, True
             return (
                 await asyncio.to_thread(
@@ -1807,6 +1821,16 @@ class TaskRunner:
                 ),
                 True,
             )
+        except TimeoutError:
+            logger.warning(
+                "knowledge_retrieval_time_budget_exhausted task_id=%s "
+                "session_id=%s course_id=%s timeout_seconds=%s",
+                request.task_id,
+                request.session_id,
+                request.course_id,
+                self.knowledge_base.settings.academic_solver_retrieval_timeout_seconds,
+            )
+            return None, True
         except Exception as exc:
             logger.warning(
                 "knowledge_retrieval_failed task_id=%s session_id=%s "
