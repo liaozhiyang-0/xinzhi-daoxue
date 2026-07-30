@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -273,6 +274,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app_settings.app_env == "test":
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
+        if (
+            app_settings.app_env != "test"
+            and app_settings.rag_enabled
+            and app_settings.rag_warmup_on_startup
+        ):
+            logger.info("rag_model_warmup_started")
+            warmup = await asyncio.to_thread(rag_retrieval.warmup)
+            app.state.rag_warmup = warmup
+            logger.info(
+                "rag_model_warmup_completed status=%s elapsed_ms=%s failed=%s",
+                warmup["status"],
+                warmup["elapsed_ms"],
+                warmup["failed_components"],
+            )
+        else:
+            app.state.rag_warmup = {
+                "status": "skipped",
+                "reason": "test_environment_or_disabled",
+            }
         yield
         await task_executor.shutdown()
         await context_cache.close()

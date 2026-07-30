@@ -59,8 +59,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260730-image-runtime-v6" in page.text
-    assert "ui-core.js?v=20260730-image-runtime-v6" in page.text
+    assert "20260730-image-runtime-v7" in page.text
+    assert "ui-core.js?v=20260730-image-runtime-v7" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -124,6 +124,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "archiveCurrentAnswer()" in script.text
     assert "scrollbar-gutter: stable" in styles.text
     assert ".workspace-center" in styles.text and "min-height: 0" in styles.text
+    assert ".related-image-gallery button" in styles.text
+    assert "aspect-ratio: 4 / 3" in styles.text
+    assert ".evidence-card" in styles.text and "overflow: hidden" in styles.text
 
     shared_script = client.get("/debug-assets/ui-core.js")
     shared_styles = client.get("/debug-assets/components.css")

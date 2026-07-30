@@ -204,6 +204,10 @@ class Settings(BaseSettings):
     knowledge_image_context_weight: float = Field(default=0.4, ge=0, le=10)
 
     rag_enabled: bool = True
+    rag_warmup_on_startup: bool = True
+    rag_warmup_image_model: bool = True
+    rag_warmup_reranker: bool = False
+    rag_warmup_strict: bool = False
     text_embedding_provider: Literal["local", "local_bge", "hash_legacy"] = "local_bge"
     text_embedding_model: str = "BAAI/bge-small-zh-v1.5"
     text_embedding_revision: str = "7999e1d3359715c523056ef9478215996d62a620"
