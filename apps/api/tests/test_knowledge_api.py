@@ -15,7 +15,8 @@ def make_client(tmp_path: Path) -> TestClient:
     for path in (ct, ae, de, ss, dsp, comm):
         path.mkdir()
     (ct / "chapter.md").write_text(
-        "## 节点电压法\n节点电压法以独立节点电压作为未知量列写方程。",
+        "## 节点电压法\n节点电压法以独立节点电压作为未知量列写方程。"
+        "\n例如 I=10/5=2A。",
         encoding="utf-8",
     )
     chapter = ct / "chapter.md"
@@ -123,8 +124,75 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
         image = client.get("/api/v1/knowledge/images/CT/diagram.png")
         assert image.status_code == 200
         assert image.headers["content-type"] == "image/png"
+
+        document = client.get(
+            "/api/v1/knowledge/documents/CT/chapter.md",
+            params={"normalize_math": "true", "chunk": "chunk-1"},
+        )
+        assert document.status_code == 200
+        assert r"$I=\frac{10}{5}=2A$" in document.text
         document = client.get("/api/v1/knowledge/documents/CT/chapter.md")
         assert document.status_code == 200
         assert "text/markdown" in document.headers["content-type"]
         traversal = client.get("/api/v1/knowledge/documents/CT/../.env")
         assert traversal.status_code in {400, 404}
+
+
+def test_document_page_anchors_and_pages_even_when_chunk_is_stale(
+    tmp_path: Path,
+) -> None:
+    anchor = "随机过程除了广义平稳外还必须满足进一步的约束条件"
+    document_path = tmp_path / "ct" / "chapter.md"
+    with make_client(tmp_path) as client:
+        document_path.write_text(
+            "# 完整教材\n"
+            + ("前段教材内容。\n" * 900)
+            + f"\n## 命中章节\n{anchor}，并满足 $I=10/5=2A$。\n"
+            + ("后段教材内容。\n" * 900),
+            encoding="utf-8",
+        )
+
+        response = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={
+                "normalize_math": "true",
+                "chunk": "chunk-9999",
+                "anchor": anchor,
+                "limit": 4000,
+            },
+        )
+
+        assert response.status_code == 200
+        page = response.json()
+        assert page["requested_chunk"] == "chunk-9999"
+        assert page["anchor_status"] == "matched"
+        assert anchor in page["content"]
+        assert r"$I=\frac{10}{5}=2A$" in page["content"]
+        assert page["previous_offset"] is not None
+        assert page["next_offset"] is not None
+        assert page["end_offset"] - page["start_offset"] >= 4000
+
+        next_response = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={"offset": page["next_offset"], "limit": 4000},
+        )
+        assert next_response.status_code == 200
+        next_page = next_response.json()
+        assert next_page["start_offset"] >= page["end_offset"]
+        assert next_page["anchor_status"] == "not_requested"
+
+
+def test_document_page_reports_missing_anchor_without_hiding_document(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        response = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={"anchor": "不存在于本地版本的索引片段"},
+        )
+
+        assert response.status_code == 200
+        page = response.json()
+        assert page["anchor_status"] == "not_found"
+        assert page["content"]
+        assert page["start_offset"] == 0

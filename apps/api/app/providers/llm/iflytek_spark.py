@@ -92,20 +92,43 @@ class IflytekSparkProvider(OpenAICompatibleProvider, BaseModelProvider):
         self._ensure_configured(model)
         options = dict(extra_options or {})
         thinking = self._thinking(options)
+        response_transport = str(
+            options.pop("spark_response_transport", "non_stream")
+        ).strip()
+        stream_total_timeout_seconds = float(
+            options.pop(
+                "spark_stream_total_timeout_seconds",
+                self.request_timeout_seconds,
+            )
+        )
         started = perf_counter()
-        completion = await self._create_completion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens or self.settings.iflytek_spark_max_tokens,
-            extra_body={"thinking": {"type": thinking}},
+        kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens or self.settings.iflytek_spark_max_tokens,
+            "extra_body": {"thinking": {"type": thinking}},
             **options,
+        }
+        if response_transport == "stream":
+            return await self._create_streaming_response(
+                model=model,
+                kwargs=kwargs,
+                started=started,
+                total_timeout_seconds=stream_total_timeout_seconds,
+                metadata={"thinking_mode": thinking},
+            )
+        completion = await self._create_completion(
+            **kwargs,
         )
         return self._response_from_completion(
             completion,
             model=model,
             started=started,
-            metadata={"thinking_mode": thinking},
+            metadata={
+                "thinking_mode": thinking,
+                "response_transport": "non_stream",
+            },
         )
 
     async def generate_json(

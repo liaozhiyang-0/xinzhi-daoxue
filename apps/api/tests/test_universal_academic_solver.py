@@ -479,6 +479,40 @@ class SequencedAcademicModelService:
         return self.responses[len(self.calls) - 1]
 
 
+class UnexpectedAcademicModelService(SequencedAcademicModelService):
+    def __init__(self) -> None:
+        super().__init__([], continuations=0)
+
+    async def generate_for_task(
+        self, *_args: object, **kwargs: object
+    ) -> ModelResponse:
+        self.calls.append(kwargs)
+        raise RuntimeError("unexpected model adapter failure")
+
+
+@pytest.mark.asyncio
+async def test_solver_preserves_deterministic_result_on_unexpected_model_error(
+) -> None:
+    model_service = UnexpectedAcademicModelService()
+    service = AcademicProblemSolverService(graph(), model_service)  # type: ignore[arg-type]
+
+    result = await service.run(
+        AgentRequest(
+            session_id="session",
+            user_id="user",
+            course_id="CT",
+            intent=Intent.SOLVE_PROBLEM,
+            canonical_input={"text": "已知电阻为2Ω、电压为10V，求电流。"},
+        )
+    )
+
+    execution = result.structured_result["model_execution"]
+    assert result.answer
+    assert execution["status"] == "failed"
+    assert execution["error_type"] == "academic_model_unexpected_error"
+    assert "已保留确定性结果" in "；".join(result.warnings)
+
+
 @pytest.mark.asyncio
 async def test_solver_continues_when_model_reaches_output_limit() -> None:
     model_service = SequencedAcademicModelService(
@@ -515,11 +549,13 @@ async def test_solver_continues_when_model_reaches_output_limit() -> None:
     )
 
     execution = result.structured_result["model_execution"]
-    assert "### 续答（第 1 部分）" in result.answer
+    assert result.answer.startswith("$$x=2$$")
+    assert "完整内容" not in result.answer
     assert "$$ x_" not in result.answer
     assert execution["output_status"] == "complete"
     assert execution["model_calls"] == 2
     assert execution["continuation_count"] == 1
+    assert execution["continuation_mode"] == "replace_consolidated"
     assert execution["finish_reasons"] == ["length", "stop"]
     assert result.metrics.model_calls == 2
     assert all(
@@ -527,6 +563,53 @@ async def test_solver_continues_when_model_reaches_output_limit() -> None:
         for call in model_service.calls
     )
     assert execution["timeout_seconds_per_call"] == 180.0
+
+
+@pytest.mark.asyncio
+async def test_solver_continuation_reuses_successful_route_fallback() -> None:
+    model_service = SequencedAcademicModelService(
+        [
+            ModelResponse(
+                provider="dashscope",
+                model="qwen3.7-plus",
+                content="第一部分。\n\n$$ y_",
+                elapsed_ms=5,
+                finish_reason="length",
+                raw_metadata={
+                    "route_fallback_used": True,
+                    "target_model": "qwen_vision_primary",
+                },
+            ),
+            ModelResponse(
+                provider="dashscope",
+                model="qwen3.7-plus",
+                content="$$y=1$$\n\n其余部分完成。",
+                elapsed_ms=7,
+                finish_reason="stop",
+            ),
+        ],
+        continuations=1,
+    )
+    service = AcademicProblemSolverService(graph(), model_service)  # type: ignore[arg-type]
+
+    result = await service.run(
+        AgentRequest(
+            session_id="session",
+            user_id="user",
+            course_id="SS",
+            intent=Intent.SOLVE_PROBLEM,
+            canonical_input={"text": "逐项判断多个连续时间系统的性质"},
+        )
+    )
+
+    assert result.answer.startswith("$$y=1$$")
+    assert "第一部分" not in result.answer
+    assert model_service.calls[1]["extra_options"] == {
+        "max_tokens": 4096,
+        "timeout": 180.0,
+        "_preferred_route_alias": "qwen_vision_primary",
+        "_allow_route_fallback": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -568,6 +651,7 @@ async def test_solver_marks_partial_after_continuation_limit() -> None:
     assert result.structured_result["status"] == "partial"
     assert "仍可能不完整" in "；".join(result.warnings)
     assert result.answer.count("$$") % 2 == 0
+    assert "第一部分已完成" not in result.answer
 
 
 @pytest.mark.asyncio
@@ -607,8 +691,21 @@ async def test_long_solver_continues_until_completion_marker() -> None:
     execution = result.structured_result["model_execution"]
     assert execution["output_status"] == "complete"
     assert execution["model_calls"] == 2
-    assert "### 续答（第 1 部分）" in result.answer
+    assert result.answer.startswith("后半部分")
+    assert "前半部分" not in result.answer
     assert marker not in result.answer
+
+
+def test_academic_images_use_quality_first_vision_route() -> None:
+    assert (
+        AcademicProblemSolverService._visual_task_type("CT")
+        == "circuit_image_extraction"
+    )
+    for course in ("AE", "DE", "SS", "DSP", "COMM"):
+        assert (
+            AcademicProblemSolverService._visual_task_type(course)
+            == "academic_image_extraction"
+        )
 
 
 def test_unclosed_formula_overrides_stop_finish_reason() -> None:

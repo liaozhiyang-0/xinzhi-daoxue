@@ -130,6 +130,10 @@ class TaskPresentation(BaseModel):
     provider_label: str
     fallback_message: str = ""
     evidence_message: str
+    answer_quality_status: str = "not_checked"
+    answer_quality_message: str = ""
+    requires_review: bool = False
+    generation_complete: bool = True
     execution_steps: list[dict[str, str]] = Field(default_factory=list)
 
 

@@ -1,0 +1,36 @@
+version: "1.0"
+course_id: "DE"
+errors:
+  - error_signature: "xnor_xor_confusion"
+    problem_types: ["logic_simplification", "combinational_logic"]
+    skill_ids: ["DE.BOOLEAN", "DE.TRUTH_TABLE", "DE.COMBINATIONAL"]
+    error_type: "logic_error"
+    match_mode: "exact_rule"
+    description: "把同或与异或的输出条件混淆"
+    hint_templates:
+      H1: "对照两个输入相同和不同时的输出。"
+      H2: "异或在输入不同时为 1，同或在输入相同时为 1。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "truth_table_mismatch"
+    problem_types: ["logic_simplification", "combinational_logic"]
+    skill_ids: ["DE.TRUTH_TABLE", "DE.COMBINATIONAL"]
+    error_type: "logic_error"
+    match_mode: "exact_rule"
+    description: "布尔表达式与真值表存在确定性不等价"
+    hint_templates:
+      H1: "逐行比较原表达式和化简结果的输出。"
+      H2: "找到第一组输出不同的输入组合，再检查对应逻辑项。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "state_transition_error"
+    problem_types: ["sequential_logic", "state_machine"]
+    skill_ids: ["DE.SEQUENTIAL", "DE.STATE_TRANSITION"]
+    error_type: "logic_error"
+    match_mode: "exact_rule"
+    description: "确定性状态转移与激励条件不一致"
+    hint_templates:
+      H1: "根据当前状态和输入重新查找下一状态。"
+      H2: "逐项核对状态表中的当前状态、输入和下一状态。"
+    teacher_reviewed: true
+    enabled: true

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from collections.abc import AsyncIterator
 from io import BytesIO
@@ -9,7 +10,11 @@ from typing import Any
 import pytest
 from app.contracts import ImageInput
 from app.core.config import Settings
-from app.core.errors import InvalidModelRequestError, ProviderNotConfiguredError
+from app.core.errors import (
+    InvalidModelRequestError,
+    ModelTimeoutError,
+    ProviderNotConfiguredError,
+)
 from app.multimodal import ImageEncoder
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
 from app.providers.llm.dashscope_qwen import resolve_dashscope_base_url
@@ -208,6 +213,16 @@ class FakeStream:
             yield chunk
 
 
+class SlowStream:
+    def __aiter__(self) -> AsyncIterator[Any]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[Any]:
+        await asyncio.sleep(1)
+        if False:
+            yield None
+
+
 @pytest.mark.asyncio
 async def test_spark_stream_hides_reasoning_content() -> None:
     reasoning_delta = SimpleNamespace(
@@ -248,3 +263,99 @@ async def test_spark_stream_hides_reasoning_content() -> None:
     ]
     assert events[0].content is None
     assert events[1].content == "final"
+
+
+@pytest.mark.asyncio
+async def test_spark_generate_text_can_collect_streaming_response() -> None:
+    reasoning_delta = SimpleNamespace(
+        reasoning_content="hidden",
+        content=None,
+        model_extra={},
+    )
+    content_delta = SimpleNamespace(
+        reasoning_content=None,
+        content="final",
+        model_extra={},
+    )
+    stream = FakeStream(
+        [
+            SimpleNamespace(
+                id="stream-request-id",
+                model="spark-x",
+                model_extra={"sid": "stream-sid"},
+                choices=[
+                    SimpleNamespace(delta=reasoning_delta, finish_reason=None)
+                ],
+                usage=None,
+            ),
+            SimpleNamespace(
+                id="stream-request-id",
+                model="spark-x",
+                model_extra={"sid": "stream-sid"},
+                choices=[
+                    SimpleNamespace(delta=content_delta, finish_reason="stop")
+                ],
+                usage=None,
+            ),
+            SimpleNamespace(
+                id="stream-request-id",
+                model="spark-x",
+                model_extra={"sid": "stream-sid"},
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=3,
+                    completion_tokens=2,
+                    total_tokens=5,
+                ),
+            ),
+        ]
+    )
+    client = FakeClient(stream)
+    provider = IflytekSparkProvider(
+        Settings(iflytek_spark_api_key="key", _env_file=None),
+        client=client,
+    )
+
+    response = await provider.generate_text(
+        messages=[{"role": "user", "content": "test"}],
+        model="spark-x",
+        extra_options={
+            "spark_response_transport": "stream",
+            "spark_stream_total_timeout_seconds": 30,
+        },
+    )
+
+    assert response.content == "final"
+    assert response.reasoning_content is None
+    assert response.finish_reason == "stop"
+    assert response.provider_request_id == "stream-sid"
+    assert response.usage is not None
+    assert response.usage.total_tokens == 5
+    assert response.raw_metadata["reasoning_present"] is True
+    assert response.raw_metadata["response_transport"] == "stream"
+    assert response.raw_metadata["stream_chunk_count"] == 3
+    assert client.completions.calls[0]["stream"] is True
+    assert client.completions.calls[0]["stream_options"] == {
+        "include_usage": True
+    }
+
+
+@pytest.mark.asyncio
+async def test_spark_collected_stream_enforces_total_timeout() -> None:
+    provider = IflytekSparkProvider(
+        Settings(iflytek_spark_api_key="key", _env_file=None),
+        client=FakeClient(SlowStream()),
+    )
+
+    with pytest.raises(ModelTimeoutError) as captured:
+        await provider.generate_text(
+            messages=[{"role": "user", "content": "test"}],
+            model="spark-x",
+            extra_options={
+                "spark_response_transport": "stream",
+                "spark_stream_total_timeout_seconds": 0.01,
+            },
+        )
+
+    assert captured.value.details["response_transport"] == "stream"
+    assert captured.value.details["stream_total_timeout_seconds"] == 0.01

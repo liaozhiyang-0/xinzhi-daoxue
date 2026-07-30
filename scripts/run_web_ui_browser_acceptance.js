@@ -1,15 +1,22 @@
 const { spawn, spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const python = path.join(root, ".venv", "Scripts", "python.exe");
 const port = process.env.XINZHI_BROWSER_PORT || "8021";
 const baseURL = `http://127.0.0.1:${port}`;
+const testDatabasePath = path.join(
+  os.tmpdir(),
+  `xinzhi-browser-acceptance-${process.pid}.db`,
+);
+const testDatabaseURL = `sqlite+aiosqlite:///${testDatabasePath.replaceAll("\\", "/")}`;
 const server = spawn(python, ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port], {
   cwd: root,
   windowsHide: true,
   stdio: "ignore",
-  env: { ...process.env, APP_ENV: "test", DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", RAG_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
+  env: { ...process.env, APP_ENV: "test", TEST_DATABASE_URL: testDatabaseURL, DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", RAG_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
 });
 
 async function ready() {
@@ -18,6 +25,26 @@ async function ready() {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error("browser acceptance server did not become ready");
+}
+
+async function stopServer() {
+  if (server.exitCode === null && !server.killed) {
+    const exited = new Promise((resolve) => server.once("exit", resolve));
+    server.kill();
+    await Promise.race([
+      exited,
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  }
+  for (const target of [
+    testDatabasePath,
+    `${testDatabasePath}-shm`,
+    `${testDatabasePath}-wal`,
+  ]) {
+    try {
+      fs.rmSync(target, { force: true });
+    } catch {}
+  }
 }
 
 (async () => {
@@ -33,6 +60,6 @@ async function ready() {
     });
     process.exitCode = result.status ?? 1;
   } finally {
-    server.kill();
+    await stopServer();
   }
-})().catch((error) => { server.kill(); console.error(error.stack || error.message); process.exit(1); });
+})().catch((error) => { console.error(error.stack || error.message); process.exit(1); });

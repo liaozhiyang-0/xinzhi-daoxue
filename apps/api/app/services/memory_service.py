@@ -26,6 +26,28 @@ REMEMBER_PATTERNS = (
     re.compile(r"^以后(.+)$"),
 )
 FORGET_PATTERN = re.compile(r"^(?:请)?忘记[：:\s]*(.*)$")
+AUTO_MEMORY_PATTERNS = (
+    re.compile(
+        r"^(?:我(?:更)?(?:喜欢|希望|习惯|偏好)|"
+        r"以后(?:回答|讲解|解题)(?:时)?(?:请)?)[：:\s]*(.+)$"
+    ),
+)
+AUTO_PREFERENCE_MARKERS = (
+    "回答",
+    "讲解",
+    "公式",
+    "步骤",
+    "思路",
+    "提示",
+    "答案",
+    "语言",
+    "中文",
+    "英文",
+    "latex",
+    "单位",
+    "详细",
+    "简洁",
+)
 
 
 class MemoryService:
@@ -37,13 +59,17 @@ class MemoryService:
         content = sanitize_runtime_text(data.content, max_chars=1000)
         self._validate_content(content)
         conflict_key = self._conflict_key(content)
+        existing_memories = await self.repository.list_for_user(
+            data.user_id,
+            statuses=(MemoryStatus.ACTIVE.value,),
+            limit=100,
+        )
+        for existing in existing_memories:
+            if self._normalize(existing.content) == self._normalize(content):
+                return existing
         if conflict_key:
-            for existing in await self.repository.list_for_user(
-                data.user_id, statuses=(MemoryStatus.ACTIVE.value,), limit=100
-            ):
+            for existing in existing_memories:
                 if existing.content_data.get("conflict_key") == conflict_key:
-                    if self._normalize(existing.content) == self._normalize(content):
-                        return existing
                     existing.status = MemoryStatus.SUPERSEDED.value
                     existing.revision += 1
                     existing.updated_at = datetime.now(UTC)
@@ -154,6 +180,7 @@ class MemoryService:
         text: str,
         course_id: str,
         memory_enabled: bool,
+        auto_memory_enabled: bool = False,
     ) -> tuple[int, str]:
         if not memory_enabled:
             return 0, "disabled"
@@ -182,6 +209,22 @@ class MemoryService:
                 )
             )
             return 1, "remembered"
+        if auto_memory_enabled:
+            content = self._automatic_preference(normalized)
+            if content:
+                await self.create(
+                    MemoryCreate(
+                        user_id=user_id,
+                        memory_type=self._memory_type(content),
+                        scope=MemoryScope.GLOBAL,
+                        course_id=None,
+                        content=content,
+                        content_data={"capture_mode": "automatic_opt_in"},
+                        source_session_id=session_id,
+                        source_message_id=message_id,
+                    )
+                )
+                return 1, "auto_remembered"
         return 0, "none"
 
     @staticmethod
@@ -217,6 +260,18 @@ class MemoryService:
         if any(item in content for item in ("讲解", "提示", "思路", "学习")):
             return MemoryType.LEARNING_PREFERENCE
         return MemoryType.PREFERENCE
+
+    @staticmethod
+    def _automatic_preference(text: str) -> str:
+        if len(text) > 240 or not any(
+            marker in text.casefold() for marker in AUTO_PREFERENCE_MARKERS
+        ):
+            return ""
+        for pattern in AUTO_MEMORY_PATTERNS:
+            match = pattern.match(text)
+            if match and match.group(1).strip():
+                return text
+        return ""
 
     async def _touch_source_session(
         self, session_id: str | None, user_id: str

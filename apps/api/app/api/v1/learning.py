@@ -9,6 +9,8 @@ from app.contracts.learning import (
     LearnerKnowledgeState,
     LearningActionRequest,
     LearningActionResponse,
+    RetestPlanV1,
+    StudentAttemptV2,
 )
 from app.dependencies import get_db
 from app.services.learning_loop import LearningLoopService
@@ -35,3 +37,55 @@ async def learning_states(
 ) -> list[LearnerKnowledgeState]:
     service = cast(LearningLoopService, request.app.state.learning_loop)
     return await service.list_states(db, user_id, course_id)
+
+
+@router.get("/attempts", response_model=list[StudentAttemptV2])
+async def learning_attempts(
+    request: Request,
+    user_id: str = Query(min_length=1, max_length=128),
+    source_task_id: str | None = Query(default=None, max_length=64),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> list[StudentAttemptV2]:
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    return await service.attempts.list(
+        db,
+        user_id=user_id,
+        source_task_id=source_task_id,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/attempts/{attempt_id}", response_model=StudentAttemptV2)
+async def learning_attempt(
+    attempt_id: str,
+    request: Request,
+    user_id: str = Query(min_length=1, max_length=128),
+    db: AsyncSession = Depends(get_db),
+) -> StudentAttemptV2:
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    return await service.attempts.get(db, attempt_id=attempt_id, user_id=user_id)
+
+
+@router.get("/retests", response_model=list[RetestPlanV1])
+async def learning_retests(
+    request: Request,
+    user_id: str = Query(min_length=1, max_length=128),
+    status: str | None = Query(
+        default=None,
+        pattern="^(scheduled|due|completed|cancelled|superseded)$",
+    ),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> list[RetestPlanV1]:
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    return await service.retests.list(
+        db,
+        user_id=user_id,
+        status=status,
+        offset=offset,
+        limit=limit,
+    )

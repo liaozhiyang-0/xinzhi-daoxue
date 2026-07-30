@@ -56,7 +56,9 @@ class ContextAssemblyService:
         runtime = RuntimeContextRepository(db)
         memories = MemoryRepository(db)
         summary = await runtime.latest_summary(session_id)
-        memory_revision = await memories.max_revision(user_id)
+        memory_revision = (
+            await memories.max_revision(user_id) if session.memory_enabled else 0
+        )
         cache_key = self.cache.key(
             {
                 "session_id": session_id,
@@ -91,15 +93,26 @@ class ContextAssemblyService:
         recent = [
             self._context_message(item)
             for item in recent_models
-            if not item.metadata_data.get("course_id")
-            or str(item.metadata_data.get("course_id", "")).upper() == course
+            if item.id != current_message_id
+            and (
+                not item.metadata_data.get("course_id")
+                or str(item.metadata_data.get("course_id", "")).upper() == course
+            )
         ]
         oldest_sequence = recent_models[0].sequence if recent_models else 1
-        older_models = await messages.list_older(
-            session_id,
-            user_id=user_id,
-            before_sequence=oldest_sequence,
-            limit=self.settings.context_relevant_older_limit * 3,
+        older_models = (
+            await messages.list_older(
+                session_id,
+                user_id=user_id,
+                before_sequence=oldest_sequence,
+                limit=self.settings.context_relevant_older_limit * 3,
+            )
+            if (
+                self.settings.context_relevant_older_limit > 0
+                and len(recent_models) >= self.settings.context_recent_message_limit
+                and oldest_sequence > 1
+            )
+            else []
         )
         older = self._select_relevant(
             [self._context_message(item) for item in older_models],
@@ -111,11 +124,16 @@ class ContextAssemblyService:
             await memories.list_for_user(
                 user_id,
                 course_id=course,
-                limit=self.settings.context_memory_limit,
+                limit=self.settings.context_memory_limit * 2,
             )
-            if session.memory_enabled
+            if session.memory_enabled and self.settings.context_memory_limit > 0
             else []
         )
+        memory_models = self._select_memories(
+            memory_models,
+            recent[-1].content_text if recent else "",
+            course,
+        )[: self.settings.context_memory_limit]
         memory_items: list[dict[str, object]] = [
             {
                 "memory_id": item.id,
@@ -208,6 +226,40 @@ class ContextAssemblyService:
             ),
             reverse=True,
         )
+
+    @staticmethod
+    def _select_memories(
+        memories: list[Any],
+        current_text: str,
+        course_id: str,
+    ) -> list[Any]:
+        query_tokens = {
+            item for item in current_text.casefold() if item.isalnum()
+        }
+
+        def score(item: Any) -> tuple[int, int, float, int]:
+            content = str(item.content)
+            overlap = len(query_tokens.intersection(content.casefold()))
+            stable_preference = int(
+                item.memory_type
+                in {
+                    "preference",
+                    "learning_preference",
+                    "stable_profile",
+                }
+            )
+            course_match = int(
+                item.scope == "course"
+                and str(item.course_id or "").upper() == course_id
+            )
+            return (
+                course_match,
+                stable_preference,
+                float(item.importance),
+                overlap,
+            )
+
+        return sorted(memories, key=score, reverse=True)
 
     @staticmethod
     async def _learner_context(

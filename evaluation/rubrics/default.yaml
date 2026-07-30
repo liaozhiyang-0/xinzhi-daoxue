@@ -8,3 +8,4 @@ weights:
   units: 1.0
   citations: 1.0
   safety: 1.5
+  teaching_foundation: 0.0

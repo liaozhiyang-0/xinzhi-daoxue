@@ -110,6 +110,7 @@ flowchart LR
 | 电路冻结基线 | 保留 | `SOLVER_CT_V1` | 只作为已验证星辰文字/单图基线与回退。 |
 | 教学任务 | 活动 | 备课、作业初审内部 Agent | 复用任务上下文与本地资料。 |
 | 学习问答 | 活动 | Knowledge QA / Local Retrieval | 明确区分课程证据、方法参考和无资料回答。 |
+| 有限诊断与分级辅导 | 活动 | TeachingPlanner / Verification / Hint / Disclosure | 三模式；H0—H2；复杂过程转人工复核，不自动评分。 |
 | 研究任务 | 活动 | 学术写作、数据分析内部 Agent | 没有可信来源/数据时只给计划并说明限制。 |
 | HIGH_RISK 校验 | 活动 | `high_risk_verification.py` | 对高风险结果执行更严格的协议校验与治理。 |
 | 数学公式 | 活动 | `math_formatting_service.py` + KaTeX | 结构化公式优先，失败显示原始 LaTeX。 |
@@ -191,11 +192,14 @@ xinzhi-daoxue/
 3. `config/models.yaml` 定义模型；`config/model_routes.yaml` 定义角色到模型的路由。
 4. `agent_configs/registry.yaml` 定义顶层 Agent 和工作流能力；`course_packs/` 定义课程包；冻结 CT 配置不得直接修改。
 5. `knowledge_config/` 定义课程资料覆盖层；只有人工批准项进入运行时。
+6. `config/skills/` 和 `config/error_pool/` 定义 CT/AE/DE 的版本化教学元数据；
+   它们只做确定性适配和精确规则匹配，不替代 CoursePack、Solver 或 RAG。
 
 ### 6.3 评测结构
 
 - `evaluation/cases/academic_solver/`：CT/AE/DE/SS 多学科求解用例。
 - `evaluation/cases/boundary/`：缺少条件、错路由和降级边界。
+- `evaluation/cases/teaching_foundation/`：学生作答、模式、解题包、证据包、技能与错因的 synthetic 合同案例。
 - `evaluation/automatic_routing/`：自然语言自动选路固定样例。
 - `evaluation/circuit_theory/`：冻结 CT 基准、Schema、样例和汇总脚本。
 - `evaluation/knowledge_retrieval/`：三课程检索基准与可比较结果。
@@ -314,6 +318,20 @@ archive_legacy/apps/api/app/services/task_service.py
 ## 13. 逐文件索引
 
 所有可发布子文件（包含源码、测试、脚本、配置、文档、截图、字体与历史隔离文件）都在 [repository_file_catalog.md](repository_file_catalog.md) 中逐目录列出，并为每个文件给出活动/隔离状态和功能摘要。
+
+## 14. 教学闭环第三阶段
+
+`practice_attempts` 是唯一 Attempt 实体，`learner_knowledge_states` 是唯一
+mastery 事实来源。`LearningOutcomeService` 位于 TaskRunner/学习动作与状态表
+之间，集中解释配置化证据；TaskRunner 只调用服务，不包含 delta。新增的
+`retest_plans` 只保存按需查询的时间计划，不运行 scheduler 或通知。
+
+```text
+StudentAttempt → Verification → FeedbackUptake
+→ MasteryEvidence → LearnerKnowledgeState → RetestPlan
+```
+
+详细边界见 [教学闭环第三阶段](architecture/teaching_loop_phase3.md)。
 # 会话运行时层
 
 会话运行时层位于 API 与已有 TaskRunner 之间，职责是将同一用户会话的消息、

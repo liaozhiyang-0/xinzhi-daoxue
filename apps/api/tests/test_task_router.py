@@ -69,3 +69,57 @@ def test_dynamic_circuit_state_variables_do_not_route_to_data_analysis() -> None
         if item.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
     )
     assert data_candidate.score == 0.0
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "已知电阻电压 u=10V、电流 i=2A，按关联参考方向求吸收功率。",
+        "求端口等效电阻。",
+        "判断二极管当前工作状态。",
+        "计算放大电路的电压增益。",
+        "化简逻辑式并给出真值表。",
+        "求离散系统的卷积响应。",
+    ],
+)
+def test_natural_academic_problem_language_routes_to_solver(text: str) -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-natural-problem",
+            "user_id": "user-natural-problem",
+            "scene": "learning",
+            "course_id": "CT",
+            "intent": "general_qa",
+            "canonical_input": {"text": text},
+            "options": {"allow_cloud": False},
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert decision.intent == "solve_problem"
+    assert "domain_contract:academic_problem_language" in decision.reason_codes
+
+
+def test_general_qa_problem_submission_completes_with_solver_answer(
+    api, client
+) -> None:
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        intent="general_qa",
+        options={"allow_cloud": False, "use_local_rag": False},
+    )
+    payload["canonical_input"] = {
+        "text": "已知电阻电压 u=10V、电流 i=2A，按关联参考方向求吸收功率。"
+    }
+
+    response = client.post("/api/v1/tasks", json=payload)
+
+    assert response.status_code == 202
+    task = api.wait_for_task(response.json()["id"], timeout=15)
+    assert task["status"] == "completed"
+    assert task["agent_id"] == "ACADEMIC_PROBLEM_SOLVER"
+    assert task["intent"] == "solve_problem"
+    assert task["result_content"]["answer"].strip()

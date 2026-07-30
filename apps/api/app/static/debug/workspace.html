@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
   <title>智能任务工作台 · 芯智导学</title>
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/workspace-v2.css">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260730-document-view-v4">
 </head>
 <body class="workspace-page">
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -28,6 +29,7 @@
         <button id="open-memory" class="text-button" type="button">记忆设置</button>
       </footer>
     </aside>
+    <div id="left-resizer" class="workspace-resizer left" role="separator" tabindex="0" aria-label="调整会话列表宽度" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="360"></div>
     <section class="workspace-center">
       <header class="workspace-toolbar" aria-label="任务模式">
         <div><strong>自然语言自动调度</strong><span class="workspace-auto-hint"> 系统会自动识别课程与任务</span></div>
@@ -60,6 +62,69 @@
             </div>
             <button id="answer-source-chip" class="source-chip" type="button">课程资料 0</button>
           </header>
+          <section id="teaching-loop-panel" class="teaching-loop-panel" aria-labelledby="teaching-loop-title" hidden>
+            <header class="teaching-loop-header">
+              <div>
+                <span class="eyebrow">分级辅导</span>
+                <h3 id="teaching-loop-title">本题学习路径</h3>
+              </div>
+              <div class="teaching-loop-badges">
+                <span id="teaching-path-badge" class="teaching-badge">直接解答</span>
+                <span id="teaching-hint-badge" class="teaching-badge level" hidden>H0</span>
+              </div>
+            </header>
+            <div id="teaching-verification-card" class="teaching-status-card" hidden>
+              <strong id="teaching-verification-title">有限核对结果</strong>
+              <p id="teaching-verification-text"></p>
+            </div>
+            <div id="teaching-hint-card" class="teaching-step-card" hidden>
+              <span class="teaching-step-label">当前提示</span>
+              <p id="teaching-hint-text"></p>
+            </div>
+            <div id="teaching-next-card" class="teaching-step-card" hidden>
+              <span class="teaching-step-label">下一步理解检查</span>
+              <p id="teaching-next-question"></p>
+              <label for="teaching-response-input">写下你的判断或计算结果</label>
+              <textarea id="teaching-response-input" maxlength="10000" rows="2" placeholder="只需回答这一小步，不必重写整道题。"></textarea>
+            </div>
+            <div class="teaching-loop-actions">
+              <button id="submit-teaching-response" class="button" type="button">提交本步回答</button>
+              <button id="request-more-hint" class="button secondary" type="button">再给一点提示</button>
+              <button id="switch-direct-answer" class="text-button" type="button">查看完整解答</button>
+            </div>
+            <p id="teaching-scope-note" class="teaching-scope-note">有限核对只确认规则可验证的错误；复杂推导会明确标记为需要人工复核。</p>
+          </section>
+          <section id="learning-progress-panel" class="learning-progress-panel" aria-labelledby="learning-progress-title" hidden>
+            <header class="learning-progress-header">
+              <div>
+                <span class="eyebrow">学习记录</span>
+                <h3 id="learning-progress-title">本题进展与待复习</h3>
+              </div>
+              <span class="teaching-badge">本地记录</span>
+            </header>
+            <div class="learning-progress-grid">
+              <section class="learning-progress-card">
+                <h4>尝试历史</h4>
+                <div id="attempt-history" class="attempt-history"></div>
+              </section>
+              <section class="learning-progress-card">
+                <h4>提交修改后的步骤</h4>
+                <textarea id="attempt-revision-input" maxlength="10000" rows="3" placeholder="根据提示修改你的步骤或最终结果。"></textarea>
+                <button id="submit-attempt-revision" class="button" type="button">提交修改后的步骤</button>
+                <p id="feedback-uptake-message" class="learning-feedback" hidden></p>
+              </section>
+              <section class="learning-progress-card">
+                <h4>学习进度估计</h4>
+                <div id="mastery-progress-list" class="mastery-progress-list"></div>
+                <p class="teaching-scope-note">学习进度为基于当前练习记录的辅助估计，不等同于考试成绩或正式能力评价。</p>
+              </section>
+              <section class="learning-progress-card">
+                <h4>待复习</h4>
+                <div id="retest-plan-list" class="retest-plan-list"></div>
+                <p class="teaching-scope-note">复习项仅在你打开工作台时查询，不会主动发送通知。</p>
+              </section>
+            </div>
+          </section>
           <div id="answer-text" class="markdown-view markdown-document"></div>
           <div id="business-result" class="business-result"></div>
           <div id="answer-notices" class="notice-stack"></div>
@@ -90,7 +155,16 @@
           </div>
           <div id="preview-images" class="upload-preview-list" aria-live="polite"></div>
         </div>
+        <div class="teaching-mode-row">
+          <label class="compact-control"><span>学习方式</span><select id="teaching-mode"><option value="direct_answer" selected>直接解答</option><option value="guided_learning">分步辅导</option><option value="check_my_work">检查我的步骤</option></select></label>
+          <span id="teaching-mode-boundary">直接给出完整思路与结论。</span>
+        </div>
         <textarea id="question-input" maxlength="4000" rows="1" aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
+        <div id="student-attempt-panel" class="student-attempt-panel" hidden>
+          <label for="student-attempt-input">请填写你的解题过程或答案</label>
+          <textarea id="student-attempt-input" maxlength="10000" rows="3" aria-label="学生解题过程" placeholder="例如：先列出 KCL 方程，再代入数值……"></textarea>
+          <small>暂不识别手写图片，也不承诺复杂推导的稳定首错定位。</small>
+        </div>
         <div class="composer-controls">
           <div class="composer-left">
             <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option><option value="SS">信号与系统</option><option value="DSP">数字信号处理</option><option value="COMM">通信原理</option></select></label>
@@ -102,31 +176,54 @@
       </form>
     </section>
 
+    <div id="right-resizer" class="workspace-resizer right" role="separator" tabindex="0" aria-label="调整任务详情宽度" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="620"></div>
     <aside id="context-panel" class="context-panel" aria-label="课程证据与执行信息">
       <header class="context-header"><div><span>当前任务</span><strong id="context-task-title">等待提问</strong></div><button id="close-context" class="icon-button" type="button" aria-label="关闭任务详情">×</button></header>
       <div class="context-tabs" role="tablist">
         <button class="active" type="button" data-context-tab="evidence">资料依据</button>
         <button type="button" data-context-tab="process">执行过程</button>
+        <button type="button" data-context-tab="context">上下文</button>
         <button type="button" data-context-tab="info">回答信息</button>
       </div>
       <section id="context-evidence" class="context-view active" data-context-view="evidence"><div class="context-empty"><strong>资料会在这里出现</strong><p>仅展示真正进入当前任务的课程证据，或明确标记的方法参考。</p></div></section>
       <section id="context-process" class="context-view" data-context-view="process" hidden></section>
+      <section id="context-usage" class="context-view" data-context-view="context" hidden><div class="context-empty"><strong>上下文状态会在这里出现</strong><p>展示本次使用的会话消息、长期记忆和上下文预算，不展示内部提示词。</p></div></section>
       <section id="context-info" class="context-view" data-context-view="info" hidden></section>
     </aside>
   </main>
   <dialog id="memory-dialog" class="memory-dialog">
-    <header><div><strong>记忆设置</strong><p>只保存你明确要求记住的稳定偏好</p></div><button id="close-memory" class="icon-button" type="button" aria-label="关闭">×</button></header>
+    <header><div><strong>记忆设置</strong><p>启用后，每次回答完成都会在后台生成会话摘要；明确的稳定偏好可自动保存为长期记忆。</p></div><button id="close-memory" class="icon-button" type="button" aria-label="关闭">×</button></header>
     <div class="memory-switches">
-      <label><input id="memory-enabled" type="checkbox"> 启用长期记忆</label>
-      <label><input id="auto-memory-enabled" type="checkbox"> 自动记忆（默认关闭）</label>
+      <label><input id="memory-enabled" type="checkbox"> 启用会话总结与长期记忆</label>
+      <label><input id="auto-memory-enabled" type="checkbox"> 从模型摘要中自动保存明确的稳定偏好</label>
     </div>
+    <section id="session-summary-preview" class="session-summary-preview" aria-live="polite"></section>
     <form id="memory-form"><input id="memory-input" maxlength="1000" placeholder="例如：公式使用 LaTeX"><button class="button secondary" type="submit">添加</button></form>
     <div id="memory-list" class="memory-list"></div>
     <button id="forget-all" class="text-button danger" type="button">清空全部记忆</button>
   </dialog>
   <dialog id="image-dialog" class="image-dialog"><button id="close-image-dialog" class="icon-button" type="button" aria-label="关闭图片">×</button><img id="dialog-image" alt="教材图片大图"><p id="dialog-caption"></p></dialog>
+  <dialog id="document-dialog" class="document-dialog">
+    <header>
+      <div><span class="eyebrow">课程资料</span><h2 id="document-dialog-title">资料原文</h2><p id="document-dialog-meta"></p></div>
+      <button id="close-document-dialog" class="icon-button" type="button" aria-label="关闭资料">×</button>
+    </header>
+    <div id="document-dialog-body" class="document-dialog-body">
+      <section id="document-dialog-match" class="document-dialog-match" hidden>
+        <strong>回答实际使用的资料片段</strong>
+        <div id="document-dialog-match-content" class="markdown-view"></div>
+      </section>
+      <div class="document-page-toolbar">
+        <button id="document-page-previous" class="text-button" type="button">上一段原文</button>
+        <span id="document-page-status">正在定位资料原文…</span>
+        <button id="document-page-next" class="text-button" type="button">下一段原文</button>
+      </div>
+      <p id="document-dialog-note" class="document-dialog-note" hidden></p>
+      <article id="document-dialog-content" class="markdown-view markdown-document"></article>
+    </div>
+  </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js"></script>
-<script src="/debug-assets/workspace.js?v=20260723-multi2-runtime1-learning1"></script>
+  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260730-document-view-v4"></script>
+<script src="/debug-assets/workspace.js?v=20260730-document-view-v4"></script>
 </body>
 </html>

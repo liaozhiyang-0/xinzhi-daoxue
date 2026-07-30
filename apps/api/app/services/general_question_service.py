@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -11,6 +13,8 @@ from app.contracts import (
 from app.core.errors import ModelProviderError
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
 from app.services.model_service import ModelService
+
+logger = logging.getLogger(__name__)
 
 
 class GeneralQuestionService:
@@ -36,8 +40,24 @@ class GeneralQuestionService:
             )
         except ModelProviderError as exc:
             return self._unavailable_result(request, question, exc.code)
+        except Exception:
+            logger.exception(
+                "general_question_model_unexpected_error task_id=%s",
+                request.task_id,
+            )
+            return self._unavailable_result(
+                request,
+                question,
+                "general_model_unexpected_error",
+            )
 
         answer = first.content.strip()
+        if not answer:
+            return self._unavailable_result(
+                request,
+                question,
+                "general_model_empty_response",
+            )
         responses = [first]
         warnings: list[str] = []
         output_status = "completed"
@@ -62,17 +82,25 @@ class GeneralQuestionService:
                 )
             except ModelProviderError:
                 warnings.append("通用回答达到单次输出上限，自动续写未完成")
+            except Exception:
+                logger.exception(
+                    "general_question_continuation_unexpected_error task_id=%s",
+                    request.task_id,
+                )
+                warnings.append("通用回答已返回有效内容，但自动续写暂时不可用")
             else:
                 responses.append(continuation)
-                answer = "\n\n".join(
-                    item for item in (answer, continuation.content.strip()) if item
-                )
-                if (
-                    continuation.finish_reason or ""
-                ).casefold() in self._TRUNCATED_REASONS:
-                    warnings.append("通用回答已自动续写一次，仍可能不完整")
+                continuation_text = continuation.content.strip()
+                if continuation_text:
+                    answer = "\n\n".join((answer, continuation_text))
+                    if (
+                        continuation.finish_reason or ""
+                    ).casefold() in self._TRUNCATED_REASONS:
+                        warnings.append("通用回答已自动续写一次，仍可能不完整")
+                    else:
+                        output_status = "completed"
                 else:
-                    output_status = "completed"
+                    warnings.append("通用回答已返回有效内容，但自动续写结果为空")
 
         usage = self._usage(responses)
         model_execution = {

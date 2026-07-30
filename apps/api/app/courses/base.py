@@ -49,7 +49,11 @@ class BaseCoursePack:
         return f"使用{self.display_name}课程规则规划，不补造题目未给出的事实。"
 
     def build_solving_prompt(self, problem: AcademicProblem) -> str:
-        return f"求解{self.classify_problem_type(problem)}并保留可核验的关键方程。"
+        rules = "、".join(self.verification_rules) or "题目条件与最终结论一致"
+        return (
+            f"求解{self.classify_problem_type(problem)}并保留可核验的关键方程。"
+            f"完成前按课程包规则逐项自检：{rules}。"
+        )
 
     def build_verification_prompt(self, problem: AcademicProblem) -> str:
         return "只报告错误类型、位置、修正指令和置信度，不重新生成整份答案。"

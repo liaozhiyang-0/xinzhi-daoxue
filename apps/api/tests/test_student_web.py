@@ -1,17 +1,29 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 from app.contracts import AgentRequest, Intent
 from app.models import SessionModel
 from app.services.session_context import SessionContextService
 from PIL import Image
 
+ROOT = Path(__file__).resolve().parents[3]
+
 
 def png_bytes() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (24, 16), "white").save(output, format="PNG")
     return output.getvalue()
+
+
+def test_browser_acceptance_uses_an_isolated_test_database() -> None:
+    script = (ROOT / "scripts" / "run_web_ui_browser_acceptance.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "TEST_DATABASE_URL: testDatabaseURL" in script
+    assert "xinzhi-browser-acceptance-${process.pid}.db" in script
 
 
 def test_student_page_uses_unified_task_and_event_apis(client) -> None:
@@ -47,13 +59,59 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260723-multi2" in page.text
+    assert "20260730-document-view-v4" in page.text
+    assert "ui-core.js?v=20260730-document-view-v4" in page.text
+    assert 'id="left-resizer"' in page.text
+    assert 'id="right-resizer"' in page.text
+    assert 'id="document-dialog"' in page.text
+    assert 'id="document-dialog-match"' in page.text
+    assert 'id="document-page-previous"' in page.text
+    assert 'id="document-page-next"' in page.text
+    assert "function openEvidenceDocument(item)" in script.text
+    assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
+    assert "documentPageState.controller?.abort()" in script.text
+    assert "initializeResizablePanels()" in script.text
     assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
     assert "let pendingLearningFollowUp = null" in script.text
     assert 'intent: requestedIntent' in script.text
     assert "source_task_id: learningFollowUp?.source_task_id" in script.text
     assert "pendingLearningFollowUp = result.follow_up_context || null" in script.text
-    assert "runtime1-learning1" in page.text
+    assert 'id="teaching-mode"' in page.text
+    assert 'value="direct_answer"' in page.text
+    assert 'value="guided_learning"' in page.text
+    assert 'value="check_my_work"' in page.text
+    assert 'id="student-attempt-input"' in page.text
+    assert 'id="teaching-loop-panel"' in page.text
+    assert 'id="submit-teaching-response"' in page.text
+    assert 'id="request-more-hint"' in page.text
+    assert 'id="switch-direct-answer"' in page.text
+    assert "teaching_mode: teachingMode" in script.text
+    assert (
+        'student_attempt: teachingMode === "check_my_work" '
+        "? { raw_text: studentAttempt } : undefined"
+    ) in script.text
+    assert "function renderTeachingLoop(structured)" in script.text
+    assert "function usesInteractiveTeaching(structured = {})" in script.text
+    assert (
+        "if (!loop || !usesInteractiveTeaching(structured))" in script.text
+    )
+    assert (
+        '["guided_learning", "check_my_work"].includes(mode)' in script.text
+    )
+    assert (
+        "retests.filter((item) => item.source_task_id === task.id)"
+        in script.text
+    )
+    assert "function verificationPresentation(report)" in script.text
+    assert 'data-context-tab="context"' in page.text
+    assert 'id="context-usage"' in page.text
+    assert "function renderContextUsage(result = {})" in script.text
+    assert "presentation.answer_quality_message" in script.text
+    assert '"答案质量"' in script.text
+    assert "active_memory_ids" in script.text
+    assert "本次已使用" in script.text
+    assert "从模型摘要中自动保存明确的稳定偏好" in page.text
+    assert "ownedTaskUrl(state.currentTask.id)" in script.text
     assert 'audience: "student"' in script.text
     assert 'api("/api/v1/capabilities")' in script.text
     assert "/api/v1/sessions/${state.sessionId}/tasks?limit=50" in script.text
@@ -67,6 +125,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     katex_styles = client.get("/debug-assets/vendor/katex/katex.min.css")
     assert "function renderLatex" in shared_script.text
     assert "appendRichInline" in shared_script.text
+    assert 'text.startsWith("\\\\[", index)' in shared_script.text
+    assert 'text.startsWith("$$", index)' in shared_script.text
     assert "window.katex.render" in shared_script.text
     assert 'trust: false' in shared_script.text
     assert "math-latex-fallback" in shared_script.text

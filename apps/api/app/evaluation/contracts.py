@@ -35,6 +35,7 @@ class EvaluationRubric(BaseModel):
     units: float = Field(default=1, ge=0)
     citations: float = Field(default=1, ge=0)
     safety: float = Field(default=1, ge=0)
+    teaching_foundation: float = Field(default=0, ge=0)
 
 
 class FailureStage(StrEnum):
@@ -81,6 +82,7 @@ class EvaluationErrorType(StrEnum):
     TIMEOUT = "timeout"
     PROVIDER_ERROR = "provider_error"
     EXECUTION_ERROR = "execution_error"
+    TEACHING_FOUNDATION_MISMATCH = "teaching_foundation_mismatch"
 
 
 class EvaluationCase(BaseModel):
@@ -97,6 +99,7 @@ class EvaluationCase(BaseModel):
     message: str
     file_refs: list[dict[str, Any]] = Field(default_factory=list)
     structured_input: dict[str, Any] = Field(default_factory=dict)
+    task_options: dict[str, Any] = Field(default_factory=dict)
     expected_agent: str
     expected_course_pack: str | None = None
     expected_execution_paths: list[str] = Field(default_factory=list)
@@ -128,6 +131,28 @@ class EvaluationCase(BaseModel):
     judge_type: Literal["rule", "human", "model", "hybrid"] = "rule"
     evidence_requirements: dict[str, Any] = Field(default_factory=dict)
     provenance: EvaluationProvenance = Field(default_factory=EvaluationProvenance)
+    official_scoring: bool = False
+    student_attempt_parsed: bool | None = None
+    teaching_mode_respected: bool | None = None
+    solution_packet_valid: bool | None = None
+    skill_mapping_valid: bool | None = None
+    evidence_packet_valid: bool | None = None
+    error_pool_match_valid: bool | None = None
+    answer_disclosure_compliant: bool | None = None
+    requires_manual_review: bool | None = None
+    expected_teaching_execution_path: str | None = None
+    verification_report_valid: bool | None = None
+    expected_verification_status: str | None = None
+    expected_error_type: str | None = None
+    expected_hint_level: str | None = None
+    expected_disclosure_mode: str | None = None
+    next_check_valid: bool | None = None
+    solution_packet_reused: bool | None = None
+    full_solution_disclosed: bool | None = None
+    no_additional_model_calls: bool | None = None
+    first_confirmed_error_found: bool | None = None
+    cross_user_isolated: bool | None = None
+    expected_skill_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_expectations(self) -> EvaluationCase:

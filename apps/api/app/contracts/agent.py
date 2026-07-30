@@ -149,6 +149,53 @@ class RunMetrics(BaseModel):
     prompt_cache_supported: bool = False
     prompt_cache_read_tokens: int = Field(default=0, ge=0)
     prompt_cache_write_tokens: int = Field(default=0, ge=0)
+    solution_packet_build_ms: float = Field(default=0, ge=0)
+    evidence_packet_build_ms: float = Field(default=0, ge=0)
+    skill_mapping_ms: float = Field(default=0, ge=0)
+    error_pool_lookup_ms: float = Field(default=0, ge=0)
+    student_attempt_present: bool = False
+    teaching_mode: str = "direct_answer"
+    teaching_execution_path: str = "direct"
+    solution_packet_reused: bool = False
+    student_verification_executed: bool = False
+    verification_method: str = "not_run"
+    manual_review_required: bool = False
+    first_confirmed_error_found: bool = False
+    hint_level: str = ""
+    hint_source: str = ""
+    hint_request_count: int = Field(default=0, ge=0)
+    next_check_generated: bool = False
+    answer_disclosure_mode: str = "full"
+    full_solution_disclosed: bool = True
+    teaching_state_restored: bool = False
+    additional_model_calls: int = Field(default=0, ge=0)
+    teaching_planning_ms: float = Field(default=0, ge=0)
+    student_verification_ms: float = Field(default=0, ge=0)
+    hint_generation_ms: float = Field(default=0, ge=0)
+    disclosure_filter_ms: float = Field(default=0, ge=0)
+    attempt_sequence: int = Field(default=0, ge=0)
+    attempt_revision_created: bool = False
+    attempt_diff_ms: float = Field(default=0, ge=0)
+    feedback_uptake_status: str = "not_applicable"
+    feedback_uptake_ms: float = Field(default=0, ge=0)
+    mastery_evidence_type: str = ""
+    mastery_delta: float = Field(default=0, ge=-1, le=1)
+    mastery_update_ms: float = Field(default=0, ge=0)
+    retest_plans_created: int = Field(default=0, ge=0)
+    due_retest_count: int = Field(default=0, ge=0)
+    full_solution_seen: bool = False
+    deadline_remaining_ms: int = Field(default=0, ge=0)
+    time_budget_exhausted: bool = False
+    partial_result_available: bool = False
+    verification_skipped_reason: str = ""
+    fallback_count: int = Field(default=0, ge=0, le=2)
+    vision_calls: int = Field(default=0, ge=0)
+    verification_triggered: bool = False
+    verification_reason: str = ""
+    complexity: str = "medium"
+    task_mode: str = "SOLVE"
+    route_path: list[str] = Field(default_factory=list)
+    node_timings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Artifact(BaseModel):

@@ -1,0 +1,93 @@
+version: "1.0"
+course_id: "DE"
+skills:
+  - skill_id: "DE.BOOLEAN"
+    title: "布尔代数"
+    course_id: "DE"
+    chapter: "logic_algebra"
+    prerequisites: []
+    problem_types: ["logic_simplification"]
+    capability_ids: ["boolean_algebra"]
+    common_error_signatures: ["boolean_inequivalent"]
+    keywords: ["布尔代数"]
+  - skill_id: "DE.MINTERM"
+    title: "最小项"
+    course_id: "DE"
+    chapter: "logic_algebra"
+    prerequisites: ["DE.BOOLEAN"]
+    problem_types: ["logic_simplification"]
+    capability_ids: ["boolean_algebra"]
+    common_error_signatures: ["minterm_index_error"]
+    keywords: ["最小项"]
+  - skill_id: "DE.TRUTH_TABLE"
+    title: "真值表"
+    course_id: "DE"
+    chapter: "logic_representation"
+    prerequisites: ["DE.BOOLEAN"]
+    problem_types: ["logic_simplification"]
+    capability_ids: ["logic_analysis"]
+    common_error_signatures: ["truth_table_mismatch"]
+    keywords: ["真值表"]
+  - skill_id: "DE.KMAP"
+    title: "卡诺图"
+    course_id: "DE"
+    chapter: "logic_simplification"
+    prerequisites: ["DE.MINTERM", "DE.TRUTH_TABLE"]
+    problem_types: ["logic_simplification"]
+    capability_ids: ["boolean_algebra", "logic_analysis"]
+    common_error_signatures: ["kmap_grouping_error"]
+    keywords: ["卡诺图", "K图"]
+  - skill_id: "DE.COMBINATIONAL"
+    title: "组合逻辑"
+    course_id: "DE"
+    chapter: "combinational_logic"
+    prerequisites: ["DE.TRUTH_TABLE"]
+    problem_types: ["combinational_logic"]
+    capability_ids: ["logic_analysis"]
+    common_error_signatures: ["truth_table_mismatch"]
+    keywords: ["组合逻辑"]
+  - skill_id: "DE.FLIP_FLOP"
+    title: "触发器"
+    course_id: "DE"
+    chapter: "sequential_elements"
+    prerequisites: ["DE.TRUTH_TABLE"]
+    problem_types: ["flip_flop"]
+    capability_ids: ["logic_analysis"]
+    common_error_signatures: ["flip_flop_transition_error"]
+    keywords: ["触发器"]
+  - skill_id: "DE.SEQUENTIAL"
+    title: "时序逻辑"
+    course_id: "DE"
+    chapter: "sequential_logic"
+    prerequisites: ["DE.FLIP_FLOP"]
+    problem_types: ["sequential_logic"]
+    capability_ids: ["logic_analysis", "state_machine"]
+    common_error_signatures: ["state_transition_error"]
+    keywords: ["时序逻辑"]
+  - skill_id: "DE.STATE_TRANSITION"
+    title: "状态转移"
+    course_id: "DE"
+    chapter: "state_machine"
+    prerequisites: ["DE.SEQUENTIAL"]
+    problem_types: ["state_machine"]
+    capability_ids: ["state_machine"]
+    common_error_signatures: ["state_transition_error"]
+    keywords: ["状态转移", "状态机"]
+  - skill_id: "DE.COUNTER"
+    title: "计数器"
+    course_id: "DE"
+    chapter: "counter"
+    prerequisites: ["DE.FLIP_FLOP"]
+    problem_types: ["counter"]
+    capability_ids: ["logic_analysis", "state_machine"]
+    common_error_signatures: ["counter_modulus_error"]
+    keywords: ["计数器"]
+  - skill_id: "DE.HAZARD"
+    title: "竞争与冒险"
+    course_id: "DE"
+    chapter: "hazard"
+    prerequisites: ["DE.KMAP", "DE.COMBINATIONAL"]
+    problem_types: ["combinational_logic"]
+    capability_ids: ["boolean_algebra", "logic_analysis"]
+    common_error_signatures: ["hazard_term_missing"]
+    keywords: ["竞争冒险", "静态冒险"]

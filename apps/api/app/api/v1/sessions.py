@@ -7,9 +7,10 @@ from app.contracts.api import (
     SessionTaskHistoryItem,
     SessionUpdate,
 )
-from app.contracts.conversation import ConversationMessage
+from app.contracts.conversation import ConversationMessage, SessionSummaryRead
 from app.dependencies import get_db
 from app.models import TaskModel
+from app.repositories import RuntimeContextRepository
 from app.services.conversation_message_service import ConversationMessageService
 from app.services.session_service import SessionService
 from app.services.task_query_service import TaskQueryService
@@ -119,6 +120,20 @@ async def list_session_messages(
         limit=limit,
     )
     return [ConversationMessage.model_validate(item) for item in rows]
+
+
+@router.get(
+    "/{session_id}/summary",
+    response_model=SessionSummaryRead | None,
+)
+async def get_session_summary(
+    session_id: str,
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SessionSummaryRead | None:
+    await SessionService(db).get_for_user(session_id, user_id)
+    summary = await RuntimeContextRepository(db).latest_summary(session_id)
+    return SessionSummaryRead.model_validate(summary) if summary is not None else None
 
 
 def _history_item(task: TaskModel) -> SessionTaskHistoryItem:

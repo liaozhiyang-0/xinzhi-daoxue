@@ -156,6 +156,10 @@ def test_registry_loads_models_and_routes() -> None:
     assert registry.get_route("simple_image_understanding").primary.startswith(
         "qwen_vision"
     )
+    academic_vision = registry.get_route("academic_image_extraction")
+    assert academic_vision.primary == "qwen_vision_primary"
+    assert academic_vision.fallback == "qwen_vision_fast"
+    assert academic_vision.options["high_resolution"] is True
     assert registry.errors == []
 
 
@@ -293,3 +297,107 @@ async def test_fallback_response_includes_failed_attempt_usage() -> None:
     assert result.usage is not None
     assert result.usage.total_tokens == 20
     assert result.raw_metadata["failed_attempt_usage_included"] is True
+
+
+@pytest.mark.asyncio
+async def test_provider_unavailable_opens_short_lived_model_circuit() -> None:
+    unavailable = ProviderUnavailableError(
+        "temporary",
+        provider="iflytek_spark",
+        model="spark-x",
+    )
+    spark = FakeProvider("iflytek_spark", "spark-x", [unavailable])
+    qwen = FakeProvider(
+        "dashscope",
+        "qwen3.7-plus",
+        [
+            response("dashscope", "qwen3.7-plus"),
+            response("dashscope", "qwen3.7-plus"),
+        ],
+    )
+    gateway, _ = service(
+        Settings(
+            model_max_retries=0,
+            model_circuit_failure_threshold=1,
+            model_circuit_reset_seconds=300,
+            _env_file=None,
+        ),
+        spark,
+        qwen,
+    )
+
+    first = await gateway.generate_for_task("knowledge_answer", messages=[])
+    second = await gateway.generate_for_task("knowledge_answer", messages=[])
+
+    assert first.provider == second.provider == "dashscope"
+    assert spark.calls == 1
+    assert qwen.calls == 2
+    assert second.raw_metadata["route_fallback_used"] is True
+    assert gateway._circuits["spark_reasoner"].state == "open_circuit"
+
+
+@pytest.mark.asyncio
+async def test_preferred_route_alias_reuses_successful_fallback_model() -> None:
+    spark = FakeProvider(
+        "iflytek_spark",
+        "spark-x",
+        [AssertionError("preferred fallback must bypass Spark")],
+    )
+    qwen = FakeProvider(
+        "dashscope",
+        "qwen3.7-plus",
+        [response("dashscope", "qwen3.7-plus")],
+    )
+    gateway, _ = service(Settings(_env_file=None), spark, qwen)
+
+    result = await gateway.generate_for_task(
+        "knowledge_answer",
+        messages=[],
+        extra_options={
+            "_preferred_route_alias": "qwen_text_fast",
+            "_allow_route_fallback": False,
+        },
+    )
+
+    assert result.provider == "dashscope"
+    assert spark.calls == 0
+    assert qwen.calls == 1
+
+
+def test_only_provider_availability_failures_trip_model_circuit() -> None:
+    assert ModelService._trips_circuit(
+        ProviderUnavailableError(
+            "temporary",
+            provider="iflytek_spark",
+            model="spark-x",
+        )
+    )
+    assert ModelService._trips_circuit(
+        AuthenticationError(
+            "bad key",
+            provider="iflytek_spark",
+            model="spark-x",
+        )
+    )
+    assert ModelService._trips_circuit(
+        ModelTimeoutError(
+            "stream budget exhausted",
+            provider="iflytek_spark",
+            model="spark-x",
+            details={"response_transport": "stream"},
+        )
+    )
+    assert not ModelService._trips_circuit(
+        ModelTimeoutError(
+            "ordinary request timeout",
+            provider="iflytek_spark",
+            model="spark-x",
+        )
+    )
+    assert not ModelService._trips_circuit(
+        RateLimitError(
+            "limited",
+            provider="iflytek_spark",
+            model="spark-x",
+        )
+    )

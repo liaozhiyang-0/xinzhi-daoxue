@@ -10,8 +10,10 @@ from app.contracts import (
     WorkflowContextBundle,
 )
 from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+from app.services.math_formatting_service import MathFormattingService
 
 COURSE_LABELS = KNOWLEDGE_COURSE_NAMES
+MATH_FORMATTER = MathFormattingService()
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
     "LEARN_01_KNOWLEDGE_QA_V1": "知识问答",
@@ -104,15 +106,57 @@ def build_task_views(
         isinstance(model_execution, dict)
         and model_execution.get("status") == "failed"
     )
+    quality_gate = result.structured_result.get("quality_gate", {})
+    quality_gate_status = (
+        str(quality_gate.get("status", "not_checked"))
+        if isinstance(quality_gate, dict)
+        else "not_checked"
+    )
+    if generation_failed:
+        answer_quality_status = "generation_failed"
+        answer_quality_message = "专业模型未形成完整答案，当前内容不能视为已核对结论。"
+    elif generation_incomplete:
+        answer_quality_status = "incomplete"
+        answer_quality_message = (
+            "模型输出未完整覆盖全部小问；已保留可用内容，但需要继续生成或复核。"
+        )
+    elif quality_gate_status == "fail":
+        answer_quality_status = "needs_review"
+        answer_quality_message = "结果检查发现阻断项，请先复核后再使用最终结论。"
+    elif quality_gate_status == "partial":
+        answer_quality_status = "needs_review"
+        answer_quality_message = (
+            "结构检查已完成，但关键结论尚未获得充分的确定性验证。"
+        )
+    elif fallback:
+        answer_quality_status = "fallback_complete"
+        answer_quality_message = (
+            "主模型未完成，本答案由后备模型生成；运行成功不等于答案质量已验证。"
+        )
+    elif quality_gate_status == "pass":
+        answer_quality_status = "checked"
+        answer_quality_message = "当前结构与可执行检查均已通过。"
+    else:
+        answer_quality_status = "not_checked"
+        answer_quality_message = "本答案尚无独立答案质量判定。"
+    requires_review = answer_quality_status in {
+        "generation_failed",
+        "incomplete",
+        "needs_review",
+        "fallback_complete",
+        "not_checked",
+    }
     status_label = (
         "开发演示"
         if mock
-        else "降级完成"
-        if fallback
         else "生成失败"
         if generation_failed
-        else "部分生成"
+        else "回答未完整"
         if generation_incomplete
+        else "建议复核"
+        if answer_quality_status == "needs_review"
+        else "后备模型完成"
+        if fallback
         else "带提示完成"
         if result_status == "accepted_with_warnings"
         else "已完成"
@@ -166,6 +210,10 @@ def build_task_views(
         provider_label=provider_label,
         fallback_message=fallback_message,
         evidence_message=evidence_message,
+        answer_quality_status=answer_quality_status,
+        answer_quality_message=answer_quality_message,
+        requires_review=requires_review,
+        generation_complete=not generation_failed and not generation_incomplete,
         execution_steps=steps,
     )
     summary = TaskExecutionSummary(
@@ -220,7 +268,7 @@ def _evidence_view(
                 chapter=hit.chapter,
                 section=hit.section,
                 content_type=hit.content_type,
-                summary=hit.content[:320],
+                summary=MATH_FORMATTER.process_markdown(hit.content[:320]).markdown,
                 source_ref=hit.source_ref,
                 related_images=hit.related_images,
                 entered_workflow=hit.evidence_id in entered,
@@ -265,19 +313,54 @@ def _execution_steps(
                 "status": "fallback" if result.fallback_used else "completed",
             }
         )
+    model_execution = result.structured_result.get("model_execution", {})
+    generation_failed = bool(
+        isinstance(model_execution, dict)
+        and model_execution.get("status") == "failed"
+    )
+    generation_incomplete = bool(
+        isinstance(model_execution, dict)
+        and model_execution.get("output_status") == "partial"
+    )
+    quality_gate = result.structured_result.get("quality_gate", {})
+    quality_status = (
+        str(quality_gate.get("status", "not_checked"))
+        if isinstance(quality_gate, dict)
+        else "not_checked"
+    )
     steps.extend(
         [
             {
                 "key": "validation",
                 "label": "结果检查",
-                "status": str(
-                    result.structured_result.get("validation", {}).get(
-                        "validation_status",
-                        citation_status if citation_status != "not_run" else "passed",
+                "status": (
+                    "failed"
+                    if generation_failed or quality_status == "fail"
+                    else "partial"
+                    if generation_incomplete or quality_status == "partial"
+                    else str(
+                        result.structured_result.get("validation", {}).get(
+                            "validation_status",
+                            (
+                                citation_status
+                                if citation_status != "not_run"
+                                else "passed"
+                            ),
+                        )
                     )
                 ),
             },
-            {"key": "result", "label": "完成", "status": "completed"},
+            {
+                "key": "result",
+                "label": "回答生成",
+                "status": (
+                    "failed"
+                    if generation_failed
+                    else "partial"
+                    if generation_incomplete
+                    else "completed"
+                ),
+            },
         ]
     )
     return steps

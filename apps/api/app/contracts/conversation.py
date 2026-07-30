@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contracts.learning import TeachingMode
+
 
 class MessageRole(StrEnum):
     USER = "user"
@@ -52,6 +54,36 @@ class ConversationMessage(BaseModel):
     )
 
 
+class TeachingStateV1(BaseModel):
+    """Short-lived session state; distinct from Memory and mastery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = "v1"
+    teaching_mode: TeachingMode = TeachingMode.DIRECT_ANSWER
+    source_task_id: str | None = None
+    student_attempt_present: bool = False
+    current_skill_ids: list[str] = Field(default_factory=list)
+    current_problem_type: str | None = None
+    current_hint_level: str | None = None
+    hint_request_count: int = Field(default=0, ge=0)
+    execution_path: str | None = None
+    first_confirmed_error_step: str | None = None
+    pending_check_question: str | None = None
+    pending_check_question_id: str | None = None
+    awaiting_student_response: bool = False
+    solution_packet_task_id: str | None = None
+    verification_report_task_id: str | None = None
+    full_solution_disclosed: bool = False
+    current_attempt_id: str | None = None
+    previous_attempt_id: str | None = None
+    attempt_sequence: int = Field(default=0, ge=0)
+    last_feedback_uptake_status: str | None = None
+    last_mastery_evidence_type: str | None = None
+    pending_retest_plan_ids: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
 class SessionWorkingState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,6 +98,7 @@ class SessionWorkingState(BaseModel):
     pending_steps: list[str] = Field(default_factory=list)
     unresolved_items: list[str] = Field(default_factory=list)
     referenced_message_ids: list[str] = Field(default_factory=list)
+    teaching_state: TeachingStateV1 | None = None
     updated_at: datetime | None = None
     version: int = Field(default=1, ge=1)
 
@@ -109,12 +142,11 @@ class ConversationContextBundle(BaseModel):
 
     def safe_prompt_text(self) -> str:
         parts: list[str] = []
-        if self.working_state.current_goal:
+        if self.working_state.current_goal and self.current_message_id is None:
             parts.append(f"当前目标：{self.working_state.current_goal}")
         if self.working_state.user_corrections:
             parts.append(
-                "用户纠正："
-                + "；".join(self.working_state.user_corrections[-3:])
+                "用户纠正：" + "；".join(self.working_state.user_corrections[-3:])
             )
         if self.session_summary:
             parts.append(f"会话摘要：{self.session_summary}")

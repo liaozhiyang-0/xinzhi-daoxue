@@ -17,6 +17,7 @@ from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
 from app.repositories.sessions import SessionRepository
+from app.services.answer_disclosure import public_teaching_result
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
 from app.services.task_creation_service import TaskCreationService
@@ -30,7 +31,13 @@ TERMINAL_STATUSES = {
 }
 
 
-def task_read(task: TaskModel) -> TaskRead:
+def task_read(
+    task: TaskModel,
+    *,
+    requester_user_id: str | None = None,
+) -> TaskRead:
+    if requester_user_id is not None and task.user_id != requester_user_id:
+        raise NotFoundError("任务不存在")
     model = TaskRead.model_validate(task)
     payload = dict(model.input_content)
     options = dict(payload.get("options") or {})
@@ -43,6 +50,10 @@ def task_read(task: TaskModel) -> TaskRead:
         options.pop(key, None)
     payload["options"] = options
     model.input_content = payload
+    model.result_content = public_teaching_result(
+        model.result_content,
+        include_private_teaching=requester_user_id == task.user_id,
+    )
     artifacts = task.__dict__.get("artifacts")
     model.artifact_ids = [artifact.id for artifact in artifacts or []]
     return model
@@ -83,7 +94,7 @@ async def create_task(
     ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
         request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return task_read(task, requester_user_id=data.user_id)
 
 
 def _with_conversation_context(
@@ -108,9 +119,13 @@ def _with_conversation_context(
 @router.get("/{task_id}", response_model=TaskRead)
 async def get_task(
     task_id: str,
+    user_id: str | None = Query(default=None, min_length=1, max_length=128),
     db: AsyncSession = Depends(get_db),
 ) -> TaskRead:
-    return task_read(await TaskQueryService(db).get(task_id))
+    return task_read(
+        await TaskQueryService(db).get(task_id),
+        requester_user_id=user_id,
+    )
 
 
 @router.get("/{task_id}/events", response_model=list[EventRead])

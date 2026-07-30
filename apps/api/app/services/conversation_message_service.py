@@ -90,17 +90,26 @@ class ConversationMessageService:
         session: SessionModel,
     ) -> ConversationMessageModel:
         question = self.question_text(request)
+        content_data = {
+            key: request.options[key]
+            for key in ("teaching_mode", "student_attempt")
+            if key in request.options
+        }
         return await self.append(
             session=session,
             user_id=request.user_id,
             role=MessageRole.USER,
             status=MessageStatus.COMPLETED,
             content_text=question or "已提交材料任务",
+            content_data=content_data,
             source_task_id=task.id,
             attachment_ids=[item.file_id for item in request.attachments],
             metadata={
                 "course_id": request.course_id.upper(),
                 "intent": request.intent.value,
+                "teaching_mode": str(
+                    request.options.get("teaching_mode", "direct_answer")
+                ),
             },
         )
 
@@ -128,6 +137,13 @@ class ConversationMessageService:
                 "evidence_view",
                 "math_content",
                 "business_view",
+                "teaching",
+                "teaching_loop",
+                "verification_report_v1",
+                "student_attempt_review",
+                "solution_packet",
+                "evidence_packet",
+                "error_pool",
             )
             if structured.get(key) is not None
         }

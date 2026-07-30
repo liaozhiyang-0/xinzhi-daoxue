@@ -19,6 +19,7 @@ from app.services.conversation_message_service import ConversationMessageService
 from app.services.event_service import append_task_event
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
+from app.services.teaching_input import normalize_teaching_options
 
 
 class TaskCreationService:
@@ -39,6 +40,8 @@ class TaskCreationService:
         attempt: int = 1,
         existing_user_message_id: str | None = None,
     ) -> TaskModel:
+        teaching_options, _, _ = normalize_teaching_options(request.options)
+        request = request.model_copy(update={"options": teaching_options})
         request = self._with_route_context(request, route)
         session = await SessionRepository(self.db).get_for_user(
             request.session_id, request.user_id, for_update=True

@@ -67,6 +67,42 @@ def evaluation_fingerprint(project_root: Path) -> str:
         / "api"
         / "app"
         / "services"
+        / "academic_review.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
+        / "student_verification.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
+        / "solver_runtime_policy.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
+        / "rag_providers.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
+        / "rag_runtime.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
+        / "task_runner.py",
+        project_root
+        / "apps"
+        / "api"
+        / "app"
+        / "services"
         / "high_risk_verification.py",
         project_root / "apps" / "api" / "app" / "evaluation" / "runner.py",
         project_root / "apps" / "api" / "app" / "evaluation" / "scorers" / "core.py",

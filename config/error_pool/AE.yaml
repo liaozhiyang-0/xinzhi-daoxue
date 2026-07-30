@@ -1,0 +1,36 @@
+version: "1.0"
+course_id: "AE"
+errors:
+  - error_signature: "unit_missing"
+    problem_types: ["*"]
+    skill_ids: []
+    error_type: "unit_error"
+    match_mode: "exact_rule"
+    description: "最终结果缺少单位"
+    hint_templates:
+      H1: "检查电压、电流或电阻结果是否写出单位。"
+      H2: "根据目标量补充 V、A 或 Ω，并检查数量级。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "op_amp_assumption_missing"
+    problem_types: ["op_amp"]
+    skill_ids: ["AE.IDEAL_OP_AMP"]
+    error_type: "condition_error"
+    match_mode: "exact_rule"
+    description: "使用虚短或虚断时未说明理想运放及反馈条件"
+    hint_templates:
+      H1: "检查虚短、虚断成立所需的运放和反馈条件。"
+      H2: "先确认理想运放处于线性负反馈状态，再使用虚短和虚断。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "small_signal_prerequisite_missing"
+    problem_types: ["small_signal_amplifier"]
+    skill_ids: ["AE.SMALL_SIGNAL"]
+    error_type: "condition_error"
+    match_mode: "exact_rule"
+    description: "未先验证静态工作点便直接使用小信号模型"
+    hint_templates:
+      H1: "先确认器件静态工作区，再建立小信号模型。"
+      H2: "用静态工作点验证器件处于放大区，然后线性化。"
+    teacher_reviewed: true
+    enabled: true

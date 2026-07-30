@@ -151,9 +151,7 @@ class ConversationMessageModel(Base):
         UniqueConstraint(
             "session_id", "sequence", name="uq_conversation_message_sequence"
         ),
-        UniqueConstraint(
-            "source_task_id", "role", name="uq_conversation_task_role"
-        ),
+        UniqueConstraint("source_task_id", "role", name="uq_conversation_task_role"),
         Index("ix_conversation_session_sequence", "session_id", "sequence"),
         Index("ix_conversation_user_created", "user_id", "created_at"),
         Index("ix_conversation_reply_to", "reply_to_message_id"),
@@ -398,18 +396,116 @@ class WrongAnswerRecordModel(Base):
 
 class PracticeAttemptModel(Base):
     __tablename__ = "practice_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_task_id",
+            "attempt_sequence",
+            name="uq_practice_attempt_source_sequence",
+        ),
+        UniqueConstraint(
+            "user_id",
+            "idempotency_key",
+            name="uq_practice_attempt_user_idempotency",
+        ),
+        Index("ix_practice_attempt_user_created", "user_id", "created_at"),
+        Index(
+            "ix_practice_attempt_session_sequence",
+            "session_id",
+            "attempt_sequence",
+        ),
+        Index(
+            "ix_practice_attempt_source_sequence",
+            "source_task_id",
+            "attempt_sequence",
+        ),
+        Index("ix_practice_attempt_revision", "revision_of_attempt_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
     source_task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
     user_id: Mapped[str] = mapped_column(String(128), index=True)
     course_id: Mapped[str] = mapped_column(String(32), index=True)
+    session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True
+    )
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), nullable=True)
+    attempt_sequence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revision_of_attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("practice_attempts.id"), nullable=True
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     problem: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     reference_answer: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     student_answer: Mapped[str] = mapped_column(Text, default="")
+    steps_data: Mapped[list[dict[str, Any]]] = mapped_column(
+        "steps_json", JSON, default=list
+    )
+    final_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    student_confidence: Mapped[float | None] = mapped_column(
+        "confidence", Float, nullable=True
+    )
+    teaching_mode: Mapped[str] = mapped_column(String(32), default="direct_answer")
+    hint_level_used: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    full_solution_seen: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    verification_report: Mapped[dict[str, Any]] = mapped_column(
+        "verification_report_json", JSON, default=dict
+    )
+    feedback_uptake: Mapped[dict[str, Any]] = mapped_column(
+        "feedback_uptake_json", JSON, default=dict
+    )
+    mastery_evidence: Mapped[list[dict[str, Any]]] = mapped_column(
+        "mastery_evidence_json", JSON, default=list
+    )
     review_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(32), default="generated")
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class RetestPlanModel(Base):
+    __tablename__ = "retest_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "skill_id",
+            "source_task_id",
+            "interval_days",
+            name="uq_retest_plan_source_interval",
+        ),
+        Index("ix_retest_user_status_due", "user_id", "status", "due_at"),
+        Index("ix_retest_skill_due", "skill_id", "due_at"),
+        Index("ix_retest_source_task", "source_task_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    skill_id: Mapped[str] = mapped_column(String(255))
+    source_task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"))
+    source_attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("practice_attempts.id"), nullable=True
+    )
+    interval_days: Mapped[int] = mapped_column(Integer)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(32), default="scheduled")
+    reason_code: Mapped[str] = mapped_column(String(64))
+    generated_problem_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_task_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id"), nullable=True
+    )
+    result: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
 

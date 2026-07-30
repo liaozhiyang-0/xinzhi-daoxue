@@ -1,0 +1,118 @@
+cases:
+  - case_id: TP3-01
+    title: Attempt版本序号与修订关系保持完整
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "将缺少单位的功率答案修改为20 W。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=20", final_answer: "20"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    evidence_requirements:
+      evaluation_dimension: attempt_version_integrity
+      expected_sequence: [1, 2]
+      immutable_history: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, attempt_version_integrity]
+    provenance: &phase3_provenance
+      source_type: synthetic
+      source_name: phase3_contract
+      publishable: true
+
+  - case_id: TP3-02
+    title: 单位错误修正形成有限反馈采用记录
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "根据单位提示将P=20修改为P=20 W。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=20"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    evidence_requirements:
+      evaluation_dimension: feedback_uptake_capture
+      expected_uptake: applied_correctly
+      model_calls: 0
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, feedback_uptake_capture]
+    provenance: *phase3_provenance
+
+  - case_id: TP3-03
+    title: 独立正确与提示后正确使用不同启发式证据
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "比较独立作答、H1和H2后正确的配置增量。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    evidence_requirements:
+      evaluation_dimension: mastery_evidence_consistency
+      expected_order: [independent_correct, h0_h1_correct, h2_correct]
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, mastery_evidence_consistency]
+    provenance: *phase3_provenance
+
+  - case_id: TP3-04
+    title: 查看完整答案不产生正向掌握增量
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "查看完整解答后提交相同结论。"
+    task_options:
+      teaching_mode: direct_answer
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    evidence_requirements:
+      evaluation_dimension: full_solution_dependency_handling
+      mastery_delta: 0
+      retest_intervals: [1, 7]
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, full_solution_dependency_handling]
+    provenance: *phase3_provenance
+
+  - case_id: TP3-05
+    title: 到期复习按唯一规则创建和查询
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "查询已经到期的1天复习计划。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    evidence_requirements:
+      evaluation_dimension: retest_plan_correctness
+      due_query_only: true
+      active_notification: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, retest_plan_correctness]
+    provenance: *phase3_provenance
+
+  - case_id: TP3-06
+    title: 复杂推导反馈采用降级人工复核
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "使用另一种省略中间过程的复杂推导提交修改。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "使用另一种复杂推导得到结论"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    requires_manual_review: true
+    evidence_requirements:
+      evaluation_dimension: manual_review_safety
+      mastery_delta: 0
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, manual_review_safety]
+    provenance: *phase3_provenance
+
+  - case_id: TP3-07
+    title: 其他用户不能读取或修订Attempt和Retest
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    message: "尝试读取另一用户的学习记录。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    cross_user_isolated: true
+    evidence_requirements:
+      evaluation_dimension: cross_user_isolation
+      expected_http_status: 404
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase3, cross_user_isolation]
+    provenance: *phase3_provenance

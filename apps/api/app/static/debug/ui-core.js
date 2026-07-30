@@ -291,9 +291,9 @@
     target.append(document.createTextNode(value || ""));
   }
 
-  function renderLatex(source, display = false) {
+  function renderLatex(source, display = false, inlineHost = false) {
     const latex = String(source || "").trim();
-    const outer = el(display ? "div" : "span", {
+    const outer = el(display && !inlineHost ? "div" : "span", {
       class: `math-expression ${display ? "math-display" : "math-inline"}`,
       role: "img", "aria-label": latex || "空公式", title: latex,
     });
@@ -356,6 +356,18 @@
         node.append(el("button", { type: "button", class: "citation-link", text: citation[1], "data-evidence-ref": citation[1], "aria-label": `查看证据 ${citation[1]}` }));
         index += citation[0].length;
         continue;
+      }
+      if (text.startsWith("\\[", index)) {
+        const end = findInlineMathEnd(text, index + 2, "\\]");
+        if (end !== -1) {
+          flush(); node.append(renderLatex(text.slice(index + 2, end), true, true)); index = end + 2; continue;
+        }
+      }
+      if (text.startsWith("$$", index)) {
+        const end = findInlineMathEnd(text, index + 2, "$$");
+        if (end !== -1) {
+          flush(); node.append(renderLatex(text.slice(index + 2, end), true, true)); index = end + 2; continue;
+        }
       }
       if (text.startsWith("\\(", index)) {
         const end = findInlineMathEnd(text, index + 2, "\\)");

@@ -110,6 +110,7 @@ class LocalBGETextEmbeddingProvider:
         cache_dir: Path | None,
         trust_remote_code: bool,
         query_instruction: str = "",
+        local_files_only: bool = True,
     ) -> None:
         self.model_name = model_name
         self.model_revision = revision
@@ -121,6 +122,7 @@ class LocalBGETextEmbeddingProvider:
         self.cache_dir = cache_dir
         self.trust_remote_code = trust_remote_code
         self.query_instruction = query_instruction
+        self.local_files_only = local_files_only
         self._model: Any = None
         self._dimension: int | None = None
         self._effective_max_length: int | None = None
@@ -151,6 +153,7 @@ class LocalBGETextEmbeddingProvider:
                 device=self.device,
                 cache_folder=str(self.cache_dir) if self.cache_dir else None,
                 trust_remote_code=self.trust_remote_code,
+                local_files_only=self.local_files_only,
             )
             tokenizer_limit = int(
                 getattr(self._model.tokenizer, "model_max_length", self.max_length)
@@ -279,6 +282,7 @@ class LocalSigLIP2ImageEmbeddingProvider:
         batch_size: int,
         normalize: bool,
         cache_dir: Path | None,
+        local_files_only: bool = True,
     ) -> None:
         self.model_name = model_name
         self.model_revision = revision
@@ -287,6 +291,7 @@ class LocalSigLIP2ImageEmbeddingProvider:
         self.batch_size = batch_size
         self.normalize = normalize
         self.cache_dir = cache_dir
+        self.local_files_only = local_files_only
         self._model: Any = None
         self._processor: Any = None
         self._dimension: int | None = None
@@ -316,11 +321,13 @@ class LocalSigLIP2ImageEmbeddingProvider:
                 self.model_name,
                 revision=self.model_revision,
                 cache_dir=cache,
+                local_files_only=self.local_files_only,
             )
             self._model = AutoModel.from_pretrained(
                 self.model_name,
                 revision=self.model_revision,
                 cache_dir=cache,
+                local_files_only=self.local_files_only,
             ).to(self.device)
             self._model.eval()
             projection = getattr(self._model.config, "projection_dim", None)
@@ -437,12 +444,14 @@ class BGERerankerProvider:
         revision: str,
         device: str,
         cache_dir: Path | None,
+        local_files_only: bool = True,
     ) -> None:
         self.model_name = model_name
         self.model_revision = revision
         self.requested_device = device
         self.device = "unresolved"
         self.cache_dir = cache_dir
+        self.local_files_only = local_files_only
         self._model: Any = None
         self._error: str | None = None
         self._load_latency_ms = 0
@@ -470,6 +479,7 @@ class BGERerankerProvider:
                 revision=self.model_revision,
                 device=self.device,
                 cache_folder=str(self.cache_dir) if self.cache_dir else None,
+                local_files_only=self.local_files_only,
             )
             config = getattr(self._model.model, "config", None)
             commit = getattr(config, "_commit_hash", None)

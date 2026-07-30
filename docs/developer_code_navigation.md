@@ -14,6 +14,7 @@
 - [测试指南](testing_guide.md)：测试分层和验收命令。
 - [统一学术求解器](universal_academic_solver.md)：多学科 Solver 设计。
 - [学习与质量闭环](implementation/learning_quality_loop.md)：学习动作、质量门和数据库设计。
+- [教学闭环第二阶段](architecture/teaching_loop_phase2.md)：有限核对、分级提示、披露与状态恢复。
 
 快速跳转：
 
@@ -117,7 +118,7 @@ flowchart LR
 5. `AcademicProblemSolverService`、内部 Agent Hub 与一般问题服务；
 6. `KnowledgeBaseService`、Embedding、Reranker、VectorStore 和 `RAGRetrievalService`；
 7. 检索上下文、知识问答、Supervisor；
-8. `TaskRunner`、`LearningLoopService`、`LocalTaskExecutor` 和 RAG Debug；
+8. `TeachingExecutionPlanner`、有限核对/提示/披露服务、`TaskRunner`、`LearningLoopService`、`LocalTaskExecutor` 和 RAG Debug；
 9. 在 lifespan 中把对象写入 `app.state`。
 
 不要在各 API 模块里重新创建上述重对象。API 通过 `request.app.state` 或 `dependencies.py` 获取共享实例。
@@ -515,6 +516,14 @@ flowchart LR
 - 不展示 Provider、Flow ID、内部 Agent ID、原始 prompt 或 Point ID；
 - Mock、fallback、证据不足和不支持状态必须明确显示。
 
+教学基础能力仍走同一个 `/tasks` 链路。输入规范化在
+`services/teaching_input.py`，结果适配入口在
+`services/teaching_foundation.py`；SolutionPacket、EvidencePacket、技能配置和
+短期状态的详细边界分别见 `docs/implementation/solution_packet_v1.md`、
+`evidence_packet_v1.md`、`skill_registry.md` 和 `teaching_state_boundaries.md`。
+Workspace 第一阶段只展示 `direct_answer`、`check_my_work`，不得把预留的
+`guided_learning`/`review` 宣称为完整功能。
+
 ## 14. 可观测性和调试
 
 当前可观测数据分为三层：
@@ -536,13 +545,14 @@ flowchart LR
 | `app/evaluation/contracts.py` | case、provenance、rubric、result 和 report 合同。 |
 | `app/evaluation/loader.py` | YAML/JSON 加载和筛选。 |
 | `app/evaluation/runner.py` | 通过真实应用 lifespan 和 HTTP 任务链运行案例。 |
-| `app/evaluation/scorers/core.py` | 路由、课程、Agent、结构、答案、引用和安全评分。 |
+| `app/evaluation/scorers/core.py` | 路由、课程、Agent、结构、答案、引用、安全和教学基础合同评分。 |
 | `app/evaluation/reporting.py` | JSON/Markdown 报告和统计。 |
 | `evaluation/schemas/` | case/rubric JSON Schema。 |
 | `evaluation/rubrics/` | 默认评分维度。 |
 | `evaluation/manifests/` | 数据集来源和发布边界。 |
 | `evaluation/private_cases/` | Git 忽略的真实私有题。 |
 | `evaluation/reports/`、`cache/` | Git 忽略的运行产物。 |
+| `evaluation/cases/teaching_foundation/` | 非正式 synthetic 教学合同案例，不代表教学效果。 |
 
 ### 15.2 运行模式
 
@@ -776,6 +786,20 @@ git diff --check
 ```
 
 逐个文件的最新职责、大小和状态继续以 [仓库逐文件目录](repository_file_catalog.md) 为索引；本文负责解释文件之间的关系和安全修改路径。
+
+## 教学闭环第三阶段导航
+
+- 合同：`app/contracts/learning.py`、`app/contracts/conversation.py`
+- ORM/migration：`app/models/entities.py`、
+  `alembic/versions/20260726_0007_teaching_loop_phase3.py`
+- Repository：`app/repositories/learning.py`
+- Attempt/反馈：`student_attempts.py`、`feedback_uptake.py`
+- 证据/状态：`learning_outcome.py`、`learning_loop.py`
+- 延迟再测：`retest_plans.py`、`practice_generation.py`
+- API：`app/api/v1/learning.py`
+- Workspace：`workspace.html`、`workspace.js`、`workspace-v2.css`
+- 配置：`config/learning_mastery.yaml`
+- 案例：`evaluation/cases/teaching_loop_phase3/`
 # Agent Runtime Foundation 导航
 
 - 合同：`app/contracts/conversation.py`、`app/contracts/memory.py`
