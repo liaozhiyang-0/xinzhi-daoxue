@@ -52,6 +52,7 @@ def build_task_views(
     evidence_view = _evidence_view(bundle, used_ids, rag_mode)
     course_label = COURSE_LABELS.get(result.course_id, result.course_id or "课程")
     is_solver = rag_mode == RAGInteractionMode.METHOD_REFERENCE
+    is_general = definition.agent_id == "GENERAL_QUESTION_V1"
     task_label = TASK_LABELS.get(definition.agent_id, definition.display_name)
     fallback = bool(result.fallback_used or routing.get("fallback_used", False))
     mock = bool(result.mock_used or result.provider == "mock")
@@ -112,7 +113,14 @@ def build_task_views(
         if isinstance(quality_gate, dict)
         else "not_checked"
     )
-    if generation_failed:
+    if (
+        is_general
+        and isinstance(model_execution, dict)
+        and model_execution.get("status") == "success"
+    ):
+        answer_quality_status = "generated"
+        answer_quality_message = ""
+    elif generation_failed:
         answer_quality_status = "generation_failed"
         answer_quality_message = "专业模型未形成完整答案，当前内容不能视为已核对结论。"
     elif generation_incomplete:
@@ -172,14 +180,18 @@ def build_task_views(
         "general_model_unavailable": (
             "通用回答模型暂不可用，本次未调用星辰工作流。"
         ),
+        "academic_generation_direct_model": (
+            "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。"
+        ),
+        "direct_general_model_unavailable": (
+            "专业与通用回答模型当前均不可用，请稍后重试。"
+        ),
     }
     generation_failure_messages = {
-        "model_timeout": (
-            "专业解题模型响应超时，当前仅保留本地确定性占位结果，请重新提交。"
-        ),
-        "model_provider_unavailable": (
-            "专业解题模型暂时不可用，当前仅保留本地确定性占位结果，请稍后重试。"
-        ),
+        "model_timeout": "回答模型响应超时，请稍后重试。",
+        "model_provider_unavailable": "回答模型暂时不可用，请稍后重试。",
+        "general_model_unexpected_error": "回答模型暂时不可用，请稍后重试。",
+        "general_model_empty_response": "回答模型返回空内容，请稍后重试。",
     }
     generation_error = (
         str(model_execution.get("error_type", ""))
@@ -188,7 +200,7 @@ def build_task_views(
     )
     fallback_message = generation_failure_messages.get(
         generation_error,
-        "专业解题模型本次未完成，当前仅保留本地确定性占位结果。",
+        "回答模型本次未完成，请稍后重试。",
     ) if generation_failed else (
         fallback_messages.get(
             result.fallback_reason,
@@ -200,7 +212,7 @@ def build_task_views(
     steps = _execution_steps(result, bundle, citation_status)
     title = (
         task_label
-        if definition.scene == "research"
+        if definition.scene == "research" or is_general
         else f"{task_label} · {course_label}"
     )
     presentation = TaskPresentation(

@@ -30,6 +30,7 @@ class GeneralQuestionService:
     async def run(self, request: AgentRequest) -> AgentResult:
         question = self._question(request)
         messages = self._messages(request, question)
+        direct_fallback = self._direct_fallback_context(request)
         max_tokens = self._max_tokens(request)
         try:
             first = await self.model_service.generate_for_task(
@@ -112,11 +113,17 @@ class GeneralQuestionService:
         }
         content = {
             "status": "completed",
-            "mode": "general_model_answer",
+            "mode": (
+                "direct_model_fallback" if direct_fallback else "general_model_answer"
+            ),
             "answer_text": answer,
             "question": question,
             "model_execution": model_execution,
-            "source_policy": "no_course_evidence_claimed",
+            "source_policy": (
+                "method_reference_not_cited"
+                if direct_fallback.get("method_reference")
+                else "no_course_evidence_claimed"
+            ),
         }
         artifact = Artifact(
             artifact_type=ArtifactType.ANSWER,
@@ -153,18 +160,32 @@ class GeneralQuestionService:
 
     @staticmethod
     def _messages(request: AgentRequest, question: str) -> list[dict[str, str]]:
-        system = (
-            "你是芯智导学的通用问题回答助手。专用课程或业务工作流无法确定时，"
-            "直接回答用户的普通文本问题，不要求用户重新选择Agent。回答应准确、"
-            "自然并与问题复杂度匹配；日常常识、生活、语言和一般科普问题直接给出"
-            "简洁答案，不套用课程求解模板，不输出进度、路由或工作流说明，也不强制"
-            "使用标题、分点或多级结构。严格遵守用户提出的字数、受众、语气、格式和"
-            "是否使用公式等限制；不知道或缺少关键条件时明确说明。"
-            "不得声称使用了未提供的课程资料、实时互联网、实验数据或参考文献，"
-            "不得编造引文。涉及医疗、法律、金融或人身安全等高风险主题时，只提供"
-            "一般信息和风险提示，不替代专业判断；对危险或违法操作不给出可执行步骤。"
-            f"{MATH_OUTPUT_INSTRUCTION}"
-        )
+        direct_fallback = GeneralQuestionService._direct_fallback_context(request)
+        if direct_fallback:
+            system = (
+                "你是芯智导学的最终直接回答模型。上游专业流程没有形成可展示的"
+                "完整答案；请忽略任何占位结果，直接根据用户原问题完成回答。"
+                "不要提及路由、上游失败、模型切换、内部工作流或占位结果。"
+                "专业计算题应给出结论、必要公式与关键推导；条件不足时优先给出"
+                "符号解、分情况结论和可继续计算的方法，只在确实无法唯一确定时"
+                "明确列出最少缺失条件。不得补造数值、连接关系、图中信息或引用。"
+                "课程资料片段只能作为方法参考，不得声称它直接证明了题目中的"
+                "具体数值或拓扑。"
+                f"{MATH_OUTPUT_INSTRUCTION}"
+            )
+        else:
+            system = (
+                "你是芯智导学的通用问题回答助手。专用课程或业务工作流无法确定时，"
+                "直接回答用户的普通文本问题，不要求用户重新选择Agent。回答应准确、"
+                "自然并与问题复杂度匹配；日常常识、生活、语言和一般科普问题直接给出"
+                "简洁答案，不套用课程求解模板，不输出进度、路由或工作流说明，也不强制"
+                "使用标题、分点或多级结构。严格遵守用户提出的字数、受众、语气、格式和"
+                "是否使用公式等限制；不知道或缺少关键条件时明确说明。"
+                "不得声称使用了未提供的课程资料、实时互联网、实验数据或参考文献，"
+                "不得编造引文。涉及医疗、法律、金融或人身安全等高风险主题时，只提供"
+                "一般信息和风险提示，不替代专业判断；对危险或违法操作不给出可执行步骤。"
+                f"{MATH_OUTPUT_INSTRUCTION}"
+            )
         context_parts = [f"用户角色：{request.user_role.value}"]
         if request.course_id not in {"", "AUTO", "UNKNOWN"}:
             context_parts.append(f"当前课程提示：{request.course_id}")
@@ -177,6 +198,12 @@ class GeneralQuestionService:
         conversation = str(request.options.get("conversation_summary", "")).strip()
         if conversation and conversation != previous:
             context_parts.append(f"对话上下文：{conversation[:6000]}")
+        method_reference = str(direct_fallback.get("method_reference", "")).strip()
+        if method_reference:
+            context_parts.append(
+                "课程方法参考（不得当作题目已知条件或直接引用来源）："
+                f"\n{method_reference[:6000]}"
+            )
         return [
             {"role": "system", "content": system},
             {
@@ -184,6 +211,11 @@ class GeneralQuestionService:
                 "content": "\n".join([*context_parts, f"问题：{question}"]),
             },
         ]
+
+    @staticmethod
+    def _direct_fallback_context(request: AgentRequest) -> dict[str, object]:
+        value = request.options.get("_direct_model_fallback")
+        return dict(value) if isinstance(value, dict) else {}
 
     @staticmethod
     def _max_tokens(request: AgentRequest) -> int:

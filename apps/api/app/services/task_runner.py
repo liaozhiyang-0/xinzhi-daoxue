@@ -326,6 +326,11 @@ class TaskRunner:
                             result = await self._maybe_run_academic_ct_fallback(
                                 result, request
                             )
+                            result = await self._maybe_run_direct_model_fallback(
+                                result,
+                                request,
+                                internal_context,
+                            )
                             context_injected = internal_context is not None
                         except AppError as internal_error:
                             if not cloud_workflow_allowed:
@@ -1469,6 +1474,146 @@ class TaskRunner:
                 ),
             }
         )
+
+    async def _maybe_run_direct_model_fallback(
+        self,
+        result: AgentResult,
+        request: AgentRequest,
+        context: RetrievalContextPacket | None,
+    ) -> AgentResult:
+        """Replace an unusable solver placeholder with one direct model answer."""
+
+        if (
+            self.internal_agents is None
+            or not self.internal_agents.available("GENERAL_QUESTION_V1")
+            or not self._needs_direct_model_fallback(result)
+            or request.options.get("_direct_model_fallback_attempted")
+        ):
+            return result
+
+        primary_execution = result.structured_result.get("model_execution")
+        primary_execution = (
+            dict(primary_execution) if isinstance(primary_execution, dict) else {}
+        )
+        method_reference = (
+            context.to_retrieved_context() if context is not None else ""
+        )
+        options = dict(request.options)
+        options["_direct_model_fallback_attempted"] = True
+        options["_direct_model_fallback"] = {
+            "source_agent": result.agent_id,
+            "reason": str(
+                primary_execution.get("error_type")
+                or primary_execution.get("output_status")
+                or "solver_answer_unusable"
+            ),
+            "method_reference": method_reference[:6000],
+        }
+        fallback_request = request.model_copy(update={"options": options})
+        direct = await self.internal_agents.run(
+            "GENERAL_QUESTION_V1",
+            fallback_request,
+        )
+        direct_execution = direct.structured_result.get("model_execution")
+        direct_execution = (
+            dict(direct_execution) if isinstance(direct_execution, dict) else {}
+        )
+        direct_completed = (
+            str(direct_execution.get("status", "")).casefold() == "success"
+            and bool(direct.answer.strip())
+        )
+        fallback_reason = (
+            "academic_generation_direct_model"
+            if direct_completed
+            else "direct_general_model_unavailable"
+        )
+        structured = dict(result.structured_result)
+        structured.update(
+            {
+                "status": "completed" if direct_completed else "failed",
+                "final_answer": direct.answer,
+                "answer_text": direct.answer,
+                "primary_model_execution": primary_execution,
+                "model_execution": direct_execution,
+                "direct_model_fallback": {
+                    "attempted": True,
+                    "completed": direct_completed,
+                    "source_agent": result.agent_id,
+                    "target_agent": "GENERAL_QUESTION_V1",
+                    "reason": options["_direct_model_fallback"]["reason"],
+                },
+                "fallback_used": True,
+                "fallback_reason": fallback_reason,
+            }
+        )
+        filtered_risks = [
+            item
+            for item in result.remaining_risks
+            if "统一模型服务不可用" not in item
+            and "模型输出达到续答上限" not in item
+        ]
+        return result.model_copy(
+            update={
+                "provider": direct.provider,
+                "answer": direct.answer,
+                "structured_result": structured,
+                "business_data": structured,
+                "artifacts": [*result.artifacts, *direct.artifacts],
+                "citations": [],
+                "warnings": [*result.warnings, *direct.warnings],
+                "remaining_risks": [*filtered_risks, *direct.remaining_risks],
+                "metrics": result.metrics.model_copy(
+                    update={
+                        "provider_latency_ms": self._sum_optional_metrics(
+                            result.metrics.provider_latency_ms,
+                            direct.metrics.provider_latency_ms,
+                        ),
+                        "model_calls": (
+                            result.metrics.model_calls + direct.metrics.model_calls
+                        ),
+                        "input_tokens": self._sum_optional_metrics(
+                            result.metrics.input_tokens,
+                            direct.metrics.input_tokens,
+                        ),
+                        "output_tokens": self._sum_optional_metrics(
+                            result.metrics.output_tokens,
+                            direct.metrics.output_tokens,
+                        ),
+                        "fallback_used": True,
+                        "fallback_count": min(
+                            2, result.metrics.fallback_count + 1
+                        ),
+                        "route_path": [
+                            *result.metrics.route_path,
+                            "GENERAL_QUESTION_V1",
+                        ],
+                    }
+                ),
+                "cloud_status": direct.cloud_status,
+                "fallback_used": True,
+                "fallback_reason": fallback_reason,
+            }
+        )
+
+    @staticmethod
+    def _needs_direct_model_fallback(result: AgentResult) -> bool:
+        if result.agent_id != "ACADEMIC_PROBLEM_SOLVER":
+            return False
+        execution = result.structured_result.get("model_execution")
+        if not isinstance(execution, dict):
+            return not bool(result.answer.strip())
+        status = str(execution.get("status", "")).casefold()
+        output_status = str(execution.get("output_status", "")).casefold()
+        return status == "failed" or output_status in {"partial", "incomplete"}
+
+    @staticmethod
+    def _sum_optional_metrics(
+        first: int | None,
+        second: int | None,
+    ) -> int | None:
+        if first is None and second is None:
+            return None
+        return (first or 0) + (second or 0)
 
     def _teaching_degraded_result(
         self,

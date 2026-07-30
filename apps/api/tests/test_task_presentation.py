@@ -214,7 +214,7 @@ def test_failed_model_generation_is_not_labeled_completed() -> None:
     assert presentation.answer_quality_status == "generation_failed"
     assert presentation.requires_review is True
     assert "模型响应超时" in presentation.fallback_message
-    assert "确定性占位结果" in presentation.fallback_message
+    assert "确定性占位结果" not in presentation.fallback_message
 
 
 def test_quality_gate_and_fallback_are_visible_to_workspace() -> None:
