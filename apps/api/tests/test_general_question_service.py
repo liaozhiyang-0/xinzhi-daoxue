@@ -4,11 +4,19 @@ from typing import Any, cast
 
 import pytest
 from app.agents import AgentRegistry, TaskRouter
-from app.contracts import AgentRequest, Intent, ModelResponse, ModelUsage
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    Intent,
+    ModelResponse,
+    ModelUsage,
+    RunMetrics,
+)
 from app.core.config import Settings
 from app.services.general_question_service import GeneralQuestionService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
+from app.services.task_runner import TaskRunner
 
 
 class FakeGeneralModelService:
@@ -27,6 +35,35 @@ class FailingGeneralModelService:
     ) -> ModelResponse:
         del task_type, kwargs
         raise RuntimeError("unexpected provider adapter failure")
+
+
+class UnavailableGeneralAgentHub:
+    @staticmethod
+    def available(agent_id: str) -> bool:
+        return agent_id == "GENERAL_QUESTION_V1"
+
+    @staticmethod
+    async def run(
+        agent_id: str,
+        request: AgentRequest,
+    ) -> AgentResult:
+        del agent_id, request
+        return AgentResult(
+            agent_id="GENERAL_QUESTION_V1",
+            provider="local_agent",
+            answer="通用回答模型暂时不可用。",
+            structured_result={
+                "model_execution": {
+                    "status": "failed",
+                    "output_status": "partial",
+                    "error_type": "model_timeout",
+                }
+            },
+            warnings=["通用回答模型暂不可用"],
+            metrics=RunMetrics(model_calls=1, provider_latency_ms=60_000),
+            fallback_used=True,
+            fallback_reason="general_model_unavailable",
+        )
 
 
 class AcademicThenGeneralModelService:
@@ -56,7 +93,7 @@ class AcademicThenGeneralModelService:
         self.calls.append(task_type)
         if task_type == "academic_problem_solving":
             raise RuntimeError("academic route unavailable")
-        if task_type == "general_question_answer":
+        if task_type == "academic_direct_answer":
             return response(
                 "在正弦稳态下，先将电源与阻抗写成相量，再用 KCL 或 KVL 求解。"
             )
@@ -104,12 +141,14 @@ def test_low_confidence_text_routes_to_general_question_without_cloud() -> None:
 
 
 def test_general_question_model_route_prefers_spark() -> None:
-    route = ModelRegistry(Settings(_env_file=None)).get_route(
-        "general_question_answer"
-    )
+    registry = ModelRegistry(Settings(_env_file=None))
+    route = registry.get_route("general_question_answer")
+    direct_route = registry.get_route("academic_direct_answer")
 
     assert route.primary == "spark_reasoner"
     assert route.fallback == "qwen_text_fast"
+    assert direct_route.primary == "qwen_text_fast"
+    assert direct_route.fallback == "qwen_vision_primary"
 
 
 def test_daily_science_question_routes_to_general_question() -> None:
@@ -164,6 +203,9 @@ async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
                     "reason": "model_timeout",
                     "method_reference": "相量法的一般步骤",
                     "visual_context": "视觉模型已读取：电源为 10V，电阻为 5Ω。",
+                    "partial_answer": (
+                        "已识别待求量为负载最大功率，并已列出戴维南等效方程。"
+                    ),
                 },
             },
         }
@@ -183,6 +225,58 @@ async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
     assert "相量法的一般步骤" in user_prompt
     assert "上游视觉读取结果" in user_prompt
     assert "电源为 10V，电阻为 5Ω" in user_prompt
+    assert "上游部分专业回答" in user_prompt
+    assert "负载最大功率" in user_prompt
+    assert fake.calls[0]["task_type"] == "academic_direct_answer"
+    assert fake.calls[0]["extra_options"] == {"max_tokens": 2048}
+
+
+@pytest.mark.asyncio
+async def test_failed_direct_fallback_preserves_usable_partial_solver_answer() -> None:
+    runner = object.__new__(TaskRunner)
+    runner.internal_agents = cast(Any, UnavailableGeneralAgentHub())
+    partial_answer = "已求得 $Z_L=4.5-j10\\,\\Omega$，并完成了主要推导。"
+    primary = AgentResult(
+        agent_id="ACADEMIC_PROBLEM_SOLVER",
+        provider="dashscope",
+        answer=partial_answer,
+        structured_result={
+            "model_execution": {
+                "status": "partial",
+                "output_status": "partial",
+                "error_type": "model_timeout",
+            }
+        },
+        business_data={},
+        warnings=["模型输出可能不完整"],
+        metrics=RunMetrics(
+            model_calls=2,
+            provider_latency_ms=72_000,
+            fallback_used=True,
+            fallback_count=1,
+            route_path=["ACADEMIC_PROBLEM_SOLVER"],
+            partial_result_available=True,
+        ),
+        fallback_used=True,
+        fallback_reason="primary_model_timeout",
+    )
+
+    result = await runner._maybe_run_direct_model_fallback(
+        primary,
+        request("解答图中题目").model_copy(
+            update={"intent": Intent.SOLVE_PROBLEM}
+        ),
+        None,
+    )
+
+    assert result.answer == partial_answer
+    assert result.provider == "dashscope"
+    assert result.fallback_reason == "primary_model_timeout"
+    assert result.structured_result["model_execution"]["status"] == "partial"
+    assert result.structured_result["direct_model_fallback"][
+        "preserved_primary_answer"
+    ] is True
+    assert "通用回答模型暂时不可用" not in result.answer
 
 
 @pytest.mark.asyncio
@@ -352,5 +446,5 @@ def test_workspace_solver_failure_is_replaced_by_direct_model_answer(
     )
     assert model_service.calls == [
         "academic_problem_solving",
-        "general_question_answer",
+        "academic_direct_answer",
     ]

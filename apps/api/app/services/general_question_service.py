@@ -22,7 +22,9 @@ class GeneralQuestionService:
 
     agent_id = "GENERAL_QUESTION_V1"
     task_type = "general_question_answer"
+    direct_fallback_task_type = "academic_direct_answer"
     _TRUNCATED_REASONS = {"length", "max_tokens"}
+    _DIRECT_FALLBACK_MAX_TOKENS = 2048
 
     def __init__(self, model_service: ModelService) -> None:
         self.model_service = model_service
@@ -32,9 +34,14 @@ class GeneralQuestionService:
         messages = self._messages(request, question)
         direct_fallback = self._direct_fallback_context(request)
         max_tokens = self._max_tokens(request)
+        model_task_type = (
+            self.direct_fallback_task_type if direct_fallback else self.task_type
+        )
+        if direct_fallback:
+            max_tokens = min(max_tokens, self._DIRECT_FALLBACK_MAX_TOKENS)
         try:
             first = await self.model_service.generate_for_task(
-                self.task_type,
+                model_task_type,
                 messages=messages,
                 request_id=str(request.options.get("request_id", "")) or None,
                 extra_options={"max_tokens": max_tokens},
@@ -66,7 +73,7 @@ class GeneralQuestionService:
             output_status = "partial"
             try:
                 continuation = await self.model_service.generate_for_task(
-                    self.task_type,
+                    model_task_type,
                     messages=[
                         *messages,
                         {"role": "assistant", "content": answer},
@@ -173,6 +180,9 @@ class GeneralQuestionService:
                 "具体数值或拓扑。若上下文提供“上游视觉读取结果”，表示用户图片"
                 "已经被视觉模型读取；必须使用其中的题干、参数和拓扑直接解答，"
                 "不得声称无法查看图片、无法访问附件或要求用户重新上传。"
+                "若提供“上游部分专业回答”，必须以其中已经识别出的待求量、"
+                "方程和有效推导为基础，修正自相矛盾后压缩成完整最终答案；"
+                "不得擅自改成开路、短路或其他示例问题。"
                 f"{MATH_OUTPUT_INSTRUCTION}"
             )
         else:
@@ -212,6 +222,13 @@ class GeneralQuestionService:
                 "上游视觉读取结果（这是从用户原图读取的题目事实，"
                 "不是方法参考）："
                 f"\n{visual_context[:20_000]}"
+            )
+        partial_answer = str(direct_fallback.get("partial_answer", "")).strip()
+        if partial_answer:
+            context_parts.append(
+                "上游部分专业回答（保留已识别的待求量和有效推导，"
+                "修正冲突并完成收束）："
+                f"\n{partial_answer[:24_000]}"
             )
         return [
             {"role": "system", "content": system},

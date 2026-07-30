@@ -1495,6 +1495,11 @@ class TaskRunner:
         primary_execution = (
             dict(primary_execution) if isinstance(primary_execution, dict) else {}
         )
+        primary_answer_usable = (
+            str(primary_execution.get("status", "")).casefold()
+            in {"success", "partial"}
+            and bool(result.answer.strip())
+        )
         method_reference = (
             context.to_retrieved_context() if context is not None else ""
         )
@@ -1509,6 +1514,10 @@ class TaskRunner:
             ),
             "method_reference": method_reference[:6000],
         }
+        if primary_answer_usable:
+            options["_direct_model_fallback"]["partial_answer"] = (
+                result.answer.strip()[:24_000]
+            )
         visual_context = result.structured_result.get("problem_summary")
         if request.attachments and isinstance(visual_context, str):
             normalized_visual_context = visual_context.strip()
@@ -1529,6 +1538,71 @@ class TaskRunner:
             str(direct_execution.get("status", "")).casefold() == "success"
             and bool(direct.answer.strip())
         )
+        direct_answer_unresolved = primary_answer_usable and any(
+            marker in direct.answer
+            for marker in (
+                "未明确指定待求量",
+                "假设输出端开路",
+                "如果题目要求的是其他量",
+            )
+        )
+        direct_completed = direct_completed and not direct_answer_unresolved
+        if not direct_completed and primary_answer_usable:
+            structured = dict(result.structured_result)
+            structured["direct_model_fallback"] = {
+                "attempted": True,
+                "completed": False,
+                "source_agent": result.agent_id,
+                "target_agent": "GENERAL_QUESTION_V1",
+                "reason": options["_direct_model_fallback"]["reason"],
+                "preserved_primary_answer": True,
+            }
+            preserved_warning = (
+                "快速直答兜底未完成，已保留专业模型已经生成的有效内容"
+            )
+            return result.model_copy(
+                update={
+                    "structured_result": structured,
+                    "business_data": structured,
+                    "warnings": [
+                        *result.warnings,
+                        *(
+                            [preserved_warning]
+                            if preserved_warning not in result.warnings
+                            else []
+                        ),
+                    ],
+                    "metrics": result.metrics.model_copy(
+                        update={
+                            "provider_latency_ms": self._sum_optional_metrics(
+                                result.metrics.provider_latency_ms,
+                                direct.metrics.provider_latency_ms,
+                            ),
+                            "model_calls": (
+                                result.metrics.model_calls
+                                + direct.metrics.model_calls
+                            ),
+                            "input_tokens": self._sum_optional_metrics(
+                                result.metrics.input_tokens,
+                                direct.metrics.input_tokens,
+                            ),
+                            "output_tokens": self._sum_optional_metrics(
+                                result.metrics.output_tokens,
+                                direct.metrics.output_tokens,
+                            ),
+                            "fallback_used": True,
+                            "fallback_count": min(
+                                2, result.metrics.fallback_count + 1
+                            ),
+                            "route_path": [
+                                *result.metrics.route_path,
+                                "GENERAL_QUESTION_V1",
+                            ],
+                        }
+                    ),
+                    "fallback_used": True,
+                }
+            )
         fallback_reason = (
             "academic_generation_direct_model"
             if direct_completed

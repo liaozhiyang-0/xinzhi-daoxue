@@ -8,6 +8,10 @@ routes:
     fallback: qwen_vision_primary
   knowledge_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
   general_question_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
+  academic_direct_answer:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1}
   simple_image_understanding: {primary: qwen_vision_fast, fallback: qwen_vision_primary}
   academic_image_extraction:
     primary: qwen_vision_primary
