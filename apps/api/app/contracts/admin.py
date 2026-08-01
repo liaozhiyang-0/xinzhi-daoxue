@@ -107,3 +107,34 @@ class AdminTaskSummaryRead(BaseModel):
     completed: int
     failed: int
     status_counts: dict[str, int]
+
+
+class AdminFileRead(BaseModel):
+    id: str
+    filename: str
+    owner_user_id: str | None
+    task_id: str | None
+    content_type: str
+    detected_content_type: str
+    size_bytes: int
+    checksum_sha256: str
+    purpose: str
+    ingestion_status: str
+    page_count: int
+    extracted_text: str
+    extraction_metadata: dict[str, object]
+    extraction_error: str | None
+    extraction_version: str
+    created_at: datetime
+    extraction_started_at: datetime | None
+    extraction_completed_at: datetime | None
+
+
+class AdminFileSummaryRead(BaseModel):
+    total: int
+    pending: int
+    processing: int
+    ready: int
+    partial: int
+    failed: int
+    total_bytes: int

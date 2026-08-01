@@ -24,6 +24,8 @@ from app.models import (
     AccountStatus,
     AuditLogModel,
     AuthSessionModel,
+    FileIngestionStatus,
+    FileModel,
     TaskModel,
     TaskStatus,
 )
@@ -375,6 +377,65 @@ class AdminService:
             "completed": counts.get(TaskStatus.COMPLETED.value, 0),
             "failed": counts.get(TaskStatus.FAILED.value, 0),
             "status_counts": counts,
+        }
+
+    async def list_files(
+        self,
+        *,
+        search: str | None,
+        ingestion_status: str | None,
+        content_type: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[FileModel], int]:
+        filters: list[ColumnElement[bool]] = []
+        if search:
+            pattern = f"%{search.strip()}%"
+            filters.append(
+                FileModel.filename.ilike(pattern) | FileModel.id.ilike(pattern)
+            )
+        if ingestion_status:
+            filters.append(
+                FileModel.ingestion_status == FileIngestionStatus(ingestion_status)
+            )
+        if content_type:
+            filters.append(FileModel.content_type.ilike(f"{content_type.strip()}%"))
+        total = int(
+            await self.db.scalar(select(func.count(FileModel.id)).where(*filters))
+            or 0
+        )
+        statement = (
+            select(FileModel)
+            .where(*filters)
+            .order_by(FileModel.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list((await self.db.scalars(statement)).all()), total
+
+    async def file_summary(self) -> dict[str, int]:
+        rows = list(
+            (
+                await self.db.execute(
+                    select(
+                        FileModel.ingestion_status,
+                        func.count(FileModel.id),
+                    ).group_by(FileModel.ingestion_status)
+                )
+            ).all()
+        )
+        counts = {str(key): int(value) for key, value in rows}
+        total_bytes = int(
+            await self.db.scalar(select(func.sum(FileModel.size_bytes))) or 0
+        )
+        return {
+            "total": sum(counts.values()),
+            "pending": counts.get(FileIngestionStatus.PENDING.value, 0),
+            "processing": counts.get(FileIngestionStatus.PROCESSING.value, 0),
+            "ready": counts.get(FileIngestionStatus.READY.value, 0),
+            "partial": counts.get(FileIngestionStatus.PARTIAL.value, 0),
+            "failed": counts.get(FileIngestionStatus.FAILED.value, 0),
+            "total_bytes": total_bytes,
         }
 
     @staticmethod

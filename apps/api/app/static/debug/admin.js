@@ -271,6 +271,43 @@ async function loadAdminTasks() {
   renderAdminTasks(result.items || []);
 }
 
+const fileStatusLabels = { pending: "等待解析", processing: "解析中", ready: "已就绪", partial: "部分完成", failed: "失败" };
+
+function renderAdminFileSummary(data) {
+  $("#admin-file-summary").replaceChildren(
+    metric("文件总数", data.total), metric("解析中", data.processing, data.processing ? "running" : "ready"),
+    metric("已就绪", data.ready, "success"), metric("部分完成", data.partial, data.partial ? "warning" : "ready"),
+    metric("解析失败", data.failed, data.failed ? "failed" : "ready"), metric("存储空间", `${(Number(data.total_bytes || 0) / 1024 / 1024).toFixed(1)} MB`),
+  );
+}
+
+function renderAdminFiles(items) {
+  if (!items.length) { $("#admin-file-table").replaceChildren(el("p", { class: "empty-state", text: "暂无符合条件的文件" })); return; }
+  const headings = ["文件", "类型", "解析状态", "页数", "关联任务", "创建时间", "操作"];
+  const table = el("table", { class: "admin-table" }, [el("thead", {}, el("tr", {}, headings.map((item) => el("th", { text: item }))))]);
+  const body = el("tbody");
+  items.forEach((file) => {
+    const detail = el("button", { type: "button", text: "查看", onclick: async () => {
+      const target = $("#admin-file-detail"); target.hidden = false; target.replaceChildren(el("pre", { class: "code-view", text: JSON.stringify(file, null, 2) }));
+    } });
+    body.append(el("tr", {}, [
+      el("td", {}, [el("strong", { text: file.filename }), el("span", { text: file.id })]),
+      el("td", {}, [el("strong", { text: file.content_type }), el("span", { text: `${Math.max(1, Math.round(file.size_bytes / 1024))} KB` })]),
+      el("td", {}, badge(file.ingestion_status, fileStatusLabels[file.ingestion_status] || file.ingestion_status)),
+      el("td", { text: String(file.page_count || "—") }), el("td", { text: file.task_id || "—" }),
+      el("td", { text: dateText(file.created_at) }), el("td", {}, detail),
+    ]));
+  });
+  table.append(body); $("#admin-file-table").replaceChildren(table);
+}
+
+async function loadAdminFiles() {
+  const form = new FormData($("#admin-file-filters")); const params = new URLSearchParams({ limit: "200" });
+  ["search", "ingestion_status", "content_type"].forEach((key) => { if (form.get(key)) params.set(key, form.get(key)); });
+  const [summary, result] = await Promise.all([api("/api/v1/admin/file-summary"), api(`/api/v1/admin/files?${params.toString()}`)]);
+  renderAdminFileSummary(summary); renderAdminFiles(result.items || []);
+}
+
 function renderAdminAgentDetail(target, data) {
   target.hidden = false;
   target.replaceChildren(el("div", { class: "section-heading" }, [el("h3", { text: `${data.display_name || data.agent_id} · 定义详情` }), el("button", { class: "text-button", type: "button", text: "关闭", onclick: () => { target.hidden = true; } })]), el("pre", { class: "code-view", text: JSON.stringify(data, null, 2) }));
@@ -350,10 +387,13 @@ function selectManagementModule(id) {
 function initManagementModules() {
   registerManagementModule("overview", async () => {});
   registerManagementModule("tasks", loadAdminTasks);
+  registerManagementModule("files", loadAdminFiles);
   registerManagementModule("agents", loadAdminAgents);
   registerManagementModule("system", loadAdminSystem);
   all("[data-admin-module-target]").forEach((button) => button.addEventListener("click", () => selectManagementModule(button.dataset.adminModuleTarget)));
   $("#admin-task-filters").addEventListener("submit", (event) => { event.preventDefault(); loadAdminTasks().catch((error) => toast(error.message, "failed")); });
+  $("#admin-file-filters").addEventListener("submit", (event) => { event.preventDefault(); loadAdminFiles().catch((error) => toast(error.message, "failed")); });
+  $("#admin-file-refresh").addEventListener("click", () => loadAdminFiles().catch((error) => toast(error.message, "failed")));
   $("#admin-agent-refresh").addEventListener("click", () => loadAdminAgents().catch((error) => toast(error.message, "failed")));
   $("#admin-system-refresh").addEventListener("click", () => loadAdminSystem().catch((error) => toast(error.message, "failed")));
   selectManagementModule("overview");

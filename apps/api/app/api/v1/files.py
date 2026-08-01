@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts.api import FileRead
+from app.contracts.api import FileChunkRead, FileRead
 from app.core.config import Settings
 from app.core.errors import NotFoundError
 from app.dependencies import (
@@ -17,9 +19,10 @@ from app.dependencies import (
     get_db,
     get_settings_from_app,
 )
-from app.models import FileModel
+from app.models import DocumentChunkModel, FileIngestionStatus, FileModel
 from app.repositories import FileRepository, TaskRepository
 from app.services.auth_service import Principal
+from app.services.document_ingestion import DocumentIngestionService
 from app.services.storage import StorageService
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -74,6 +77,13 @@ async def upload_file(
         storage_key=storage_key,
         checksum_sha256=sha256(data).hexdigest(),
         purpose=purpose,
+        detected_content_type=content_type,
+        ingestion_status=(
+            FileIngestionStatus.PENDING
+            if Path(safe_name).suffix.lower()
+            in {".txt", ".md", ".csv", ".json", ".pdf", ".doc", ".docx"}
+            else FileIngestionStatus.READY
+        ),
         expires_at=(
             datetime.now(UTC) + timedelta(seconds=settings.student_upload_ttl_seconds)
             if purpose == "student_solver_image" and task_id is None
@@ -82,6 +92,16 @@ async def upload_file(
     )
     try:
         await repository.add(model)
+        if Path(safe_name).suffix.lower() in {
+            ".txt",
+            ".md",
+            ".csv",
+            ".json",
+            ".pdf",
+            ".doc",
+            ".docx",
+        }:
+            await DocumentIngestionService(settings).ingest(model, data, db)
         await db.commit()
         await db.refresh(model)
     except Exception:
@@ -103,6 +123,29 @@ async def get_file(
     if principal.has_identity and model.owner_user_id != principal.user_id:
         raise NotFoundError("文件不存在", details={"file_id": file_id})
     return FileRead.model_validate(model)
+
+
+@router.get("/{file_id}/chunks", response_model=list[FileChunkRead])
+async def get_file_chunks(
+    file_id: str,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[FileChunkRead]:
+    model = await FileRepository(db).get(file_id)
+    if model is None or (
+        principal.has_identity and model.owner_user_id != principal.user_id
+    ):
+        raise NotFoundError("文件不存在", details={"file_id": file_id})
+    chunks = list(
+        (
+            await db.scalars(
+                select(DocumentChunkModel)
+                .where(DocumentChunkModel.file_id == file_id)
+                .order_by(DocumentChunkModel.ordinal)
+            )
+        ).all()
+    )
+    return [FileChunkRead.model_validate(item) for item in chunks]
 
 
 @router.get("/{file_id}/content")

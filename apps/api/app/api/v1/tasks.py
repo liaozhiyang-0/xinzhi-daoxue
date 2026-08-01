@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +20,7 @@ from app.dependencies import (
 )
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
-from app.repositories import TaskRepository
+from app.repositories import FileRepository, TaskRepository
 from app.repositories.sessions import SessionRepository
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
@@ -87,6 +87,7 @@ async def create_task(
         except ValueError:
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
+    data = await _hydrate_document_attachments(data, principal, db, request)
     session = await SessionRepository(db).get(data.session_id)
     if session is not None:
         data = SessionContextService(request.app.state.settings).apply(session, data)
@@ -111,6 +112,71 @@ async def create_task(
     if task.status == TaskStatus.QUEUED:
         request.app.state.task_executor.submit(task.id)
     return task_read(task, requester_user_id=data.user_id)
+
+
+async def _hydrate_document_attachments(
+    data: AgentRequest,
+    principal: Principal,
+    db: AsyncSession,
+    request: Request,
+) -> AgentRequest:
+    if not data.attachments:
+        return data
+    if len(data.attachments) > request.app.state.settings.document_max_files_per_task:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "一次最多上传 "
+                f"{request.app.state.settings.document_max_files_per_task} 个文件"
+            ),
+        )
+    repository = FileRepository(db)
+    hydrated = []
+    extracted_blocks: list[str] = []
+    for attachment in data.attachments:
+        model = await repository.get(attachment.file_id)
+        if model is None or (
+            principal.has_identity and model.owner_user_id != principal.user_id
+        ):
+            raise HTTPException(status_code=404, detail="附件不存在")
+        if model.ingestion_status in {"pending", "processing"}:
+            raise HTTPException(
+                status_code=409, detail=f"附件仍在解析中: {model.filename}"
+            )
+        if model.ingestion_status == "failed":
+            raise HTTPException(
+                status_code=422,
+                detail=model.extraction_error or f"附件解析失败: {model.filename}",
+            )
+        updated = attachment.model_copy(
+            update={
+                "ingestion_status": str(model.ingestion_status),
+                "page_count": model.page_count,
+                "extracted_text": model.extracted_text[:200_000],
+                "extraction_metadata": model.extraction_metadata or {},
+            }
+        )
+        hydrated.append(updated)
+        if model.extracted_text.strip():
+            extracted_blocks.append(f"【附件：{model.filename}】\n{model.extracted_text.strip()}")
+    if not extracted_blocks:
+        return data.model_copy(update={"attachments": hydrated})
+    canonical = dict(data.canonical_input)
+    original_text = str(
+        canonical.get("text") or canonical.get("question") or ""
+    ).strip()
+    combined = "\n\n".join(
+        part for part in (original_text, "\n\n".join(extracted_blocks)) if part
+    )
+    canonical["text"] = combined[
+        : request.app.state.settings.document_max_extracted_chars
+    ]
+    canonical["uploaded_text"] = "\n\n".join(extracted_blocks)[
+        : request.app.state.settings.document_max_extracted_chars
+    ]
+    return data.model_copy(
+        update={"attachments": hydrated, "canonical_input": canonical}
+    )
 
 
 def _with_conversation_context(

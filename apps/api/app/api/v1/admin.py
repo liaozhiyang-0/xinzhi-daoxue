@@ -11,6 +11,8 @@ from app.contracts.admin import (
     AdminAccountCreate,
     AdminAccountRead,
     AdminAccountUpdate,
+    AdminFileRead,
+    AdminFileSummaryRead,
     AdminOverviewRead,
     AdminPasswordReset,
     AdminSessionRead,
@@ -80,6 +82,29 @@ def _task_read(task: Any, account: Any | None) -> AdminTaskRead:
     )
 
 
+def _file_read(file: Any) -> AdminFileRead:
+    return AdminFileRead(
+        id=file.id,
+        filename=file.filename,
+        owner_user_id=file.owner_user_id,
+        task_id=file.task_id,
+        content_type=file.content_type,
+        detected_content_type=file.detected_content_type,
+        size_bytes=file.size_bytes,
+        checksum_sha256=file.checksum_sha256,
+        purpose=file.purpose,
+        ingestion_status=file.ingestion_status,
+        page_count=file.page_count,
+        extracted_text=file.extracted_text,
+        extraction_metadata=file.extraction_metadata or {},
+        extraction_error=file.extraction_error,
+        extraction_version=file.extraction_version,
+        created_at=file.created_at,
+        extraction_started_at=file.extraction_started_at,
+        extraction_completed_at=file.extraction_completed_at,
+    )
+
+
 @router.get("/task-summary", response_model=AdminTaskSummaryRead)
 async def task_summary(
     request: Request,
@@ -118,6 +143,39 @@ async def list_tasks(
     )
     return {
         "items": [_task_read(task, account) for task, account in tasks],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.get("/file-summary", response_model=AdminFileSummaryRead)
+async def file_summary(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AdminFileSummaryRead:
+    return AdminFileSummaryRead(**(await _service(request, db).file_summary()))
+
+
+@router.get("/files")
+async def list_files(
+    request: Request,
+    search: str | None = Query(default=None, max_length=255),
+    ingestion_status: str | None = Query(default=None, max_length=32),
+    content_type: str | None = Query(default=None, max_length=128),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    files, total = await _service(request, db).list_files(
+        search=search,
+        ingestion_status=ingestion_status,
+        content_type=content_type,
+        offset=offset,
+        limit=limit,
+    )
+    return {
+        "items": [_file_read(item) for item in files],
         "total": total,
         "offset": offset,
         "limit": limit,

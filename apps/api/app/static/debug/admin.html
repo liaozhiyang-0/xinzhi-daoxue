@@ -44,6 +44,7 @@
       <nav id="admin-module-nav" class="admin-module-nav" aria-label="管理模块">
         <button class="active" type="button" data-admin-module-target="overview">总览与账号</button>
         <button type="button" data-admin-module-target="tasks">任务中心</button>
+        <button type="button" data-admin-module-target="files">文件中心</button>
         <button type="button" data-admin-module-target="agents">Agent 中心</button>
         <button type="button" data-admin-module-target="system">系统状态</button>
       </nav>
@@ -104,6 +105,24 @@
           </form>
           <div id="admin-task-table" class="table-wrap admin-table-wrap"></div>
           <div id="admin-task-detail" class="admin-task-detail" hidden></div>
+        </section>
+      </section>
+
+      <section data-admin-module="files" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">DOCUMENT INGESTION</p><h2>文件中心</h2><p>查看上传文件、解析状态、页数、关联任务和失败原因。</p></div>
+          <button id="admin-file-refresh" class="button secondary" type="button">刷新文件</button>
+        </header>
+        <section id="admin-file-summary" class="admin-metric-grid"></section>
+        <section class="card admin-panel">
+          <form id="admin-file-filters" class="filter-row">
+            <input name="search" placeholder="搜索文件名或文件 ID" aria-label="搜索文件">
+            <select name="ingestion_status" aria-label="按解析状态筛选"><option value="">全部状态</option><option value="pending">等待解析</option><option value="processing">解析中</option><option value="ready">已就绪</option><option value="partial">部分完成</option><option value="failed">失败</option></select>
+            <input name="content_type" placeholder="类型，如 application/pdf" aria-label="按文件类型筛选">
+            <button class="button primary" type="submit">查询文件</button>
+          </form>
+          <div id="admin-file-table" class="table-wrap admin-table-wrap"></div>
+          <div id="admin-file-detail" class="admin-task-detail" hidden></div>
         </section>
       </section>
 

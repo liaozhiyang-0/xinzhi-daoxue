@@ -49,6 +49,14 @@ class AccountStatus(StrEnum):
     LOCKED = "locked"
 
 
+class FileIngestionStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
 task_status_enum = Enum(
     TaskStatus,
     values_callable=lambda enum: [item.value for item in enum],
@@ -391,10 +399,63 @@ class FileModel(Base):
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     checksum_sha256: Mapped[str] = mapped_column(String(64), index=True)
     purpose: Mapped[str] = mapped_column(String(64), default="generic")
+    detected_content_type: Mapped[str] = mapped_column(
+        String(128), default="application/octet-stream"
+    )
+    ingestion_status: Mapped[FileIngestionStatus] = mapped_column(
+        Enum(
+            FileIngestionStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=FileIngestionStatus.PENDING,
+        index=True,
+    )
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    extraction_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_version: Mapped[str] = mapped_column(String(32), default="1")
+    extraction_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    extraction_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
+
+    chunks: Mapped[list[DocumentChunkModel]] = relationship(
+        back_populates="file", cascade="all, delete-orphan"
+    )
+
+
+class DocumentChunkModel(Base):
+    __tablename__ = "file_chunks"
+    __table_args__ = (
+        UniqueConstraint("file_id", "ordinal", name="uq_file_chunks_file_ordinal"),
+        Index("ix_file_chunks_file_page", "file_id", "page_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    file_id: Mapped[str] = mapped_column(
+        ForeignKey("files.id", ondelete="CASCADE"), index=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section: Mapped[str] = mapped_column(String(255), default="")
+    content: Mapped[str] = mapped_column(Text)
+    char_start: Mapped[int] = mapped_column(Integer, default=0)
+    char_end: Mapped[int] = mapped_column(Integer, default=0)
+    source_ref: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    file: Mapped[FileModel] = relationship(back_populates="chunks")
 
 
 class ArtifactModel(Base):

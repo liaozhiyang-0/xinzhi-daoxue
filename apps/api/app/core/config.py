@@ -198,6 +198,13 @@ class Settings(BaseSettings):
     workflow_max_retries: int = Field(default=1, ge=0, le=3)
 
     max_upload_size_mb: int = Field(default=20, gt=0)
+    document_max_files_per_task: int = Field(default=8, ge=1, le=32)
+    document_max_pages: int = Field(default=200, ge=1, le=2000)
+    document_max_extracted_chars: int = Field(default=80_000, ge=4_000, le=500_000)
+    document_chunk_size_chars: int = Field(default=1_200, ge=200, le=10_000)
+    document_chunk_overlap_chars: int = Field(default=160, ge=0, le=2_000)
+    document_extraction_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    document_converter_command: str = "soffice"
     local_storage_fallback: bool = True
     local_storage_path: Path = PROJECT_ROOT / "local_storage"
     sse_heartbeat_seconds: float = Field(default=10.0, gt=0)

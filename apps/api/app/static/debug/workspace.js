@@ -993,11 +993,10 @@ function selectedMaterialFiles() {
 }
 
 function validateMaterialFiles(files) {
-  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"];
-  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 张图片`);
-  if (files.length > 1 && files.some((file) => !file.type.startsWith("image/"))) throw new Error("多文件输入目前仅支持图片；文档材料请单独上传");
+  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 个材料`);
   files.forEach((file) => {
-    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
+    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf|doc|docx)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
     if (file.size > 20 * 1024 * 1024) throw new Error(`材料不能超过 20MB：${file.name}`);
   });
 }
@@ -1021,9 +1020,8 @@ async function uploadMaterials() {
   for (const file of files) {
     const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
     const uploaded = await api("/api/v1/files", { method: "POST", body: form });
-    let extractedText = "";
-    if ((file.type.startsWith("text/") || file.type === "application/json" || /\.(md|txt|csv|json)$/i.test(file.name)) && file.size <= 2 * 1024 * 1024) extractedText = await file.text();
-    materials.push({ uploaded, extractedText, originalType: file.type });
+    if (["failed", "processing", "pending"].includes(uploaded.ingestion_status)) throw new Error(uploaded.extraction_error || `材料解析失败：${file.name}`);
+    materials.push({ uploaded, extractedText: "", originalType: file.type });
   }
   return materials;
 }
@@ -1058,7 +1056,7 @@ async function submit(event) {
   const requestedCourse = learningFollowUp?.course_id || course;
   const requestedIntent = learningFollowUp?.intent || "unknown";
   const selectedFiles = selectedMaterialFiles();
-  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传图片"; return; }
+  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
   if (teachingMode === "check_my_work" && !studentAttempt) { $("#form-error").textContent = "请填写你的解题过程或答案"; return; }
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
   renderProcess([{ label: "正在理解你的需求", status: "running" }]);

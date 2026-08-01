@@ -77,6 +77,15 @@ async def _attachments(
             raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
         if principal.has_identity and model.owner_user_id != principal.user_id:
             raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
+        if model.ingestion_status in {"pending", "processing"}:
+            raise HTTPException(
+                status_code=409, detail=f"附件仍在解析中: {model.filename}"
+            )
+        if model.ingestion_status == "failed":
+            raise HTTPException(
+                status_code=422,
+                detail=model.extraction_error or f"附件解析失败: {model.filename}",
+            )
         values.append(
             AttachmentRef(
                 file_id=model.id,
@@ -85,6 +94,10 @@ async def _attachments(
                 size_bytes=model.size_bytes,
                 storage_key=model.storage_key,
                 checksum_sha256=model.checksum_sha256,
+                ingestion_status=str(model.ingestion_status),
+                page_count=model.page_count,
+                extracted_text=model.extracted_text[:200_000],
+                extraction_metadata=model.extraction_metadata or {},
             )
         )
     return values
@@ -113,9 +126,27 @@ async def _submit(
         )
         session_id = session.id
     attachment_refs = await _attachments(db, payload, principal)
+    document_blocks = [
+        f"【附件：{item.filename}】\n{item.extracted_text.strip()}"
+        for item in attachment_refs
+        if item.extracted_text.strip()
+    ]
+    prepared_payload = payload
+    if document_blocks:
+        combined = "\n\n".join(document_blocks)
+        message = "\n\n".join(
+            part for part in (payload.message.strip(), combined) if part
+        )
+        prepared_payload = payload.model_copy(
+            update={
+                "message": message[
+                    : request.app.state.settings.document_max_extracted_chars
+                ]
+            }
+        )
     context = dict(getattr(session, "context_data", {}) or {})
     prepared = request.app.state.supervisor.prepare(
-        payload,
+        prepared_payload,
         session_id=session_id,
         user_id=user_id,
         attachments=attachment_refs,

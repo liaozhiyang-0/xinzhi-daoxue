@@ -102,3 +102,25 @@ def test_admin_api_rejects_student(auth_client: TestClient) -> None:
     register(auth_client, login="student-admin@example.com")
     response = auth_client.get("/api/v1/admin/overview")
     assert response.status_code == 403
+
+
+def test_admin_can_inspect_ingested_files(auth_client: TestClient) -> None:
+    admin = register(auth_client, login="file-admin@example.com")
+    promote_to_admin(auth_client, admin["account"]["id"])
+
+    uploaded = auth_client.post(
+        "/api/v1/files",
+        files={"upload": ("admin-note.txt", b"admin material", "text/plain")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+
+    summary = auth_client.get("/api/v1/admin/file-summary")
+    assert summary.status_code == 200
+    assert summary.json()["ready"] >= 1
+
+    files = auth_client.get(
+        "/api/v1/admin/files", params={"ingestion_status": "ready"}
+    )
+    assert files.status_code == 200
+    assert files.json()["total"] >= 1
+    assert files.json()["items"][0]["extracted_text"] == "admin material"

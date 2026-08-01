@@ -97,6 +97,10 @@ class AttachmentRef(BaseModel):
     storage_key: str
     provider_file_id: str | None = None
     checksum_sha256: str | None = None
+    ingestion_status: str = "pending"
+    page_count: int = Field(default=0, ge=0)
+    extracted_text: str = ""
+    extraction_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunMetrics(BaseModel):

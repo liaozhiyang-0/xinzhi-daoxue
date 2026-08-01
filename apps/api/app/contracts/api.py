@@ -128,6 +128,30 @@ class FileRead(BaseModel):
     size_bytes: int
     storage_key: str
     checksum_sha256: str
+    detected_content_type: str
+    ingestion_status: str
+    page_count: int
+    extracted_text: str
+    extraction_metadata: dict[str, Any]
+    extraction_error: str | None
+    extraction_version: str
+    extraction_started_at: datetime | None
+    extraction_completed_at: datetime | None
+    created_at: datetime
+
+
+class FileChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    file_id: str
+    ordinal: int
+    page_number: int | None
+    section: str
+    content: str
+    char_start: int
+    char_end: int
+    source_ref: str
     created_at: datetime
 
 
