@@ -5,17 +5,15 @@
   const statusLabels = {
     ready: "正常", running: "运行中", success: "成功", completed: "完成",
     partial: "部分完成", degraded: "降级运行", planned: "开发中", mock: "开发模拟",
-    failed: "失败", disabled: "已停用", not_configured: "未配置", unknown: "未知",
+    failed: "失败", disabled: "已停用", locked: "已锁定", active: "启用", not_configured: "未配置", unknown: "未知",
     ok: "正常", healthy: "正常", configured: "已配置", published: "已发布",
   };
   const nav = [
     { group: "学习", items: [
       { id: "workspace", href: "/workspace", label: "智能任务工作台", short: "学" },
     ] },
-    { group: "开发与调试", items: [
-      { id: "execution", href: "/debug/execution", label: "执行调试", short: "执" },
-      { id: "agents", href: "/debug/agents", label: "Agent 管理", short: "A" },
-      { id: "system", href: "/system", label: "系统状态", short: "S" },
+    { group: "管理", items: [
+      { id: "admin", href: "/admin", label: "管理总览", short: "管" },
     ] },
     { group: "演示", items: [
       { id: "demo", href: "/demo", label: "演示中心", short: "演" },
@@ -45,7 +43,11 @@
     const text = await response.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
-    if (!response.ok) throw new Error(data.error?.message || data.detail || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(data.error?.message || data.detail || `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
     if (ttlMs) cache.set(key, { at: Date.now(), data });
     return data;
   }
@@ -120,6 +122,31 @@
     localStorage.setItem("xinzhi_sidebar_collapsed", String(document.body.classList.contains("sidebar-collapsed")));
   }
 
+  async function loadIdentityControl(target) {
+    const renderLogin = () => target.replaceChildren(
+      el("a", { class: "identity-link", href: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, text: "登录 / 注册" }),
+    );
+    try {
+      const identity = await api("/api/v1/auth/me");
+      const isGuest = identity.guest === true || identity.role === "guest";
+      const label = isGuest ? "游客模式" : (identity.display_name || identity.login || "已登录");
+      const content = [el("span", { class: "identity-label", text: label })];
+      if (isGuest) {
+        content.push(el("a", { class: "identity-link", href: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, text: "登录保存" }));
+      } else {
+        const logout = el("button", { class: "identity-link identity-logout", type: "button", text: "退出登录" });
+        logout.addEventListener("click", async () => {
+          await api("/api/v1/auth/logout", { method: "POST" }).catch(() => {});
+          localStorage.removeItem("xinzhi_student_session");
+          localStorage.removeItem("xinzhi_student_user");
+          window.location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`);
+        });
+        content.push(logout);
+      }
+      target.replaceChildren(...content);
+    } catch (_error) { renderLogin(); }
+  }
+
   function initShell({ page, title, description = "", context = "", audience = "developer" }) {
     const sidebar = $("#app-sidebar");
     const topbar = $("#app-topbar");
@@ -128,6 +155,9 @@
       const menuButton = el("button", { class: "mobile-menu-button", type: "button", text: "菜单", "aria-label": "打开导航", onclick: () => document.body.classList.toggle("drawer-open") });
       const heading = el("div", { class: "topbar-title" }, [el("strong", { text: title }), el("span", { text: description })]);
       const right = el("div", { class: "topbar-actions" });
+      const identityControl = el("div", { class: "identity-control", "aria-label": "当前身份" });
+      right.append(identityControl);
+      void loadIdentityControl(identityControl);
       if (context) right.append(el("span", { class: "topbar-context", text: context }));
       if (new URLSearchParams(location.search).get("presentation") === "1") {
         document.body.classList.add("presentation-mode");
@@ -521,5 +551,47 @@
     }));
   }
 
-  window.XinzhiUI = { $, all, el, api, badge, initShell, initTabs, renderJson, renderLatex, renderMarkdown, statusLabels, toast, setTheme, applyTheme };
+  async function initIdentityGate({ next = "/student" } = {}) {
+    let identity = null;
+    try { identity = await api("/api/v1/auth/me"); } catch (_error) { identity = null; }
+    if (identity) return identity;
+
+    const target = next.startsWith("/") ? next : "/student";
+    const overlay = el("section", { class: "identity-gate", role: "dialog", "aria-modal": "true", "aria-labelledby": "identity-gate-title" }, [
+      el("div", { class: "identity-gate-card" }, [
+        el("span", { class: "eyebrow", text: "开始学习" }),
+        el("h1", { id: "identity-gate-title", text: "先选择你的进入方式" }),
+        el("p", { text: "登录或注册后可以跨设备保留学习记录；也可以先以游客模式体验。" }),
+        el("div", { class: "identity-gate-actions" }, [
+          el("a", { class: "button primary", href: `/login?next=${encodeURIComponent(target)}`, text: "登录账号" }),
+          el("a", { class: "button secondary", href: `/login?mode=register&next=${encodeURIComponent(target)}`, text: "注册账号" }),
+          el("button", { class: "button quiet", type: "button", "data-guest-entry": "true", text: "以游客模式进入" }),
+        ]),
+        el("p", { class: "identity-gate-note", text: "游客数据只保存在当前浏览器身份下，注册或登录后才能长期保留。" }),
+        el("p", { class: "form-error", role: "alert", "data-identity-error": "true" }),
+      ]),
+    ]);
+    document.body.append(overlay);
+    const guestButton = overlay.querySelector("[data-guest-entry]");
+    let resolveIdentity;
+    guestButton.addEventListener("click", async () => {
+      guestButton.disabled = true;
+      guestButton.textContent = "正在进入…";
+      try {
+        identity = await api("/api/v1/auth/guest", { method: "POST" });
+        overlay.remove();
+        resolveIdentity(identity);
+        return identity;
+      } catch (error) {
+        overlay.querySelector("[data-identity-error]").textContent = error.message;
+        guestButton.disabled = false;
+        guestButton.textContent = "以游客模式进入";
+      }
+    });
+    return new Promise((resolve) => {
+      resolveIdentity = resolve;
+    });
+  }
+
+  window.XinzhiUI = { $, all, el, api, badge, initShell, initIdentityGate, initTabs, renderJson, renderLatex, renderMarkdown, statusLabels, toast, setTheme, applyTheme };
 })();

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理总览 · 芯智导学</title>
+  <link rel="stylesheet" href="/debug-assets/design-tokens.css">
+  <link rel="stylesheet" href="/debug-assets/app-shell.css">
+  <link rel="stylesheet" href="/debug-assets/components.css">
+  <link rel="stylesheet" href="/debug-assets/admin.css">
+</head>
+<body>
+  <aside id="app-sidebar" class="app-sidebar"></aside>
+  <header id="app-topbar" class="app-topbar"></header>
+  <main class="app-main admin-main">
+    <section id="admin-login" class="admin-login card" hidden>
+      <div class="admin-login-copy">
+        <p class="eyebrow">ADMINISTRATION</p>
+        <h1>管理员登录</h1>
+        <p>登录后查看账号、会话、审计和系统运行概览。</p>
+      </div>
+      <form id="admin-login-form" class="form-stack">
+        <label>登录名<input name="login" type="text" autocomplete="username" required></label>
+        <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button primary" type="submit">登录管理后台</button>
+        <p id="admin-login-error" class="form-error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="admin-app" hidden>
+      <header class="admin-hero">
+        <div>
+          <p class="eyebrow">CONTROL CENTER</p>
+          <h1>管理总览</h1>
+          <p>集中管理账号与会话，持续观察系统使用和关键操作。</p>
+        </div>
+        <div class="admin-hero-actions">
+          <span id="admin-identity" class="identity-chip"></span>
+          <button id="admin-refresh" class="button secondary" type="button">刷新数据</button>
+          <button id="admin-logout" class="button secondary" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <nav id="admin-module-nav" class="admin-module-nav" aria-label="管理模块">
+        <button class="active" type="button" data-admin-module-target="overview">总览与账号</button>
+        <button type="button" data-admin-module-target="tasks">任务中心</button>
+        <button type="button" data-admin-module-target="agents">Agent 中心</button>
+        <button type="button" data-admin-module-target="system">系统状态</button>
+      </nav>
+
+      <section data-admin-module="overview">
+      <section id="admin-metrics" class="admin-metric-grid" aria-label="管理指标"></section>
+
+      <section class="admin-dashboard-grid">
+        <article class="card admin-panel admin-panel-wide">
+          <div class="section-heading">
+            <div><h2>账号管理</h2><p>创建账号，调整角色与状态，必要时重置密码。</p></div>
+            <button id="open-create-account" class="button primary" type="button">创建账号</button>
+          </div>
+          <form id="account-filters" class="filter-row">
+            <input name="search" placeholder="搜索登录名或显示名称" aria-label="搜索账号">
+            <select name="role" aria-label="按角色筛选"><option value="">全部角色</option><option value="student">学生</option><option value="teacher">教师</option><option value="operator">运营</option><option value="admin">管理员</option></select>
+            <select name="status" aria-label="按状态筛选"><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option><option value="locked">锁定</option></select>
+            <button class="button secondary" type="submit">筛选</button>
+          </form>
+          <div id="account-table" class="table-wrap admin-table-wrap"></div>
+        </article>
+
+        <article class="card admin-panel">
+          <div class="section-heading"><div><h2>账号分布</h2><p>按角色和状态查看当前账号结构。</p></div></div>
+          <div id="account-distribution" class="distribution-list"></div>
+          <div id="account-status-distribution" class="distribution-list admin-distribution-secondary"></div>
+          <div class="section-heading admin-subheading"><div><h2>审计活动</h2><p>最近操作的类型分布。</p></div></div>
+          <div id="audit-distribution" class="distribution-list"></div>
+        </article>
+      </section>
+
+      <section class="card admin-panel" data-tabs>
+        <div class="section-heading">
+          <div><h2>会话与审计</h2><p>查看当前登录设备和最近的管理事件，不显示任何明文令牌。</p></div>
+          <div class="admin-tabs">
+            <button class="button secondary active" data-tab-target="sessions" type="button">活跃会话</button>
+            <button class="button secondary" data-tab-target="audit" type="button">审计日志</button>
+          </div>
+        </div>
+        <div data-tab-panel="sessions" id="session-table" class="table-wrap admin-table-wrap"></div>
+        <div data-tab-panel="audit" id="audit-table" class="table-wrap admin-table-wrap" hidden></div>
+      </section>
+      </section>
+
+      <section data-admin-module="tasks" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">TASK OPERATIONS</p><h2>任务中心</h2><p>全局查询任务状态、执行者、课程、用户和失败信息；详细链路继续复用执行追踪页面。</p></div>
+          <a class="button secondary" href="/debug/execution">打开执行追踪</a>
+        </header>
+        <section id="admin-task-summary" class="admin-metric-grid"></section>
+        <section class="card admin-panel">
+          <form id="admin-task-filters" class="filter-row">
+            <input name="search" placeholder="搜索任务 ID、用户、Agent 或意图" aria-label="搜索任务">
+            <select name="status" aria-label="按任务状态筛选"><option value="">全部状态</option><option value="created">已创建</option><option value="queued">排队中</option><option value="running">运行中</option><option value="waiting_user">等待用户</option><option value="waiting_review">等待审核</option><option value="completed">已完成</option><option value="failed">失败</option><option value="cancelled">已取消</option></select>
+            <input name="course_id" placeholder="课程，如 CT" aria-label="按课程筛选">
+            <input name="agent_id" placeholder="Agent ID" aria-label="按 Agent 筛选">
+            <button class="button primary" type="submit">查询任务</button>
+          </form>
+          <div id="admin-task-table" class="table-wrap admin-table-wrap"></div>
+          <div id="admin-task-detail" class="admin-task-detail" hidden></div>
+        </section>
+      </section>
+
+      <section data-admin-module="agents" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">AGENT CONTROL</p><h2>Agent 中心</h2><p>统一查看注册、发布、配置、Mock 与契约状态；真实云端动作仍遵循现有发布和权限约束。</p></div>
+          <div class="module-actions"><button id="admin-agent-refresh" class="button secondary" type="button">刷新 Agent</button><a class="button secondary" href="/debug/agents">打开完整调试页</a></div>
+        </header>
+        <section id="admin-agent-summary" class="admin-metric-grid"></section>
+        <section class="card admin-panel">
+          <div id="admin-agent-table" class="table-wrap admin-table-wrap"></div>
+          <div id="admin-agent-detail" class="admin-agent-detail" hidden></div>
+        </section>
+      </section>
+
+      <section data-admin-module="system" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">SYSTEM STATUS</p><h2>系统状态</h2><p>集中展示 API、数据库、Provider、RAG、Agent 注册和运行依赖状态，不触发大模型预热或云端调用。</p></div>
+          <button id="admin-system-refresh" class="button secondary" type="button">刷新状态</button>
+        </header>
+        <div id="admin-system-notice" aria-live="polite"></div>
+        <section id="admin-system-metrics" class="admin-metric-grid"></section>
+        <section class="card admin-panel"><div id="admin-system-services" class="admin-service-grid"></div></section>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="account-dialog" class="admin-dialog">
+    <form id="account-form" class="form-stack" method="dialog">
+      <div class="section-heading"><div><h2>创建账号</h2><p>密码至少 12 个字符。</p></div><button class="dialog-close" value="cancel" type="submit" aria-label="关闭">×</button></div>
+      <label>登录名<input name="login" type="email" required></label>
+      <label>显示名称<input name="display_name" type="text"></label>
+      <label>角色<select name="role"><option value="student">学生</option><option value="teacher">教师</option><option value="operator">运营</option><option value="admin">管理员</option></select></label>
+      <label>初始密码<input name="password" type="password" minlength="12" required></label>
+      <p id="account-form-error" class="form-error" role="alert"></p>
+      <button class="button primary" type="submit" value="create">创建账号</button>
+    </form>
+  </dialog>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/debug-assets/ui-core.js"></script>
+  <script src="/debug-assets/admin.js"></script>
+</body>
+</html>

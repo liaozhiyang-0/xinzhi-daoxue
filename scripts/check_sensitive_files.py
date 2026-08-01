@@ -25,6 +25,7 @@ SECRET_PATTERNS = {
     "generic_api_token": re.compile(
         r"(?i)\b(?:api[_-]?key|access[_-]?token|secret[_-]?key)\b"
         r"\s*[:=]\s*[\"']?(?!change_me|your_|example|not_required|missing)"
+        r"(?![A-Za-z0-9_]+\s*\()"
         r"[A-Za-z0-9_\-]{16,}"
     ),
 }

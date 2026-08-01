@@ -8,9 +8,10 @@ from app.contracts.api import (
     SessionUpdate,
 )
 from app.contracts.conversation import ConversationMessage, SessionSummaryRead
-from app.dependencies import get_db
+from app.dependencies import effective_user_id, get_current_principal, get_db
 from app.models import TaskModel
 from app.repositories import RuntimeContextRepository
+from app.services.auth_service import Principal
 from app.services.conversation_message_service import ConversationMessageService
 from app.services.session_service import SessionService
 from app.services.task_query_service import TaskQueryService
@@ -20,19 +21,26 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
 async def create_session(
-    data: SessionCreate, db: AsyncSession = Depends(get_db)
+    data: SessionCreate,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
 ) -> SessionRead:
+    data = data.model_copy(
+        update={"user_id": effective_user_id(principal, data.user_id)}
+    )
     return SessionRead.model_validate(await SessionService(db).create(data))
 
 
 @router.get("", response_model=list[SessionRead])
 async def list_sessions(
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     include_archived: bool = False,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionRead]:
+    user_id = effective_user_id(principal, user_id)
     rows = await SessionService(db).list(
         user_id,
         include_archived=include_archived,
@@ -45,11 +53,13 @@ async def list_sessions(
 @router.get("/search", response_model=list[SessionRead])
 async def search_sessions(
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     q: str = Query(min_length=1, max_length=100),
     include_archived: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionRead]:
+    user_id = effective_user_id(principal, user_id)
     rows = await SessionService(db).list(
         user_id,
         include_archived=include_archived,
@@ -62,9 +72,11 @@ async def search_sessions(
 @router.get("/{session_id}", response_model=SessionRead)
 async def get_session(
     session_id: str,
+    principal: Principal = Depends(get_current_principal),
     user_id: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> SessionRead:
+    user_id = effective_user_id(principal, user_id)
     service = SessionService(db)
     model = (
         await service.get_for_user(session_id, user_id)
@@ -78,8 +90,12 @@ async def get_session(
 async def update_session(
     session_id: str,
     data: SessionUpdate,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> SessionRead:
+    data = data.model_copy(
+        update={"user_id": effective_user_id(principal, data.user_id)}
+    )
     return SessionRead.model_validate(await SessionService(db).update(session_id, data))
 
 
@@ -87,8 +103,10 @@ async def update_session(
 async def archive_session(
     session_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> SessionRead:
+    user_id = effective_user_id(principal, user_id)
     return SessionRead.model_validate(
         await SessionService(db).archive(session_id, user_id, archived=True)
     )
@@ -98,8 +116,10 @@ async def archive_session(
 async def restore_session(
     session_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> SessionRead:
+    user_id = effective_user_id(principal, user_id)
     return SessionRead.model_validate(
         await SessionService(db).archive(session_id, user_id, archived=False)
     )
@@ -109,10 +129,12 @@ async def restore_session(
 async def list_session_messages(
     session_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     after_sequence: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[ConversationMessage]:
+    user_id = effective_user_id(principal, user_id)
     rows = await ConversationMessageService(db).list_user_visible(
         session_id,
         user_id=user_id,
@@ -129,8 +151,10 @@ async def list_session_messages(
 async def get_session_summary(
     session_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> SessionSummaryRead | None:
+    user_id = effective_user_id(principal, user_id)
     await SessionService(db).get_for_user(session_id, user_id)
     summary = await RuntimeContextRepository(db).latest_summary(session_id)
     return SessionSummaryRead.model_validate(summary) if summary is not None else None
@@ -169,10 +193,12 @@ def _history_item(task: TaskModel) -> SessionTaskHistoryItem:
 @router.get("/{session_id}/tasks", response_model=list[SessionTaskHistoryItem])
 async def list_session_tasks(
     session_id: str,
+    principal: Principal = Depends(get_current_principal),
     user_id: str | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionTaskHistoryItem]:
+    user_id = effective_user_id(principal, user_id)
     service = SessionService(db)
     if user_id:
         await service.get_for_user(session_id, user_id)

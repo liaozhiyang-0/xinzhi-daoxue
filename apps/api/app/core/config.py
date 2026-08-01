@@ -29,6 +29,26 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
 
+    # Authentication is opt-in for local development and mandatory in production.
+    auth_required: bool = False
+    auth_allow_registration: bool = True
+    auth_allow_guest: bool = True
+    auth_guest_ttl_seconds: int = Field(default=86_400, ge=300, le=31_536_000)
+    auth_guest_cookie_name: str = "xzd_guest_token"
+    auth_guest_signing_key: SecretStr = SecretStr("")
+    auth_access_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+    auth_refresh_ttl_seconds: int = Field(default=2_592_000, ge=3_600, le=31_536_000)
+    auth_access_cookie_name: str = "xzd_access_token"
+    auth_refresh_cookie_name: str = "xzd_refresh_token"
+    auth_cookie_secure: bool = False
+    auth_cookie_same_site: Literal["lax", "strict", "none"] = "lax"
+    auth_login_max_attempts: int = Field(default=5, ge=1, le=20)
+    auth_login_window_seconds: int = Field(default=300, ge=30, le=3_600)
+    auth_login_lockout_seconds: int = Field(default=900, ge=60, le=86_400)
+    auth_scrypt_n_log2: int = Field(default=15, ge=14, le=20)
+    auth_scrypt_r: int = Field(default=8, ge=1, le=32)
+    auth_scrypt_p: int = Field(default=1, ge=1, le=8)
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
@@ -356,6 +376,23 @@ class Settings(BaseSettings):
                     f"{label} solver deadlines must satisfy soft <= "
                     "finalization <= hard"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def validate_authentication(self) -> Settings:
+        if self.app_env == "production" and not self.auth_required:
+            raise ValueError("AUTH_REQUIRED must be true in production")
+        if (
+            self.app_env == "production"
+            and self.auth_allow_guest
+            and not self.auth_guest_signing_key.get_secret_value()
+        ):
+            raise ValueError(
+                "AUTH_GUEST_SIGNING_KEY must be set when guest mode is enabled "
+                "in production"
+            )
+        if self.auth_cookie_same_site == "none" and not self.auth_cookie_secure:
+            raise ValueError("AUTH_COOKIE_SECURE must be true when SameSite=None")
         return self
 
     @property

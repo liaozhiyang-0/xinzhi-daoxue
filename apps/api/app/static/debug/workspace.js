@@ -1,4 +1,4 @@
-const { $, all, api, el, initShell, renderMarkdown, toast } = XinzhiUI;
+const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
 const courseLabels = {
   CT: "电路理论",
@@ -1296,7 +1296,17 @@ async function loadCapabilities() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  const identity = await initIdentityGate({ next: `${location.pathname}${location.search}` });
+  if (identity?.user_id || identity?.id) {
+    const identityId = identity.user_id || identity.id;
+    if (state.userId !== identityId) {
+      state.sessionId = "";
+      localStorage.removeItem("xinzhi_student_session");
+    }
+    state.userId = identityId;
+    localStorage.setItem("xinzhi_student_user", state.userId);
+  }
   initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: "student" });
   applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels(); loadCapabilities(); loadSessionHistory(); loadSessionList();
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);

@@ -25,10 +25,16 @@ from app.core.internal_workflows import (
     WORKFLOW_INTERNAL_AGENT_MAP,
     internal_workflow_models_configured,
 )
-from app.dependencies import get_db, get_provider
+from app.dependencies import (
+    effective_user_id,
+    get_current_principal,
+    get_db,
+    get_provider,
+)
 from app.models import TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import FileRepository, SessionRepository, TaskRepository
+from app.services.auth_service import Principal
 from app.services.session_service import SessionService
 from app.services.task_creation_service import TaskCreationService
 
@@ -61,13 +67,15 @@ def _local_handler_available(path: str) -> bool:
 
 
 async def _attachments(
-    db: AsyncSession, payload: AgentRequestV2
+    db: AsyncSession, payload: AgentRequestV2, principal: Principal
 ) -> list[AttachmentRef]:
     values: list[AttachmentRef] = []
     repository = FileRepository(db)
     for item in payload.files:
         model = await repository.get(item.file_id)
         if model is None:
+            raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
+        if principal.has_identity and model.owner_user_id != principal.user_id:
             raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
         values.append(
             AttachmentRef(
@@ -87,8 +95,9 @@ async def _submit(
     request: Request,
     db: AsyncSession,
     provider: AgentProvider,
+    principal: Principal,
 ) -> tuple[Any, ChatSubmission]:
-    user_id = payload.user_id or "local-user"
+    user_id = effective_user_id(principal, payload.user_id) or "local-user"
     if payload.session_id:
         session = await SessionRepository(db).get(payload.session_id)
         if session is None:
@@ -103,7 +112,7 @@ async def _submit(
             )
         )
         session_id = session.id
-    attachment_refs = await _attachments(db, payload)
+    attachment_refs = await _attachments(db, payload, principal)
     context = dict(getattr(session, "context_data", {}) or {})
     prepared = request.app.state.supervisor.prepare(
         payload,
@@ -138,10 +147,11 @@ async def _submit(
 async def create_chat(
     payload: AgentRequestV2,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> ChatSubmission:
-    _, submission = await _submit(payload, request, db, provider)
+    _, submission = await _submit(payload, request, db, provider, principal)
     return submission
 
 
@@ -149,10 +159,11 @@ async def create_chat(
 async def stream_chat(
     payload: AgentRequestV2,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> StreamingResponse:
-    task, _ = await _submit(payload, request, db, provider)
+    task, _ = await _submit(payload, request, db, provider, principal)
     return StreamingResponse(
         event_stream(request, task.id, cursor=0),
         media_type="text/event-stream",
@@ -171,10 +182,16 @@ def _citation(source_ref: str, index: int) -> Citation:
 
 
 @router.get("/chat/{task_id}", response_model=AgentResponse)
-async def get_chat_result(task_id: str, request: Request) -> AgentResponse:
+async def get_chat_result(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+) -> AgentResponse:
     async with request.app.state.session_factory() as db:
         task = await TaskRepository(db).get(task_id)
     if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if principal.has_identity and task.user_id != principal.user_id:
         raise HTTPException(status_code=404, detail="任务不存在")
     result = dict(task.result_content or {})
     if task.status == TaskStatus.FAILED:

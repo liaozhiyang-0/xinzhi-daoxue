@@ -60,7 +60,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
     assert "20260730-image-runtime-v7" in page.text
-    assert "ui-core.js?v=20260730-image-runtime-v7" in page.text
+    assert "ui-core.js?v=20260801-auth-entry-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text

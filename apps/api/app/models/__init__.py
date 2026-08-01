@@ -1,6 +1,10 @@
 from app.models.entities import (
+    AccountModel,
+    AccountStatus,
     AgentRunModel,
     ArtifactModel,
+    AuditLogModel,
+    AuthSessionModel,
     ConversationMessageModel,
     FileModel,
     MemoryModel,
@@ -15,7 +19,11 @@ from app.models.entities import (
 )
 
 __all__ = [
+    "AccountModel",
+    "AccountStatus",
     "AgentRunModel",
+    "AuditLogModel",
+    "AuthSessionModel",
     "ArtifactModel",
     "ConversationMessageModel",
     "FileModel",

@@ -32,6 +32,7 @@ from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.answer_disclosure import AnswerDisclosureService
+from app.services.auth_service import LoginRateLimiter
 from app.services.context_assembly import ContextAssemblyService
 from app.services.context_budget import ContextBudgetManager
 from app.services.context_cache import ContextAssemblyCache
@@ -221,6 +222,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         context_service,
         knowledge_qa,
     )
+    auth_rate_limiter = LoginRateLimiter()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -264,6 +266,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.context_service = context_service
         app.state.knowledge_qa = knowledge_qa
         app.state.rag_debug = rag_debug
+        app.state.auth_rate_limiter = auth_rate_limiter
         app.state.task_runner = task_runner
         app.state.task_executor = task_executor
         app.state.learning_loop = learning_loop
@@ -323,6 +326,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
 
+    @app.get("/login", include_in_schema=True, tags=["authentication"])
+    async def login_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "login.html")
+
+    @app.get("/admin", include_in_schema=True, tags=["management"])
+    async def admin_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "admin.html")
+
     @app.get("/debug/rag", include_in_schema=True, tags=["development"])
     async def rag_debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "execution.html")
@@ -365,9 +376,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
         return JSONResponse(
             status_code=exc.status_code,
             content=jsonable_encoder(error_payload(exc.code, exc.message, exc.details)),
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)

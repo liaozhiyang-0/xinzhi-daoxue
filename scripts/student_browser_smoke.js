@@ -14,6 +14,14 @@ async function shot(page, name, fullPage = false) {
 }
 async function load(page, route) {
   await page.goto(`${baseURL}${route}`, { waitUntil: "networkidle" });
+  const identityGate = page.locator(".identity-gate");
+  if (route.startsWith("/workspace") || route.startsWith("/student")) {
+    const gateShown = await identityGate.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false);
+    if (gateShown) {
+      await page.locator("[data-guest-entry]").click();
+      await identityGate.waitFor({ state: "detached" });
+    }
+  }
   await page.locator("#app-sidebar .brand-lockup").waitFor();
 }
 async function ask(page, course, question) {
@@ -43,6 +51,7 @@ async function ask(page, course, question) {
   const citation = page.locator("#answer-text .citation-link").first();
   if (await citation.count()) await citation.click(); else if (await page.locator(".evidence-card").count()) await page.locator(".evidence-card").first().click();
   await shot(page, "04-evidence-linked");
+  if (await page.locator("#document-dialog[open]").count()) await page.locator("#close-document-dialog").click();
   await page.locator('[data-context-tab="process"]').click();
   await shot(page, "05-process-simple");
   await page.locator('[data-context-tab="info"]').click();

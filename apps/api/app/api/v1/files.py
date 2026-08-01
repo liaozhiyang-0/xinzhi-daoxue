@@ -11,9 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts.api import FileRead
 from app.core.config import Settings
 from app.core.errors import NotFoundError
-from app.dependencies import get_db, get_settings_from_app
+from app.dependencies import (
+    effective_user_id,
+    get_current_principal,
+    get_db,
+    get_settings_from_app,
+)
 from app.models import FileModel
 from app.repositories import FileRepository, TaskRepository
+from app.services.auth_service import Principal
 from app.services.storage import StorageService
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -24,10 +30,18 @@ async def upload_file(
     upload: UploadFile = File(...),
     task_id: str | None = Form(default=None),
     purpose: str = Form(default="generic"),
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_from_app),
 ) -> FileRead:
-    if task_id and await TaskRepository(db).get(task_id) is None:
+    task = await TaskRepository(db).get(task_id) if task_id else None
+    if task_id and task is None:
+        raise NotFoundError("关联任务不存在", details={"task_id": task_id})
+    if (
+        principal.has_identity
+        and task is not None
+        and task.user_id != principal.user_id
+    ):
         raise NotFoundError("关联任务不存在", details={"task_id": task_id})
     limit = settings.max_upload_size_mb * 1024 * 1024
     data = await upload.read(limit + 1)
@@ -48,6 +62,11 @@ async def upload_file(
     storage_key = await service.save(safe_name, content_type, data)
     model = FileModel(
         id=f"file_{uuid4().hex}",
+        owner_user_id=(
+            principal.user_id
+            if principal.has_identity
+            else task.user_id if task is not None else None
+        ),
         task_id=task_id,
         filename=safe_name,
         content_type=content_type,
@@ -75,10 +94,13 @@ async def upload_file(
 @router.get("/{file_id}", response_model=FileRead)
 async def get_file(
     file_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> FileRead:
     model = await FileRepository(db).get(file_id)
     if model is None:
+        raise NotFoundError("文件不存在", details={"file_id": file_id})
+    if principal.has_identity and model.owner_user_id != principal.user_id:
         raise NotFoundError("文件不存在", details={"file_id": file_id})
     return FileRead.model_validate(model)
 
@@ -87,6 +109,7 @@ async def get_file(
 async def get_file_content(
     file_id: str,
     user_id: str = Query(min_length=1, max_length=128),
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_from_app),
 ) -> Response:
@@ -95,9 +118,11 @@ async def get_file_content(
     model = await FileRepository(db).get(file_id)
     if model is None or model.task_id is None:
         raise NotFoundError("图片附件不存在", details={"file_id": file_id})
+    user_id = effective_user_id(principal, user_id)
     task = await TaskRepository(db).get(model.task_id)
     if (
         task is None
+        or (principal.has_identity and model.owner_user_id != principal.user_id)
         or task.user_id != user_id
         or not model.content_type.startswith("image/")
     ):

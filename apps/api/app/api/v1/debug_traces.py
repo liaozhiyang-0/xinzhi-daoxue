@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-router = APIRouter(prefix="/debug/traces", tags=["development"])
+from app.dependencies import require_admin
+
+router = APIRouter(
+    prefix="/debug/traces", tags=["development"], dependencies=[Depends(require_admin)]
+)
 
 
 @router.get("/{trace_id}", response_model=dict[str, Any])

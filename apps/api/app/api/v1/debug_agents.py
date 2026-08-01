@@ -4,14 +4,17 @@ import json
 from time import perf_counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.contracts import AgentRequest, Intent, Scene
 from app.core.config import PROJECT_ROOT
 from app.core.errors import ValidationAppError
+from app.dependencies import require_admin
 
-router = APIRouter(prefix="/debug/agents", tags=["agent-debug"])
+router = APIRouter(
+    prefix="/debug/agents", tags=["agent-debug"], dependencies=[Depends(require_admin)]
+)
 FIXTURE_PATH = (
     PROJECT_ROOT
     / "apps"

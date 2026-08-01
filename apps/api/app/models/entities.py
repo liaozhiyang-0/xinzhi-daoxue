@@ -43,12 +43,116 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class AccountStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    LOCKED = "locked"
+
+
 task_status_enum = Enum(
     TaskStatus,
     values_callable=lambda enum: [item.value for item in enum],
     native_enum=False,
     length=32,
 )
+
+
+class AccountModel(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("login_normalized", name="uq_accounts_login_normalized"),
+        Index("ix_accounts_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    login: Mapped[str] = mapped_column(String(255))
+    login_normalized: Mapped[str] = mapped_column(String(255), index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str] = mapped_column(String(512))
+    role: Mapped[str] = mapped_column(String(32), default="student", index=True)
+    status: Mapped[AccountStatus] = mapped_column(
+        Enum(
+            AccountStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=AccountStatus.ACTIVE,
+    )
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    auth_sessions: Mapped[list[AuthSessionModel]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+
+
+class AuthSessionModel(Base):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        Index("ix_auth_sessions_account_active", "account_id", "revoked_at"),
+        Index("ix_auth_sessions_access_expires", "access_expires_at"),
+        Index("ix_auth_sessions_refresh_expires", "refresh_expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    access_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    account: Mapped[AccountModel] = relationship(back_populates="auth_sessions")
+
+
+class AuditLogModel(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_actor_created", "actor_account_id", "created_at"),
+        Index("ix_audit_logs_action_created", "action", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    actor_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(96), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
 
 class SessionModel(Base):
@@ -275,6 +379,9 @@ class FileModel(Base):
     __tablename__ = "files"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
     task_id: Mapped[str | None] = mapped_column(
         ForeignKey("tasks.id"), nullable=True, index=True
     )

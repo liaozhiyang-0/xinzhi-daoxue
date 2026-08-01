@@ -12,6 +12,7 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage-*
 htmlcov/
 evaluation/circuit_theory/results/*
 !evaluation/circuit_theory/results/.gitkeep

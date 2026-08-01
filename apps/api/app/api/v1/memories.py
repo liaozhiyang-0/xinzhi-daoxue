@@ -8,8 +8,9 @@ from app.contracts.memory import (
     MemoryRead,
     MemoryUpdate,
 )
-from app.dependencies import get_db
+from app.dependencies import effective_user_id, get_current_principal, get_db
 from app.repositories import MemoryRepository
+from app.services.auth_service import Principal
 from app.services.memory_service import MemoryService
 
 router = APIRouter(prefix="/memories", tags=["memories"])
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 @router.get("", response_model=list[MemoryRead])
 async def list_memories(
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     memory_type: str | None = None,
     course_id: str | None = None,
     include_deleted: bool = False,
@@ -25,6 +27,7 @@ async def list_memories(
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[MemoryRead]:
+    user_id = effective_user_id(principal, user_id)
     statuses = (
         ("active", "deleted", "superseded", "candidate")
         if include_deleted
@@ -43,8 +46,13 @@ async def list_memories(
 
 @router.post("", response_model=MemoryRead, status_code=201)
 async def create_memory(
-    data: MemoryCreate, db: AsyncSession = Depends(get_db)
+    data: MemoryCreate,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
 ) -> MemoryRead:
+    data = data.model_copy(
+        update={"user_id": effective_user_id(principal, data.user_id)}
+    )
     model = await MemoryService(db).create(data)
     await db.commit()
     await db.refresh(model)
@@ -55,8 +63,12 @@ async def create_memory(
 async def update_memory(
     memory_id: str,
     data: MemoryUpdate,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryRead:
+    data = data.model_copy(
+        update={"user_id": effective_user_id(principal, data.user_id)}
+    )
     model = await MemoryService(db).update(memory_id, data)
     await db.commit()
     await db.refresh(model)
@@ -67,8 +79,10 @@ async def update_memory(
 async def delete_memory(
     memory_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryMutationResult:
+    user_id = effective_user_id(principal, user_id)
     await MemoryService(db).soft_delete(memory_id, user_id)
     await db.commit()
     return MemoryMutationResult(affected=1, message="记忆已删除")
@@ -78,8 +92,10 @@ async def delete_memory(
 async def restore_memory(
     memory_id: str,
     user_id: str,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> MemoryRead:
+    user_id = effective_user_id(principal, user_id)
     model = await MemoryService(db).restore(memory_id, user_id)
     await db.commit()
     await db.refresh(model)
@@ -88,8 +104,13 @@ async def restore_memory(
 
 @router.post("/forget", response_model=MemoryMutationResult)
 async def forget_memories(
-    data: ForgetRequest, db: AsyncSession = Depends(get_db)
+    data: ForgetRequest,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
 ) -> MemoryMutationResult:
+    data = data.model_copy(
+        update={"user_id": effective_user_id(principal, data.user_id)}
+    )
     affected = await MemoryService(db).forget(
         data.user_id, data.query, all_memories=data.all_memories
     )

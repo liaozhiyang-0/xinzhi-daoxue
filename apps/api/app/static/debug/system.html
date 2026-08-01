@@ -1,2 +1,33 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>系统状态 · 芯智导学</title><link rel="stylesheet" href="/debug-assets/design-tokens.css"><link rel="stylesheet" href="/debug-assets/app-shell.css"><link rel="stylesheet" href="/debug-assets/components.css"><link rel="stylesheet" href="/debug-assets/pages.css"></head>
-<body><aside id="app-sidebar" class="app-sidebar"></aside><header id="app-topbar" class="app-topbar"></header><main class="app-main"><header class="page-header"><div><p class="eyebrow">SYSTEM OVERVIEW</p><h1>系统状态</h1><p>快速判断本地服务、知识库与已发布工作流是否可用。此页面不会预热大型模型或发起云端调用。</p></div><button id="refresh-status" class="button secondary" type="button">刷新状态</button></header><section id="status-notice" aria-live="polite"></section><section><h2>核心状态</h2><div id="service-grid" class="metric-grid"><div class="skeleton card"></div><div class="skeleton card"></div><div class="skeleton card"></div></div></section><section><h2>数据与 Agent</h2><div id="data-grid" class="metric-grid"></div></section><section class="card"><div class="section-heading"><div><h2>运行说明</h2><p>页面只读取轻量健康状态与缓存数据；未加载的模型显示“按需加载”。</p></div></div><div id="runtime-note" class="empty-state">正在读取系统状态…</div></section></main><div id="toast-region" class="toast-region" aria-live="polite"></div><script src="/debug-assets/ui-core.js"></script><script src="/debug-assets/system.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>系统状态 · 芯智导学</title>
+  <link rel="stylesheet" href="/debug-assets/design-tokens.css">
+  <link rel="stylesheet" href="/debug-assets/app-shell.css">
+  <link rel="stylesheet" href="/debug-assets/components.css">
+  <link rel="stylesheet" href="/debug-assets/pages.css">
+</head>
+<body>
+  <aside id="app-sidebar" class="app-sidebar"></aside>
+  <header id="app-topbar" class="app-topbar"></header>
+  <main class="app-main system-main">
+    <header class="page-header">
+      <div><p class="eyebrow">SYSTEM OVERVIEW</p><h1>系统状态</h1><p>快速判断本地服务、知识库和已发布工作流是否可用。此页面不会预热大型模型或发起云端调用。</p></div>
+      <button id="refresh-status" class="button secondary" type="button">刷新状态</button>
+    </header>
+    <section id="status-notice" aria-live="polite"></section>
+    <section><h2>核心状态</h2><div id="service-grid" class="metric-grid"><div class="skeleton card"></div><div class="skeleton card"></div><div class="skeleton card"></div></div></section>
+    <section class="system-dashboard-grid">
+      <article class="card system-panel"><div class="section-heading"><div><h2>运行健康度</h2><p>服务、存储和检索能力的当前状态。</p></div></div><div id="runtime-health-chart" class="system-bar-list"></div></article>
+      <article class="card system-panel"><div class="section-heading"><div><h2>Agent 生命周期</h2><p>注册表中各类 Agent 的配置与发布情况。</p></div></div><div id="agent-lifecycle-chart" class="system-bar-list"></div></article>
+    </section>
+    <section><h2>数据与 Agent</h2><div id="data-grid" class="metric-grid"></div></section>
+    <section class="card system-panel"><div class="section-heading"><div><h2>运行说明</h2><p>页面只读取轻量健康状态与缓存数据；未加载的模型显示“按需加载”。</p></div></div><div id="runtime-note" class="empty-state">正在读取系统状态…</div></section>
+  </main>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/debug-assets/ui-core.js"></script>
+  <script src="/debug-assets/system.js"></script>
+</body>
+</html>

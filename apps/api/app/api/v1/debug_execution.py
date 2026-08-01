@@ -6,11 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
+from app.dependencies import get_db, require_admin
 from app.models import AgentRunModel, TaskModel
 from app.services.task_query_service import TaskQueryService
 
-router = APIRouter(prefix="/debug/execution", tags=["execution-debug"])
+router = APIRouter(
+    prefix="/debug/execution",
+    tags=["execution-debug"],
+    dependencies=[Depends(require_admin)],
+)
 SENSITIVE_KEYS = {
     "authorization",
     "api_key",
