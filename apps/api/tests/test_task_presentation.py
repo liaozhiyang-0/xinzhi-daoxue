@@ -179,7 +179,11 @@ def test_incomplete_model_generation_is_not_labeled_completed() -> None:
         timings={},
     )
 
-    assert presentation.status_label == "部分生成"
+    assert presentation.status_label == "回答未完整"
+    assert presentation.answer_quality_status == "incomplete"
+    assert presentation.requires_review is True
+    assert presentation.generation_complete is False
+    assert presentation.execution_steps[-1]["status"] == "partial"
 
 
 def test_failed_model_generation_is_not_labeled_completed() -> None:
@@ -207,8 +211,44 @@ def test_failed_model_generation_is_not_labeled_completed() -> None:
     )
 
     assert presentation.status_label == "生成失败"
+    assert presentation.answer_quality_status == "generation_failed"
+    assert presentation.requires_review is True
     assert "模型响应超时" in presentation.fallback_message
-    assert "确定性占位结果" in presentation.fallback_message
+    assert "确定性占位结果" not in presentation.fallback_message
+
+
+def test_quality_gate_and_fallback_are_visible_to_workspace() -> None:
+    definition = AgentRegistry().get("ACADEMIC_PROBLEM_SOLVER")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_graph",
+        course_id="SS",
+        intent="solve_problem",
+        answer="已生成答案。",
+        fallback_used=True,
+        fallback_reason="model_provider_unavailable",
+        structured_result={
+            "model_execution": {
+                "status": "completed",
+                "output_status": "complete",
+            },
+            "quality_gate": {"status": "partial"},
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.status_label == "建议复核"
+    assert presentation.answer_quality_status == "needs_review"
+    assert presentation.requires_review is True
+    assert "确定性验证" in presentation.answer_quality_message
+    assert presentation.execution_steps[-2]["status"] == "partial"
 
 
 def test_lesson_fallback_keeps_retrieved_materials_visible_but_not_cited() -> None:

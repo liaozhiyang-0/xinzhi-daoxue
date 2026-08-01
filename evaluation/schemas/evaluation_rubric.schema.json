@@ -9,7 +9,8 @@
     "numeric": {"type": "number", "minimum": 0},
     "units": {"type": "number", "minimum": 0},
     "citations": {"type": "number", "minimum": 0},
-    "safety": {"type": "number", "minimum": 0}
+    "safety": {"type": "number", "minimum": 0},
+    "teaching_foundation": {"type": "number", "minimum": 0}
   },
   "additionalProperties": false
 }

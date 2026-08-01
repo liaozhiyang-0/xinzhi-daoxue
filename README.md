@@ -6,6 +6,8 @@
 
 专业求解入口现统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。`SOLVER_CT_V1` 保留为 CT 云端冻结基线和回退，不再作为本地核心。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_consolidation_audit.md`。
 
+教学闭环在同一任务链上支持 `direct_answer`、`guided_learning` 和 `check_my_work`：后台复用 `SolutionPacketV1`，以有限规则生成 `VerificationReportV1`、H0—H2 提示和单个理解检查，并由后端强制过滤学习模式的完整答案；`review` 仍为 `foundation_only`。刷新可恢复当前提示与问题，主动切换完整解答不会重复运行 Solver。它不是全题型首错系统，复杂推导明确进入 `manual_review`，也不会自动更新 mastery。详见 [第一阶段基础能力](docs/architecture/teaching_foundation_phase1.md) 与 [第二阶段有限诊断和分级辅导](docs/architecture/teaching_loop_phase2.md)。
+
 ## 组员统一启动（Windows）
 
 只需要安装 **Python 3.11-3.13、Git 和 Docker Desktop**。克隆仓库、启动 Docker Desktop 后，在仓库根目录执行：
@@ -341,3 +343,17 @@ git diff --check
 
 - [Agent Runtime Foundation](docs/architecture/agent_runtime_foundation.md)
 - [会话与长期记忆部署指南](docs/deployment/conversation_memory_guide.md)
+
+## 教学闭环第三阶段
+
+Workspace 现可在同一题目下保存不可覆盖的多版本学生尝试，使用本地有限规则记录
+反馈采用，形成启发式 MasteryEvidence，更新现有唯一的
+LearnerKnowledgeState，并按配置展示 1/7/28 天待复习项。系统不新增模型调用、
+后台调度器或主动通知。
+
+- 架构：[教学闭环第三阶段](docs/architecture/teaching_loop_phase3.md)
+- 配置：[学习状态配置](docs/deployment/learning_state_configuration.md)
+- 审计：[第三阶段实施前审计](docs/audits/teaching_loop_phase3_audit.md)
+
+界面中的“学习进度估计”只是一项基于当前练习记录的辅助估计，不等同于考试成绩、
+正式能力评价或真实掌握概率。

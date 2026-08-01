@@ -66,6 +66,15 @@ def test_regression_for_damaged_differential_equation(
     assert expression.latex == (r"\frac{d^2v}{dt^2} + 2\frac{dv}{dt} + 4v = -12e^{-t}")
 
 
+def test_plain_numeric_equation_is_wrapped_for_katex(
+    formatter: MathFormattingService,
+) -> None:
+    content = formatter.process_markdown("由欧姆定律可得 I=10/5=2A。")
+
+    assert r"$I=\frac{10}{5}=2A$" in content.markdown
+    assert content.math_expressions[0].latex == r"I=\frac{10}{5}=2A"
+
+
 def test_existing_latex_and_legacy_delimiters_are_not_double_wrapped(
     formatter: MathFormattingService,
 ) -> None:

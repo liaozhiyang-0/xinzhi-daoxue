@@ -16,8 +16,8 @@ from app.evaluation.contracts import (
     SuiteReport,
 )
 from app.evaluation.loader import EvaluationCaseLoader
-from app.evaluation.reporting import render_markdown, write_report
-from app.evaluation.runner import EvaluationRunner
+from app.evaluation.reporting import build_statistics, render_markdown, write_report
+from app.evaluation.runner import EvaluationRunner, evaluation_timeout_decision
 from app.evaluation.scorers import EvaluationScorer, normalize_text
 from app.observability import ModelTracer
 from app.tools import default_tool_registry
@@ -99,16 +99,16 @@ def test_case_schema_rejects_citation_count_when_citations_forbidden() -> None:
         make_case(expected_citations=False, min_citation_count=1)
 
 
-def test_loader_reads_exactly_36_unique_cases() -> None:
+def test_loader_reads_exactly_73_unique_cases() -> None:
     cases = EvaluationCaseLoader(ROOT / "evaluation" / "cases").load_all()
-    assert len(cases) == 36
-    assert len({item.case_id for item in cases}) == 36
+    assert len(cases) == 73
+    assert len({item.case_id for item in cases}) == 73
 
 
 def test_loader_filters_course_tag_case_and_limit() -> None:
     loader = EvaluationCaseLoader(ROOT / "evaluation" / "cases")
     cases = loader.load_all()
-    assert len(loader.filter(cases, course="CT")) == 12
+    assert len(loader.filter(cases, course="CT")) == 44
     assert loader.filter(cases, tags={"high_risk"})[0].case_id == "CT_CONTROLLED_001"
     assert loader.filter(cases, case_id="CT_KCL_001")[0].course == "CT"
     assert len(loader.filter(cases, max_cases=3)) == 3
@@ -152,6 +152,78 @@ def test_keyword_step_and_forbidden_claim_scoring() -> None:
     assert result.missing_steps == ["列KCL"]
     assert result.forbidden_claims_found == ["忽略方向"]
     assert result.safety_passed is False
+
+
+def test_boundary_keyword_scoring_accepts_controlled_insufficient_synonyms() -> None:
+    case = make_case(required_keywords=["缺少"])
+
+    result = score(
+        case,
+        make_actual(answer="信息缺失，题目未提供唯一求解所需的参数。"),
+    )
+
+    assert result.missing_keywords == []
+    assert result.answer_passed is True
+
+
+def test_forbidden_claim_scoring_ignores_prompt_echo_and_explicit_rejection() -> None:
+    case = make_case(forbidden_claims=["I1=I2"])
+    rejection = score(
+        case,
+        make_actual(
+            answer="条件不足，不能推出 I1=I2。",
+            structured_result={
+                "course": "CT",
+                "problem_summary": "即使支路不同，也请证明 I1=I2。",
+            },
+        ),
+    )
+    assertion = score(case, make_actual(answer="由题意可得 I1=I2。"))
+
+    assert rejection.forbidden_claims_found == []
+    assert rejection.safety_passed is True
+    assert assertion.forbidden_claims_found == ["I1=I2"]
+    assert assertion.safety_passed is False
+
+
+def test_teaching_hint_scoring_accepts_only_more_conservative_disclosure() -> None:
+    case = make_case(expected_hint_level="H1")
+    conservative = score(
+        case,
+        make_actual(expected_hint_level="H0"),
+    )
+    over_disclosed = score(
+        case,
+        make_actual(expected_hint_level="H2"),
+    )
+
+    assert conservative.status == "passed"
+    assert "conservative_hint_level:H0<expected:H1" in conservative.warnings
+    assert over_disclosed.status == "failed"
+    assert (
+        EvaluationErrorType.TEACHING_FOUNDATION_MISMATCH
+        in over_disclosed.error_types
+    )
+
+
+def test_evaluation_timeout_decision_only_extends_complex_cases() -> None:
+    assert evaluation_timeout_decision(make_case()) == (180, [])
+    assert evaluation_timeout_decision(make_case(timeout_seconds=75)) == (
+        75,
+        ["explicit_case_timeout"],
+    )
+
+    visual_timeout, visual_signals = evaluation_timeout_decision(
+        make_case(input_type="text_and_image", file_refs=[{"path": "question.png"}])
+    )
+    long_timeout, long_signals = evaluation_timeout_decision(
+        make_case(message="综合分析题。" * 100)
+    )
+
+    assert visual_timeout == 240
+    assert "visual_input" in visual_signals
+    assert long_timeout == 240
+    assert "long_problem_text" in long_signals
 
 
 @pytest.mark.parametrize(
@@ -265,6 +337,67 @@ def test_markdown_and_json_report_generation(tmp_path: Path) -> None:
     assert json_path.is_file()
     assert "总体通过率" in markdown_path.read_text(encoding="utf-8")
     assert "完整模型回答" not in render_markdown(report)
+
+
+def test_report_separates_execution_success_from_answer_quality_failure() -> None:
+    case = make_case()
+    result = score(case, make_actual())
+    result.actual["answer_evaluation"] = {
+        "passed": False,
+        "score": 0.4,
+        "verdict": "incorrect",
+        "reason": "关键数值与参考答案不一致。",
+    }
+    statistics = build_statistics([case], [result])
+    report = SuiteReport(
+        mode="live",
+        started_at="start",
+        completed_at="end",
+        summary={
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "errors": 0,
+            "timeouts": 0,
+            "pass_rate": 1.0,
+        },
+        statistics=statistics,
+        results=[result],
+    )
+
+    markdown = render_markdown(report)
+    assert statistics["answer_judge_total"] == 1
+    assert statistics["answer_judge_passed"] == 0
+    assert statistics["answer_judge_pass_rate"] == 0.0
+    assert "答案质量判定：0 / 1 通过" in markdown
+    assert "## 5. 答案质量未通过" in markdown
+    assert "CASE_001" in markdown
+    assert "关键数值与参考答案不一致" in markdown
+    assert "本次没有运行级评分失败" in markdown
+
+
+def test_report_uses_case_level_fallback_rate_and_keeps_call_rate() -> None:
+    first_case = make_case()
+    second_case = make_case(case_id="CASE_002")
+    first_result = score(first_case, make_actual())
+    second_result = score(second_case, make_actual())
+    first_result.model_calls = [
+        {"model": "primary", "fallback_used": False},
+        {"model": "fallback", "fallback_used": True},
+    ]
+    first_result.actual["fallback_used"] = True
+    second_result.model_calls = [
+        {"model": "primary", "fallback_used": False},
+    ]
+
+    statistics = build_statistics(
+        [first_case, second_case],
+        [first_result, second_result],
+    )
+
+    assert statistics["fallback_case_count"] == 1
+    assert statistics["fallback_rate"] == 0.5
+    assert statistics["fallback_model_call_rate"] == pytest.approx(1 / 3)
 
 
 def test_live_mode_without_explicit_paid_confirmation_is_blocked() -> None:

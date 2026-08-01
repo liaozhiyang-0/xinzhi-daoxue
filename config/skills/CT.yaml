@@ -1,0 +1,93 @@
+version: "1.0"
+course_id: "CT"
+skills:
+  - skill_id: "CT.KCL"
+    title: "基尔霍夫电流定律"
+    course_id: "CT"
+    chapter: "circuit_laws"
+    prerequisites: []
+    problem_types: ["kcl_kvl"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["kcl_sign_error"]
+    keywords: ["KCL", "基尔霍夫电流定律"]
+  - skill_id: "CT.KVL"
+    title: "基尔霍夫电压定律"
+    course_id: "CT"
+    chapter: "circuit_laws"
+    prerequisites: []
+    problem_types: ["kcl_kvl"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["reference_direction_error"]
+    keywords: ["KVL", "基尔霍夫电压定律"]
+  - skill_id: "CT.NODAL"
+    title: "节点电压法"
+    course_id: "CT"
+    chapter: "network_methods"
+    prerequisites: ["CT.KCL"]
+    problem_types: ["node_voltage"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["kcl_sign_error"]
+    keywords: ["节点电压", "节点法"]
+  - skill_id: "CT.MESH"
+    title: "回路电流法"
+    course_id: "CT"
+    chapter: "network_methods"
+    prerequisites: ["CT.KVL"]
+    problem_types: ["mesh_current"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["reference_direction_error"]
+    keywords: ["回路电流", "网孔电流"]
+  - skill_id: "CT.THEVENIN_NORTON"
+    title: "戴维南与诺顿等效"
+    course_id: "CT"
+    chapter: "network_theorems"
+    prerequisites: ["CT.KCL", "CT.KVL"]
+    problem_types: ["thevenin_norton"]
+    capability_ids: ["circuit_analysis", "algebra"]
+    common_error_signatures: ["equivalent_resistance_error"]
+    keywords: ["戴维南", "诺顿"]
+  - skill_id: "CT.FIRST_ORDER_INITIAL"
+    title: "一阶电路初值"
+    course_id: "CT"
+    chapter: "dynamic_circuits"
+    prerequisites: ["CT.KCL", "CT.KVL"]
+    problem_types: ["first_order"]
+    capability_ids: ["circuit_analysis", "differential_equations"]
+    common_error_signatures: ["capacitor_voltage_continuity"]
+    keywords: ["初值", "换路"]
+  - skill_id: "CT.TIME_CONSTANT"
+    title: "一阶电路时间常数"
+    course_id: "CT"
+    chapter: "dynamic_circuits"
+    prerequisites: ["CT.FIRST_ORDER_INITIAL"]
+    problem_types: ["first_order"]
+    capability_ids: ["differential_equations", "unit_validation"]
+    common_error_signatures: ["unit_incompatible"]
+    keywords: ["时间常数"]
+  - skill_id: "CT.PHASOR"
+    title: "相量表示"
+    course_id: "CT"
+    chapter: "sinusoidal_steady_state"
+    prerequisites: ["CT.KVL"]
+    problem_types: ["sinusoidal_steady_state"]
+    capability_ids: ["complex_numbers", "circuit_analysis"]
+    common_error_signatures: ["phase_sign_error"]
+    keywords: ["相量"]
+  - skill_id: "CT.COMPLEX_IMPEDANCE"
+    title: "复阻抗"
+    course_id: "CT"
+    chapter: "sinusoidal_steady_state"
+    prerequisites: ["CT.PHASOR"]
+    problem_types: ["sinusoidal_steady_state"]
+    capability_ids: ["complex_numbers", "circuit_analysis"]
+    common_error_signatures: ["unit_missing"]
+    keywords: ["复阻抗", "阻抗"]
+  - skill_id: "CT.AC_POWER"
+    title: "正弦稳态功率"
+    course_id: "CT"
+    chapter: "sinusoidal_power"
+    prerequisites: ["CT.PHASOR", "CT.COMPLEX_IMPEDANCE"]
+    problem_types: ["power"]
+    capability_ids: ["complex_numbers", "unit_validation"]
+    common_error_signatures: ["unit_missing", "power_factor_error"]
+    keywords: ["有功功率", "无功功率", "复功率"]

@@ -57,6 +57,16 @@ _INLINE_HIGH_CONFIDENCE_RE = re.compile(
     r"∫[^，。；;\n]+?d[A-Za-zτ])",
     re.IGNORECASE,
 )
+_INLINE_NUMERIC_EQUATION_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"(?:[A-Za-z][A-Za-z0-9_]{0,7})"
+    r"\s*=\s*"
+    r"[+\-]?(?:\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9_]*)"
+    r"(?:\s*(?:[+\-*/^=])\s*"
+    r"[+\-]?(?:\d+(?:\.\d+)?|[A-Za-z][A-Za-z0-9_]*))*"
+    r"\s*(?:[pnumkMμ]?(?:V|A|F|H|Hz|W|s)|Ω)?"
+    r"(?![A-Za-z0-9_])"
+)
 _UNICODE_SUPERSCRIPTS = str.maketrans(
     {
         "⁰": "0",
@@ -532,7 +542,19 @@ class MathFormattingService:
                         self._protected_chunk(trailing, MathSegmentType.TEXT),
                     ]
                 )
-        matches = list(_INLINE_HIGH_CONFIDENCE_RE.finditer(text))
+        matches = sorted(
+            [
+                *_INLINE_HIGH_CONFIDENCE_RE.finditer(text),
+                *_INLINE_NUMERIC_EQUATION_RE.finditer(text),
+            ],
+            key=lambda item: (item.start(), -item.end()),
+        )
+        non_overlapping: list[re.Match[str]] = []
+        for match in matches:
+            if non_overlapping and match.start() < non_overlapping[-1].end():
+                continue
+            non_overlapping.append(match)
+        matches = non_overlapping
         if not matches:
             warnings = (
                 ["ambiguous_math_pattern_preserved"]

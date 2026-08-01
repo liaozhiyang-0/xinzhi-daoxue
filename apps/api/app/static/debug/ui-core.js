@@ -291,9 +291,9 @@
     target.append(document.createTextNode(value || ""));
   }
 
-  function renderLatex(source, display = false) {
+  function renderLatex(source, display = false, inlineHost = false) {
     const latex = String(source || "").trim();
-    const outer = el(display ? "div" : "span", {
+    const outer = el(display && !inlineHost ? "div" : "span", {
       class: `math-expression ${display ? "math-display" : "math-inline"}`,
       role: "img", "aria-label": latex || "空公式", title: latex,
     });
@@ -336,6 +336,21 @@
     return -1;
   }
 
+  function safeMarkdownUrl(value, { image = false } = {}) {
+    const raw = String(value || "").trim().replace(/^<|>$/g, "");
+    if (!raw || /[\u0000-\u001f]/.test(raw)) return "";
+    if (raw.startsWith("/")) return raw;
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) return "";
+    try {
+      const parsed = new URL(raw, location.origin);
+      if (["http:", "https:"].includes(parsed.protocol)) return raw;
+      if (image && parsed.protocol === "data:" && raw.startsWith("data:image/")) return raw;
+    } catch (_error) {
+      return "";
+    }
+    return "";
+  }
+
   function appendRichInline(node, source) {
     const text = String(source || "");
     let plain = "";
@@ -350,12 +365,56 @@
           continue;
         }
       }
+      const markdownImage = text.slice(index).match(/^!\[([^\]]*)\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/);
+      if (markdownImage) {
+        const src = safeMarkdownUrl(markdownImage[2], { image: true });
+        if (src) {
+          flush();
+          node.append(el("img", {
+            class: "markdown-image",
+            src,
+            alt: markdownImage[1] || "资料图片",
+            loading: "lazy",
+            decoding: "async",
+          }));
+          index += markdownImage[0].length;
+          continue;
+        }
+      }
       const citation = text.slice(index).match(/^\[(S\d+)\]/);
       if (citation) {
         flush();
         node.append(el("button", { type: "button", class: "citation-link", text: citation[1], "data-evidence-ref": citation[1], "aria-label": `查看证据 ${citation[1]}` }));
         index += citation[0].length;
         continue;
+      }
+      const markdownLink = text.slice(index).match(/^\[([^\]]+)\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/);
+      if (markdownLink) {
+        const href = safeMarkdownUrl(markdownLink[2]);
+        if (href) {
+          flush();
+          const external = /^https?:\/\//i.test(href);
+          node.append(el("a", {
+            href,
+            text: markdownLink[1],
+            target: external ? "_blank" : null,
+            rel: external ? "noopener noreferrer" : null,
+          }));
+          index += markdownLink[0].length;
+          continue;
+        }
+      }
+      if (text.startsWith("\\[", index)) {
+        const end = findInlineMathEnd(text, index + 2, "\\]");
+        if (end !== -1) {
+          flush(); node.append(renderLatex(text.slice(index + 2, end), true, true)); index = end + 2; continue;
+        }
+      }
+      if (text.startsWith("$$", index)) {
+        const end = findInlineMathEnd(text, index + 2, "$$");
+        if (end !== -1) {
+          flush(); node.append(renderLatex(text.slice(index + 2, end), true, true)); index = end + 2; continue;
+        }
       }
       if (text.startsWith("\\(", index)) {
         const end = findInlineMathEnd(text, index + 2, "\\)");

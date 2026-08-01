@@ -679,6 +679,65 @@
         }
       }
     },
+    "/api/v1/sessions/{session_id}/summary": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get Session Summary",
+        "operationId": "get_session_summary_api_v1_sessions__session_id__summary_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionSummaryRead"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Session Summary Api V1 Sessions  Session Id  Summary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sessions/{session_id}/tasks": {
       "get": {
         "tags": [
@@ -809,6 +868,24 @@
             "schema": {
               "type": "string",
               "title": "Task Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
             }
           }
         ],
@@ -1127,6 +1204,58 @@
         }
       }
     },
+    "/api/v1/files/{file_id}/content": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Get File Content",
+        "description": "Return an attached student image only to the task owner.",
+        "operationId": "get_file_content_api_v1_files__file_id__content_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/artifacts/{artifact_id}": {
       "get": {
         "tags": [
@@ -1414,6 +1543,26 @@
               "type": "string",
               "title": "Relative Path"
             }
+          },
+          {
+            "name": "normalize_math",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Normalize Math"
+            }
+          },
+          {
+            "name": "chunk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Chunk"
+            }
           }
         ],
         "responses": {
@@ -1422,6 +1571,118 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/document-pages/{course_id}/{relative_path}": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Knowledge Document Page",
+        "operationId": "knowledge_document_page_api_v1_knowledge_document_pages__course_id___relative_path__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "relative_path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Relative Path"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60000,
+              "minimum": 4000,
+              "default": 24000,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "anchor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2000,
+              "default": "",
+              "title": "Anchor"
+            }
+          },
+          {
+            "name": "chunk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "default": "",
+              "title": "Chunk"
+            }
+          },
+          {
+            "name": "normalize_math",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Normalize Math"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentPage"
+                }
               }
             }
           },
@@ -1575,6 +1836,235 @@
                     "$ref": "#/components/schemas/LearnerKnowledgeState"
                   },
                   "title": "Response Learning States Api V1 Learning States Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/attempts": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Learning Attempts",
+        "operationId": "learning_attempts_api_v1_learning_attempts_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "source_task_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Task Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudentAttemptV2"
+                  },
+                  "title": "Response Learning Attempts Api V1 Learning Attempts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/attempts/{attempt_id}": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Learning Attempt",
+        "operationId": "learning_attempt_api_v1_learning_attempts__attempt_id__get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attempt Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentAttemptV2"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/retests": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Learning Retests",
+        "operationId": "learning_retests_api_v1_learning_retests_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(scheduled|due|completed|cancelled|superseded)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RetestPlanV1"
+                  },
+                  "title": "Response Learning Retests Api V1 Learning Retests Get"
                 }
               }
             }
@@ -4122,6 +4612,195 @@
         ],
         "title": "ExecutionStatus"
       },
+      "FeedbackUptakeStatus": {
+        "type": "string",
+        "enum": [
+          "applied_correctly",
+          "applied_incorrectly",
+          "partially_applied",
+          "not_applied",
+          "indeterminate",
+          "not_applicable"
+        ],
+        "title": "FeedbackUptakeStatus"
+      },
+      "FeedbackUptakeV1": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "source_task_id": {
+            "type": "string",
+            "title": "Source Task Id"
+          },
+          "previous_attempt_id": {
+            "type": "string",
+            "title": "Previous Attempt Id"
+          },
+          "current_attempt_id": {
+            "type": "string",
+            "title": "Current Attempt Id"
+          },
+          "hint_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint Level"
+          },
+          "hint_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint Source"
+          },
+          "target_step_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Step Id"
+          },
+          "target_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Skill Ids"
+          },
+          "student_modified": {
+            "type": "boolean",
+            "title": "Student Modified"
+          },
+          "modified_step_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Modified Step Ids"
+          },
+          "target_step_modified": {
+            "type": "boolean",
+            "title": "Target Step Modified"
+          },
+          "previous_verification_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Verification Status"
+          },
+          "current_verification_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Verification Status"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FeedbackUptakeStatus"
+          },
+          "modification_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modification Correct"
+          },
+          "time_to_revision_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time To Revision Seconds"
+          },
+          "evaluation_method": {
+            "type": "string",
+            "title": "Evaluation Method"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_id",
+          "session_id",
+          "source_task_id",
+          "previous_attempt_id",
+          "current_attempt_id",
+          "hint_level",
+          "hint_source",
+          "target_step_id",
+          "student_modified",
+          "target_step_modified",
+          "previous_verification_status",
+          "current_verification_status",
+          "status",
+          "modification_correct",
+          "evaluation_method"
+        ],
+        "title": "FeedbackUptakeV1"
+      },
       "FileRead": {
         "properties": {
           "id": {
@@ -4372,6 +5051,93 @@
           "COMM"
         ],
         "title": "KnowledgeCourseId"
+      },
+      "KnowledgeDocumentPage": {
+        "properties": {
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "requested_chunk": {
+            "type": "string",
+            "title": "Requested Chunk",
+            "default": ""
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "total_chars": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Chars"
+          },
+          "start_offset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start Offset"
+          },
+          "end_offset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "End Offset"
+          },
+          "previous_offset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Offset"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "anchor_status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "not_found",
+              "not_requested"
+            ],
+            "title": "Anchor Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_ref",
+          "course_id",
+          "relative_path",
+          "content",
+          "total_chars",
+          "start_offset",
+          "end_offset",
+          "anchor_status"
+        ],
+        "title": "KnowledgeDocumentPage",
+        "description": "A bounded page from a local source document with anchor metadata."
       },
       "KnowledgeHit": {
         "properties": {
@@ -4651,7 +5417,14 @@
               "check_answer",
               "generate_variant",
               "related_knowledge",
-              "mark_mastered"
+              "mark_mastered",
+              "request_more_hint",
+              "submit_check_response",
+              "switch_to_direct_answer",
+              "submit_attempt_revision",
+              "start_retest",
+              "complete_retest",
+              "dismiss_retest"
             ],
             "title": "Action"
           },
@@ -4697,7 +5470,14 @@
               "check_answer",
               "generate_variant",
               "related_knowledge",
-              "mark_mastered"
+              "mark_mastered",
+              "request_more_hint",
+              "submit_check_response",
+              "switch_to_direct_answer",
+              "submit_attempt_revision",
+              "start_retest",
+              "complete_retest",
+              "dismiss_retest"
             ],
             "title": "Action"
           },
@@ -4755,6 +5535,45 @@
             },
             "type": "array",
             "title": "Mastery"
+          },
+          "teaching": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Teaching"
+          },
+          "attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudentAttemptV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "feedback_uptake": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackUptakeV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mastery_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/MasteryEvidenceV1"
+            },
+            "type": "array",
+            "title": "Mastery Evidence"
+          },
+          "retest_plans": {
+            "items": {
+              "$ref": "#/components/schemas/RetestPlanV1"
+            },
+            "type": "array",
+            "title": "Retest Plans"
           }
         },
         "additionalProperties": false,
@@ -4789,7 +5608,14 @@
               "check_answer",
               "generate_variant",
               "related_knowledge",
-              "mark_mastered"
+              "mark_mastered",
+              "request_more_hint",
+              "submit_check_response",
+              "switch_to_direct_answer",
+              "submit_attempt_revision",
+              "start_retest",
+              "complete_retest",
+              "dismiss_retest"
             ],
             "title": "Action"
           }
@@ -4803,6 +5629,97 @@
           "action"
         ],
         "title": "LearningFollowUpContext"
+      },
+      "MasteryEvidenceType": {
+        "type": "string",
+        "enum": [
+          "independent_correct",
+          "h0_h1_correct",
+          "h2_correct",
+          "full_solution_seen",
+          "feedback_applied_correctly",
+          "feedback_not_applied",
+          "verified_error",
+          "manual_review",
+          "delayed_retest_correct",
+          "delayed_retest_incorrect"
+        ],
+        "title": "MasteryEvidenceType"
+      },
+      "MasteryEvidenceV1": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "title": "Evidence Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "skill_id": {
+            "type": "string",
+            "title": "Skill Id"
+          },
+          "source_task_id": {
+            "type": "string",
+            "title": "Source Task Id"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attempt Id"
+          },
+          "evidence_type": {
+            "$ref": "#/components/schemas/MasteryEvidenceType"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "evidence_strength": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Evidence Strength"
+          },
+          "mastery_delta": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Mastery Delta"
+          },
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "user_id",
+          "skill_id",
+          "source_task_id",
+          "attempt_id",
+          "evidence_type",
+          "verified",
+          "evidence_strength",
+          "mastery_delta",
+          "reason_code",
+          "created_at"
+        ],
+        "title": "MasteryEvidenceV1"
       },
       "MathBlockType": {
         "type": "string",
@@ -5526,6 +6443,127 @@
         ],
         "title": "RelatedImage"
       },
+      "RetestPlanStatus": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "due",
+          "completed",
+          "cancelled",
+          "superseded"
+        ],
+        "title": "RetestPlanStatus"
+      },
+      "RetestPlanV1": {
+        "properties": {
+          "retest_plan_id": {
+            "type": "string",
+            "title": "Retest Plan Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "skill_id": {
+            "type": "string",
+            "title": "Skill Id"
+          },
+          "source_task_id": {
+            "type": "string",
+            "title": "Source Task Id"
+          },
+          "source_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Attempt Id"
+          },
+          "interval_days": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Interval Days"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Due At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RetestPlanStatus"
+          },
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code"
+          },
+          "generated_problem_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Problem Id"
+          },
+          "completed_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Task Id"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "retest_plan_id",
+          "user_id",
+          "skill_id",
+          "source_task_id",
+          "source_attempt_id",
+          "interval_days",
+          "due_at",
+          "status",
+          "reason_code",
+          "generated_problem_id",
+          "completed_task_id",
+          "result",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RetestPlanV1"
+      },
       "RetrievalResult": {
         "properties": {
           "query": {
@@ -5829,6 +6867,89 @@
         ],
         "title": "SessionRead"
       },
+      "SessionSummaryRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "covers_from_sequence": {
+            "type": "integer",
+            "title": "Covers From Sequence"
+          },
+          "covers_through_sequence": {
+            "type": "integer",
+            "title": "Covers Through Sequence"
+          },
+          "summary_text": {
+            "type": "string",
+            "title": "Summary Text"
+          },
+          "structured_state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Structured State"
+          },
+          "source_message_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Message Ids"
+          },
+          "source_checksum": {
+            "type": "string",
+            "title": "Source Checksum"
+          },
+          "generation_method": {
+            "type": "string",
+            "title": "Generation Method"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "token_estimate": {
+            "type": "integer",
+            "title": "Token Estimate"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "version",
+          "covers_from_sequence",
+          "covers_through_sequence",
+          "summary_text",
+          "structured_state",
+          "source_message_ids",
+          "source_checksum",
+          "generation_method",
+          "model_name",
+          "token_estimate",
+          "status",
+          "created_at"
+        ],
+        "title": "SessionSummaryRead"
+      },
       "SessionTaskHistoryItem": {
         "properties": {
           "id": {
@@ -5986,6 +7107,254 @@
           "user_id"
         ],
         "title": "SessionUpdate"
+      },
+      "StudentAttemptStatus": {
+        "type": "string",
+        "enum": [
+          "submitted",
+          "verified",
+          "manual_review",
+          "superseded",
+          "cancelled"
+        ],
+        "title": "StudentAttemptStatus"
+      },
+      "StudentAttemptStep": {
+        "properties": {
+          "step_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "expression": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expression"
+          },
+          "claimed_result": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed Result"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "reference_direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Direction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "StudentAttemptStep"
+      },
+      "StudentAttemptV2": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v2",
+            "title": "Version",
+            "default": "v2"
+          },
+          "attempt_id": {
+            "type": "string",
+            "title": "Attempt Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "source_task_id": {
+            "type": "string",
+            "title": "Source Task Id"
+          },
+          "attempt_sequence": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt Sequence"
+          },
+          "revision_of_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Of Attempt Id"
+          },
+          "raw_text": {
+            "type": "string",
+            "maxLength": 10000,
+            "title": "Raw Text",
+            "default": ""
+          },
+          "final_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Answer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StudentAttemptStep"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Steps"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "teaching_mode": {
+            "$ref": "#/components/schemas/TeachingMode"
+          },
+          "hint_level_used": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint Level Used"
+          },
+          "full_solution_seen": {
+            "type": "boolean",
+            "title": "Full Solution Seen",
+            "default": false
+          },
+          "verification_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Status"
+          },
+          "verification_report_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Report Ref"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitted At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StudentAttemptStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attempt_id",
+          "user_id",
+          "session_id",
+          "task_id",
+          "source_task_id",
+          "attempt_sequence",
+          "teaching_mode",
+          "submitted_at",
+          "status"
+        ],
+        "title": "StudentAttemptV2",
+        "description": "Durable, user-owned attempt version; internal reports stay in storage."
       },
       "TaskRead": {
         "properties": {
@@ -6259,6 +7628,16 @@
           "cancelled"
         ],
         "title": "TaskStatus"
+      },
+      "TeachingMode": {
+        "type": "string",
+        "enum": [
+          "direct_answer",
+          "guided_learning",
+          "check_my_work",
+          "review"
+        ],
+        "title": "TeachingMode"
       },
       "UserRole": {
         "type": "string",

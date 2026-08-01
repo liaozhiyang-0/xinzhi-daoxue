@@ -68,6 +68,8 @@ async def get_metrics_summary(
         "route": {},
         "quality": {},
         "citation_failure": {},
+        "teaching_path": {},
+        "verification": {},
     }
     retrieval_attempts = 0
     retrieval_successes = 0
@@ -78,6 +80,10 @@ async def get_metrics_summary(
         presentation = structured.get("presentation", {})
         presentation = presentation if isinstance(presentation, dict) else {}
         metrics = run.metrics_data if isinstance(run.metrics_data, dict) else {}
+        result_metrics = result.get("metrics", {})
+        result_metrics = (
+            result_metrics if isinstance(result_metrics, dict) else {}
+        )
         input_options = task.input_content.get("options", {})
         input_options = input_options if isinstance(input_options, dict) else {}
         route = input_options.get("_routing", {})
@@ -115,6 +121,35 @@ async def get_metrics_summary(
             "context_budget_tokens": metrics.get("context_budget_tokens", 0),
             "context_cache_hit": bool(metrics.get("context_cache_hit", False)),
             "memory_retrieval_count": metrics.get("memory_retrieval_count", 0),
+            "teaching_mode": str(result_metrics.get("teaching_mode", "")),
+            "teaching_execution_path": str(
+                result_metrics.get("teaching_execution_path", "")
+            ),
+            "student_verification_executed": bool(
+                result_metrics.get("student_verification_executed", False)
+            ),
+            "verification_method": str(
+                result_metrics.get("verification_method", "not_run")
+            ),
+            "manual_review_required": bool(
+                result_metrics.get("manual_review_required", False)
+            ),
+            "first_confirmed_error_found": bool(
+                result_metrics.get("first_confirmed_error_found", False)
+            ),
+            "hint_level": str(result_metrics.get("hint_level", "")),
+            "hint_request_count": int(
+                result_metrics.get("hint_request_count", 0)
+            ),
+            "solution_packet_reused": bool(
+                result_metrics.get("solution_packet_reused", False)
+            ),
+            "full_solution_disclosed": bool(
+                result_metrics.get("full_solution_disclosed", False)
+            ),
+            "additional_model_calls": int(
+                result_metrics.get("additional_model_calls", 0)
+            ),
         }
         records.append(record)
         for dimension, value in (
@@ -132,6 +167,8 @@ async def get_metrics_summary(
         for name, value in (
             ("route", record["route_source"]),
             ("quality", record["quality_status"]),
+            ("teaching_path", record["teaching_execution_path"] or "none"),
+            ("verification", record["verification_method"]),
         ):
             key = str(value)
             distributions[name][key] = distributions[name].get(key, 0) + 1
@@ -199,6 +236,8 @@ async def get_execution(
         if run is not None and isinstance(run.metrics_data, dict)
         else {}
     )
+    result_metrics = result.get("metrics", {})
+    result_metrics = result_metrics if isinstance(result_metrics, dict) else {}
     input_content = task.input_content if isinstance(task.input_content, dict) else {}
     input_options = input_content.get("options", {})
     input_options = input_options if isinstance(input_options, dict) else {}
@@ -256,6 +295,26 @@ async def get_execution(
             "key": "validation",
             "label": "结果校验",
             "duration_ms": timings.get("validation_ms", 0),
+        },
+        {
+            "key": "teaching_planning",
+            "label": "教学规划",
+            "duration_ms": result_metrics.get("teaching_planning_ms", 0),
+        },
+        {
+            "key": "student_verification",
+            "label": "学生过程核对",
+            "duration_ms": result_metrics.get("student_verification_ms", 0),
+        },
+        {
+            "key": "hint",
+            "label": "分级提示",
+            "duration_ms": result_metrics.get("hint_generation_ms", 0),
+        },
+        {
+            "key": "disclosure",
+            "label": "答案披露过滤",
+            "duration_ms": result_metrics.get("disclosure_filter_ms", 0),
         },
     ]
     return _redact(
@@ -349,6 +408,31 @@ async def get_execution(
                     "memory_write_count": runtime_metrics.get(
                         "memory_write_count", 0
                     ),
+                },
+                "teaching": {
+                    key: result_metrics.get(key)
+                    for key in (
+                        "teaching_mode",
+                        "teaching_execution_path",
+                        "student_attempt_present",
+                        "solution_packet_reused",
+                        "student_verification_executed",
+                        "verification_method",
+                        "manual_review_required",
+                        "first_confirmed_error_found",
+                        "hint_level",
+                        "hint_source",
+                        "hint_request_count",
+                        "next_check_generated",
+                        "answer_disclosure_mode",
+                        "full_solution_disclosed",
+                        "teaching_state_restored",
+                        "additional_model_calls",
+                        "teaching_planning_ms",
+                        "student_verification_ms",
+                        "hint_generation_ms",
+                        "disclosure_filter_ms",
+                    )
                 },
             },
             "events": [

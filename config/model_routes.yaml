@@ -8,19 +8,41 @@ routes:
     fallback: qwen_vision_primary
   knowledge_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
   general_question_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
+  academic_direct_answer:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1}
   simple_image_understanding: {primary: qwen_vision_fast, fallback: qwen_vision_primary}
+  academic_image_extraction:
+    primary: qwen_vision_primary
+    fallback: qwen_vision_fast
+    options: {high_resolution: true}
   circuit_image_extraction:
     primary: qwen_vision_primary
     fallback: qwen_vision_fast
     options: {high_resolution: true}
   multi_image_summary: {primary: spark_reasoner, fallback: qwen_text_fast}
+  conversation_memory_summary:
+    primary: spark_reasoner
+    fallback: qwen_text_fast
+    options: {temperature: 0.1, max_tokens: 1200}
   complex_circuit_reasoning:
     primary: spark_reasoner
     verifier: qwen_vision_primary
   academic_problem_solving:
+    primary: qwen_vision_primary
+    fallback: spark_reasoner
+    verifier: qwen_vision_primary
+    options:
+      spark_response_transport: stream
+      spark_stream_total_timeout_seconds: 50
+  academic_problem_solving_simple:
     primary: spark_reasoner
     fallback: qwen_vision_primary
     verifier: qwen_vision_primary
+    options:
+      spark_response_transport: stream
+      spark_stream_total_timeout_seconds: 50
   lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
   assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}
   academic_writing: {primary: spark_reasoner, fallback: qwen_vision_primary}

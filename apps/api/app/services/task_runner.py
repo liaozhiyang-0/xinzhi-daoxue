@@ -29,10 +29,11 @@ from app.contracts.conversation import (
     MessageRole,
     MessageStatus,
 )
-from app.contracts.solver import SolverResult
+from app.contracts.learning import StudentAttempt, TeachingMode
+from app.contracts.solver import AcademicProblem, SolverResult
 from app.core.errors import AppError, NotConfiguredError, ProviderCancelledError
 from app.courses import CourseRegistry
-from app.models import AgentRunModel, ArtifactModel, TaskStatus
+from app.models import AgentRunModel, ArtifactModel, TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import SessionRepository, TaskRepository
 from app.services.agent_result_governance import (
@@ -50,14 +51,19 @@ from app.services.knowledge_qa_service import (
     KnowledgeQAExecution,
     KnowledgeQAService,
 )
+from app.services.learning_outcome import LearningOutcomeService
 from app.services.math_formatting_service import MathFormattingService
 from app.services.memory_service import MemoryService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.session_compaction import SessionCompactionService
 from app.services.session_context import SessionContextService
+from app.services.session_working_state import SessionWorkingStateService
+from app.services.solver_boundary_policy import BoundaryDecision, SolverBoundaryPolicy
 from app.services.solver_quality_gate import SolverQualityGateService
 from app.services.storage import StorageService
+from app.services.student_attempts import StudentAttemptService
 from app.services.task_presentation import build_task_views
+from app.services.teaching_foundation import TeachingFoundationService
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +96,8 @@ class TaskRunner:
         *,
         context_assembly: ContextAssemblyService | None = None,
         session_compaction: SessionCompactionService | None = None,
+        teaching_foundation: TeachingFoundationService | None = None,
+        learning_outcome: LearningOutcomeService | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -101,6 +109,9 @@ class TaskRunner:
         self.course_registry = course_registry
         self.context_assembly = context_assembly
         self.session_compaction = session_compaction
+        self.teaching_foundation = teaching_foundation
+        self.learning_outcome = learning_outcome
+        self.student_attempts = StudentAttemptService()
         self.solver_quality_gate = SolverQualityGateService()
         self.citation_validator = CitationValidator()
         self.result_validators = AgentResultValidatorRegistry()
@@ -110,6 +121,8 @@ class TaskRunner:
             agent_registry, knowledge_base.settings
         )
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._post_tasks: dict[str, asyncio.Task[None]] = {}
+        self._summary_locks: dict[str, asyncio.Lock] = {}
         self.execution_owner = f"local-{uuid4().hex[:12]}"
 
     def submit(self, task_id: str) -> bool:
@@ -122,7 +135,11 @@ class TaskRunner:
         return True
 
     async def shutdown(self) -> None:
-        active = [task for task in self._tasks.values() if not task.done()]
+        active = [
+            task
+            for task in [*self._tasks.values(), *self._post_tasks.values()]
+            if not task.done()
+        ]
         for task in active:
             task.cancel()
         if active:
@@ -133,6 +150,7 @@ class TaskRunner:
     async def run(self, task_id: str) -> None:
         request: AgentRequest
         conversation_bundle: ConversationContextBundle | None = None
+        runner_started = perf_counter()
         started_at = utc_now()
         try:
             async with self.session_factory() as db:
@@ -233,6 +251,10 @@ class TaskRunner:
             internal_available = bool(
                 self.internal_agents and self.internal_agents.available(agent_id)
             )
+            boundary_preflight = self._academic_boundary_preflight(
+                request,
+                agent_id,
+            )
 
             if agent_definition.mode == "retrieval_only":
                 if self.knowledge_base.settings.enable_local_knowledge_qa:
@@ -250,7 +272,7 @@ class TaskRunner:
                 knowledge_hits = list(execution.context.evidence)
                 retrieval_attempted = True
             else:
-                if execution_plan.use_rag:
+                if execution_plan.use_rag and boundary_preflight is None:
                     (
                         retrieval_result,
                         retrieval_attempted,
@@ -288,6 +310,10 @@ class TaskRunner:
                 cloud_response_failed = False
                 try:
                     if internal_available and self.internal_agents is not None:
+                        request = self._with_upstream_elapsed(
+                            request,
+                            runner_started,
+                        )
                         internal_context = (
                             retrieval_packet
                             if agent_definition.retrieval_policy.generation_injection
@@ -299,6 +325,11 @@ class TaskRunner:
                             )
                             result = await self._maybe_run_academic_ct_fallback(
                                 result, request
+                            )
+                            result = await self._maybe_run_direct_model_fallback(
+                                result,
+                                request,
+                                internal_context,
                             )
                             context_injected = internal_context is not None
                         except AppError as internal_error:
@@ -683,6 +714,12 @@ class TaskRunner:
                         agent_id = writing.agent_id
                         agent_definition = writing
                         workflow_definition = writing
+                if boundary_preflight is not None:
+                    result.structured_result["retrieval_preflight"] = {
+                        "status": "skipped",
+                        "reason": boundary_preflight.reason,
+                        "saved_stage": "knowledge_retrieval",
+                    }
                 if retrieval_attempted:
                     result.metrics.retrieval_calls += 1
                 if (
@@ -822,6 +859,20 @@ class TaskRunner:
                 routing.get("fallback_reason", "")
             )
             result = self._apply_solver_quality_gate(result, request, agent_id)
+            if self.teaching_foundation is not None:
+                try:
+                    result = self.teaching_foundation.enrich(
+                        result,
+                        request,
+                        retrieval_packet,
+                        query=self._knowledge_query(request),
+                    )
+                except Exception:
+                    logger.exception(
+                        "teaching_foundation_unexpected_error task_id=%s",
+                        request.task_id,
+                    )
+                    result = self._teaching_degraded_result(result, request)
             if result.fallback_used and not result.fallback_reason:
                 result.fallback_reason = "route_cloud_unavailable"
             result_validation = self.result_validators.validate(
@@ -986,12 +1037,22 @@ class TaskRunner:
                 task.updated_at = completed_at
                 task.heartbeat_at = completed_at
                 task.lease_expires_at = None
+                context_usage: dict[str, object] = {}
                 session = await SessionRepository(db).get_for_user(
                     task.session_id, task.user_id, for_update=True
                 )
                 if session is not None:
                     SessionContextService(self.knowledge_base.settings).update(
                         session, request, result
+                    )
+                    await SessionWorkingStateService(db).update_from_result(
+                        request, result
+                    )
+                    await self._record_initial_attempt(
+                        db,
+                        task=task,
+                        request=request,
+                        result=result,
                     )
                     assistant_message = await ConversationMessageService(
                         db
@@ -1010,6 +1071,7 @@ class TaskRunner:
                             text=ConversationMessageService.question_text(request),
                             course_id=task.course_id,
                             memory_enabled=session.memory_enabled,
+                            auto_memory_enabled=session.auto_memory_enabled,
                         )
                         if memory_action in {"remembered", "forgotten"}:
                             confirmation = (
@@ -1042,25 +1104,6 @@ class TaskRunner:
                     memory_latency_ms = (perf_counter() - memory_started) * 1000
                     compaction_count = 0
                     compaction_latency_ms = 0.0
-                    if (
-                        self.session_compaction is not None
-                        and conversation_bundle is not None
-                    ):
-                        try:
-                            summary, compaction_latency_ms = (
-                                await self.session_compaction.compact_if_needed(
-                                    db,
-                                    session=session,
-                                    bundle=conversation_bundle,
-                                )
-                            )
-                            compaction_count = int(summary is not None)
-                        except Exception:
-                            logger.warning(
-                                "session_compaction_degraded task_id=%s",
-                                task.id,
-                                exc_info=True,
-                            )
                     if conversation_bundle is not None:
                         result.metrics = result.metrics.model_copy(
                             update={
@@ -1105,7 +1148,52 @@ class TaskRunner:
                                 "memory_latency_ms": memory_latency_ms,
                             }
                         )
-                task.result_content = result.model_dump(mode="json")
+                        context_usage = {
+                            "memory_enabled": session.memory_enabled,
+                            "auto_memory_enabled": session.auto_memory_enabled,
+                            "active_memory_count": len(
+                                conversation_bundle.active_memories
+                            ),
+                            "active_memory_ids": list(
+                                conversation_bundle.source_memory_ids
+                            ),
+                            "memory_write_count": memory_writes,
+                            "memory_action": memory_action,
+                            "recent_message_count": len(
+                                conversation_bundle.recent_messages
+                            ),
+                            "older_message_count": len(
+                                conversation_bundle.relevant_earlier_messages
+                            ),
+                            "summary_used": bool(
+                                conversation_bundle.session_summary
+                            ),
+                            "summary_version": conversation_bundle.summary_version,
+                            "estimated_tokens": conversation_bundle.token_estimate,
+                            "budget_tokens": conversation_bundle.budget,
+                            "budget_ratio": (
+                                conversation_bundle.token_estimate
+                                / max(1, conversation_bundle.budget)
+                            ),
+                            "trimmed": conversation_bundle.context_trimmed,
+                            "compaction_count": compaction_count,
+                            "summary_refresh_status": (
+                                "queued"
+                                if (
+                                    self.session_compaction is not None
+                                    and session.memory_enabled
+                                )
+                                else "disabled"
+                            ),
+                            "cache_status": conversation_bundle.cache_status,
+                            "build_latency_ms": (
+                                conversation_bundle.build_latency_ms
+                            ),
+                        }
+                result_payload = result.model_dump(mode="json")
+                if context_usage:
+                    result_payload["context_usage"] = context_usage
+                task.result_content = result_payload
 
                 for artifact in result.artifacts:
                     db.add(
@@ -1172,6 +1260,8 @@ class TaskRunner:
                     },
                 )
                 await db.commit()
+                if self.session_compaction is not None:
+                    self._schedule_memory_summary(task.id, task.session_id)
         except ProviderCancelledError as exc:
             await self._cancel_after_exception(task_id, exc.message)
         except asyncio.CancelledError:
@@ -1189,12 +1279,111 @@ class TaskRunner:
             code = exc.code if isinstance(exc, AppError) else "background_task_error"
             await self._fail_after_exception(task_id, message, code)
 
+    def _schedule_memory_summary(self, task_id: str, session_id: str) -> None:
+        existing = self._post_tasks.get(task_id)
+        if existing is not None and not existing.done():
+            return
+        background = asyncio.create_task(
+            self._summarize_completed_task(task_id, session_id),
+            name=f"xzd-memory-{task_id}",
+        )
+        self._post_tasks[task_id] = background
+        background.add_done_callback(lambda _: self._post_tasks.pop(task_id, None))
+
+    async def _summarize_completed_task(
+        self, task_id: str, session_id: str
+    ) -> None:
+        if self.session_compaction is None:
+            return
+        lock = self._summary_locks.setdefault(session_id, asyncio.Lock())
+        try:
+            async with lock:
+                async with self.session_factory() as db:
+                    task = await TaskRepository(db).get(task_id)
+                    if task is None or task.status != TaskStatus.COMPLETED:
+                        return
+                    session = await SessionRepository(db).get_for_user(
+                        session_id, task.user_id, for_update=True
+                    )
+                    if session is None:
+                        return
+                    summary, latency_ms = (
+                        await self.session_compaction.summarize_completed_turn(
+                            db,
+                            session=session,
+                            source_task_id=task_id,
+                        )
+                    )
+                    payload = dict(task.result_content or {})
+                    usage = dict(payload.get("context_usage") or {})
+                    usage.update(
+                        {
+                            "summary_refresh_status": (
+                                "completed"
+                                if summary is not None
+                                else "not_required"
+                            ),
+                            "summary_refresh_latency_ms": latency_ms,
+                            "generated_summary_version": (
+                                summary.version if summary is not None else 0
+                            ),
+                            "summary_generation_method": (
+                                summary.generation_method
+                                if summary is not None
+                                else ""
+                            ),
+                        }
+                    )
+                    payload["context_usage"] = usage
+                    task.result_content = payload
+                    await db.commit()
+        except Exception:
+            logger.warning(
+                "post_answer_memory_degraded task_id=%s",
+                task_id,
+                exc_info=True,
+            )
+            await self._mark_summary_refresh_failed(task_id)
+        finally:
+            if not lock.locked():
+                self._summary_locks.pop(session_id, None)
+
+    async def _mark_summary_refresh_failed(self, task_id: str) -> None:
+        try:
+            async with self.session_factory() as db:
+                task = await TaskRepository(db).get(task_id)
+                if task is None:
+                    return
+                payload = dict(task.result_content or {})
+                usage = dict(payload.get("context_usage") or {})
+                usage["summary_refresh_status"] = "failed"
+                payload["context_usage"] = usage
+                task.result_content = payload
+                await db.commit()
+        except Exception:
+            logger.warning(
+                "summary_refresh_status_update_failed task_id=%s",
+                task_id,
+                exc_info=True,
+            )
+
     async def _maybe_run_academic_ct_fallback(
         self, result: AgentResult, request: AgentRequest
     ) -> AgentResult:
         """Run the frozen CT cloud baseline only for an explicit graph decision."""
 
-        target = str(result.structured_result.get("fallback_target") or "")
+        raw_decision = result.structured_result.get("fallback_decision")
+        decision = raw_decision if isinstance(raw_decision, dict) else {}
+        if not decision.get("approved"):
+            return result
+        target = str(
+            decision.get("target_agent")
+            or result.structured_result.get("fallback_target")
+            or ""
+        )
+        fallback_count = int(decision.get("fallback_count", 0) or 0)
+        if fallback_count < 1 or fallback_count > 1:
+            return result
         settings = self.knowledge_base.settings
         try:
             fallback_definition = self.agent_registry.get(target)
@@ -1234,6 +1423,9 @@ class TaskRunner:
                 "fallback_used": True,
                 "fallback_target": target,
                 "fallback_result": fallback_result.structured_result,
+                "fallback_reason": decision.get("fallback_reason"),
+                "fallback_stage": decision.get("fallback_stage"),
+                "fallback_count": fallback_count,
             }
         )
         return result.model_copy(
@@ -1264,11 +1456,314 @@ class TaskRunner:
                             (result.metrics.provider_latency_ms or 0)
                             + (fallback_result.metrics.provider_latency_ms or 0)
                         ),
+                        "fallback_count": fallback_count,
+                        "route_path": list(
+                            (
+                                result.structured_result.get(
+                                    "solver_observability", {}
+                                )
+                                or {}
+                            ).get("route_path", [])
+                        ),
                     }
                 ),
                 "cloud_status": "cloud_fallback_completed",
                 "fallback_used": True,
-                "fallback_reason": "ct_course_pack_high_risk",
+                "fallback_reason": str(
+                    decision.get("fallback_reason") or "high_risk_problem"
+                ),
+            }
+        )
+
+    async def _maybe_run_direct_model_fallback(
+        self,
+        result: AgentResult,
+        request: AgentRequest,
+        context: RetrievalContextPacket | None,
+    ) -> AgentResult:
+        """Replace an unusable solver placeholder with one direct model answer."""
+
+        if (
+            self.internal_agents is None
+            or not self.internal_agents.available("GENERAL_QUESTION_V1")
+            or not self._needs_direct_model_fallback(result)
+            or request.options.get("_direct_model_fallback_attempted")
+        ):
+            return result
+
+        primary_execution = result.structured_result.get("model_execution")
+        primary_execution = (
+            dict(primary_execution) if isinstance(primary_execution, dict) else {}
+        )
+        primary_answer_usable = (
+            str(primary_execution.get("status", "")).casefold()
+            in {"success", "partial"}
+            and bool(result.answer.strip())
+        )
+        method_reference = (
+            context.to_retrieved_context() if context is not None else ""
+        )
+        options = dict(request.options)
+        options["_direct_model_fallback_attempted"] = True
+        options["_direct_model_fallback"] = {
+            "source_agent": result.agent_id,
+            "reason": str(
+                primary_execution.get("error_type")
+                or primary_execution.get("output_status")
+                or "solver_answer_unusable"
+            ),
+            "method_reference": method_reference[:6000],
+        }
+        if primary_answer_usable:
+            options["_direct_model_fallback"]["partial_answer"] = (
+                result.answer.strip()[:24_000]
+            )
+        visual_context = result.structured_result.get("problem_summary")
+        if request.attachments and isinstance(visual_context, str):
+            normalized_visual_context = visual_context.strip()
+            if normalized_visual_context:
+                options["_direct_model_fallback"]["visual_context"] = (
+                    normalized_visual_context[:20_000]
+                )
+        fallback_request = request.model_copy(update={"options": options})
+        direct = await self.internal_agents.run(
+            "GENERAL_QUESTION_V1",
+            fallback_request,
+        )
+        direct_execution = direct.structured_result.get("model_execution")
+        direct_execution = (
+            dict(direct_execution) if isinstance(direct_execution, dict) else {}
+        )
+        direct_completed = (
+            str(direct_execution.get("status", "")).casefold() == "success"
+            and bool(direct.answer.strip())
+        )
+        direct_answer_unresolved = primary_answer_usable and any(
+            marker in direct.answer
+            for marker in (
+                "未明确指定待求量",
+                "假设输出端开路",
+                "如果题目要求的是其他量",
+            )
+        )
+        direct_completed = direct_completed and not direct_answer_unresolved
+        if not direct_completed and primary_answer_usable:
+            structured = dict(result.structured_result)
+            structured["direct_model_fallback"] = {
+                "attempted": True,
+                "completed": False,
+                "source_agent": result.agent_id,
+                "target_agent": "GENERAL_QUESTION_V1",
+                "reason": options["_direct_model_fallback"]["reason"],
+                "preserved_primary_answer": True,
+            }
+            preserved_warning = (
+                "快速直答兜底未完成，已保留专业模型已经生成的有效内容"
+            )
+            return result.model_copy(
+                update={
+                    "structured_result": structured,
+                    "business_data": structured,
+                    "warnings": [
+                        *result.warnings,
+                        *(
+                            [preserved_warning]
+                            if preserved_warning not in result.warnings
+                            else []
+                        ),
+                    ],
+                    "metrics": result.metrics.model_copy(
+                        update={
+                            "provider_latency_ms": self._sum_optional_metrics(
+                                result.metrics.provider_latency_ms,
+                                direct.metrics.provider_latency_ms,
+                            ),
+                            "model_calls": (
+                                result.metrics.model_calls
+                                + direct.metrics.model_calls
+                            ),
+                            "input_tokens": self._sum_optional_metrics(
+                                result.metrics.input_tokens,
+                                direct.metrics.input_tokens,
+                            ),
+                            "output_tokens": self._sum_optional_metrics(
+                                result.metrics.output_tokens,
+                                direct.metrics.output_tokens,
+                            ),
+                            "fallback_used": True,
+                            "fallback_count": min(
+                                2, result.metrics.fallback_count + 1
+                            ),
+                            "route_path": [
+                                *result.metrics.route_path,
+                                "GENERAL_QUESTION_V1",
+                            ],
+                        }
+                    ),
+                    "fallback_used": True,
+                }
+            )
+        fallback_reason = (
+            "academic_generation_direct_model"
+            if direct_completed
+            else "direct_general_model_unavailable"
+        )
+        structured = dict(result.structured_result)
+        structured.update(
+            {
+                "status": "completed" if direct_completed else "failed",
+                "final_answer": direct.answer,
+                "answer_text": direct.answer,
+                "primary_model_execution": primary_execution,
+                "model_execution": direct_execution,
+                "direct_model_fallback": {
+                    "attempted": True,
+                    "completed": direct_completed,
+                    "source_agent": result.agent_id,
+                    "target_agent": "GENERAL_QUESTION_V1",
+                    "reason": options["_direct_model_fallback"]["reason"],
+                },
+                "fallback_used": True,
+                "fallback_reason": fallback_reason,
+            }
+        )
+        filtered_risks = [
+            item
+            for item in result.remaining_risks
+            if "统一模型服务不可用" not in item
+            and "模型输出达到续答上限" not in item
+        ]
+        return result.model_copy(
+            update={
+                "provider": direct.provider,
+                "answer": direct.answer,
+                "structured_result": structured,
+                "business_data": structured,
+                "artifacts": [*result.artifacts, *direct.artifacts],
+                "citations": [],
+                "warnings": [*result.warnings, *direct.warnings],
+                "remaining_risks": [*filtered_risks, *direct.remaining_risks],
+                "metrics": result.metrics.model_copy(
+                    update={
+                        "provider_latency_ms": self._sum_optional_metrics(
+                            result.metrics.provider_latency_ms,
+                            direct.metrics.provider_latency_ms,
+                        ),
+                        "model_calls": (
+                            result.metrics.model_calls + direct.metrics.model_calls
+                        ),
+                        "input_tokens": self._sum_optional_metrics(
+                            result.metrics.input_tokens,
+                            direct.metrics.input_tokens,
+                        ),
+                        "output_tokens": self._sum_optional_metrics(
+                            result.metrics.output_tokens,
+                            direct.metrics.output_tokens,
+                        ),
+                        "fallback_used": True,
+                        "fallback_count": min(
+                            2, result.metrics.fallback_count + 1
+                        ),
+                        "route_path": [
+                            *result.metrics.route_path,
+                            "GENERAL_QUESTION_V1",
+                        ],
+                    }
+                ),
+                "cloud_status": direct.cloud_status,
+                "fallback_used": True,
+                "fallback_reason": fallback_reason,
+            }
+        )
+
+    @staticmethod
+    def _needs_direct_model_fallback(result: AgentResult) -> bool:
+        if result.agent_id != "ACADEMIC_PROBLEM_SOLVER":
+            return False
+        execution = result.structured_result.get("model_execution")
+        if not isinstance(execution, dict):
+            return not bool(result.answer.strip())
+        status = str(execution.get("status", "")).casefold()
+        output_status = str(execution.get("output_status", "")).casefold()
+        return status == "failed" or output_status in {"partial", "incomplete"}
+
+    @staticmethod
+    def _sum_optional_metrics(
+        first: int | None,
+        second: int | None,
+    ) -> int | None:
+        if first is None and second is None:
+            return None
+        return (first or 0) + (second or 0)
+
+    def _teaching_degraded_result(
+        self,
+        result: AgentResult,
+        request: AgentRequest,
+    ) -> AgentResult:
+        assert self.teaching_foundation is not None
+        try:
+            mode = TeachingMode(
+                str(
+                    request.options.get(
+                        "teaching_mode",
+                        TeachingMode.DIRECT_ANSWER,
+                    )
+                )
+            )
+        except ValueError:
+            mode = TeachingMode.DIRECT_ANSWER
+        policy = self.teaching_foundation.disclosure.policy(mode)
+        structured = dict(result.structured_result)
+        structured["teaching"] = {
+            "teaching_mode": mode.value,
+            "mode_status": "degraded",
+            "warning": "学习步骤核对暂时不可用，已保留本次求解结果。",
+            "student_attempt_present": isinstance(
+                request.options.get("student_attempt"),
+                dict,
+            ),
+            "requires_manual_review": True,
+        }
+        structured["teaching_loop"] = {
+            "version": "v1",
+            "status": "degraded",
+            "error_type": "teaching_enrichment_unexpected_error",
+            "disclosure_policy": policy.model_dump(mode="json"),
+        }
+        degraded = result.model_copy(
+            update={
+                "structured_result": structured,
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            *result.warnings,
+                            "学习步骤核对暂时不可用，任务已安全降级。",
+                        ]
+                    )
+                ),
+            }
+        )
+        if mode == TeachingMode.DIRECT_ANSWER:
+            return degraded
+        filtered, disclosure_ms = self.teaching_foundation.disclosure.apply(
+            degraded,
+            policy=policy,
+            hint=None,
+            next_check=None,
+            verification=None,
+        )
+        return filtered.model_copy(
+            update={
+                "metrics": filtered.metrics.model_copy(
+                    update={
+                        "teaching_mode": mode.value,
+                        "manual_review_required": True,
+                        "answer_disclosure_mode": policy.mode.value,
+                        "full_solution_disclosed": False,
+                        "disclosure_filter_ms": disclosure_ms,
+                    }
+                )
             }
         )
 
@@ -1309,6 +1804,32 @@ class TaskRunner:
         structured.update(checked.model_dump(mode="json"))
         return result.model_copy(update={"structured_result": structured})
 
+    @classmethod
+    def _academic_boundary_preflight(
+        cls,
+        request: AgentRequest,
+        agent_id: str,
+    ) -> BoundaryDecision | None:
+        if agent_id != "ACADEMIC_PROBLEM_SOLVER":
+            return None
+        problem = AcademicProblem(
+            course=request.course_id,
+            problem_text=cls._knowledge_query(request),
+            figures_given=[
+                {
+                    "file_id": item.file_id,
+                    "filename": item.filename,
+                    "content_type": item.content_type,
+                }
+                for item in request.attachments
+                if item.content_type.startswith("image/")
+            ],
+        )
+        decision = SolverBoundaryPolicy().evaluate(problem)
+        if decision.intercepted and not decision.can_continue:
+            return decision
+        return None
+
     async def _retrieve_knowledge(
         self,
         request: AgentRequest,
@@ -1336,7 +1857,7 @@ class TaskRunner:
                         attachment.storage_key
                     )
             if self.rag_retrieval is not None:
-                result = await asyncio.to_thread(
+                retrieval = asyncio.to_thread(
                     self.rag_retrieval.search,
                     query_text=query,
                     query_image=image,
@@ -1357,6 +1878,13 @@ class TaskRunner:
                     ),
                     local_budget_ms=plan.budget.retrieval_p95_target_ms,
                 )
+                if agent_definition.agent_id == "ACADEMIC_PROBLEM_SOLVER":
+                    async with asyncio.timeout(
+                        self.knowledge_base.settings.academic_solver_retrieval_timeout_seconds
+                    ):
+                        result = await retrieval
+                else:
+                    result = await retrieval
                 return result, True
             return (
                 await asyncio.to_thread(
@@ -1367,6 +1895,16 @@ class TaskRunner:
                 ),
                 True,
             )
+        except TimeoutError:
+            logger.warning(
+                "knowledge_retrieval_time_budget_exhausted task_id=%s "
+                "session_id=%s course_id=%s timeout_seconds=%s",
+                request.task_id,
+                request.session_id,
+                request.course_id,
+                self.knowledge_base.settings.academic_solver_retrieval_timeout_seconds,
+            )
+            return None, True
         except Exception as exc:
             logger.warning(
                 "knowledge_retrieval_failed task_id=%s session_id=%s "
@@ -1558,6 +2096,18 @@ class TaskRunner:
         return request.model_copy(update={"options": options})
 
     @staticmethod
+    def _with_upstream_elapsed(
+        request: AgentRequest,
+        runner_started: float,
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options["_upstream_elapsed_seconds"] = max(
+            0.0,
+            perf_counter() - runner_started,
+        )
+        return request.model_copy(update={"options": options})
+
+    @staticmethod
     def _with_conversation_context(
         request: AgentRequest, bundle: ConversationContextBundle
     ) -> AgentRequest:
@@ -1745,6 +2295,99 @@ class TaskRunner:
                 data={"mode": "retrieval_only"},
             )
             await db.commit()
+
+    async def _record_initial_attempt(
+        self,
+        db: AsyncSession,
+        *,
+        task: TaskModel,
+        request: AgentRequest,
+        result: AgentResult,
+    ) -> None:
+        """Persist explicit student work without copying it into session state."""
+
+        raw_attempt = request.options.get("student_attempt")
+        if self.learning_outcome is None or not isinstance(raw_attempt, dict):
+            return
+        attempt = StudentAttempt.model_validate(raw_attempt)
+        structured = result.structured_result
+        raw_report = structured.get("verification_report_v1")
+        teaching_loop = structured.get("teaching_loop")
+        if not isinstance(raw_report, dict) and isinstance(teaching_loop, dict):
+            raw_report = teaching_loop.get("verification")
+        verification_report = (
+            dict(raw_report) if isinstance(raw_report, dict) else {}
+        )
+        model = await self.student_attempts.create(
+            db,
+            task=task,
+            user_id=task.user_id,
+            idempotency_key=f"{task.id}:initial-attempt",
+            attempt=attempt,
+            teaching_mode=TeachingMode(
+                str(
+                    request.options.get(
+                        "teaching_mode", TeachingMode.DIRECT_ANSWER
+                    )
+                )
+            ),
+            # The response hint is generated after this first submission.
+            hint_level_used=None,
+            full_solution_seen=False,
+            verification_report=verification_report,
+        )
+        packet = structured.get("solution_packet")
+        skill_ids = (
+            [str(item) for item in packet.get("skill_ids", [])]
+            if isinstance(packet, dict)
+            else []
+        )
+        outcome = await self.learning_outcome.process_attempt(
+            db,
+            task=task,
+            attempt=model,
+            skill_ids=skill_ids,
+        )
+        due_retests = await self.learning_outcome.retests.list(
+            db,
+            user_id=task.user_id,
+            status="due",
+            offset=0,
+            limit=100,
+        )
+        result.metrics = result.metrics.model_copy(
+            update={
+                "attempt_sequence": int(model.attempt_sequence or 0),
+                "attempt_revision_created": False,
+                "due_retest_count": len(due_retests),
+                **outcome.metrics,
+            }
+        )
+        result.structured_result["learning_outcome"] = {
+            "attempt_id": model.id,
+            "attempt_sequence": model.attempt_sequence,
+            "mastery_evidence_types": [
+                item.evidence_type.value for item in outcome.evidence
+            ],
+            "retest_plan_ids": [
+                item.retest_plan_id for item in outcome.retest_plans
+            ],
+        }
+        await SessionWorkingStateService(db).update_phase3(
+            task,
+            current_attempt_id=model.id,
+            previous_attempt_id=None,
+            attempt_sequence=int(model.attempt_sequence or 0),
+            feedback_uptake_status=None,
+            mastery_evidence_type=(
+                outcome.evidence[0].evidence_type.value
+                if outcome.evidence
+                else None
+            ),
+            pending_retest_plan_ids=[
+                item.retest_plan_id for item in outcome.retest_plans
+            ],
+        )
 
     async def _mark_cancelled(
         self, db: AsyncSession, task_id: str, reason: str

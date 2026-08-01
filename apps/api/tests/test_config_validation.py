@@ -38,3 +38,25 @@ def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:
             _env_file=None,
             xingchen_timeout_seconds=601,
         )
+
+
+def test_academic_solver_complex_deadlines_are_extended_but_bounded() -> None:
+    settings = Settings(app_env="test", _env_file=None)
+
+    assert (
+        settings.academic_solver_complex_soft_deadline_seconds,
+        settings.academic_solver_complex_finalization_deadline_seconds,
+        settings.academic_solver_complex_hard_deadline_seconds,
+    ) == (200, 225, 235)
+
+    with pytest.raises(
+        ValidationError,
+        match="complex solver deadlines must satisfy",
+    ):
+        Settings(
+            app_env="test",
+            _env_file=None,
+            academic_solver_complex_soft_deadline_seconds=230,
+            academic_solver_complex_finalization_deadline_seconds=220,
+            academic_solver_complex_hard_deadline_seconds=235,
+        )

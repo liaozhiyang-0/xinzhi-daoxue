@@ -201,6 +201,20 @@ class KnowledgeBaseService:
     ) -> list[KnowledgeHit]:
         return self.search_result(query, course_ids, top_k).hits
 
+    def source_content(self, source_ref: str) -> str | None:
+        """Return the exact indexed excerpt for a validated kb:// reference."""
+
+        self._ensure_loaded()
+        with self._lock:
+            return next(
+                (
+                    chunk.content
+                    for chunk in self._chunks
+                    if chunk.source_ref == source_ref
+                ),
+                None,
+            )
+
     def search_baseline(
         self,
         query: str,

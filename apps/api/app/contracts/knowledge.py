@@ -151,6 +151,49 @@ class KnowledgeHit(BaseModel):
     related_images: list[RelatedImage] = Field(default_factory=list)
 
 
+class EvidenceSourceV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    document_id: str
+    chunk_id: str
+    course_id: str | None = None
+    chapter: str | None = None
+    section: str | None = None
+    page: int | None = Field(default=None, ge=1)
+    title: str | None = None
+    content_excerpt: str
+    source_ref: str | None = None
+    applicable_skill_ids: list[str] = Field(default_factory=list)
+    retrieval_score: float | None = Field(default=None, ge=0)
+    rerank_score: float | None = None
+    score_components: dict[str, float] = Field(default_factory=dict)
+    document_checksum: str | None = None
+    source_version: str | None = None
+    support_level: Literal[
+        "retrieved",
+        "potentially_relevant",
+        "supports_claim",
+        "conflicts",
+        "unknown",
+    ]
+    image_refs: list[str] = Field(default_factory=list)
+
+
+class EvidencePacketV1(BaseModel):
+    """Bounded retrieval evidence; relevance is not proof of a conclusion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    query: str
+    course_id: str | None = None
+    retrieval_status: str
+    evidence_sufficiency: str
+    sources: list[EvidenceSourceV1] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RetrievalResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -242,6 +285,24 @@ class KnowledgeSearchResponse(BaseModel):
     query: str
     hits: list[KnowledgeHit] = Field(default_factory=list)
     sources: list[KnowledgeSourceStatus] = Field(default_factory=list)
+
+
+class KnowledgeDocumentPage(BaseModel):
+    """A bounded page from a local source document with anchor metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_ref: str
+    course_id: str
+    relative_path: str
+    requested_chunk: str = ""
+    content: str
+    total_chars: int = Field(ge=0)
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    previous_offset: int | None = Field(default=None, ge=0)
+    next_offset: int | None = Field(default=None, ge=0)
+    anchor_status: Literal["matched", "not_found", "not_requested"]
 
 
 def utc_now() -> datetime:

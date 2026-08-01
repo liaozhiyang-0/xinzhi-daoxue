@@ -203,6 +203,71 @@ def test_multimodal_rrf_text_to_image_image_to_image_and_rerank(
     service.close()
 
 
+def test_retrieval_warmup_loads_enabled_models_before_first_query(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path).model_copy(
+        update={
+            "rag_warmup_image_model": True,
+            "rag_warmup_reranker": True,
+        }
+    )
+    text = DeterministicFakeTextEmbeddingProvider()
+    image = DeterministicFakeImageEmbeddingProvider()
+    reranker = DeterministicFakeReranker()
+    service = RAGRetrievalService(
+        config,
+        KnowledgeBaseService(config),
+        text,
+        image,
+        reranker,
+        store_for(config),
+    )
+
+    result = service.warmup()
+    health = service.health()
+
+    assert result["status"] == "ready"
+    assert result["failed_components"] == []
+    assert set(result["components"]) == {"text", "image", "reranker"}
+    assert text.loaded and image.loaded and reranker.loaded
+    assert health["warmup"]["status"] == "ready"
+    assert health["text_model_loaded"] is True
+    assert health["image_model_loaded"] is True
+    assert health["reranker_loaded"] is True
+    service.close()
+
+
+def test_retrieval_warmup_reports_optional_model_failure(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path).model_copy(
+        update={
+            "rag_warmup_image_model": True,
+            "rag_warmup_reranker": False,
+            "rag_warmup_strict": False,
+        }
+    )
+    service = RAGRetrievalService(
+        config,
+        KnowledgeBaseService(config),
+        DeterministicFakeTextEmbeddingProvider(),
+        DeterministicFakeImageEmbeddingProvider(fail=True),
+        DeterministicFakeReranker(),
+        store_for(config),
+    )
+
+    result = service.warmup()
+
+    assert result["status"] == "degraded"
+    assert result["failed_components"] == ["image"]
+    assert result["components"]["text"]["warmup_status"] == "ready"
+    assert result["components"]["image"]["warmup_status"] == "failed"
+    assert service.health()["rag_status"] == "degraded"
+    assert "image_model_not_loaded" in service.health()["degraded_reasons"]
+    service.close()
+
+
 def test_failed_model_is_explicitly_degraded_without_hash_fallback(
     tmp_path: Path,
 ) -> None:

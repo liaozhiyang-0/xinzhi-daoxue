@@ -1,6 +1,12 @@
 import math
+import sys
+from types import SimpleNamespace
 
 from app.providers.embedding import HashLegacyEmbeddingProvider
+from app.services.rag_providers import (
+    LocalBGETextEmbeddingProvider,
+    LocalSigLIP2ImageEmbeddingProvider,
+)
 
 
 def test_legacy_hash_embedding_is_deterministic_and_normalized() -> None:
@@ -13,3 +19,96 @@ def test_legacy_hash_embedding_is_deterministic_and_normalized() -> None:
     assert len(first) == 64
     assert math.isclose(sum(value * value for value in first), 1.0)
     assert provider.health().reason == "legacy_embedding_fallback=true"
+
+
+def test_local_text_model_load_does_not_probe_the_network(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSentenceTransformer:
+        tokenizer = SimpleNamespace(model_max_length=512)
+
+        def __init__(self, model_name: str, **kwargs: object) -> None:
+            captured["model_name"] = model_name
+            captured.update(kwargs)
+
+        def _first_module(self) -> object:
+            config = SimpleNamespace(
+                max_position_embeddings=512,
+                _commit_hash="local-revision",
+            )
+            return SimpleNamespace(auto_model=SimpleNamespace(config=config))
+
+        def get_embedding_dimension(self) -> int:
+            return 384
+
+        get_sentence_embedding_dimension = get_embedding_dimension
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+    provider = LocalBGETextEmbeddingProvider(
+        model_name="local/text",
+        revision="revision",
+        device="cpu",
+        batch_size=1,
+        normalize=True,
+        max_length=512,
+        cache_dir=None,
+        trust_remote_code=False,
+        local_files_only=True,
+    )
+
+    provider.load()
+
+    assert captured["local_files_only"] is True
+
+
+def test_local_image_model_load_does_not_probe_the_network(monkeypatch) -> None:
+    processor_kwargs: dict[str, object] = {}
+    model_kwargs: dict[str, object] = {}
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(
+            cls, model_name: str, **kwargs: object
+        ) -> object:
+            processor_kwargs["model_name"] = model_name
+            processor_kwargs.update(kwargs)
+            return cls()
+
+    class FakeModel:
+        config = SimpleNamespace(projection_dim=768, _commit_hash="local-revision")
+
+        @classmethod
+        def from_pretrained(cls, model_name: str, **kwargs: object) -> object:
+            model_kwargs["model_name"] = model_name
+            model_kwargs.update(kwargs)
+            return cls()
+
+        def to(self, _device: str) -> object:
+            return self
+
+        def eval(self) -> None:
+            return None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(AutoModel=FakeModel, AutoProcessor=FakeProcessor),
+    )
+    provider = LocalSigLIP2ImageEmbeddingProvider(
+        model_name="local/image",
+        revision="revision",
+        device="cpu",
+        batch_size=1,
+        normalize=True,
+        cache_dir=None,
+        local_files_only=True,
+    )
+
+    provider.load()
+
+    assert processor_kwargs["local_files_only"] is True
+    assert model_kwargs["local_files_only"] is True

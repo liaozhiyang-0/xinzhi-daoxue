@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 
+from app.contracts import ModelResponse
 from app.contracts.conversation import (
     ContextMessage,
     ConversationContextBundle,
@@ -202,24 +205,173 @@ def test_follow_up_uses_same_session_context_and_explicit_memory(api) -> None:
     assert context["estimated_tokens"] > 0
 
 
-def test_compaction_creates_versioned_summary_without_extra_model_call(
+def test_auto_memory_opt_in_is_used_by_the_next_task(api) -> None:
+    session = api.create_session()
+    updated = api.client.patch(
+        f"/api/v1/sessions/{session['id']}",
+        json={
+            "user_id": "user-test",
+            "memory_enabled": True,
+            "auto_memory_enabled": True,
+        },
+    )
+    assert updated.status_code == 200
+
+    preference = api.task_payload(
+        session["id"],
+        intent="general_qa",
+        options={"use_local_rag": False},
+    )
+    preference["canonical_input"] = {
+        "text": "我希望讲解时先给思路再给答案"
+    }
+    created = api.client.post("/api/v1/tasks", json=preference)
+    assert created.status_code == 202, created.text
+    completed = api.wait_for_task(created.json()["id"])
+    usage = completed["result_content"]["context_usage"]
+    assert usage["memory_action"] == "auto_remembered"
+    assert usage["memory_write_count"] == 1
+
+    memories = api.client.get(
+        "/api/v1/memories",
+        params={"user_id": "user-test"},
+    ).json()
+    assert len(memories) == 1
+    assert memories[0]["content"] == "我希望讲解时先给思路再给答案"
+    assert memories[0]["content_data"]["capture_mode"] == "automatic_opt_in"
+
+    follow_up = api.create_task(
+        session["id"],
+        options={"use_local_rag": False},
+    )
+    follow_up_completed = api.wait_for_task(follow_up["id"])
+    follow_up_usage = follow_up_completed["result_content"]["context_usage"]
+    assert follow_up_usage["active_memory_count"] == 1
+    assert follow_up_usage["active_memory_ids"] == [memories[0]["memory_id"]]
+
+
+def test_academic_boundary_preflight_skips_unnecessary_retrieval(api) -> None:
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        intent="solve_problem",
+        options={"use_local_rag": True},
+    )
+    payload["course_id"] = "CT"
+    payload["canonical_input"] = {
+        "text": "所示电路没有附电路图，缺少元件参数和连接关系，请直接计算。"
+    }
+
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"])
+    result = completed["result_content"]
+
+    assert result["metrics"]["retrieval_calls"] == 0
+    assert result["structured_result"]["retrieval_preflight"] == {
+        "status": "skipped",
+        "reason": "missing_figure",
+        "saved_stage": "knowledge_retrieval",
+    }
+
+
+def test_each_completed_answer_runs_background_model_summary_for_next_turn(
     api, app
 ) -> None:
-    app.state.settings.context_summary_message_trigger = 4
-    app.state.settings.context_recent_message_limit = 2
-    session = api.create_session()
-    for _ in range(2):
-        task = api.create_task(session["id"])
-        completed = api.wait_for_task(task["id"])
-    assert completed["result_content"]["metrics"]["compaction_count"] == 1
-    baseline_model_calls = completed["result_content"]["metrics"]["model_calls"]
+    class SummaryModel:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
 
-    third = api.create_task(session["id"])
-    third_completed = api.wait_for_task(third["id"])
-    metrics = third_completed["result_content"]["metrics"]
+        async def generate_json_for_task(
+            self,
+            task_type: str,
+            *,
+            messages: list[dict[str, object]],
+            request_id: str,
+            schema: object,
+        ) -> ModelResponse:
+            del messages, schema
+            self.calls.append(request_id)
+            return ModelResponse(
+                provider="test",
+                model="summary-test",
+                content=json.dumps(
+                    {
+                        "summary": "用户正在求解电路问题。",
+                        "current_goal": "继续完成电路计算",
+                        "key_facts": ["题目属于电路理论"],
+                        "explicit_user_preferences": [
+                            "回答公式统一使用 LaTeX"
+                        ],
+                        "unresolved_items": ["继续确认电流"],
+                    },
+                    ensure_ascii=False,
+                ),
+                elapsed_ms=3,
+            )
+
+    summary_model = SummaryModel()
+    app.state.session_compaction.model_service = summary_model
+    session = api.create_session()
+    updated = api.client.patch(
+        f"/api/v1/sessions/{session['id']}",
+        json={
+            "user_id": "user-test",
+            "memory_enabled": True,
+            "auto_memory_enabled": True,
+        },
+    )
+    assert updated.status_code == 200
+
+    first = api.create_task(session["id"])
+    first_completed = api.wait_for_task(first["id"])
+    assert first_completed["result_content"]["context_usage"][
+        "summary_refresh_status"
+    ] in {"queued", "completed"}
+
+    deadline = time.monotonic() + 3
+    first_summary = None
+    while time.monotonic() < deadline:
+        response = api.client.get(
+            f"/api/v1/sessions/{session['id']}/summary",
+            params={"user_id": "user-test"},
+        )
+        assert response.status_code == 200
+        first_summary = response.json()
+        if first_summary is not None:
+            break
+        time.sleep(0.02)
+    assert first_summary["version"] == 1
+    assert first_summary["generation_method"] == "model"
+    assert first_summary["model_name"] == "summary-test"
+    memories = api.client.get(
+        "/api/v1/memories",
+        params={"user_id": "user-test"},
+    ).json()
+    assert memories[0]["content"] == "回答公式统一使用 LaTeX"
+    assert (
+        memories[0]["content_data"]["capture_mode"]
+        == "model_summary_explicit_preference"
+    )
+
+    second = api.create_task(session["id"])
+    second_completed = api.wait_for_task(second["id"])
+    metrics = second_completed["result_content"]["metrics"]
     assert metrics["session_summary_used"] is True
     assert metrics["summary_version"] == 1
-    assert metrics["model_calls"] == baseline_model_calls
+
+    deadline = time.monotonic() + 3
+    second_summary = first_summary
+    while time.monotonic() < deadline:
+        second_summary = api.client.get(
+            f"/api/v1/sessions/{session['id']}/summary",
+            params={"user_id": "user-test"},
+        ).json()
+        if second_summary["version"] == 2:
+            break
+        time.sleep(0.02)
+    assert second_summary["version"] == 2
+    assert len(summary_model.calls) == 2
 
 
 def test_context_cache_falls_back_to_bounded_memory(settings: Settings) -> None:

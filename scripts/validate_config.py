@@ -9,7 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.agents import AgentRegistry  # noqa: E402
+from app.capabilities import default_capability_registry  # noqa: E402
 from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # noqa: E402
+from app.courses import default_course_registry  # noqa: E402
+from app.services.error_pool import ErrorPoolRegistry  # noqa: E402
+from app.services.learning_outcome import LearningOutcomeService  # noqa: E402
+from app.services.skill_registry import SkillRegistry  # noqa: E402
 
 
 def safe_status(value: str, *, required: bool) -> str:
@@ -20,6 +25,12 @@ def safe_status(value: str, *, required: bool) -> str:
 
 def validate(settings: Settings) -> dict[str, object]:
     registry = AgentRegistry()
+    skill_registry = SkillRegistry(
+        default_course_registry(),
+        default_capability_registry(),
+    )
+    error_pool_registry = ErrorPoolRegistry()
+    learning_outcome = LearningOutcomeService()
     return {
         "valid": True,
         "app_env": settings.app_env,
@@ -88,6 +99,26 @@ def validate(settings: Settings) -> dict[str, object]:
             "chunk_size_chars": settings.knowledge_chunk_size_chars,
             "chunk_overlap_chars": settings.knowledge_chunk_overlap_chars,
             "default_top_k": settings.knowledge_default_top_k,
+        },
+        "teaching_foundation": {
+            "supported_courses": ["CT", "AE", "DE"],
+            "skills": {
+                course_id: len(skill_registry.list_for_course(course_id))
+                for course_id in ("CT", "AE", "DE")
+            },
+            "reviewed_error_templates": {
+                course_id: len(error_pool_registry.list_for_course(course_id))
+                for course_id in ("CT", "AE", "DE")
+            },
+        },
+        "teaching_loop_phase3": {
+            "mastery_policy_version": str(learning_outcome.config["version"]),
+            "calibration_status": learning_outcome.config["calibration_status"],
+            "evidence_rules": len(
+                learning_outcome.config["evidence_updates"]
+            ),
+            "active_scheduler": False,
+            "feedback_uptake_model_enabled": False,
         },
     }
 

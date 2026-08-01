@@ -36,6 +36,34 @@ _UNIT_SCALE = {
     "s": 1.0,
     "W": 1.0,
 }
+_KEYWORD_EQUIVALENTS = {
+    "缺少": ("缺少", "缺失", "未提供", "未给出", "信息不足"),
+}
+_SOLUTION_CLAIM_FIELDS = (
+    "final_answer",
+    "final_answer_detail",
+    "solution_steps",
+    "intermediate_results",
+    "verification",
+    "verification_report",
+    "professional_validation",
+    "assumptions",
+    "remaining_risks",
+)
+_NEGATION_MARKERS = (
+    "不能",
+    "不可",
+    "不应",
+    "不得",
+    "并非",
+    "不成立",
+    "不能推出",
+    "无法保证",
+    "错误",
+    "矛盾",
+    "拒绝",
+)
+_HINT_LEVELS = {"H0": 0, "H1": 1, "H2": 2}
 
 
 def normalize_text(value: Any) -> str:
@@ -68,6 +96,7 @@ class EvaluationScorer:
         searchable = normalize_text(
             "\n".join((answer, json.dumps(structured, ensure_ascii=False)))
         )
+        safety_searchable = self._safety_searchable(answer, structured)
         task_families = {str(item) for item in actual.get("task_families", [])}
         route_passed = (
             case.task_family in task_families
@@ -86,16 +115,23 @@ class EvaluationScorer:
         )
         missing_keywords = [
             item
-            for item in [*case.required_keywords, *case.required_equations]
-            if normalize_text(item) not in searchable
+            for item in case.required_keywords
+            if not self._keyword_present(item, searchable)
         ]
+        missing_keywords.extend(
+            item
+            for item in case.required_equations
+            if normalize_text(item) not in searchable
+        )
         missing_steps = [
             item
             for item in case.required_steps
             if normalize_text(item) not in searchable
         ]
         forbidden = [
-            item for item in case.forbidden_claims if normalize_text(item) in searchable
+            item
+            for item in case.forbidden_claims
+            if self._forbidden_claim_present(item, safety_searchable)
         ]
         numeric = self._numeric_comparisons(case, actual, structured)
         numeric_passed = all(item["passed"] for item in numeric)
@@ -107,6 +143,10 @@ class EvaluationScorer:
         tools_passed = not tool_mismatches
         citations_passed, citation_errors = self._citations_passed(case, actual)
         insufficient_passed = self._insufficient_passed(case, actual, searchable)
+        (
+            teaching_foundation_passed,
+            teaching_advisories,
+        ) = self._teaching_foundation_assessment(case, actual)
         answer_passed = (
             status_passed
             and not missing_keywords
@@ -124,6 +164,7 @@ class EvaluationScorer:
             answer_passed,
             citations_passed,
             safety_passed,
+            teaching_foundation_passed,
         )
         dimension_scores = {
             "routing": 100.0
@@ -135,6 +176,9 @@ class EvaluationScorer:
             "units": 100.0 if answer_passed else 0.0,
             "citations": 100.0 if citations_passed else 0.0,
             "safety": 100.0 if safety_passed and tools_passed else 0.0,
+            "teaching_foundation": (
+                100.0 if teaching_foundation_passed else 0.0
+            ),
         }
         weights = case.rubric.model_dump()
         weight_total = sum(float(value) for value in weights.values()) or 1.0
@@ -157,6 +201,7 @@ class EvaluationScorer:
             tool_mismatches=tool_mismatches,
             citation_errors=citation_errors,
             insufficient_passed=insufficient_passed,
+            teaching_foundation_passed=teaching_foundation_passed,
         )
         failure_stage = self._failure_stage(error_types)
         return EvaluationResult(
@@ -179,6 +224,33 @@ class EvaluationScorer:
                 "course_pack": case.expected_course_pack,
                 "execution_paths": case.expected_execution_paths,
                 "statuses": case.expected_statuses,
+                "teaching_foundation": {
+                    key: getattr(case, key)
+                    for key in (
+                        "student_attempt_parsed",
+                        "teaching_mode_respected",
+                        "solution_packet_valid",
+                        "skill_mapping_valid",
+                        "evidence_packet_valid",
+                        "error_pool_match_valid",
+                        "answer_disclosure_compliant",
+                        "requires_manual_review",
+                        "expected_teaching_execution_path",
+                        "verification_report_valid",
+                        "expected_verification_status",
+                        "expected_error_type",
+                        "expected_hint_level",
+                        "expected_disclosure_mode",
+                        "next_check_valid",
+                        "solution_packet_reused",
+                        "full_solution_disclosed",
+                        "no_additional_model_calls",
+                        "first_confirmed_error_found",
+                        "cross_user_isolated",
+                    )
+                    if getattr(case, key) is not None
+                },
+                "skill_ids": case.expected_skill_ids,
             },
             actual=actual,
             missing_keywords=missing_keywords,
@@ -188,7 +260,10 @@ class EvaluationScorer:
             tool_mismatches=tool_mismatches,
             failure_stage=failure_stage,
             error_types=error_types,
-            warnings=[str(item) for item in actual.get("warnings", [])],
+            warnings=[
+                *[str(item) for item in actual.get("warnings", [])],
+                *teaching_advisories,
+            ],
             elapsed_ms=elapsed_ms,
             model_calls=model_calls,
             tool_calls=tool_calls,
@@ -369,6 +444,99 @@ class EvaluationScorer:
         return bool(assumptions or risks) and conditional
 
     @staticmethod
+    def _keyword_present(keyword: str, searchable: str) -> bool:
+        normalized = normalize_text(keyword)
+        equivalents = _KEYWORD_EQUIVALENTS.get(normalized, (normalized,))
+        return any(normalize_text(item) in searchable for item in equivalents)
+
+    @staticmethod
+    def _safety_searchable(answer: str, structured: dict[str, Any]) -> str:
+        solution_claims = {
+            key: structured[key]
+            for key in _SOLUTION_CLAIM_FIELDS
+            if key in structured
+        }
+        return normalize_text(
+            "\n".join(
+                (
+                    answer,
+                    json.dumps(solution_claims, ensure_ascii=False),
+                )
+            )
+        )
+
+    @staticmethod
+    def _forbidden_claim_present(claim: str, searchable: str) -> bool:
+        normalized_claim = normalize_text(claim)
+        if not normalized_claim:
+            return False
+        start = 0
+        while True:
+            index = searchable.find(normalized_claim, start)
+            if index < 0:
+                return False
+            context_end = index + len(normalized_claim) + 12
+            context = searchable[max(0, index - 18) : context_end]
+            if not any(marker in context for marker in _NEGATION_MARKERS):
+                return True
+            start = index + len(normalized_claim)
+
+    @staticmethod
+    def _teaching_foundation_assessment(
+        case: EvaluationCase, actual: dict[str, Any]
+    ) -> tuple[bool, list[str]]:
+        advisories: list[str] = []
+        fields = (
+            "student_attempt_parsed",
+            "teaching_mode_respected",
+            "solution_packet_valid",
+            "skill_mapping_valid",
+            "evidence_packet_valid",
+            "error_pool_match_valid",
+            "answer_disclosure_compliant",
+            "requires_manual_review",
+            "expected_teaching_execution_path",
+            "verification_report_valid",
+            "expected_verification_status",
+            "expected_error_type",
+            "expected_disclosure_mode",
+            "next_check_valid",
+            "solution_packet_reused",
+            "full_solution_disclosed",
+            "no_additional_model_calls",
+            "first_confirmed_error_found",
+            "cross_user_isolated",
+        )
+        for field in fields:
+            expected = getattr(case, field)
+            if expected is None:
+                continue
+            observed = actual.get(field)
+            if isinstance(expected, bool):
+                if bool(observed) is not expected:
+                    return False, advisories
+            elif str(observed) != str(expected):
+                return False, advisories
+        if case.expected_hint_level is not None:
+            expected_hint = str(case.expected_hint_level).upper()
+            observed_hint = str(actual.get("expected_hint_level", "")).upper()
+            if expected_hint in _HINT_LEVELS and observed_hint in _HINT_LEVELS:
+                if _HINT_LEVELS[observed_hint] > _HINT_LEVELS[expected_hint]:
+                    return False, advisories
+                if _HINT_LEVELS[observed_hint] < _HINT_LEVELS[expected_hint]:
+                    advisories.append(
+                        "conservative_hint_level:"
+                        f"{observed_hint}<expected:{expected_hint}"
+                    )
+            elif observed_hint != expected_hint:
+                return False, advisories
+        if case.expected_skill_ids and not set(case.expected_skill_ids).issubset(
+            {str(item) for item in actual.get("skill_ids", [])}
+        ):
+            return False, advisories
+        return True, advisories
+
+    @staticmethod
     def _errors(**values: Any) -> list[EvaluationErrorType]:
         errors: list[EvaluationErrorType] = []
         mapping = {
@@ -391,6 +559,8 @@ class EvaluationScorer:
             errors.append(EvaluationErrorType.FORBIDDEN_CLAIM)
         if any(not item["passed"] for item in values["numeric"]):
             errors.append(EvaluationErrorType.NUMERIC_MISMATCH)
+        if not values["teaching_foundation_passed"]:
+            errors.append(EvaluationErrorType.TEACHING_FOUNDATION_MISMATCH)
         reason_map = {
             "tool_disabled": EvaluationErrorType.TOOL_DISABLED,
             "not_selected": EvaluationErrorType.TOOL_NOT_SELECTED,
@@ -443,6 +613,10 @@ class EvaluationScorer:
                 FailureStage.CITATION_VALIDATION,
             ),
             ({EvaluationErrorType.FORBIDDEN_CLAIM}, FailureStage.VERIFICATION),
+            (
+                {EvaluationErrorType.TEACHING_FOUNDATION_MISMATCH},
+                FailureStage.VERIFICATION,
+            ),
             (
                 {
                     EvaluationErrorType.STATUS_MISMATCH,

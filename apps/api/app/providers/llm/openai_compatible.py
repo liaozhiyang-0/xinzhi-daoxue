@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from time import perf_counter
@@ -83,6 +84,98 @@ class OpenAICompatibleProvider:
             raise self._translate_error(
                 exc, model=str(kwargs.get("model", ""))
             ) from exc
+
+    async def _create_streaming_response(
+        self,
+        *,
+        model: str,
+        kwargs: dict[str, Any],
+        started: float,
+        total_timeout_seconds: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> ModelResponse:
+        content_parts: list[str] = []
+        usage: ModelUsage | None = None
+        finish_reason: str | None = None
+        provider_request_id: str | None = None
+        response_model = model
+        reasoning_present = False
+        chunk_count = 0
+
+        async def consume() -> None:
+            nonlocal chunk_count, finish_reason, provider_request_id
+            nonlocal reasoning_present, response_model, usage
+            stream = await self._get_client().chat.completions.create(
+                **kwargs,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            async for chunk in stream:
+                chunk_count += 1
+                response_model = str(getattr(chunk, "model", None) or response_model)
+                chunk_extra = getattr(chunk, "model_extra", None)
+                sid = chunk_extra.get("sid") if isinstance(chunk_extra, dict) else None
+                provider_request_id = (
+                    str(sid or getattr(chunk, "id", None) or provider_request_id or "")
+                    or None
+                )
+                chunk_usage = self._usage(getattr(chunk, "usage", None))
+                if chunk_usage is not None:
+                    usage = chunk_usage
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                choice_finish_reason = getattr(choice, "finish_reason", None)
+                if choice_finish_reason:
+                    finish_reason = str(choice_finish_reason)
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+                reasoning = getattr(delta, "reasoning_content", None)
+                delta_extra = getattr(delta, "model_extra", None)
+                if reasoning is None and isinstance(delta_extra, dict):
+                    reasoning = delta_extra.get("reasoning_content")
+                reasoning_present = reasoning_present or bool(reasoning)
+                content = getattr(delta, "content", None)
+                if content:
+                    content_parts.append(str(content))
+
+        try:
+            async with asyncio.timeout(total_timeout_seconds):
+                await consume()
+        except TimeoutError as exc:
+            raise ModelTimeoutError(
+                "模型流式请求超过总时间预算",
+                provider=self.provider_name,
+                model=model,
+                details={
+                    "response_transport": "stream",
+                    "stream_total_timeout_seconds": total_timeout_seconds,
+                    "stream_chunk_count": chunk_count,
+                    "partial_content_chars": sum(len(item) for item in content_parts),
+                },
+            ) from exc
+        except Exception as exc:
+            raise self._translate_error(exc, model=model) from exc
+
+        return ModelResponse(
+            provider=self.provider_name,
+            model=response_model,
+            content="".join(content_parts),
+            reasoning_content=None,
+            usage=usage,
+            provider_request_id=provider_request_id,
+            elapsed_ms=max(0, int((perf_counter() - started) * 1000)),
+            finish_reason=finish_reason,
+            raw_metadata={
+                "reasoning_present": reasoning_present,
+                "response_transport": "stream",
+                "stream_chunk_count": chunk_count,
+                "stream_total_timeout_seconds": total_timeout_seconds,
+                **(metadata or {}),
+            },
+        )
 
     def _response_from_completion(
         self,

@@ -1,0 +1,93 @@
+version: "1.0"
+course_id: "AE"
+skills:
+  - skill_id: "AE.DIODE_REGION"
+    title: "二极管工作状态"
+    course_id: "AE"
+    chapter: "diode"
+    prerequisites: []
+    problem_types: ["diode_circuit"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["diode_region_error"]
+    keywords: ["二极管导通", "二极管截止"]
+  - skill_id: "AE.BJT_REGION"
+    title: "BJT工作区"
+    course_id: "AE"
+    chapter: "bjt"
+    prerequisites: []
+    problem_types: ["bjt_bias"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["bjt_region_error"]
+    keywords: ["BJT工作区", "三极管工作区"]
+  - skill_id: "AE.MOS_REGION"
+    title: "MOS工作区"
+    course_id: "AE"
+    chapter: "mos"
+    prerequisites: []
+    problem_types: ["mos_bias"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["mos_region_error"]
+    keywords: ["MOS工作区"]
+  - skill_id: "AE.Q_POINT"
+    title: "静态工作点"
+    course_id: "AE"
+    chapter: "bias"
+    prerequisites: ["AE.BJT_REGION"]
+    problem_types: ["bjt_bias"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["q_point_region_mismatch"]
+    keywords: ["静态工作点", "Q点"]
+  - skill_id: "AE.SMALL_SIGNAL"
+    title: "小信号模型"
+    course_id: "AE"
+    chapter: "small_signal"
+    prerequisites: ["AE.Q_POINT"]
+    problem_types: ["small_signal_amplifier"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["small_signal_prerequisite_missing"]
+    keywords: ["小信号模型"]
+  - skill_id: "AE.VOLTAGE_GAIN"
+    title: "电压增益"
+    course_id: "AE"
+    chapter: "amplifier"
+    prerequisites: ["AE.SMALL_SIGNAL"]
+    problem_types: ["small_signal_amplifier"]
+    capability_ids: ["circuit_analysis", "algebra"]
+    common_error_signatures: ["gain_sign_error"]
+    keywords: ["电压增益"]
+  - skill_id: "AE.INPUT_RESISTANCE"
+    title: "输入电阻"
+    course_id: "AE"
+    chapter: "amplifier"
+    prerequisites: ["AE.SMALL_SIGNAL"]
+    problem_types: ["small_signal_amplifier"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["unit_missing"]
+    keywords: ["输入电阻"]
+  - skill_id: "AE.OUTPUT_RESISTANCE"
+    title: "输出电阻"
+    course_id: "AE"
+    chapter: "amplifier"
+    prerequisites: ["AE.SMALL_SIGNAL"]
+    problem_types: ["small_signal_amplifier"]
+    capability_ids: ["circuit_analysis"]
+    common_error_signatures: ["unit_missing"]
+    keywords: ["输出电阻"]
+  - skill_id: "AE.FEEDBACK"
+    title: "负反馈"
+    course_id: "AE"
+    chapter: "feedback"
+    prerequisites: ["AE.VOLTAGE_GAIN"]
+    problem_types: ["feedback"]
+    capability_ids: ["circuit_analysis", "algebra"]
+    common_error_signatures: ["feedback_polarity_error"]
+    keywords: ["负反馈", "反馈极性"]
+  - skill_id: "AE.IDEAL_OP_AMP"
+    title: "理想运放"
+    course_id: "AE"
+    chapter: "op_amp"
+    prerequisites: []
+    problem_types: ["op_amp"]
+    capability_ids: ["circuit_analysis", "equation_system"]
+    common_error_signatures: ["op_amp_assumption_missing"]
+    keywords: ["理想运放", "虚短", "虚断"]

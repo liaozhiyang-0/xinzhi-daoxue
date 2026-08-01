@@ -155,6 +155,71 @@ class RAGRetrievalService:
         )
         self._reranker_semaphore = BoundedSemaphore(settings.reranker_concurrency_limit)
         self._cache_lock = RLock()
+        self._warmup_state: dict[str, Any] = {
+            "status": "not_started",
+            "elapsed_ms": 0,
+            "components": {},
+            "failed_components": [],
+        }
+
+    def warmup(self) -> dict[str, Any]:
+        """Load retrieval models before the API begins accepting requests."""
+
+        if not self.settings.rag_enabled:
+            self._warmup_state = {
+                "status": "skipped",
+                "elapsed_ms": 0,
+                "components": {},
+                "failed_components": [],
+                "reason": "rag_disabled",
+            }
+            return dict(self._warmup_state)
+
+        providers: list[tuple[str, Any]] = [("text", self.text_provider)]
+        if (
+            self.settings.image_embedding_enabled
+            and self.settings.rag_warmup_image_model
+        ):
+            providers.append(("image", self.image_provider))
+        if self.settings.reranker_enabled and self.settings.rag_warmup_reranker:
+            providers.append(("reranker", self.reranker))
+
+        started = perf_counter()
+        components: dict[str, Any] = {}
+        failed: list[str] = []
+        for name, provider in providers:
+            component_started = perf_counter()
+            try:
+                provider.load()
+                health = provider.health().to_dict()
+                health["warmup_status"] = "ready"
+            except Exception as exc:
+                health = provider.health().to_dict()
+                health["warmup_status"] = "failed"
+                health["reason"] = health.get("reason") or (
+                    f"{type(exc).__name__}: {exc}"
+                )
+                failed.append(name)
+                logger.exception("rag_model_warmup_failed component=%s", name)
+            health["warmup_elapsed_ms"] = int(
+                (perf_counter() - component_started) * 1000
+            )
+            components[name] = health
+
+        self._warmup_state = {
+            "status": "ready" if not failed else "degraded",
+            "elapsed_ms": int((perf_counter() - started) * 1000),
+            "components": components,
+            "failed_components": failed,
+        }
+        self._metrics["rag_warmup_total"] += 1
+        if failed:
+            self._metrics["rag_warmup_failure_total"] += len(failed)
+            if self.settings.rag_warmup_strict:
+                raise RuntimeError(
+                    "RAG 模型启动预热失败: " + ", ".join(failed)
+                )
+        return dict(self._warmup_state)
 
     def search(
         self,
@@ -513,8 +578,30 @@ class RAGRetrievalService:
             for item in (vector, text, image, reranker)
             if item.get("reason")
         ]
+        required_models = {
+            "text": bool(text["loaded"]),
+            "image": (
+                not self.settings.image_embedding_enabled
+                or not self.settings.rag_warmup_image_model
+                or bool(image["loaded"])
+            ),
+            "reranker": (
+                not self.settings.reranker_enabled
+                or not self.settings.rag_warmup_reranker
+                or bool(reranker["loaded"])
+            ),
+        }
+        reasons.extend(
+            f"{name}_model_not_loaded"
+            for name, ready in required_models.items()
+            if not ready
+        )
         return {
-            "rag_status": "ready" if vector.get("connected") else "degraded",
+            "rag_status": (
+                "ready"
+                if vector.get("connected") and all(required_models.values())
+                else "degraded"
+            ),
             "text_model_loaded": text["loaded"],
             "text_model_name": text["model_name"],
             "text_model_revision": text["model_revision"],
@@ -533,6 +620,7 @@ class RAGRetrievalService:
             "image_vector_count": vector.get("image_vector_count", 0),
             "index_version": self._index_version(),
             "degraded_reasons": reasons,
+            "warmup": dict(self._warmup_state),
             "metrics": dict(self._metrics),
         }
 

@@ -32,6 +32,7 @@ def create_text_embedding_provider(
         cache_dir=settings.text_embedding_cache_dir,
         trust_remote_code=settings.text_embedding_trust_remote_code,
         query_instruction=settings.text_embedding_query_instruction,
+        local_files_only=settings.rag_model_local_files_only,
     )
     if settings.app_env == "development" and settings.legacy_hash_embedding_enabled:
         return DevelopmentEmbeddingFallback(primary, legacy)
@@ -48,6 +49,7 @@ def create_image_embedding_provider(
         batch_size=settings.image_embedding_batch_size,
         normalize=settings.image_embedding_normalize,
         cache_dir=settings.image_embedding_cache_dir,
+        local_files_only=settings.rag_model_local_files_only,
     )
 
 
@@ -57,6 +59,7 @@ def create_reranker_provider(settings: Settings) -> BGERerankerProvider:
         revision=settings.reranker_revision,
         device=settings.reranker_device,
         cache_dir=settings.text_embedding_cache_dir,
+        local_files_only=settings.rag_model_local_files_only,
     )
 
 

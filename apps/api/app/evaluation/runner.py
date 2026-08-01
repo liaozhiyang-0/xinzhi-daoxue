@@ -21,6 +21,40 @@ from app.evaluation.contracts import (
 )
 from app.evaluation.reporting import build_statistics, write_report
 from app.evaluation.scorers import EvaluationScorer
+from app.services.solver_runtime_policy import SolverRuntimePolicy
+
+STANDARD_EVALUATION_TIMEOUT_SECONDS = 180
+COMPLEX_EVALUATION_TIMEOUT_SECONDS = 240
+_COMPLEX_TAGS = {
+    "complex",
+    "high_risk",
+    "long_context",
+    "multi_step",
+    "quality_flagged",
+}
+
+
+def evaluation_timeout_decision(case: EvaluationCase) -> tuple[int, list[str]]:
+    """Keep standard cases bounded while giving multi-stage cases 240 seconds."""
+
+    if case.timeout_seconds != STANDARD_EVALUATION_TIMEOUT_SECONDS:
+        return case.timeout_seconds, ["explicit_case_timeout"]
+    signals: list[str] = []
+    if case.file_refs or "image" in case.input_type.casefold():
+        signals.append("visual_input")
+    if case.difficulty == "hard":
+        signals.append("hard_difficulty")
+    signals.extend(SolverRuntimePolicy.text_complexity_signals(case.message))
+    if _COMPLEX_TAGS.intersection(item.casefold() for item in case.tags):
+        signals.append("complexity_tag")
+    if str(case.task_options.get("complexity", "")).casefold() in {
+        "complex",
+        "high_risk",
+    }:
+        signals.append("explicit_complexity")
+    if signals:
+        return COMPLEX_EVALUATION_TIMEOUT_SECONDS, signals
+    return STANDARD_EVALUATION_TIMEOUT_SECONDS, []
 
 
 class EvaluationRunner:
@@ -84,10 +118,12 @@ class EvaluationRunner:
         started = perf_counter()
         trace_id = f"eval_{case.case_id}_{uuid4().hex[:8]}"
         before_traces = len(self.app.state.model_tracer.list())
+        timeout_seconds, complexity_signals = evaluation_timeout_decision(case)
         try:
-            async with asyncio.timeout(case.timeout_seconds):
+            async with asyncio.timeout(timeout_seconds):
                 task = await self._execute(case, trace_id)
         except TimeoutError:
+            model_calls = self._model_calls_since(before_traces, trace_id)
             result = self._terminal_result(
                 case,
                 status="timeout",
@@ -97,6 +133,14 @@ class EvaluationRunner:
                 trace_id=trace_id,
                 cache_key=cache_key,
                 mode=self.mode,
+                warning=(
+                    f"evaluation_timeout_seconds={timeout_seconds}; "
+                    "complexity_signals="
+                    f"{','.join(complexity_signals) or 'none'}"
+                ),
+                model_calls=model_calls,
+                timeout_seconds=timeout_seconds,
+                complexity_signals=complexity_signals,
             )
             self.cache.save(cache_key, result)
             return result
@@ -114,17 +158,10 @@ class EvaluationRunner:
             )
             self.cache.save(cache_key, result)
             return result
-        model_calls = [
-            {
-                **item.model_dump(mode="json"),
-                "usage_status": (
-                    "available" if item.total_tokens is not None else "unavailable"
-                ),
-            }
-            for item in self.app.state.model_tracer.list()[before_traces:]
-            if item.request_id == trace_id
-        ]
+        model_calls = self._model_calls_since(before_traces, trace_id)
         actual = self._observation(task)
+        actual["evaluation_timeout_seconds"] = timeout_seconds
+        actual["evaluation_complexity_signals"] = complexity_signals
         assert self.scorer is not None
         result = self.scorer.score(
             case,
@@ -137,6 +174,22 @@ class EvaluationRunner:
         result = result.model_copy(update={"evaluation_mode": self.mode})
         self.cache.save(cache_key, result)
         return result
+
+    def _model_calls_since(
+        self,
+        before_traces: int,
+        trace_id: str,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                **item.model_dump(mode="json"),
+                "usage_status": (
+                    "available" if item.total_tokens is not None else "unavailable"
+                ),
+            }
+            for item in self.app.state.model_tracer.list()[before_traces:]
+            if item.request_id == trace_id
+        ]
 
     async def run_suite(
         self,
@@ -174,6 +227,16 @@ class EvaluationRunner:
 
     async def _execute(self, case: EvaluationCase, trace_id: str) -> dict[str, Any]:
         assert self.client is not None
+        evaluation_controls = {
+            key: value
+            for key, value in case.task_options.items()
+            if key.startswith("_evaluation_")
+        }
+        task_options = {
+            key: value
+            for key, value in case.task_options.items()
+            if not key.startswith("_evaluation_")
+        }
         session_response = await self.client.post(
             "/api/v1/sessions",
             json={
@@ -203,6 +266,7 @@ class EvaluationRunner:
                     "evaluation_case_id": case.case_id,
                     "evaluation_mode": self.mode,
                     "allow_cloud": self.mode in {"live", "real_model", "real_xingchen"},
+                    **task_options,
                 },
             },
         )
@@ -210,9 +274,44 @@ class EvaluationRunner:
         task = task_response.json()
         while task["status"] not in {"completed", "failed", "cancelled"}:
             await asyncio.sleep(0.02)
-            response = await self.client.get(f"/api/v1/tasks/{task['id']}")
+            response = await self.client.get(
+                f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+            )
             response.raise_for_status()
             task = response.json()
+        actions = evaluation_controls.get("_evaluation_follow_up_actions", [])
+        for index, item in enumerate(actions if isinstance(actions, list) else []):
+            action = item if isinstance(item, str) else str(item.get("action", ""))
+            student_answer = (
+                "" if isinstance(item, str) else str(item.get("student_answer", ""))
+            )
+            action_response = await self.client.post(
+                "/api/v1/learning/actions",
+                json={
+                    "source_task_id": task["id"],
+                    "user_id": "evaluation-user",
+                    "action": action,
+                    "idempotency_key": (
+                        f"{trace_id}_{case.case_id}_{index}_{action}"
+                    )[:128],
+                    "student_answer": student_answer,
+                    "payload": {},
+                },
+            )
+            action_response.raise_for_status()
+            response = await self.client.get(
+                f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+            )
+            response.raise_for_status()
+            task = response.json()
+        if evaluation_controls.get("_evaluation_cross_user_check"):
+            cross_user = await self.client.get(
+                f"/api/v1/tasks/{task['id']}?user_id=another-evaluation-user"
+            )
+            task["_evaluation_cross_user_isolated"] = cross_user.status_code in {
+                403,
+                404,
+            }
         return task
 
     def _observation(self, task: dict[str, Any]) -> dict[str, Any]:
@@ -242,6 +341,54 @@ class EvaluationRunner:
             ):
                 selected_tools.extend(str(item) for item in step.get("tools", []))
         verification = structured.get("verification_report") or {}
+        input_options = (task.get("input_content") or {}).get("options", {})
+        input_options = input_options if isinstance(input_options, dict) else {}
+        teaching = structured.get("teaching") or {}
+        teaching = teaching if isinstance(teaching, dict) else {}
+        solution_packet = structured.get("solution_packet") or {}
+        solution_packet = (
+            solution_packet if isinstance(solution_packet, dict) else {}
+        )
+        evidence_packet = structured.get("evidence_packet") or {}
+        evidence_packet = (
+            evidence_packet if isinstance(evidence_packet, dict) else {}
+        )
+        error_pool = structured.get("error_pool") or {}
+        error_pool = error_pool if isinstance(error_pool, dict) else {}
+        teaching_loop = structured.get("teaching_loop") or {}
+        teaching_loop = teaching_loop if isinstance(teaching_loop, dict) else {}
+        teaching_plan = teaching_loop.get("execution_plan") or {}
+        teaching_plan = teaching_plan if isinstance(teaching_plan, dict) else {}
+        phase2_verification = (
+            structured.get("verification_report_v1")
+            or teaching_loop.get("verification")
+            or {}
+        )
+        phase2_verification = (
+            phase2_verification
+            if isinstance(phase2_verification, dict)
+            else {}
+        )
+        phase2_steps = phase2_verification.get("step_results") or []
+        phase2_steps = phase2_steps if isinstance(phase2_steps, list) else []
+        first_verification = (
+            phase2_steps[0]
+            if phase2_steps and isinstance(phase2_steps[0], dict)
+            else {}
+        )
+        hint = teaching_loop.get("hint") or {}
+        hint = hint if isinstance(hint, dict) else {}
+        disclosure = teaching_loop.get("disclosure_policy") or {}
+        disclosure = disclosure if isinstance(disclosure, dict) else {}
+        next_check = teaching_loop.get("next_check") or {}
+        next_check = next_check if isinstance(next_check, dict) else {}
+        metrics = result.get("metrics", {})
+        metrics = metrics if isinstance(metrics, dict) else {}
+        expected_mode = str(input_options.get("teaching_mode", "direct_answer"))
+        mapping_status = str(solution_packet.get("mapping_status", ""))
+        mapped_skill_ids = [
+            str(item) for item in solution_packet.get("skill_ids", [])
+        ]
         return {
             "task_status": str(task.get("status", "")),
             "route_status": str(task.get("route_status", "")),
@@ -269,7 +416,75 @@ class EvaluationRunner:
             "fallback_used": result.get(
                 "fallback_used", routing.get("fallback_used", False)
             ),
-            "metrics": result.get("metrics", {}),
+            "metrics": metrics,
+            "student_attempt_parsed": isinstance(
+                input_options.get("student_attempt"), dict
+            ),
+            "teaching_mode_respected": (
+                str(teaching.get("teaching_mode", "")) == expected_mode
+            ),
+            "solution_packet_valid": (
+                solution_packet.get("version") == "v1"
+                and bool(solution_packet.get("course_id"))
+            ),
+            "skill_mapping_valid": (
+                (mapping_status == "mapped" and bool(mapped_skill_ids))
+                or (
+                    mapping_status in {"partial", "unavailable"}
+                    and not mapped_skill_ids
+                )
+            ),
+            "skill_ids": mapped_skill_ids,
+            "evidence_packet_valid": (
+                evidence_packet.get("version") == "v1"
+                and "evidence_sufficiency" in evidence_packet
+            ),
+            "error_pool_match_valid": error_pool.get("status") == "matched",
+            "answer_disclosure_compliant": bool(
+                teaching.get("answer_disclosure_compliant", False)
+            ),
+            "requires_manual_review": bool(
+                teaching.get("requires_manual_review", False)
+            ),
+            "expected_teaching_execution_path": str(
+                teaching_plan.get("path", "")
+            ),
+            "verification_report_valid": (
+                phase2_verification.get("version") == "v1"
+                and bool(phase2_verification.get("overall_status"))
+            ),
+            "expected_verification_status": str(
+                phase2_verification.get("overall_status", "")
+            ),
+            "expected_error_type": str(first_verification.get("error_type", "")),
+            "expected_hint_level": str(hint.get("hint_level", "")),
+            "expected_disclosure_mode": str(disclosure.get("mode", "")),
+            "next_check_valid": (
+                next_check.get("version") == "v1"
+                and bool(next_check.get("question_text"))
+                and "answer_key_internal" not in next_check
+            ),
+            "solution_packet_reused": bool(
+                teaching_loop.get(
+                    "solution_packet_reused",
+                    metrics.get("solution_packet_reused", False),
+                )
+            ),
+            "full_solution_disclosed": bool(
+                teaching_loop.get(
+                    "full_solution_disclosed",
+                    disclosure.get("reveal_final_answer", False),
+                )
+            ),
+            "no_additional_model_calls": (
+                int(metrics.get("additional_model_calls", 0)) == 0
+            ),
+            "first_confirmed_error_found": bool(
+                phase2_verification.get("first_confirmed_error_step")
+            ),
+            "cross_user_isolated": bool(
+                task.get("_evaluation_cross_user_isolated", False)
+            ),
         }
 
     @staticmethod
@@ -284,6 +499,9 @@ class EvaluationRunner:
         cache_key: str,
         mode: str,
         warning: str | None = None,
+        model_calls: list[dict[str, Any]] | None = None,
+        timeout_seconds: int | None = None,
+        complexity_signals: list[str] | None = None,
     ) -> EvaluationResult:
         return EvaluationResult(
             case_id=case.case_id,
@@ -298,12 +516,20 @@ class EvaluationRunner:
             citations_passed=False,
             safety_passed=False,
             total_score=0,
-            expected={"course": case.course, "agent_id": case.expected_agent},
-            actual={},
+            expected={
+                "course": case.course,
+                "agent_id": case.expected_agent,
+                "timeout_seconds": timeout_seconds,
+            },
+            actual={
+                "evaluation_timeout_seconds": timeout_seconds,
+                "evaluation_complexity_signals": complexity_signals or [],
+            },
             failure_stage=stage,
             error_types=[error],
             warnings=[warning] if warning else [],
             elapsed_ms=elapsed_ms,
+            model_calls=model_calls or [],
             trace_id=trace_id,
             cache_key=cache_key,
             evaluation_mode=mode,

@@ -1,0 +1,331 @@
+cases:
+  - case_id: TP2-01
+    title: direct_answer保持完整回答和零额外模型调用
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: &power_input
+      problem_type: power
+      equations_given: ["P=10*2"]
+      known_conditions:
+        - {name: u, value: 10, unit: V}
+        - {name: i, value: 2, unit: A}
+      target_quantities:
+        - {name: P, unit: W}
+      structure_status: complete
+      extraction_confidence: 0.99
+    task_options: {teaching_mode: direct_answer}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_teaching_execution_path: direct
+    expected_disclosure_mode: full
+    full_solution_disclosed: true
+    no_additional_model_calls: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, direct]
+    provenance: &phase2_provenance {source_type: synthetic, source_name: phase2_contract, publishable: true}
+
+  - case_id: TP2-02
+    title: guided首次只披露提示和单个理解检查
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options: {teaching_mode: guided_learning}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_teaching_execution_path: guided
+    expected_disclosure_mode: next_step_only
+    expected_hint_level: H1
+    next_check_valid: true
+    full_solution_disclosed: false
+    no_additional_model_calls: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, disclosure]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-03
+    title: check_my_work确认单位缺失并给H1
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=u*i=20", final_answer: "P=20"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_teaching_execution_path: check
+    verification_report_valid: true
+    expected_verification_status: verified_incorrect
+    expected_error_type: unit_missing
+    expected_hint_level: H1
+    expected_disclosure_mode: withhold_final
+    first_confirmed_error_found: true
+    full_solution_disclosed: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, verification]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-04
+    title: check_my_work确认最终数值不一致
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=u*i=18W", final_answer: "P=18W"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    verification_report_valid: true
+    expected_verification_status: verified_incorrect
+    expected_error_type: numeric_error
+    next_check_valid: true
+    first_confirmed_error_found: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, verification]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-05
+    title: CT电容连续性错因模板
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: first_order
+    message: "分析一阶RC换路过程中的电容电压。"
+    structured_input:
+      problem_type: first_order
+      known_conditions: [{name: u_C_0, value: 5, unit: V}]
+      target_quantities: [{name: u_C_0_plus, unit: V}]
+      structure_status: complete
+      extraction_confidence: 0.99
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "换路瞬间电容电压可以突变。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    verification_report_valid: true
+    expected_error_type: condition_missing
+    expected_hint_level: H1
+    first_confirmed_error_found: true
+    full_solution_disclosed: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, CT]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-06
+    title: AE虚短虚断适用条件遗漏
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: op_amp
+    message: "判断理想运放电路输入端关系。"
+    structured_input:
+      problem_type: op_amp
+      known_conditions: [{name: feedback, value: negative}]
+      target_quantities: [{name: input_relation}]
+      structure_status: complete
+      extraction_confidence: 0.99
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "由虚短可知两个输入端电压相等。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    verification_report_valid: true
+    expected_error_type: condition_missing
+    first_confirmed_error_found: true
+    full_solution_disclosed: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, AE]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-07
+    title: DE同或异或混淆
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: logic_simplification
+    message: "判断两输入同或门的输出条件。"
+    structured_input:
+      problem_type: logic_simplification
+      known_conditions: [{name: gate, value: XNOR}]
+      target_quantities: [{name: output_condition}]
+      structure_status: complete
+      extraction_confidence: 0.99
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "两个输入不同时，异或输出为1。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    verification_report_valid: true
+    expected_error_type: boolean_inequivalence
+    first_confirmed_error_found: true
+    full_solution_disclosed: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, DE]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-08
+    title: 合法但非最优方法不武断判错
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt:
+        raw_text: "我先使用支路电流法整理，最终得到P=20W。"
+        final_answer: "P=20W"
+        steps: [{step_id: alternative-path, sequence: 1, content: "使用支路电流法整理。"}]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_verification_status: verified_correct
+    first_confirmed_error_found: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, boundary]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-09
+    title: 复杂自然语言推导降级人工复核
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "我通过一个省略若干中间步骤的等效变换得到结论。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_verification_status: manual_review
+    requires_manual_review: true
+    first_confirmed_error_found: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, manual_review]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-10
+    title: 提示请求升级到H2且不再提升
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: guided_learning
+      _evaluation_follow_up_actions: [request_more_hint, request_more_hint]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_hint_level: H2
+    next_check_valid: true
+    full_solution_disclosed: false
+    no_additional_model_calls: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, multi_round]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-11
+    title: 主动切换完整答案复用标准解
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: guided_learning
+      _evaluation_follow_up_actions: [switch_to_direct_answer]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    solution_packet_reused: true
+    full_solution_disclosed: true
+    no_additional_model_calls: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, multi_round]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-12
+    title: 刷新后提示和待回答问题可恢复
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: guided_learning
+      _evaluation_follow_up_actions: [request_more_hint]
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_hint_level: H2
+    next_check_valid: true
+    notes: "跨刷新相同状态由集成测试以消息和WorkingState共同验证。"
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, state_restore]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-13
+    title: 学习模式结构化结果不泄露最终答案
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options: {teaching_mode: guided_learning}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_disclosure_mode: next_step_only
+    full_solution_disclosed: false
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, disclosure]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-14
+    title: 取消重试不产生平行提示状态
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options: {teaching_mode: guided_learning}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    next_check_valid: true
+    notes: "取消、重试和幂等边界由任务可靠性及第二阶段集成测试联合验证。"
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, reliability]
+    provenance: *phase2_provenance
+
+  - case_id: TP2-15
+    title: 其他用户不能读取教学状态
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压10V、电流2A，按关联参考方向求吸收功率。"
+    structured_input: *power_input
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=20", final_answer: "P=20"}
+      _evaluation_cross_user_check: true
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    cross_user_isolated: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_loop_phase2, privacy_boundary]
+    provenance: *phase2_provenance

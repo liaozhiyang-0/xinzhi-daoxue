@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from time import perf_counter
 from typing import Literal
 from uuid import uuid4
 
@@ -8,11 +9,17 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts import SolutionPacketV1
 from app.contracts.learning import (
+    FeedbackUptakeV1,
+    HintDecisionV1,
     LearnerKnowledgeState,
     LearningActionRequest,
     LearningActionResponse,
     LearningFollowUpContext,
+    StudentAttempt,
+    TeachingMode,
+    VerificationReportV1,
 )
 from app.core.errors import NotFoundError
 from app.models.entities import (
@@ -22,20 +29,51 @@ from app.models.entities import (
     TaskModel,
     WrongAnswerRecordModel,
 )
+from app.repositories.learning import LearningRecordRepository
+from app.services.answer_disclosure import INTERNAL_TEACHING_KEY
+from app.services.feedback_uptake import FeedbackUptakeService
+from app.services.learning_outcome import LearningOutcomeService
 from app.services.practice_generation import PracticeGenerationService
+from app.services.retest_plans import RetestPlanService
+from app.services.session_working_state import SessionWorkingStateService
 from app.services.student_answer_review import StudentAnswerReviewService
+from app.services.student_attempts import StudentAttemptService
+from app.services.student_verification import StudentVerificationService
+from app.services.teaching_interaction import (
+    PHASE2_ACTIONS,
+    TeachingInteractionService,
+)
 
 DEFAULT_CONFIG = (
     Path(__file__).resolve().parents[4] / "config" / "learning_mastery.yaml"
 )
+PHASE3_ACTIONS = frozenset(
+    {
+        "submit_attempt_revision",
+        "start_retest",
+        "complete_retest",
+        "dismiss_retest",
+    }
+)
 
 
 class LearningLoopService:
-    def __init__(self, config_path: Path = DEFAULT_CONFIG) -> None:
+    def __init__(
+        self,
+        config_path: Path = DEFAULT_CONFIG,
+        teaching_interactions: TeachingInteractionService | None = None,
+        learning_outcome: LearningOutcomeService | None = None,
+    ) -> None:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.config = raw if isinstance(raw, dict) else {}
         self.reviewer = StudentAnswerReviewService()
         self.practice = PracticeGenerationService()
+        self.teaching_interactions = teaching_interactions
+        self.attempts = StudentAttemptService()
+        self.feedback_uptake = FeedbackUptakeService()
+        self.verifier = StudentVerificationService()
+        self.learning_outcome = learning_outcome or LearningOutcomeService(config_path)
+        self.retests: RetestPlanService = self.learning_outcome.retests
 
     async def act(
         self, session: AsyncSession, request: LearningActionRequest
@@ -52,6 +90,37 @@ class LearningLoopService:
         task = await session.get(TaskModel, request.source_task_id)
         if task is None or task.user_id != request.user_id:
             raise NotFoundError("未找到可访问的来源任务")
+        if request.action in PHASE3_ACTIONS:
+            return await self._act_phase3(session, task, request)
+        if request.action in PHASE2_ACTIONS and self.teaching_interactions is not None:
+            message, teaching = await self.teaching_interactions.act(
+                session,
+                task,
+                request,
+            )
+            response = LearningActionResponse(
+                interaction_id=uuid4().hex,
+                action=request.action,
+                status="completed",
+                message=message,
+                teaching=teaching,
+            )
+            session.add(
+                LearningInteractionModel(
+                    id=response.interaction_id,
+                    source_task_id=task.id,
+                    user_id=request.user_id,
+                    action=request.action,
+                    idempotency_key=request.idempotency_key,
+                    payload={
+                        **request.payload,
+                        "student_answer": request.student_answer,
+                    },
+                    result=response.model_dump(mode="json"),
+                )
+            )
+            await session.commit()
+            return response
         structured = dict((task.result_content or {}).get("structured_result") or {})
         answer = str((task.result_content or {}).get("answer", ""))
         points = self._knowledge_points(structured)
@@ -240,6 +309,329 @@ class LearningLoopService:
         )
         await session.commit()
         return response
+
+    async def _act_phase3(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        request: LearningActionRequest,
+    ) -> LearningActionResponse:
+        interaction_id = uuid4().hex
+        response: LearningActionResponse
+        if request.action == "submit_attempt_revision":
+            response = await self._submit_attempt_revision(
+                session, task, request, interaction_id
+            )
+        elif request.action == "start_retest":
+            plan_id = str(request.payload.get("retest_plan_id", ""))
+            plan, practice = await self.retests.start(
+                session,
+                retest_plan_id=plan_id,
+                user_id=request.user_id,
+            )
+            instruction = (
+                practice.problem_text
+                if practice.status == "ready"
+                else (
+                    f"围绕知识点 {plan.skill_id} 给出一道不含答案的受控微测题；"
+                    "无法确定性生成时只解释暂不支持，不得虚构答案键。"
+                )
+            )
+            response = LearningActionResponse(
+                interaction_id=interaction_id,
+                action=request.action,
+                status="needs_task",
+                message="复习题已准备；请通过普通任务链开始作答",
+                follow_up_prompt=instruction,
+                follow_up_context=LearningFollowUpContext(
+                    source_task_id=plan.source_task_id,
+                    course_id=task.course_id,
+                    intent=task.intent,
+                    action=request.action,
+                ),
+                practice=practice,
+                retest_plans=[self.retests.to_contract(plan)],
+            )
+        elif request.action == "dismiss_retest":
+            plan = await self.retests.dismiss(
+                session,
+                retest_plan_id=str(request.payload.get("retest_plan_id", "")),
+                user_id=request.user_id,
+            )
+            response = LearningActionResponse(
+                interaction_id=interaction_id,
+                action=request.action,
+                status="completed",
+                message="已将该复习项设为稍后处理",
+                retest_plans=[self.retests.to_contract(plan)],
+            )
+        else:
+            response = await self._complete_retest(
+                session, task, request, interaction_id
+            )
+        session.add(
+            LearningInteractionModel(
+                id=interaction_id,
+                source_task_id=task.id,
+                user_id=request.user_id,
+                action=request.action,
+                idempotency_key=request.idempotency_key,
+                payload={
+                    **request.payload,
+                    "student_answer": request.student_answer,
+                },
+                result=response.model_dump(mode="json"),
+            )
+        )
+        await session.commit()
+        return response
+
+    async def _submit_attempt_revision(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        request: LearningActionRequest,
+        interaction_id: str,
+    ) -> LearningActionResponse:
+        raw_attempt = request.payload.get("attempt")
+        attempt_payload = dict(raw_attempt) if isinstance(raw_attempt, dict) else {}
+        if not attempt_payload:
+            attempt_payload = {
+                "raw_text": request.student_answer,
+                "final_answer": request.payload.get("final_answer"),
+                "steps": request.payload.get("steps", []),
+                "confidence": request.payload.get("confidence"),
+            }
+        student_attempt = StudentAttempt.model_validate(attempt_payload)
+        working = await SessionWorkingStateService(session).get(task.session_id)
+        teaching_state = working.teaching_state
+        packet, report, hint = self._phase3_context(task, student_attempt)
+        previous_id = str(
+            request.payload.get("revision_of_attempt_id")
+            or (teaching_state.current_attempt_id if teaching_state else "")
+            or ""
+        )
+        attempt_save_started = perf_counter()
+        model = await self.attempts.create(
+            session,
+            task=task,
+            user_id=request.user_id,
+            idempotency_key=f"{request.idempotency_key}:attempt",
+            attempt=student_attempt,
+            revision_of_attempt_id=previous_id or None,
+            teaching_mode=(
+                teaching_state.teaching_mode
+                if teaching_state
+                else TeachingMode.CHECK_MY_WORK
+            ),
+            hint_level_used=(
+                teaching_state.current_hint_level if teaching_state else None
+            ),
+            full_solution_seen=bool(
+                teaching_state and teaching_state.full_solution_disclosed
+            ),
+            verification_report=report.model_dump(mode="json"),
+        )
+        attempt_save_ms = (perf_counter() - attempt_save_started) * 1000
+        uptake: FeedbackUptakeV1 | None = None
+        uptake_ms = 0.0
+        if model.revision_of_attempt_id:
+            previous = await self.attempts.get(
+                session,
+                attempt_id=model.revision_of_attempt_id,
+                user_id=request.user_id,
+            )
+            previous_model = await LearningRecordRepository(session).attempt_by_id(
+                previous.attempt_id, request.user_id
+            )
+            assert previous_model is not None
+            uptake, uptake_ms = self.feedback_uptake.evaluate(
+                previous=previous_model,
+                current=model,
+                hint=hint,
+            )
+            model.feedback_uptake = uptake.model_dump(mode="json")
+        skill_ids = list(packet.skill_ids) if packet else []
+        if not skill_ids and teaching_state:
+            skill_ids = list(teaching_state.current_skill_ids)
+        outcome = await self.learning_outcome.process_attempt(
+            session,
+            task=task,
+            attempt=model,
+            skill_ids=skill_ids,
+            uptake=uptake,
+        )
+        due_retest_query_started = perf_counter()
+        due_retests = await self.retests.list(
+            session,
+            user_id=request.user_id,
+            status="due",
+            offset=0,
+            limit=100,
+        )
+        due_retest_query_ms = (perf_counter() - due_retest_query_started) * 1000
+        pending_ids = [item.retest_plan_id for item in outcome.retest_plans]
+        await SessionWorkingStateService(session).update_phase3(
+            task,
+            current_attempt_id=model.id,
+            previous_attempt_id=model.revision_of_attempt_id,
+            attempt_sequence=int(model.attempt_sequence or 0),
+            feedback_uptake_status=(
+                uptake.status.value if uptake is not None else None
+            ),
+            mastery_evidence_type=(
+                outcome.evidence[0].evidence_type.value if outcome.evidence else None
+            ),
+            pending_retest_plan_ids=pending_ids,
+        )
+        message = self._uptake_message(uptake)
+        return LearningActionResponse(
+            interaction_id=interaction_id,
+            action=request.action,
+            status="completed",
+            message=message,
+            attempt=self.attempts.to_contract(model),
+            feedback_uptake=uptake,
+            mastery_evidence=outcome.evidence,
+            mastery=outcome.mastery,
+            retest_plans=outcome.retest_plans,
+            teaching={
+                "metrics": {
+                    "attempt_sequence": model.attempt_sequence,
+                    "attempt_revision_created": bool(model.revision_of_attempt_id),
+                    "attempt_save_ms": attempt_save_ms,
+                    "feedback_uptake_status": (
+                        uptake.status.value if uptake else "not_applicable"
+                    ),
+                    "feedback_uptake_ms": uptake_ms,
+                    "attempt_diff_ms": uptake_ms,
+                    "due_retest_count": len(due_retests),
+                    "due_retest_query_ms": due_retest_query_ms,
+                    **outcome.metrics,
+                }
+            },
+        )
+
+    async def _complete_retest(
+        self,
+        session: AsyncSession,
+        source_task: TaskModel,
+        request: LearningActionRequest,
+        interaction_id: str,
+    ) -> LearningActionResponse:
+        plan = await self.retests.complete(
+            session,
+            retest_plan_id=str(request.payload.get("retest_plan_id", "")),
+            user_id=request.user_id,
+            completed_task_id=str(request.payload.get("completed_task_id", "")),
+            result=str(request.payload.get("result", "")),
+        )
+        completed_task = await session.get(TaskModel, plan.completed_task_id)
+        assert completed_task is not None
+        attempt = await LearningRecordRepository(session).latest_attempt(
+            completed_task.id, request.user_id
+        )
+        if attempt is None:
+            student_attempt = StudentAttempt(raw_text=request.student_answer)
+            _, report, _ = self._phase3_context(completed_task, student_attempt)
+            attempt = await self.attempts.create(
+                session,
+                task=completed_task,
+                user_id=request.user_id,
+                idempotency_key=f"{request.idempotency_key}:attempt",
+                attempt=student_attempt,
+                teaching_mode=TeachingMode.CHECK_MY_WORK,
+                verification_report=report.model_dump(mode="json"),
+            )
+        outcome = await self.learning_outcome.process_attempt(
+            session,
+            task=completed_task,
+            attempt=attempt,
+            skill_ids=[plan.skill_id],
+            retest_result=plan.result,
+            retest_plan_source_task_id=plan.source_task_id,
+        )
+        await SessionWorkingStateService(session).update_phase3(
+            completed_task,
+            current_attempt_id=attempt.id,
+            previous_attempt_id=attempt.revision_of_attempt_id,
+            attempt_sequence=int(attempt.attempt_sequence or 0),
+            feedback_uptake_status=None,
+            mastery_evidence_type=(
+                outcome.evidence[0].evidence_type.value if outcome.evidence else None
+            ),
+            pending_retest_plan_ids=[
+                item.retest_plan_id for item in outcome.retest_plans
+            ],
+        )
+        return LearningActionResponse(
+            interaction_id=interaction_id,
+            action=request.action,
+            status="completed",
+            message="复习结果已记录，并更新学习进度估计",
+            attempt=self.attempts.to_contract(attempt),
+            mastery=outcome.mastery,
+            mastery_evidence=outcome.evidence,
+            retest_plans=[
+                self.retests.to_contract(plan),
+                *outcome.retest_plans,
+            ],
+            teaching={"metrics": outcome.metrics},
+        )
+
+    def _phase3_context(
+        self, task: TaskModel, attempt: StudentAttempt
+    ) -> tuple[
+        SolutionPacketV1 | None,
+        VerificationReportV1,
+        HintDecisionV1 | None,
+    ]:
+        structured = dict((task.result_content or {}).get("structured_result") or {})
+        internal = structured.get(INTERNAL_TEACHING_KEY)
+        raw_packet = (
+            internal.get("full_solution_packet") if isinstance(internal, dict) else None
+        )
+        packet = (
+            SolutionPacketV1.model_validate(raw_packet)
+            if isinstance(raw_packet, dict)
+            else None
+        )
+        if packet is None:
+            report = VerificationReportV1(
+                overall_status="manual_review",
+                supported_scope=[],
+                manual_review_required=True,
+                warnings=["缺少可复用SolutionPacket，未进行自动正确性判断"],
+            )
+        else:
+            report, _ = self.verifier.verify(attempt, packet)
+        teaching_loop = structured.get("teaching_loop")
+        raw_hint = (
+            teaching_loop.get("hint") if isinstance(teaching_loop, dict) else None
+        )
+        try:
+            hint = (
+                HintDecisionV1.model_validate(raw_hint)
+                if isinstance(raw_hint, dict)
+                else None
+            )
+        except ValueError:
+            hint = None
+        return packet, report, hint
+
+    @staticmethod
+    def _uptake_message(uptake: FeedbackUptakeV1 | None) -> str:
+        if uptake is None:
+            return "已保存本次尝试"
+        messages = {
+            "applied_correctly": "你已经修正了目标步骤",
+            "applied_incorrectly": "当前修改仍需检查",
+            "partially_applied": "当前修改仍需检查",
+            "not_applied": "未发现目标步骤发生变化",
+            "indeterminate": "该过程较复杂，暂时无法自动判断",
+            "not_applicable": "已保存本次尝试",
+        }
+        return messages[uptake.status.value]
 
     @staticmethod
     def _knowledge_points(structured: dict[str, object]) -> list[str]:

@@ -75,6 +75,12 @@ class TaskRouter:
         material = self.material_extractor.extract(request)
         course_id, course_reasons = self._detect_course(request, material.raw_text)
         input_type = self._input_type(request)
+        scored = self._score(request, material.materials, material.raw_text)
+        general_qa_problem_override = (
+            request.intent == Intent.GENERAL_QA
+            and "domain_contract:academic_problem_language"
+            in scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
+        )
         debug_target = str(request.options.get("debug_agent_id", "")).strip()
         if (
             debug_target
@@ -97,7 +103,7 @@ class TaskRouter:
                     "visited_agents": [debug_target],
                 }
             )
-        if request.intent != Intent.UNKNOWN:
+        if request.intent != Intent.UNKNOWN and not general_qa_problem_override:
             for rule in self.registry.routing_rules:
                 if (
                     course_id in rule.course_ids
@@ -117,7 +123,6 @@ class TaskRouter:
                             "visited_agents": [decision.agent_id],
                         }
                     )
-        scored = self._score(request, material.materials, material.raw_text)
         candidates = self._candidate_models(
             scored, course_id=course_id, input_type=input_type
         )
@@ -455,7 +460,7 @@ class TaskRouter:
         scores: dict[str, float] = defaultdict(float)
         reasons: dict[str, list[str]] = defaultdict(list)
         explicit = INTENT_AGENT.get(request.intent.value)
-        if explicit:
+        if explicit and request.intent != Intent.GENERAL_QA:
             scores[explicit] = 1.0
             reasons[explicit].append(f"explicit_intent:{request.intent.value}")
             return _ScoredRoute(dict(scores), dict(reasons), "", [], False)
@@ -565,6 +570,94 @@ class TaskRouter:
                     min(ceiling, 0.60 + 0.12 * len(hits)),
                     f"keywords:{','.join(hits[:4])}",
                 )
+
+        problem_actions = (
+            "求",
+            "计算",
+            "求解",
+            "解出",
+            "列式",
+            "列方程",
+            "判断",
+            "确定",
+            "分析",
+            "化简",
+            "设计",
+            "验证",
+        )
+        academic_targets = (
+            "功率",
+            "电压",
+            "电流",
+            "电阻",
+            "阻抗",
+            "导纳",
+            "电荷",
+            "能量",
+            "相量",
+            "频率",
+            "增益",
+            "响应",
+            "传递函数",
+            "状态方程",
+            "微分方程",
+            "工作点",
+            "放大倍数",
+            "输出",
+            "输入",
+            "逻辑式",
+            "真值表",
+            "卡诺图",
+            "触发器",
+            "波形",
+            "卷积",
+            "频谱",
+            "系统函数",
+            "误码率",
+            "信噪比",
+            "调制",
+            "解调",
+            "电路",
+            "二极管",
+            "晶体管",
+            "MOS管",
+        )
+        has_problem_action = any(token in text for token in problem_actions)
+        has_academic_target = any(token in text for token in academic_targets)
+        has_quantified_condition = (
+            any(char.isdigit() for char in text)
+            or "=" in text
+            or any(
+                token in text
+                for token in ("已知", "给定", "条件", "参数", "参考方向", "初始值")
+            )
+        )
+        is_assignment_review = bool(
+            materials.get("student_answer")
+            or materials.get("rubric")
+            or any(
+                token in text
+                for token in ("批改", "评分标准", "教师反馈", "给分", "满分")
+            )
+        )
+        is_lesson_design = any(
+            token in text
+            for token in ("教案", "备课", "教学设计", "教学流程", "课堂活动", "课时")
+        ) or (
+            "课程" in text
+            and any(token in text for token in ("设计", "教学", "备课", "课堂"))
+        )
+        if (
+            has_problem_action
+            and has_academic_target
+            and not is_assignment_review
+            and not is_lesson_design
+        ):
+            add(
+                "ACADEMIC_PROBLEM_SOLVER",
+                0.86 if has_quantified_condition else 0.72,
+                "domain_contract:academic_problem_language",
+            )
 
         statistical_context = any(
             token in text

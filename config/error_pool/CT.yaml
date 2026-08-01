@@ -1,0 +1,47 @@
+version: "1.0"
+course_id: "CT"
+errors:
+  - error_signature: "unit_missing"
+    problem_types: ["*"]
+    skill_ids: []
+    error_type: "unit_error"
+    match_mode: "exact_rule"
+    description: "最终结果缺少单位"
+    hint_templates:
+      H1: "检查最终结果是否写出了物理量单位。"
+      H2: "请根据题目中的量纲，为最终数值补充正确单位。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "unit_incompatible"
+    problem_types: ["*"]
+    skill_ids: []
+    error_type: "unit_error"
+    match_mode: "exact_rule"
+    description: "最终结果单位与目标物理量不兼容"
+    hint_templates:
+      H1: "检查目标物理量与当前单位是否属于同一量纲。"
+      H2: "先写出目标量的标准单位，再检查单位换算。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "reference_direction_error"
+    problem_types: ["kcl_kvl", "node_voltage", "mesh_current"]
+    skill_ids: ["CT.KCL", "CT.KVL", "CT.NODAL", "CT.MESH"]
+    error_type: "direction_error"
+    match_mode: "exact_rule"
+    description: "参考方向或符号与声明不一致"
+    hint_templates:
+      H1: "回到你声明的电压或电流参考方向，逐项检查正负号。"
+      H2: "先固定参考方向，再按同一方向重新列写方程。"
+    teacher_reviewed: true
+    enabled: true
+  - error_signature: "capacitor_voltage_continuity"
+    problem_types: ["first_order"]
+    skill_ids: ["CT.FIRST_ORDER_INITIAL"]
+    error_type: "initial_condition_error"
+    match_mode: "exact_rule"
+    description: "换路瞬间误用了电容电压连续性"
+    hint_templates:
+      H1: "检查换路前后电容电压的连续性条件。"
+      H2: "先求换路前稳态电容电压，再令其等于换路后初值。"
+    teacher_reviewed: true
+    enabled: true

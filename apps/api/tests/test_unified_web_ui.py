@@ -52,6 +52,8 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
 
     assert "renderMarkdown" in script
     assert "document.createTextNode" in script
+    assert "safeMarkdownUrl" in script
+    assert 'class: "markdown-image"' in script
     assert ".innerHTML" not in student
     assert 'renderMarkdown($("#answer-text")' in student
 

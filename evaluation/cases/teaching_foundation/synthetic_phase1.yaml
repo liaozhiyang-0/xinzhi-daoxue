@@ -1,0 +1,251 @@
+cases:
+  - case_id: TF01_LEGACY_DEFAULT_MODE
+    title: 旧客户端默认直接解答
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    message: "使用节点电压法求解给定电路。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [FAST, STANDARD, HIGH_RISK, CONDITIONAL]
+    teaching_mode_respected: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF02_TEXT_STUDENT_ATTEMPT
+    title: 文本StudentAttempt进入任务输入
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "一个10V电压源串联5Ω电阻，求电流。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "I=10/5=2", final_answer: "I=2"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    student_attempt_parsed: true
+    teaching_mode_respected: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF03_CHECK_MY_WORK_CONTEXT
+    title: 检查模式保留原题和学生过程
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: kcl_kvl
+    message: "列写节点KCL方程。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "流入电流之和等于流出电流之和"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    student_attempt_parsed: true
+    teaching_mode_respected: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF04_CT_SKILL_MAPPING
+    title: CT节点电压技能映射
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    message: "用节点电压法求节点电压。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    solution_packet_valid: true
+    skill_mapping_valid: true
+    expected_skill_ids: [CT.NODAL]
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF05_AE_SKILL_MAPPING
+    title: AE共射极静态工作点技能映射
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: bjt_bias
+    message: "求共射极放大电路的静态工作点。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    solution_packet_valid: true
+    skill_mapping_valid: true
+    expected_skill_ids: [AE.Q_POINT]
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF06_DE_SKILL_MAPPING
+    title: DE卡诺图技能映射
+    course: DE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: logic_simplification
+    message: "使用卡诺图化简逻辑函数。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: DE
+    solution_packet_valid: true
+    skill_mapping_valid: true
+    expected_skill_ids: [DE.KMAP]
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF07_UNKNOWN_SKILL
+    title: 未知题型不伪造技能
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: unknown
+    message: "分析一个无法归类的课程问题。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    solution_packet_valid: true
+    skill_mapping_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation, boundary]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF08_SOLUTION_PACKET_COMPAT
+    title: 老SolverResult适配V1
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: kcl_kvl
+    message: "使用KCL和KVL求解电路。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    solution_packet_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF09_EXECUTION_STEP_SOURCE
+    title: 执行阶段不冒充教学步骤
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: kcl_kvl
+    message: "列写基尔霍夫方程并求解。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    solution_packet_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF10_EVIDENCE_PAGE_NULL
+    title: EvidencePacket缺页码不虚构
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    message: "结合课程资料说明节点电压法。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    evidence_packet_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF11_UNAVAILABLE_COURSE_EVIDENCE
+    title: 非正式课程证据返回unavailable
+    course: SS
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: convolution
+    message: "求两个信号的卷积。"
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: SS
+    evidence_packet_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation, boundary]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF12_ERROR_POOL_EXACT
+    title: 确定性错因池精确命中
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: power
+    message: "已知电阻电压u=10V、电流i=2A，按关联参考方向求吸收功率。"
+    structured_input:
+      problem_type: power
+      equations_given: ["P=10*2"]
+      known_conditions:
+        - {name: u, value: 10, unit: V}
+        - {name: i, value: 2, unit: A}
+      target_quantities:
+        - {name: P, unit: W}
+      structure_status: complete
+      extraction_confidence: 0.99
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "P=u*i=20", final_answer: "P=20"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    error_pool_match_valid: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF13_ERROR_POOL_NO_FUZZY_MATCH
+    title: 未知错误不误命中
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: unknown
+    message: "检查一个没有确定性错误签名的方法选择。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "我选择了另一种方法。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    error_pool_match_valid: false
+    requires_manual_review: true
+    official_scoring: false
+    tags: [synthetic_template, teaching_foundation, boundary]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF14_MEMORY_BOUNDARY
+    title: StudentAttempt不进入长期Memory
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    message: "求节点电压。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "先列节点方程。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    student_attempt_parsed: true
+    official_scoring: false
+    notes: "Memory边界由集成测试验证，单个评测结果不代表长期隐私审计。"
+    tags: [synthetic_template, teaching_foundation, privacy_boundary]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}
+
+  - case_id: TF15_MASTERY_BOUNDARY
+    title: 提交StudentAttempt不自动更新掌握度
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    problem_type: node_voltage
+    message: "求节点电压。"
+    task_options:
+      teaching_mode: check_my_work
+      student_attempt: {raw_text: "先列节点方程。"}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    student_attempt_parsed: true
+    official_scoring: false
+    notes: "mastery边界由集成测试验证，本案例不声称掌握度提升。"
+    tags: [synthetic_template, teaching_foundation, mastery_boundary]
+    provenance: {source_type: synthetic, source_name: phase1_contract, publishable: true}

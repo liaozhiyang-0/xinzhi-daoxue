@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,16 +31,22 @@ from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
 from app.services.academic_solver_service import AcademicProblemSolverService
+from app.services.answer_disclosure import AnswerDisclosureService
 from app.services.context_assembly import ContextAssemblyService
 from app.services.context_budget import ContextBudgetManager
 from app.services.context_cache import ContextAssemblyCache
+from app.services.error_pool import ErrorPoolRegistry
+from app.services.evidence_packet_adapter import EvidencePacketAdapterService
 from app.services.general_question_service import GeneralQuestionService
+from app.services.hint_policy import HintPolicyService
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.knowledge_qa_service import KnowledgeQAService
 from app.services.learning_loop import LearningLoopService
+from app.services.learning_outcome import LearningOutcomeService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
+from app.services.next_check_question import NextCheckQuestionService
 from app.services.rag_debug import RAGDebugService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.rag_runtime import (
@@ -53,9 +60,15 @@ from app.services.retrieval_context import (
     RetrievalContextService,
 )
 from app.services.session_compaction import SessionCompactionService
+from app.services.skill_registry import SkillRegistry
+from app.services.solution_packet_adapter import SolutionPacketAdapterService
 from app.services.storage import StorageService
+from app.services.student_verification import StudentVerificationService
 from app.services.task_executor import LocalTaskExecutor
 from app.services.task_runner import TaskRunner
+from app.services.teaching_execution_planner import TeachingExecutionPlanner
+from app.services.teaching_foundation import TeachingFoundationService
+from app.services.teaching_interaction import TeachingInteractionService
 from app.tools import default_tool_registry
 
 logger = logging.getLogger(__name__)
@@ -95,6 +108,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     course_registry = default_course_registry()
     capability_registry = default_capability_registry()
+    skill_registry = SkillRegistry(course_registry, capability_registry)
+    error_pool = ErrorPoolRegistry()
+    solution_packets = SolutionPacketAdapterService(skill_registry)
+    evidence_packets = EvidencePacketAdapterService()
+    teaching_planner = TeachingExecutionPlanner()
+    student_verification = StudentVerificationService()
+    hint_policy = HintPolicyService(error_pool, skill_registry)
+    next_checks = NextCheckQuestionService()
+    answer_disclosure = AnswerDisclosureService()
+    teaching_foundation = TeachingFoundationService(
+        solution_packets,
+        evidence_packets,
+        error_pool,
+        teaching_planner,
+        student_verification,
+        hint_policy,
+        next_checks,
+        answer_disclosure,
+    )
+    teaching_interactions = TeachingInteractionService(
+        student_verification,
+        hint_policy,
+        next_checks,
+        answer_disclosure,
+    )
     tool_registry = default_tool_registry()
     graph_factory = GraphFactory(
         courses=course_registry,
@@ -149,7 +187,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     context_assembly = ContextAssemblyService(
         app_settings, context_cache, context_budget
     )
-    session_compaction = SessionCompactionService(app_settings, context_budget)
+    session_compaction = SessionCompactionService(
+        app_settings,
+        context_budget,
+        None if app_settings.app_env == "test" else model_service,
+    )
+    learning_outcome = LearningOutcomeService()
     task_runner = TaskRunner(
         session_factory,
         provider,
@@ -161,8 +204,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         course_registry,
         context_assembly=context_assembly,
         session_compaction=session_compaction,
+        teaching_foundation=teaching_foundation,
+        learning_outcome=learning_outcome,
     )
-    learning_loop = LearningLoopService()
+    learning_loop = LearningLoopService(
+        teaching_interactions=teaching_interactions,
+        learning_outcome=learning_outcome,
+    )
     task_executor = LocalTaskExecutor(task_runner)
     rag_debug = RAGDebugService(
         app_settings,
@@ -192,6 +240,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.model_service = model_service
         app.state.course_registry = course_registry
         app.state.capability_registry = capability_registry
+        app.state.skill_registry = skill_registry
+        app.state.error_pool = error_pool
+        app.state.solution_packets = solution_packets
+        app.state.evidence_packets = evidence_packets
+        app.state.teaching_foundation = teaching_foundation
+        app.state.teaching_planner = teaching_planner
+        app.state.student_verification = student_verification
+        app.state.hint_policy = hint_policy
+        app.state.next_checks = next_checks
+        app.state.answer_disclosure = answer_disclosure
+        app.state.teaching_interactions = teaching_interactions
         app.state.tool_registry = tool_registry
         app.state.graph_factory = graph_factory
         app.state.academic_solver = academic_solver
@@ -215,6 +274,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if app_settings.app_env == "test":
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
+        if (
+            app_settings.app_env != "test"
+            and app_settings.rag_enabled
+            and app_settings.rag_warmup_on_startup
+        ):
+            logger.info("rag_model_warmup_started")
+            warmup = await asyncio.to_thread(rag_retrieval.warmup)
+            app.state.rag_warmup = warmup
+            logger.info(
+                "rag_model_warmup_completed status=%s elapsed_ms=%s failed=%s",
+                warmup["status"],
+                warmup["elapsed_ms"],
+                warmup["failed_components"],
+            )
+        else:
+            app.state.rag_warmup = {
+                "status": "skipped",
+                "reason": "test_environment_or_disabled",
+            }
         yield
         await task_executor.shutdown()
         await context_cache.close()

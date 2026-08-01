@@ -22,7 +22,7 @@ class SourceImage:
 
 @dataclass(frozen=True)
 class PreparedImageBatch:
-    strategy: Literal["single", "stitched", "per_image"]
+    strategy: Literal["single", "ordered_multi_image", "stitched", "per_image"]
     images: tuple[ImageInput, ...]
     source_count: int
     fallback_reason: str = ""
@@ -38,6 +38,7 @@ class MultiImageComposer:
         self.max_total_pixels = settings.multi_image_stitch_max_total_pixels
         self.max_canvas_edge = settings.multi_image_stitch_max_canvas_edge
         self.max_aspect_ratio = settings.multi_image_stitch_max_aspect_ratio
+        self.preserve_originals = settings.multi_image_preserve_originals
         self.max_output_bytes = settings.upload_max_image_size_mb * 1024 * 1024
         self.max_single_edge = settings.image_max_long_edge
         self.auto_rotate = settings.image_auto_rotate
@@ -48,7 +49,7 @@ class MultiImageComposer:
         opened = [self._open(item) for item in sources]
         normalized = [self._normalize(image) for image in opened]
         individual = tuple(
-            self._image_input(image, source.filename)
+            self._image_input(image, source.filename, source.mime_type)
             for image, source in zip(normalized, sources, strict=True)
         )
         if len(sources) == 1:
@@ -56,6 +57,13 @@ class MultiImageComposer:
                 strategy="single",
                 images=individual,
                 source_count=1,
+            )
+
+        if self.preserve_originals:
+            return PreparedImageBatch(
+                strategy="ordered_multi_image",
+                images=individual,
+                source_count=len(sources),
             )
 
         fallback_reason = self._fallback_reason(normalized)
@@ -69,7 +77,11 @@ class MultiImageComposer:
 
         composite = self._stitch(normalized)
         try:
-            encoded = self._image_input(composite, "xzd-multi-image-composite.jpg")
+            encoded = self._image_input(
+                composite,
+                "xzd-multi-image-composite.jpg",
+                "image/jpeg",
+            )
         except ImageProcessingError:
             return PreparedImageBatch(
                 strategy="per_image",
@@ -186,17 +198,38 @@ class MultiImageComposer:
             canvas.paste(item, (image_x, image_y))
         return canvas
 
-    def _image_input(self, image: Image.Image, filename: str) -> ImageInput:
-        encoded = self._encode_jpeg(image)
+    def _image_input(
+        self,
+        image: Image.Image,
+        filename: str,
+        preferred_mime_type: str = "image/jpeg",
+    ) -> ImageInput:
+        mime_type = "image/jpeg"
+        encoded: bytes
+        if preferred_mime_type.casefold() == "image/png":
+            png = self._encode_png(image)
+            if len(png) <= self.max_output_bytes:
+                encoded = png
+                mime_type = "image/png"
+            else:
+                encoded = self._encode_jpeg(image)
+        else:
+            encoded = self._encode_jpeg(image)
         return ImageInput(
             source_type="base64",
             value=(
-                "data:image/jpeg;base64,"
+                f"data:{mime_type};base64,"
                 f"{base64.b64encode(encoded).decode('ascii')}"
             ),
-            mime_type="image/jpeg",
+            mime_type=mime_type,
             filename=filename,
         )
+
+    @staticmethod
+    def _encode_png(image: Image.Image) -> bytes:
+        output = BytesIO()
+        image.save(output, format="PNG", optimize=True)
+        return output.getvalue()
 
     def _encode_jpeg(self, image: Image.Image) -> bytes:
         for quality in (90, 82, 74, 66):

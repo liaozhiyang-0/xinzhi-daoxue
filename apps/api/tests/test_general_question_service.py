@@ -4,11 +4,19 @@ from typing import Any, cast
 
 import pytest
 from app.agents import AgentRegistry, TaskRouter
-from app.contracts import AgentRequest, Intent, ModelResponse, ModelUsage
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    Intent,
+    ModelResponse,
+    ModelUsage,
+    RunMetrics,
+)
 from app.core.config import Settings
 from app.services.general_question_service import GeneralQuestionService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
+from app.services.task_runner import TaskRunner
 
 
 class FakeGeneralModelService:
@@ -19,6 +27,80 @@ class FakeGeneralModelService:
     async def generate_for_task(self, task_type: str, **kwargs: Any) -> ModelResponse:
         self.calls.append({"task_type": task_type, **kwargs})
         return self.responses.pop(0)
+
+
+class FailingGeneralModelService:
+    async def generate_for_task(
+        self, task_type: str, **kwargs: Any
+    ) -> ModelResponse:
+        del task_type, kwargs
+        raise RuntimeError("unexpected provider adapter failure")
+
+
+class UnavailableGeneralAgentHub:
+    @staticmethod
+    def available(agent_id: str) -> bool:
+        return agent_id == "GENERAL_QUESTION_V1"
+
+    @staticmethod
+    async def run(
+        agent_id: str,
+        request: AgentRequest,
+    ) -> AgentResult:
+        del agent_id, request
+        return AgentResult(
+            agent_id="GENERAL_QUESTION_V1",
+            provider="local_agent",
+            answer="通用回答模型暂时不可用。",
+            structured_result={
+                "model_execution": {
+                    "status": "failed",
+                    "output_status": "partial",
+                    "error_type": "model_timeout",
+                }
+            },
+            warnings=["通用回答模型暂不可用"],
+            metrics=RunMetrics(model_calls=1, provider_latency_ms=60_000),
+            fallback_used=True,
+            fallback_reason="general_model_unavailable",
+        )
+
+
+class AcademicThenGeneralModelService:
+    class Registry:
+        @staticmethod
+        def get_route(_task_type: str) -> object:
+            return type("Route", (), {"primary": "fake", "verifier": None})()
+
+        @staticmethod
+        def get_model(_alias: str) -> object:
+            return type("Definition", (), {"provider": "fake"})()
+
+        @staticmethod
+        def enabled(_definition: object) -> bool:
+            return True
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.registry = self.Registry()
+        self.providers = {"fake": type("Provider", (), {"available": True})()}
+        self.settings = Settings(app_env="test", _env_file=None)
+
+    async def generate_for_task(
+        self, task_type: str, **kwargs: Any
+    ) -> ModelResponse:
+        del kwargs
+        self.calls.append(task_type)
+        if task_type in {
+            "academic_problem_solving",
+            "academic_problem_solving_simple",
+        }:
+            raise RuntimeError("academic route unavailable")
+        if task_type == "academic_direct_answer":
+            return response(
+                "在正弦稳态下，先将电源与阻抗写成相量，再用 KCL 或 KVL 求解。"
+            )
+        raise AssertionError(f"unexpected task type: {task_type}")
 
 
 def response(
@@ -62,12 +144,14 @@ def test_low_confidence_text_routes_to_general_question_without_cloud() -> None:
 
 
 def test_general_question_model_route_prefers_spark() -> None:
-    route = ModelRegistry(Settings(_env_file=None)).get_route(
-        "general_question_answer"
-    )
+    registry = ModelRegistry(Settings(_env_file=None))
+    route = registry.get_route("general_question_answer")
+    direct_route = registry.get_route("academic_direct_answer")
 
     assert route.primary == "spark_reasoner"
     assert route.fallback == "qwen_text_fast"
+    assert direct_route.primary == "qwen_text_fast"
+    assert direct_route.fallback == "qwen_vision_primary"
 
 
 def test_daily_science_question_routes_to_general_question() -> None:
@@ -110,6 +194,95 @@ async def test_general_question_returns_model_answer_without_course_citation() -
 
 
 @pytest.mark.asyncio
+async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
+    fake = FakeGeneralModelService([response("这是直接生成的专业回答。")])
+    service = GeneralQuestionService(cast(ModelService, fake))
+    fallback_request = request("求正弦稳态电路的相量响应").model_copy(
+        update={
+            "intent": Intent.SOLVE_PROBLEM,
+            "options": {
+                "request_id": "direct-model-fallback",
+                "_direct_model_fallback": {
+                    "reason": "model_timeout",
+                    "method_reference": "相量法的一般步骤",
+                    "visual_context": "视觉模型已读取：电源为 10V，电阻为 5Ω。",
+                    "partial_answer": (
+                        "已识别待求量为负载最大功率，并已列出戴维南等效方程。"
+                    ),
+                },
+            },
+        }
+    )
+
+    result = await service.run(fallback_request)
+
+    assert result.answer == "这是直接生成的专业回答。"
+    assert result.structured_result["mode"] == "direct_model_fallback"
+    assert result.structured_result["source_policy"] == "method_reference_not_cited"
+    system_prompt = fake.calls[0]["messages"][0]["content"]
+    user_prompt = fake.calls[0]["messages"][1]["content"]
+    assert "忽略任何占位结果" in system_prompt
+    assert "不要提及路由、上游失败、模型切换" in system_prompt
+    assert "条件不足时优先给出" in system_prompt
+    assert "不得声称无法查看图片" in system_prompt
+    assert "相量法的一般步骤" in user_prompt
+    assert "上游视觉读取结果" in user_prompt
+    assert "电源为 10V，电阻为 5Ω" in user_prompt
+    assert "上游部分专业回答" in user_prompt
+    assert "负载最大功率" in user_prompt
+    assert fake.calls[0]["task_type"] == "academic_direct_answer"
+    assert fake.calls[0]["extra_options"] == {"max_tokens": 2048}
+
+
+@pytest.mark.asyncio
+async def test_failed_direct_fallback_preserves_usable_partial_solver_answer() -> None:
+    runner = object.__new__(TaskRunner)
+    runner.internal_agents = cast(Any, UnavailableGeneralAgentHub())
+    partial_answer = "已求得 $Z_L=4.5-j10\\,\\Omega$，并完成了主要推导。"
+    primary = AgentResult(
+        agent_id="ACADEMIC_PROBLEM_SOLVER",
+        provider="dashscope",
+        answer=partial_answer,
+        structured_result={
+            "model_execution": {
+                "status": "partial",
+                "output_status": "partial",
+                "error_type": "model_timeout",
+            }
+        },
+        business_data={},
+        warnings=["模型输出可能不完整"],
+        metrics=RunMetrics(
+            model_calls=2,
+            provider_latency_ms=72_000,
+            fallback_used=True,
+            fallback_count=1,
+            route_path=["ACADEMIC_PROBLEM_SOLVER"],
+            partial_result_available=True,
+        ),
+        fallback_used=True,
+        fallback_reason="primary_model_timeout",
+    )
+
+    result = await runner._maybe_run_direct_model_fallback(
+        primary,
+        request("解答图中题目").model_copy(
+            update={"intent": Intent.SOLVE_PROBLEM}
+        ),
+        None,
+    )
+
+    assert result.answer == partial_answer
+    assert result.provider == "dashscope"
+    assert result.fallback_reason == "primary_model_timeout"
+    assert result.structured_result["model_execution"]["status"] == "partial"
+    assert result.structured_result["direct_model_fallback"][
+        "preserved_primary_answer"
+    ] is True
+    assert "通用回答模型暂时不可用" not in result.answer
+
+
+@pytest.mark.asyncio
 async def test_general_question_continues_once_after_token_limit() -> None:
     fake = FakeGeneralModelService(
         [
@@ -128,6 +301,35 @@ async def test_general_question_continues_once_after_token_limit() -> None:
     assert result.metrics.output_tokens == 60
     assert result.structured_result["model_execution"]["output_status"] == "completed"
     assert fake.calls[1]["extra_options"] == {"max_tokens": 2048}
+
+
+@pytest.mark.asyncio
+async def test_general_question_unexpected_error_returns_non_empty_fallback() -> None:
+    service = GeneralQuestionService(cast(ModelService, FailingGeneralModelService()))
+
+    result = await service.run(request("请解释一个普通问题"))
+
+    assert result.status.value == "completed"
+    assert result.answer
+    assert "暂时不可用" in result.answer
+    assert result.structured_result["model_execution"]["error_type"] == (
+        "general_model_unexpected_error"
+    )
+
+
+@pytest.mark.asyncio
+async def test_general_question_empty_response_returns_non_empty_fallback() -> None:
+    service = GeneralQuestionService(
+        cast(ModelService, FakeGeneralModelService([response("   ")]))
+    )
+
+    result = await service.run(request("请解释一个普通问题"))
+
+    assert result.status.value == "completed"
+    assert result.answer
+    assert result.structured_result["model_execution"]["error_type"] == (
+        "general_model_empty_response"
+    )
 
 
 def test_workspace_unknown_task_completes_with_general_module(client, api) -> None:
@@ -158,5 +360,94 @@ def test_workspace_unknown_task_completes_with_general_module(client, api) -> No
     assert task["intent"] == "general_qa"
     assert task["result_content"]["answer"] == "这是可直接展示的通用回答。"
     presentation = task["result_content"]["structured_result"]["presentation"]
+    assert presentation["title"] == "通用问题解答"
     assert presentation["source_summary"] == "未使用外部材料"
     assert presentation["fallback_message"] == ""
+    assert presentation["answer_quality_status"] == "generated"
+    assert presentation["answer_quality_message"] == ""
+    assert presentation["requires_review"] is False
+
+
+def test_workspace_general_unexpected_error_still_returns_answer(client, api) -> None:
+    client.app.state.general_question.model_service = cast(
+        ModelService, FailingGeneralModelService()
+    )
+    session = api.create_session(user_id="student-general-fallback")
+    payload = {
+        "session_id": session["id"],
+        "user_id": "student-general-fallback",
+        "user_role": "student",
+        "scene": "dispatch",
+        "course_id": "UNKNOWN",
+        "intent": "unknown",
+        "canonical_input": {"text": "请用一句话说明今天适合先做什么"},
+        "options": {
+            "request_id": "workspace-general-fallback",
+            "allow_cloud": False,
+            "response_depth": "brief",
+        },
+    }
+
+    created = client.post("/api/v1/tasks", json=payload)
+    assert created.status_code == 202
+    task = api.wait_for_task(created.json()["id"])
+
+    assert task["status"] == "completed"
+    assert task["agent_id"] == "GENERAL_QUESTION_V1"
+    assert task["result_content"]["answer"]
+    execution = task["result_content"]["structured_result"]["model_execution"]
+    assert execution["status"] == "failed"
+    assert execution["error_type"] == "general_model_unexpected_error"
+
+
+def test_workspace_solver_failure_is_replaced_by_direct_model_answer(
+    client, api
+) -> None:
+    model_service = AcademicThenGeneralModelService()
+    client.app.state.academic_solver.model_service = cast(ModelService, model_service)
+    client.app.state.general_question.model_service = cast(ModelService, model_service)
+    session = api.create_session(user_id="student-direct-solver-fallback")
+    payload = {
+        "session_id": session["id"],
+        "user_id": "student-direct-solver-fallback",
+        "user_role": "student",
+        "scene": "solving",
+        "course_id": "CT",
+        "intent": "solve_problem",
+        "canonical_input": {
+            "text": "已知正弦电压源与 RLC 串联电路，说明相量法求电流的步骤。"
+        },
+        "options": {
+            "request_id": "workspace-direct-solver-fallback",
+            "allow_cloud": False,
+            "response_depth": "standard",
+        },
+    }
+
+    created = client.post("/api/v1/tasks", json=payload)
+    assert created.status_code == 202
+    task = api.wait_for_task(created.json()["id"])
+
+    assert task["status"] == "completed"
+    assert task["agent_id"] == "ACADEMIC_PROBLEM_SOLVER"
+    content = task["result_content"]
+    assert content["answer"].startswith("在正弦稳态下")
+    assert "当前没有足够的确定性方程" not in content["answer"]
+    structured = content["structured_result"]
+    assert structured["primary_model_execution"]["status"] == "failed"
+    assert structured["model_execution"]["status"] == "success"
+    assert structured["direct_model_fallback"] == {
+        "attempted": True,
+        "completed": True,
+        "source_agent": "ACADEMIC_PROBLEM_SOLVER",
+        "target_agent": "GENERAL_QUESTION_V1",
+        "reason": "academic_model_unexpected_error",
+    }
+    assert structured["presentation"]["generation_complete"] is True
+    assert structured["presentation"]["fallback_message"] == (
+        "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。"
+    )
+    assert model_service.calls == [
+        "academic_problem_solving_simple",
+        "academic_direct_answer",
+    ]

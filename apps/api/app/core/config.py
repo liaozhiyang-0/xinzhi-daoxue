@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -78,12 +78,37 @@ class Settings(BaseSettings):
     model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
     model_max_retries: int = Field(default=1, ge=0, le=1)
     model_global_max_concurrency: int = Field(default=6, ge=1, le=32)
+    model_circuit_failure_threshold: int = Field(default=1, ge=1, le=20)
+    model_circuit_reset_seconds: float = Field(default=300, gt=0, le=3600)
     spark_max_concurrency: int = Field(default=4, ge=1, le=16)
     qwen_max_concurrency: int = Field(default=2, ge=1, le=32)
     enable_model_cost_tracking: bool = True
     academic_solver_max_tokens: int = Field(default=4096, ge=1024, le=65536)
     academic_solver_max_continuations: int = Field(default=2, ge=0, le=4)
     academic_solver_timeout_seconds: float = Field(default=240, gt=0, le=600)
+    academic_solver_soft_deadline_seconds: float = Field(default=140, gt=0, le=175)
+    academic_solver_finalization_deadline_seconds: float = Field(
+        default=165, gt=0, le=175
+    )
+    academic_solver_hard_deadline_seconds: float = Field(default=175, gt=0, le=175)
+    academic_solver_complex_soft_deadline_seconds: float = Field(
+        default=200, gt=0, le=235
+    )
+    academic_solver_complex_finalization_deadline_seconds: float = Field(
+        default=225, gt=0, le=235
+    )
+    academic_solver_complex_hard_deadline_seconds: float = Field(
+        default=235, gt=0, le=240
+    )
+    academic_solver_retrieval_timeout_seconds: float = Field(
+        default=30, gt=0, le=120
+    )
+    academic_solver_vision_timeout_seconds: float = Field(
+        default=60, gt=0, le=180
+    )
+    academic_solver_min_generation_seconds: float = Field(
+        default=90, gt=0, le=180
+    )
 
     upload_max_image_size_mb: int = Field(default=6, ge=1, le=50)
     upload_max_images: int = Field(default=8, ge=1, le=32)
@@ -94,12 +119,9 @@ class Settings(BaseSettings):
     multi_image_stitch_max_total_pixels: int = Field(
         default=16_000_000, ge=1_000_000, le=100_000_000
     )
-    multi_image_stitch_max_canvas_edge: int = Field(
-        default=4096, ge=1024, le=8192
-    )
-    multi_image_stitch_max_aspect_ratio: float = Field(
-        default=4.0, ge=1.5, le=20
-    )
+    multi_image_stitch_max_canvas_edge: int = Field(default=4096, ge=1024, le=8192)
+    multi_image_stitch_max_aspect_ratio: float = Field(default=4.0, ge=1.5, le=20)
+    multi_image_preserve_originals: bool = True
     multi_image_fallback_concurrency: int = Field(default=2, ge=1, le=4)
     multi_image_summary_max_chars: int = Field(default=24_000, ge=2000, le=100_000)
 
@@ -109,6 +131,7 @@ class Settings(BaseSettings):
     enable_qwen_vision_primary: bool = True
     enable_dual_model_verification: bool = True
     dual_model_min_risk_level: Literal["low", "medium", "high", "critical"] = "high"
+    student_verification_model_enabled: bool = False
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "xzd_minio"
@@ -181,6 +204,10 @@ class Settings(BaseSettings):
     knowledge_image_context_weight: float = Field(default=0.4, ge=0, le=10)
 
     rag_enabled: bool = True
+    rag_warmup_on_startup: bool = True
+    rag_warmup_image_model: bool = True
+    rag_warmup_reranker: bool = False
+    rag_warmup_strict: bool = False
     text_embedding_provider: Literal["local", "local_bge", "hash_legacy"] = "local_bge"
     text_embedding_model: str = "BAAI/bge-small-zh-v1.5"
     text_embedding_revision: str = "7999e1d3359715c523056ef9478215996d62a620"
@@ -191,6 +218,7 @@ class Settings(BaseSettings):
     text_embedding_cache_dir: Path | None = None
     text_embedding_trust_remote_code: bool = False
     text_embedding_query_instruction: str = ""
+    rag_model_local_files_only: bool = True
     text_colbert_enabled: bool = False
     legacy_hash_embedding_enabled: bool = True
     legacy_hash_embedding_dimension: int = Field(default=384, ge=8, le=4096)
@@ -276,18 +304,21 @@ class Settings(BaseSettings):
     student_previous_answer_chars: int = Field(default=600, ge=100, le=2000)
 
     context_max_input_tokens: int = Field(default=16_000, ge=1_000, le=1_000_000)
-    context_reserved_output_tokens: int = Field(
-        default=4_096, ge=256, le=262_144
-    )
+    context_reserved_output_tokens: int = Field(default=4_096, ge=256, le=262_144)
     context_compaction_trigger_ratio: float = Field(default=0.70, ge=0.1, le=0.95)
     context_recent_message_limit: int = Field(default=12, ge=2, le=100)
     context_relevant_older_limit: int = Field(default=6, ge=0, le=50)
     context_memory_limit: int = Field(default=8, ge=0, le=50)
     context_summary_target_tokens: int = Field(default=1_200, ge=100, le=8_000)
     context_summary_message_trigger: int = Field(default=24, ge=4, le=1_000)
+    conversation_memory_summary_enabled: bool = True
+    conversation_memory_summary_max_turn_chars: int = Field(
+        default=12_000, ge=1_000, le=50_000
+    )
+    conversation_memory_summary_max_items: int = Field(default=8, ge=1, le=20)
     context_cache_ttl_seconds: int = Field(default=300, ge=1, le=86_400)
     context_cache_max_entries: int = Field(default=256, ge=1, le=10_000)
-    context_config_version: str = "conversation-v1"
+    context_config_version: str = "conversation-v2"
 
     route_budget_ms: int = Field(default=50, ge=1, le=5000)
     normalization_budget_ms: int = Field(default=20, ge=1, le=5000)
@@ -302,6 +333,30 @@ class Settings(BaseSettings):
         if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError("LOG_LEVEL 必须是标准 Python 日志级别")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_academic_solver_deadlines(self) -> Settings:
+        deadline_groups = (
+            (
+                self.academic_solver_soft_deadline_seconds,
+                self.academic_solver_finalization_deadline_seconds,
+                self.academic_solver_hard_deadline_seconds,
+                "standard",
+            ),
+            (
+                self.academic_solver_complex_soft_deadline_seconds,
+                self.academic_solver_complex_finalization_deadline_seconds,
+                self.academic_solver_complex_hard_deadline_seconds,
+                "complex",
+            ),
+        )
+        for soft, finalization, hard, label in deadline_groups:
+            if not 0 < soft <= finalization <= hard:
+                raise ValueError(
+                    f"{label} solver deadlines must satisfy soft <= "
+                    "finalization <= hard"
+                )
+        return self
 
     @property
     def active_database_url(self) -> str:

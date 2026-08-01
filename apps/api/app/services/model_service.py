@@ -11,13 +11,17 @@ from pydantic import BaseModel
 from app.contracts import ImageInput, ModelResponse, ModelStreamEvent, ModelUsage
 from app.core.config import Settings
 from app.core.errors import (
+    AuthenticationError,
     InvalidModelRequestError,
     ModelProviderError,
+    ModelTimeoutError,
     ProviderNotConfiguredError,
+    ProviderUnavailableError,
     StructuredOutputError,
 )
 from app.observability import ModelCallRecord, ModelTracer
 from app.providers.llm import BaseModelProvider
+from app.services.agent_runtime import ProviderCircuitBreaker
 from app.services.model_registry import ModelDefinition, ModelRegistry
 
 T = TypeVar("T", bound=ModelResponse)
@@ -42,6 +46,7 @@ class ModelService:
             "iflytek_spark": asyncio.Semaphore(settings.spark_max_concurrency),
             "dashscope": asyncio.Semaphore(settings.qwen_max_concurrency),
         }
+        self._circuits: dict[str, ProviderCircuitBreaker] = {}
         self._vision = asyncio.Semaphore(settings.vision_max_concurrency)
 
     async def generate_for_task(
@@ -195,10 +200,42 @@ class ModelService:
         vision: bool = False,
     ) -> ModelResponse:
         route = self.registry.get_route(task_type)
-        aliases = [route.primary, route.fallback]
+        call_options = dict(extra_options or {})
+        allow_route_fallback = bool(call_options.pop("_allow_route_fallback", True))
+        preferred_alias = call_options.pop("_preferred_route_alias", None)
+        route_aliases = {route.primary, route.fallback}
+        if preferred_alias is not None and preferred_alias not in route_aliases:
+            raise InvalidModelRequestError(
+                f"模型别名 {preferred_alias} 不属于任务路由 {task_type}",
+                details={
+                    "task_type": task_type,
+                    "preferred_alias": preferred_alias,
+                },
+            )
+        aliases = (
+            [preferred_alias]
+            if preferred_alias is not None
+            else [
+                route.primary,
+                route.fallback if allow_route_fallback else None,
+            ]
+        )
         last_error: ModelProviderError | None = None
         failed_usage: ModelUsage | None = None
         for index, alias in enumerate(item for item in aliases if item):
+            circuit = self._circuit(alias)
+            if not circuit.allow_request():
+                definition = self.registry.get_model(alias)
+                last_error = ProviderUnavailableError(
+                    f"模型别名 {alias} 暂处于熔断冷却期",
+                    provider=definition.provider,
+                    model=definition.model,
+                    details={
+                        "circuit_open": True,
+                        **circuit.snapshot(),
+                    },
+                )
+                continue
             try:
                 response = await self._execute_alias(
                     task_type,
@@ -209,9 +246,27 @@ class ModelService:
                     high_resolution=high_resolution,
                     fallback_used=index > 0,
                     operation=operation,
-                    extra_options={**route.options, **(extra_options or {})},
+                    extra_options={**route.options, **call_options},
                     vision=vision,
                 )
+                circuit.record_success()
+                if index > 0:
+                    response = response.model_copy(
+                        update={
+                            "raw_metadata": {
+                                **response.raw_metadata,
+                                "route_fallback_used": True,
+                                "fallback_count": 1,
+                                "fallback_reason": (
+                                    last_error.code
+                                    if last_error is not None
+                                    else "primary_model_error"
+                                ),
+                                "source_model": route.primary,
+                                "target_model": alias,
+                            }
+                        }
+                    )
                 if failed_usage is not None:
                     response = response.model_copy(
                         update={
@@ -225,6 +280,8 @@ class ModelService:
                 return response
             except ModelProviderError as exc:
                 last_error = exc
+                if self._trips_circuit(exc):
+                    circuit.record_failure()
                 failed_usage = self._merge_usage(
                     failed_usage, self._usage_from_details(exc.details)
                 )
@@ -267,6 +324,9 @@ class ModelService:
             started = self.tracer.now()
             try:
                 options = self._options(definition, {}, extra_options)
+                if definition.provider != "iflytek_spark":
+                    options.pop("spark_response_transport", None)
+                    options.pop("spark_stream_total_timeout_seconds", None)
                 async with self._global, self._provider_limit(definition.provider):
                     if vision:
                         async with self._vision:
@@ -337,6 +397,29 @@ class ModelService:
 
     def _provider_limit(self, provider: str) -> asyncio.Semaphore:
         return self._provider_limits.setdefault(provider, asyncio.Semaphore(1))
+
+    def _circuit(self, alias: str) -> ProviderCircuitBreaker:
+        return self._circuits.setdefault(
+            alias,
+            ProviderCircuitBreaker(
+                failure_threshold=self.settings.model_circuit_failure_threshold,
+                reset_seconds=self.settings.model_circuit_reset_seconds,
+            ),
+        )
+
+    @staticmethod
+    def _trips_circuit(error: ModelProviderError) -> bool:
+        streamed_total_timeout = isinstance(error, ModelTimeoutError) and (
+            error.details.get("response_transport") == "stream"
+        )
+        return isinstance(
+            error,
+            (
+                AuthenticationError,
+                ProviderNotConfiguredError,
+                ProviderUnavailableError,
+            ),
+        ) or streamed_total_timeout
 
     @staticmethod
     def _options(
