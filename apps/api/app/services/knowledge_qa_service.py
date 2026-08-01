@@ -79,10 +79,13 @@ class KnowledgeQAService:
             execution.result.fallback_reason = "model_generation_unavailable"
             return execution
 
+        generated_content = re.sub(
+            r"(?<!\[)\b(S\d+)\b(?!\])", r"[\1]", generated.content
+        )
         evidence_by_id = {
             item.evidence_id: item.source_ref for item in execution.context.evidence
         }
-        declared = set(re.findall(r"\[(S\d+)\]", generated.content))
+        declared = set(re.findall(r"\[(S\d+)\]", generated_content))
         citations = [
             source
             for evidence_id, source in evidence_by_id.items()
@@ -91,12 +94,12 @@ class KnowledgeQAService:
         if not citations:
             execution.result.warnings.append("模型回答未包含可验证的证据编号")
         execution.result.provider = generated.provider
-        execution.result.answer = generated.content
+        execution.result.answer = generated_content
         execution.result.citations = citations
         execution.result.structured_result.update(
             {
                 "mode": "local_rag_model_generation",
-                "answer_text": generated.content,
+                "answer_text": generated_content,
                 "verified_evidence_ids": sorted(declared & evidence_by_id.keys()),
                 "generation_model": generated.model,
                 "generation_usage": (
@@ -114,22 +117,46 @@ class KnowledgeQAService:
 
     def run(self, agent_id: str, request: AgentRequest) -> KnowledgeQAExecution:
         question = self._question(request)
-        retrieval = (
-            self.rag_retrieval.search(
-                query_text=question,
-                course_id=request.course_id,
-                intent=request.intent.value,
-                target_agent_id=agent_id,
-                top_k=self.knowledge_base.settings.knowledge_default_top_k,
-            )
-            if self.rag_retrieval is not None
-            else self.knowledge_base.search_result(
-                question,
-                [request.course_id],
-                self.knowledge_base.settings.knowledge_default_top_k,
-            )
-        )
+        if self.rag_retrieval is None:
+            retrieval = self._local_lexical_search(question, request.course_id)
+        else:
+            try:
+                retrieval = self.rag_retrieval.search(
+                    query_text=question,
+                    course_id=request.course_id,
+                    intent=request.intent.value,
+                    target_agent_id=agent_id,
+                    top_k=self.knowledge_base.settings.knowledge_default_top_k,
+                )
+            except Exception as exc:
+                retrieval = self._local_lexical_search(
+                    question,
+                    request.course_id,
+                    warning=f"local_lexical_fallback:{type(exc).__name__}",
+                )
+            if not retrieval.hits:
+                lexical = self._local_lexical_search(
+                    question,
+                    request.course_id,
+                    warning="local_lexical_fallback:no_rag_hits",
+                )
+                if lexical.hits:
+                    retrieval = lexical
         return self.from_retrieval(agent_id, request, retrieval)
+
+    def _local_lexical_search(
+        self, question: str, course_id: str, warning: str | None = None
+    ) -> RetrievalResult:
+        result = self.knowledge_base.search_result(
+            question,
+            [course_id],
+            self.knowledge_base.settings.knowledge_default_top_k,
+        )
+        if warning:
+            result = result.model_copy(
+                update={"warnings": list(dict.fromkeys([*result.warnings, warning]))}
+            )
+        return result
 
     def from_retrieval(
         self,
@@ -188,10 +215,11 @@ class KnowledgeQAService:
             source_refs=context.source_refs,
             confidence=retrieval.confidence,
         )
+        answer = self._build_grounded_answer(question, context, summary)
         result = AgentResult(
             agent_id=agent_id,
             provider="local",
-            answer=f"{DISCLAIMER}\n{summary}",
+            answer=answer,
             structured_result=content,
             artifacts=[artifact],
             citations=context.source_refs,
@@ -208,6 +236,42 @@ class KnowledgeQAService:
         )
         result.metrics.retrieval_calls = 1
         return KnowledgeQAExecution(result=result, retrieval=retrieval, context=context)
+
+    @staticmethod
+    def _build_grounded_answer(
+        question: str, context: RetrievalContextPacket, summary: str
+    ) -> str:
+        if not context.evidence:
+            return (
+                f"## {question}\n\n"
+                "暂时没有在当前课程知识库中检索到足够依据。"
+                "可以补充课程范围、关键词或上传相关资料后再问。"
+            )
+        lines = [
+            f"## {question}",
+            "",
+            "### 先给结论",
+            f"这是一个知识讲解问题。{summary}。下面的说明仅使用当前本地课程资料中的内容，引用标记对应右侧可打开的原文。",
+            "",
+            "### 核心讲解",
+            "- 先掌握资料中的定义、工作条件和关键组成，再结合工作过程理解结论。",
+            "- 如果需要计算或设计，应以资料中的公式、参数约束和例题步骤为准，"
+            "不把概念说明误当成具体数值求解。",
+            "",
+            "### 本地资料依据",
+        ]
+        for evidence in context.evidence[:4]:
+            excerpt = " ".join(evidence.content.split())[:520]
+            label = evidence.chapter or evidence.title or evidence.document_path
+            lines.extend([f"- [{evidence.evidence_id}] {label}", f"  {excerpt}"])
+        lines.extend(
+            [
+                "",
+                "### 下一步",
+                "如果你希望继续深入，可以指定“工作原理”“参数计算”“拓扑对比”或“设计例题”，系统会沿用本地资料继续检索。",
+            ]
+        )
+        return "\n".join(lines)
 
     @staticmethod
     def _question(request: AgentRequest) -> str:

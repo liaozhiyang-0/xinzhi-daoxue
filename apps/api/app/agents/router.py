@@ -446,6 +446,33 @@ class TaskRouter:
             ),
             "IC": sum(token in text for token in ("集成电路", "芯片设计", "版图")),
         }
+        # The router is also used directly by integrations that do not pass
+        # through XZDSupervisor. Keep a complete natural-language vocabulary
+        # here as a second line of defense for those callers.
+        for course, keywords in {
+            "CT": (
+                "电路理论", "戴维宁", "诺顿", "电感", "暂态", "稳态",
+                "基尔霍夫", "KCL", "KVL",
+            ),
+            "AE": (
+                "模拟电路", "运算放大器", "二极管", "反馈", "振荡", "稳压",
+                "开关稳压", "线性稳压", "整流", "滤波", "晶体管", "MOS管",
+            ),
+            "DE": (
+                "数字电路", "逻辑", "锁存器", "计数器", "寄存器", "时序逻辑", "组合逻辑"
+            ),
+            "SS": ("信号与系统", "卷积", "拉普拉斯变换"),
+            "DSP": ("数字信号处理", "离散傅里叶", "z变换", "滤波器"),
+            "COMM": ("通信原理", "调制", "解调", "信道编码"),
+            "RF": ("高频电子", "谐振放大", "混频"),
+            "EM": ("电磁场", "电磁波", "麦克斯韦"),
+            "INFO": ("信息论", "信源编码", "信道容量"),
+            "EMBEDDED": ("嵌入式", "单片机", "微控制器"),
+            "IC": ("集成电路", "芯片设计", "版图"),
+        }.items():
+            scores[course] += 2 * sum(
+                token.casefold() in text.casefold() for token in keywords
+            )
         best = max(scores, key=scores.get)  # type: ignore[arg-type]
         if scores[best] > 0 and list(scores.values()).count(scores[best]) == 1:
             return best, [f"detected_course:{best}"]
@@ -570,6 +597,34 @@ class TaskRouter:
                     min(ceiling, 0.60 + 0.12 * len(hits)),
                     f"keywords:{','.join(hits[:4])}",
                 )
+
+        knowledge_markers = (
+            "为什么", "是什么", "什么是", "解释", "讲解", "说明", "介绍",
+            "原理", "概念", "特点", "区别", "作用", "如何理解", "怎么理解",
+            "用途", "应用", "本地知识库", "本地资料", "课程资料", "知识库", "检索",
+        )
+        knowledge_hits = [
+            token for token in knowledge_markers if token.casefold() in text.casefold()
+        ]
+        non_knowledge_score = max(
+            (
+                score
+                for agent, score in scores.items()
+                if agent != "LEARN_01_KNOWLEDGE_QA_V1"
+            ),
+            default=0.0,
+        )
+        if (
+            knowledge_hits
+            and non_knowledge_score < 0.60
+            and scores.get("LEARN_01_KNOWLEDGE_QA_V1", 0.0) == 0.0
+            and not str(request.options.get("previous_agent", "")).strip()
+        ):
+            add(
+                "LEARN_01_KNOWLEDGE_QA_V1",
+                min(0.72, 0.60 + 0.06 * len(knowledge_hits)),
+                f"keywords:knowledge_language:{','.join(knowledge_hits[:4])}",
+            )
 
         problem_actions = (
             "求",
