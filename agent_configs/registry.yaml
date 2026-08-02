@@ -264,6 +264,17 @@ agents:
       allowed_content_types: [chapter_summary, concept, formula, method, mixed, unknown]
       context_max_chars: 6000
       generation_injection: true
+      external:
+        enabled: true
+        source_scopes: [academic, web]
+        providers: [arxiv, crossref, semantic_scholar, web_json]
+        max_results: 6
+        max_fetches: 0
+        max_iterations: 2
+        allow_full_text: false
+        require_citations: true
+        generation_injection: true
+        timeout_seconds: 20
     fallback:
       type: agent
       handler: local_retrieval_answer
@@ -313,6 +324,17 @@ agents:
       allowed_content_types: [chapter_summary, concept, formula, method, mixed, unknown]
       context_max_chars: 6000
       generation_injection: true
+      external:
+        enabled: true
+        source_scopes: [academic, web]
+        providers: [arxiv, crossref, semantic_scholar, web_json]
+        max_results: 6
+        max_fetches: 0
+        max_iterations: 2
+        allow_full_text: false
+        require_citations: true
+        generation_injection: true
+        timeout_seconds: 20
     fallback:
       type: none
       handler: no_fallback
@@ -361,6 +383,17 @@ agents:
       reranker: off
       context_max_chars: 0
       generation_injection: false
+      external:
+        enabled: true
+        source_scopes: [academic, web]
+        providers: [arxiv, crossref, semantic_scholar, web_json]
+        max_results: 6
+        max_fetches: 0
+        max_iterations: 2
+        allow_full_text: false
+        require_citations: true
+        generation_injection: true
+        timeout_seconds: 20
     fallback:
       type: none
       handler: no_fallback
@@ -510,6 +543,65 @@ agents:
       mock_enabled: true
       mock_profile: teach_assignment_review_v1
       mock_latency_ms: 25
+  RESEARCH_01_ACADEMIC_SEARCH_V1:
+    display_name: 学术论文检索
+    version: "1.0"
+    schema_version: "1"
+    scene: research
+    provider:
+      type: local
+      timeout_seconds: 30
+      max_retries: 0
+      parser_type: plain_text
+      output_schema: external_academic_search_v1
+    enabled: true
+    publication_status: local
+    mode: external_search
+    execution_mode: local
+    priority: 95
+    capabilities:
+      user_roles: [student, teacher, researcher, admin]
+      courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+      intents: [unknown, general_qa]
+      input_modes: [text]
+      supports_session_context: true
+      supports_images: false
+    input_mapping:
+      text: {source: text, transform: string, max_length: 12000}
+    input_contract:
+      required: [text]
+      optional: [conversation_summary, previous_answer_summary, request_id]
+    retrieval_policy:
+      enabled: false
+      policy_name: external_academic_search
+      mode: no_rag
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 0
+      generation_injection: false
+      external:
+        enabled: true
+        source_scopes: [academic, web]
+        providers: [arxiv, crossref, openalex, semantic_scholar, cnki, web_json]
+        max_results: 8
+        max_fetches: 0
+        max_iterations: 3
+        freshness_days: 1095
+        allow_full_text: false
+        require_citations: true
+        generation_injection: false
+        intent_gate_mode: signals_or_intent
+        intent_score_threshold: 2
+        timeout_seconds: 60
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: generic
+    renderer_type: generic
+
   RESEARCH_02_ACADEMIC_WRITING_V1:
     display_name: 学术写作
     version: "1.0"
@@ -561,6 +653,18 @@ agents:
       reranker: off
       context_max_chars: 12000
       generation_injection: false
+      external:
+        enabled: true
+        source_scopes: [academic, web]
+        providers: [arxiv, crossref, semantic_scholar, web_json]
+        max_results: 8
+        max_fetches: 4
+        max_iterations: 2
+        allow_full_text: false
+        require_citations: true
+        generation_injection: true
+        intent_allowlist: [academic_writing]
+        timeout_seconds: 20
     fallback:
       type: review
       handler: manual_review

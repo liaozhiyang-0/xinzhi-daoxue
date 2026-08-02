@@ -7,6 +7,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.agents.internal.contracts import (
+    AcademicPaperReview,
+    AcademicSearchPlan,
     AcademicWritingDraft,
     AssignmentReviewDraft,
     CircuitPlan,
@@ -15,6 +17,7 @@ from app.agents.internal.contracts import (
     IntentClassification,
     InternalAgentResult,
     LessonPrepDraft,
+    OverallRouteDecision,
     QueryRewrite,
     VisionExtraction,
 )
@@ -34,6 +37,54 @@ class InternalAgentDefinition:
 
 
 INTERNAL_AGENT_DEFINITIONS = (
+    InternalAgentDefinition(
+        "OVERALL_ROUTER_LOCAL_V1",
+        "overall_routing",
+        "在真正执行任务前，根据原始输入和候选路径选择一个业务 Agent",
+        (
+            "你是芯智导学的总体路由器，只负责选择 Agent，不回答用户问题。"
+            "必须根据原始用户输入，从候选路径中选择一个最合适的 target_agent_id。"
+            "论文检索与学术写作必须严格区分：查找/推荐/最新论文进入 "
+            "RESEARCH_01_ACADEMIC_SEARCH_V1，"
+            "改写/润色/摘要写作进入 RESEARCH_02_ACADEMIC_WRITING_V1。"
+            "不确定时选择 GENERAL_QUESTION_V1；只输出符合 JSON Schema 的对象。"
+        ),
+        OverallRouteDecision,
+    ),
+    InternalAgentDefinition(
+        "ACADEMIC_PAPER_REVIEW_LOCAL_V1",
+        "academic_paper_review",
+        "论文检索结果相关性审核Agent",
+        (
+            "你是论文检索结果审核器。逐条判断候选论文是否真正回答用户指定的领域或主题。"
+            "必须同时检查标题、摘要、来源和日期；跨领域、标题摘要不匹配、摘要为空、"
+            "明显未来日期或只有泛化词命中的记录必须 approved=false。"
+            "日期判断必须以用户输入JSON中的as_of_date为准，发布日期早于或等于该日期"
+            "不得因为年份是当前年份就判为未来。"
+            "如果用户只指定宽泛领域（例如人工智能），只要论文核心方法或研究对象明确属于"
+            "人工智能、机器学习、深度学习、生成式AI、计算机视觉、自然语言处理、强化学习、"
+            "神经网络或智能系统，就可以 approved=true，不要要求论文必须属于"
+            "电子信息课程。"
+            "只有主题明确匹配且摘要足以支持相关性的论文才 approved=true。"
+            "必须覆盖输入中的每个 evidence_id，只输出JSON，不补造论文信息。"
+        ),
+        AcademicPaperReview,
+    ),
+    InternalAgentDefinition(
+        "ACADEMIC_SEARCH_PLANNER_LOCAL_V1",
+        "academic_search_planning",
+        "学术论文检索规划Agent",
+        (
+            "你是学术论文检索规划器，不直接回答问题。根据用户原始输入提取研究主题、"
+            "领域、方法、应用场景、时间和数量要求，生成最多4组适合学术数据库的检索词。"
+            "必须同时生成中文和英文表达；详细主题要拆成核心概念组合，例如医学影像要考虑"
+            "medical imaging、radiology、medical image analysis、radiomics、"
+            "computer vision、"
+            "deep learning等相关表达，但不要无依据扩展到无关学科。"
+            "minimum_results必须识别用户的‘至少N篇’要求，未明确时默认为4。只输出JSON。"
+        ),
+        AcademicSearchPlan,
+    ),
     InternalAgentDefinition(
         "COURSE_CLASSIFIER_LOCAL_V1",
         "course_classification",
@@ -185,6 +236,7 @@ class InternalAgentHub:
         input_text: str,
         request_id: str | None = None,
         max_tokens: int | None = None,
+        extra_options: dict[str, Any] | None = None,
     ) -> InternalAgentResult:
         definition = self._get(agent_id)
         if definition.modality != "text":
@@ -194,7 +246,9 @@ class InternalAgentHub:
             )
         if not input_text.strip():
             raise InvalidModelRequestError("内部Agent输入不能为空", model=agent_id)
-        options = {"max_tokens": max_tokens} if max_tokens is not None else None
+        options = dict(extra_options or {})
+        if max_tokens is not None:
+            options["max_tokens"] = max_tokens
         schema_json = self._schema_json(definition)
         route = self.model_service.registry.get_route(definition.task_type)
         primary = self.model_service.registry.get_model(route.primary)

@@ -21,6 +21,7 @@ TASK_LABELS = {
     "SOLVER_CT_V1": "电路解题",
     "TEACH_01_LESSON_PREP_V1": "教案设计",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "作业批改",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "学术论文检索",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "学术写作",
     "RESEARCH_03_DATA_ANALYSIS_V1": "数据分析",
 }
@@ -37,6 +38,12 @@ def build_task_views(
     rag_mode = RAGInteractionMode(definition.retrieval_policy.interaction_mode)
     validation = result.structured_result.get("citation_validation", {})
     validation = validation if isinstance(validation, dict) else {}
+    external_validation = result.structured_result.get(
+        "external_citation_validation", {}
+    )
+    external_validation = (
+        external_validation if isinstance(external_validation, dict) else {}
+    )
     used_ids = {
         str(item) for item in validation.get("valid_ids", []) if isinstance(item, str)
     }
@@ -50,17 +57,40 @@ def build_task_views(
     if bundle is not None:
         bundle.used_evidence_ids = sorted(used_ids)
     evidence_view = _evidence_view(bundle, used_ids, rag_mode)
+    external_retrieval = result.structured_result.get("external_retrieval", {})
+    external_retrieval = (
+        external_retrieval if isinstance(external_retrieval, dict) else {}
+    )
+    external_count = len(external_retrieval.get("items", []))
     course_label = COURSE_LABELS.get(result.course_id, result.course_id or "课程")
     is_solver = rag_mode == RAGInteractionMode.METHOD_REFERENCE
     is_general = definition.agent_id == "GENERAL_QUESTION_V1"
-    task_label = TASK_LABELS.get(definition.agent_id, definition.display_name)
+    is_external_search_result = bool(
+        result.structured_result.get("external_search", False)
+    )
+    task_label = (
+        "学术论文检索"
+        if is_external_search_result
+        else TASK_LABELS.get(definition.agent_id, definition.display_name)
+    )
     fallback = bool(result.fallback_used or routing.get("fallback_used", False))
     mock = bool(result.mock_used or result.provider == "mock")
-    citation_status = str(validation.get("status", "not_run"))
+    citation_status = str(
+        validation.get(
+            "status",
+            external_validation.get("status", "not_run"),
+        )
+    )
     used_count = len(used_ids)
     evidence_count = len(bundle.evidence_items) if bundle else 0
     workflow_count = len(bundle.workflow_evidence_ids) if bundle else 0
-    if is_solver:
+    if external_count:
+        source_summary = f"外部论文 {external_count} 篇"
+        evidence_message = "已完成外部学术检索；在资料依据中可查看摘要、来源和原文链接"
+    elif definition.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1":
+        source_summary = "外部论文 0 篇"
+        evidence_message = "本次未找到可展示的外部论文；请调整关键词或时间范围"
+    elif is_solver:
         source_summary = (
             f"方法参考 {evidence_count} 条" if evidence_count else "暂无方法参考"
         )
@@ -95,6 +125,8 @@ def build_task_views(
         if result.provider == "local"
         else "内部 Agent 协作"
         if result.provider == "local_agent"
+        else "外部学术检索"
+        if result.provider == "external_retrieval"
         else "智能协作"
     )
     result_status = str(result.structured_result.get("result_status", "accepted"))
@@ -113,7 +145,12 @@ def build_task_views(
         if isinstance(quality_gate, dict)
         else "not_checked"
     )
-    if (
+    if result.provider == "external_retrieval" and external_count:
+        answer_quality_status = "checked"
+        answer_quality_message = (
+            "检索结果已完成来源、时间和链接字段整理；摘要内容仍建议打开原文核对。"
+        )
+    elif (
         is_general
         and isinstance(model_execution, dict)
         and model_execution.get("status") == "success"
@@ -305,6 +342,22 @@ def _execution_steps(
             "status": "completed" if bundle else "skipped",
         },
     ]
+    external = result.structured_result.get("external_retrieval", {})
+    if isinstance(external, dict):
+        external_status = str(external.get("status", "skipped"))
+        steps.append(
+            {
+                "key": "external_retrieval",
+                "label": "外部学术检索",
+                "status": (
+                    "completed"
+                    if external_status in {"completed", "partial"}
+                    else "failed"
+                    if external_status == "failed"
+                    else "skipped"
+                ),
+            }
+        )
     pipeline = result.structured_result.get("pipeline_stages", [])
     if isinstance(pipeline, list) and len(pipeline) == 2:
         steps.extend(

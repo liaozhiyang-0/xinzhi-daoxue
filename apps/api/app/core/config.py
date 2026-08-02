@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     qwen_timeout_seconds: float = Field(default=90, gt=0, le=600)
     qwen_vision_high_resolution: bool = True
 
+    # A single fast model call may refine the deterministic route before execution.
+    overall_routing_enabled: bool = True
+    overall_routing_timeout_seconds: float = Field(default=10, gt=0, le=30)
+    overall_routing_max_tokens: int = Field(default=160, ge=64, le=512)
+
     model_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
     model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
     model_max_retries: int = Field(default=1, ge=0, le=1)
@@ -120,15 +125,9 @@ class Settings(BaseSettings):
     academic_solver_complex_hard_deadline_seconds: float = Field(
         default=235, gt=0, le=240
     )
-    academic_solver_retrieval_timeout_seconds: float = Field(
-        default=30, gt=0, le=120
-    )
-    academic_solver_vision_timeout_seconds: float = Field(
-        default=60, gt=0, le=180
-    )
-    academic_solver_min_generation_seconds: float = Field(
-        default=90, gt=0, le=180
-    )
+    academic_solver_retrieval_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    academic_solver_vision_timeout_seconds: float = Field(default=60, gt=0, le=180)
+    academic_solver_min_generation_seconds: float = Field(default=90, gt=0, le=180)
 
     upload_max_image_size_mb: int = Field(default=6, ge=1, le=50)
     upload_max_images: int = Field(default=8, ge=1, le=32)
@@ -297,6 +296,42 @@ class Settings(BaseSettings):
     rag_sufficient_min_sources: int = Field(default=2, ge=1, le=10)
     rag_sufficient_min_score: float = Field(default=0.45, ge=0, le=1)
     rag_partial_min_score: float = Field(default=0.01, ge=0, le=1)
+
+    # External retrieval is available by default, but intent recognition must
+    # still approve the request before any provider is contacted.
+    external_retrieval_enabled: bool = True
+    external_retrieval_intent_gate_enabled: bool = True
+    external_retrieval_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    external_retrieval_review_enabled: bool = True
+    external_retrieval_planning_timeout_seconds: float = Field(
+        default=6, gt=0, le=60
+    )
+    external_retrieval_planning_max_tokens: int = Field(
+        default=700, ge=256, le=4000
+    )
+    external_retrieval_review_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    external_retrieval_review_max_tokens: int = Field(default=2400, ge=512, le=8000)
+    external_retrieval_max_results: int = Field(default=8, ge=1, le=50)
+    external_retrieval_max_fetches: int = Field(default=4, ge=0, le=20)
+    external_retrieval_allow_full_text: bool = False
+    external_retrieval_max_content_chars: int = Field(
+        default=12_000, ge=500, le=100_000
+    )
+    external_arxiv_base_url: str = "https://export.arxiv.org/api"
+    external_crossref_base_url: str = "https://api.crossref.org"
+    external_openalex_base_url: str = "https://api.openalex.org"
+    external_openalex_api_key: SecretStr = SecretStr("")
+    external_openalex_mailto: str = ""
+    external_semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
+    external_semantic_scholar_api_key: SecretStr = SecretStr("")
+    external_cnki_base_url: str = ""
+    external_cnki_api_key: SecretStr = SecretStr("")
+    external_cnki_auth_header: str = "x-api-key"
+    external_cnki_timeout_seconds: float = Field(default=8, gt=0, le=60)
+    external_web_search_base_url: str = ""
+    external_web_search_api_key: SecretStr = SecretStr("")
+    external_web_search_auth_header: str = "x-api-key"
+    external_web_search_timeout_seconds: float = Field(default=15, gt=0, le=120)
 
     rag_debug_enabled: bool = True
     rag_debug_max_input_chars: int = Field(default=2000, ge=100, le=20000)

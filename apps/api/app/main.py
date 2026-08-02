@@ -30,6 +30,9 @@ from app.orchestrator import GraphFactory, XZDSupervisor
 from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
+from app.providers.retrieval import create_external_search_service
+from app.services.academic_paper_review import AcademicPaperReviewService
+from app.services.academic_search_planner import AcademicSearchPlannerService
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.answer_disclosure import AnswerDisclosureService
 from app.services.auth_service import LoginRateLimiter
@@ -38,6 +41,7 @@ from app.services.context_budget import ContextBudgetManager
 from app.services.context_cache import ContextAssemblyCache
 from app.services.error_pool import ErrorPoolRegistry
 from app.services.evidence_packet_adapter import EvidencePacketAdapterService
+from app.services.external_retrieval import ExternalContentFetcher
 from app.services.general_question_service import GeneralQuestionService
 from app.services.hint_policy import HintPolicyService
 from app.services.internal_agent_execution import InternalAgentExecutionService
@@ -48,6 +52,7 @@ from app.services.learning_outcome import LearningOutcomeService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from app.services.next_check_question import NextCheckQuestionService
+from app.services.overall_routing import OverallRoutingService
 from app.services.rag_debug import RAGDebugService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.rag_runtime import (
@@ -146,7 +151,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         graph_factory.create("academic_problem_solver"), model_service, storage
     )
     internal_agent_hub = InternalAgentHub(model_service)
+    academic_paper_review = AcademicPaperReviewService(
+        internal_agent_hub, app_settings
+    )
+    academic_search_planner = AcademicSearchPlannerService(
+        internal_agent_hub, app_settings
+    )
     general_question = GeneralQuestionService(model_service)
+    overall_router = OverallRoutingService(
+        internal_agent_hub,
+        task_router,
+        app_settings,
+    )
     internal_agent_execution = InternalAgentExecutionService(
         internal_agent_hub, academic_solver, general_question
     )
@@ -162,6 +178,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         image_embedding,
         reranker,
         vector_store,
+    )
+    external_search = create_external_search_service(app_settings)
+    external_fetcher = ExternalContentFetcher(
+        max_bytes=app_settings.external_retrieval_max_content_chars * 8,
     )
     context_service = RetrievalContextService(
         app_settings.knowledge_max_context_chars,
@@ -207,6 +227,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_compaction=session_compaction,
         teaching_foundation=teaching_foundation,
         learning_outcome=learning_outcome,
+        external_search=external_search,
+        external_fetcher=external_fetcher,
+        external_paper_reviewer=academic_paper_review,
+        external_search_planner=academic_search_planner,
+        overall_router=overall_router,
     )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,
@@ -263,6 +288,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.supervisor = supervisor
         app.state.knowledge_base = knowledge_base
         app.state.rag_retrieval = rag_retrieval
+        app.state.external_search = external_search
+        app.state.external_fetcher = external_fetcher
         app.state.context_service = context_service
         app.state.knowledge_qa = knowledge_qa
         app.state.rag_debug = rag_debug
@@ -299,6 +326,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await task_executor.shutdown()
         await context_cache.close()
+        await external_search.close()
+        await external_fetcher.close()
         close_provider = getattr(provider, "aclose", None)
         if close_provider is not None:
             await close_provider()

@@ -38,6 +38,16 @@ class FakeModelService:
             }
             if schema_name == "CircuitPlan"
             else {
+                "target_agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                "intent": "general_qa",
+                "course_id": "UNKNOWN",
+                "confidence": 0.94,
+                "reason": "the request asks for recent papers",
+                "reason_codes": ["paper_search"],
+                "task_subtype": "academic_search",
+            }
+            if schema_name == "OverallRouteDecision"
+            else {
                 "course": "CT",
                 "confidence": 0.9,
                 "reason_codes": ["capacitor"],
@@ -101,13 +111,30 @@ def test_internal_agent_catalog_maps_to_model_routes() -> None:
 
     agents = agent_hub.list_agents()
 
-    assert len(agents) == 9
+    assert len(agents) == 12
     assert {item["agent_id"] for item in agents} >= {
         "COURSE_CLASSIFIER_LOCAL_V1",
         "CIRCUIT_PLANNER_LOCAL_V1",
         "CIRCUIT_VISION_EXTRACTOR_LOCAL_V1",
     }
     assert all(item["configured"] for item in agents)
+
+
+@pytest.mark.asyncio
+async def test_overall_router_uses_compact_structured_contract() -> None:
+    agent_hub, service = hub()
+
+    result = await agent_hub.run_text(
+        "OVERALL_ROUTER_LOCAL_V1",
+        input_text="查找最新的电子信息领域相关论文",
+        max_tokens=160,
+    )
+
+    assert result.structured_result["target_agent_id"] == (
+        "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    )
+    assert service.calls[0]["task_type"] == "overall_routing"
+    assert service.calls[0]["extra_options"] == {"max_tokens": 160}
 
 
 @pytest.mark.asyncio
@@ -175,5 +202,5 @@ def test_internal_agents_api_lists_subordinate_policy(client: Any) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["agents"]) == 9
+    assert len(payload["agents"]) == 12
     assert payload["execution_policy"].startswith("subordinate_only")

@@ -1,4 +1,13 @@
 routes:
+  overall_routing:
+    primary: qwen_text_fast
+    options: {temperature: 0.0, max_tokens: 160}
+  academic_paper_review:
+    primary: qwen_text_fast
+    options: {temperature: 0.0, max_tokens: 2400}
+  academic_search_planning:
+    primary: qwen_text_fast
+    options: {temperature: 0.0, max_tokens: 700}
   course_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
   intent_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
   query_rewrite: {primary: spark_reasoner, fallback: qwen_text_fast}

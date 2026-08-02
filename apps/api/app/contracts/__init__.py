@@ -26,6 +26,15 @@ from app.contracts.conversation import (
     SessionWorkingState,
     TeachingStateV1,
 )
+from app.contracts.external_retrieval import (
+    ExternalEvidenceItem,
+    ExternalEvidenceSupport,
+    ExternalRetrievalIntentDecision,
+    ExternalRetrievalPolicy,
+    ExternalRetrievalResult,
+    ExternalSourceScope,
+    ExternalSourceType,
+)
 from app.contracts.knowledge import (
     EvidencePacketV1,
     EvidenceSourceV1,
@@ -225,6 +234,13 @@ __all__ = [
     "SessionSummaryRead",
     "SessionWorkingState",
     "TeachingStateV1",
+    "ExternalEvidenceItem",
+    "ExternalEvidenceSupport",
+    "ExternalRetrievalIntentDecision",
+    "ExternalRetrievalPolicy",
+    "ExternalRetrievalResult",
+    "ExternalSourceScope",
+    "ExternalSourceType",
     "TeachingMode",
     "TeachingExecutionPath",
     "TeachingExecutionPlanV1",

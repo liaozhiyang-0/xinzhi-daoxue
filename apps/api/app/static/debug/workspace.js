@@ -8,6 +8,14 @@ const courseLabels = {
   DSP: "数字信号处理",
   COMM: "通信原理",
 };
+const externalProviderLabels = {
+  arxiv: "arXiv",
+  crossref: "Crossref",
+  openalex: "OpenAlex",
+  semantic_scholar: "Semantic Scholar",
+  cnki: "中国知网",
+  web_json: "网页检索",
+};
 const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_writing: "学术写作", data_analysis: "数据分析" };
 const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_writing: "学术写作", data_analysis: "数据分析" };
 const ragLabels = { grounded_generation: "课程资料支撑", method_reference: "方法参考", reference_only: "资料参考", user_sources_only: "用户材料", data_context_only: "数据上下文", no_rag: "无需课程检索" };
@@ -547,12 +555,63 @@ function relatedImageCard(images) {
   ]);
 }
 
-function renderEvidence(items, presentation, relatedImages = []) {
+function externalPaperCard(item) {
+  const rawUrl = String(item.url || "").trim();
+  let safeUrl = "";
+  try {
+    const url = new URL(rawUrl, location.origin);
+    if (["http:", "https:"].includes(url.protocol)) safeUrl = url.href;
+  } catch (_) {
+    safeUrl = "";
+  }
+  const metadata = [
+    item.date_label ? `发表/更新 ${item.date_label}` : "时间未知",
+    externalProviderLabels[item.provider] || item.provider || "学术来源",
+    item.venue,
+    item.citation_count != null ? `被引 ${item.citation_count} 次` : "引用数据未提供",
+  ].filter(Boolean).join(" · ");
+  const authors = Array.isArray(item.authors) ? item.authors.filter(Boolean).join(", ") : "";
+  const abstract = item.abstract || "暂无摘要，建议打开原文查看。";
+  const title = safeUrl
+    ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: item.title || "未命名论文" })
+    : el("span", { text: item.title || "未命名论文" });
+  const actions = safeUrl
+    ? el("a", { class: "external-paper-open", href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: "打开论文" })
+    : el("small", { text: "链接不可用" });
+  return el("article", { class: "external-paper-card" }, [
+    el("div", { class: "external-paper-header" }, [
+      el("span", { class: "evidence-id", text: item.evidence_id || "paper" }),
+      el("span", { class: "external-paper-date", text: item.source_type === "academic_paper" ? "学术论文" : "外部来源" }),
+    ]),
+    el("h3", {}, title),
+    el("small", { class: "external-paper-meta", text: metadata }),
+    authors ? el("p", { class: "external-paper-authors", text: authors }) : null,
+    el("p", { class: "external-paper-abstract", text: abstract }),
+    el("div", { class: "external-paper-footer" }, [
+      el("span", { text: item.doi ? `DOI: ${item.doi}` : item.arxiv_id ? `arXiv: ${item.arxiv_id}` : "" }),
+      actions,
+    ]),
+  ].filter(Boolean));
+}
+
+function renderExternalPapers(items) {
+  if (!items?.length) return null;
+  return el("section", { class: "external-results" }, [
+    el("div", { class: "external-results-heading" }, [
+      el("strong", { text: `外部论文 ${items.length} 篇 · 已通过模型审核` }),
+      el("span", { text: "摘要仅作快速概览，请以原文为准" }),
+    ]),
+    ...items.map(externalPaperCard),
+  ]);
+}
+
+function renderEvidence(items, presentation, relatedImages = [], externalItems = []) {
   state.evidence = items || [];
   const cards = state.evidence.map(evidenceCard);
   const imageCard = relatedImageCard(relatedImages);
   if (imageCard) cards.push(imageCard);
-  $("#context-evidence").replaceChildren(...(cards.length ? cards : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的课程依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
+  const external = renderExternalPapers(externalItems);
+  $("#context-evidence").replaceChildren(...(cards.length || external ? [...(external ? [external] : []), ...cards] : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的资料依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
 }
 
 function renderProcess(steps = []) {
@@ -662,6 +721,7 @@ function renderResult(task) {
   const presentation = presentationFor(task, result);
   const summary = structured.execution_summary || {};
   const evidence = structured.evidence_view || [];
+  const externalItems = structured.external_search_view || structured.external_retrieval?.items || [];
   state.lastAnswer = displayAnswer(task, result);
   state.currentTask = task;
   $("#answer-panel").hidden = false;
@@ -690,7 +750,7 @@ function renderResult(task) {
     ...(result.related_images || []),
     ...(structured.knowledge?.images || []),
   ];
-  renderEvidence(evidence, presentation, relatedImages); renderProcess(presentation.execution_steps || []);
+  renderEvidence(evidence, presentation, relatedImages, externalItems); renderProcess(presentation.execution_steps || []);
   renderContextUsage(result);
   const renderMs = performance.now() - renderStarted; localStorage.setItem("xinzhi_last_render_ms", renderMs.toFixed(1));
   renderInfo(task, result, summary, presentation, renderMs);
@@ -1074,7 +1134,7 @@ async function submit(event) {
     const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
-    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage(`已识别：${taskLabels[task.intent] || "待进一步判断"}${task.course_id ? ` · ${courseLabels[task.course_id] || task.course_id}` : ""}`, "system"); renderResult(await waitForTask(task.id)); await loadSessionList();
+    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system"); renderResult(await waitForTask(task.id)); await loadSessionList();
     $("#question-input").value = ""; $("#student-attempt-input").value = ""; autoGrow(); clearImage();
   } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
   finally { state.taskId = ""; setBusy(false); }

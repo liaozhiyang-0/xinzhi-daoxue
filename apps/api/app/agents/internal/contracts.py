@@ -43,6 +43,42 @@ class IntentClassification(BaseModel):
     reason_codes: list[str] = Field(default_factory=list, max_length=5)
 
 
+class OverallRouteDecision(BaseModel):
+    """Small structured contract used by the pre-execution overall router."""
+
+    target_agent_id: str = Field(min_length=1, max_length=80)
+    intent: str = Field(min_length=1, max_length=40)
+    course_id: str = Field(default="UNKNOWN", max_length=20)
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=300)
+    reason_codes: list[str] = Field(default_factory=list, max_length=5)
+    task_subtype: str = Field(default="", max_length=80)
+
+
+class AcademicPaperReviewDecision(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=64)
+    approved: bool
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class AcademicPaperReview(BaseModel):
+    decisions: list[AcademicPaperReviewDecision] = Field(
+        default_factory=list, max_length=50
+    )
+
+
+class AcademicSearchPlan(BaseModel):
+    topic_summary: str = Field(min_length=1, max_length=300)
+    search_queries: list[str] = Field(min_length=1, max_length=6)
+    required_concepts: list[str] = Field(default_factory=list, max_length=12)
+    excluded_concepts: list[str] = Field(default_factory=list, max_length=12)
+    minimum_results: int = Field(default=4, ge=1, le=20)
+    citation_preference: Literal[
+        "not_requested", "prefer_high", "required"
+    ] = "not_requested"
+
+
 class QueryRewrite(BaseModel):
     rewritten_query: str = Field(min_length=1, max_length=500)
     keywords: list[str] = Field(min_length=1, max_length=12)
