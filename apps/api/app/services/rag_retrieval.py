@@ -143,6 +143,7 @@ class RAGRetrievalService:
         self._result_cache: OrderedDict[
             tuple[str, ...], tuple[float, RetrievalResult]
         ] = OrderedDict()
+        self._index_version_cache: tuple[int, int, str] | None = None
         self._executor = ThreadPoolExecutor(
             max_workers=settings.rag_retrieval_worker_count,
             thread_name_prefix="xzd-rag-channel",
@@ -638,10 +639,22 @@ class RAGRetrievalService:
     def _index_version(self) -> str:
         state = self.settings.knowledge_index_path / "rag_index_state.json"
         try:
+            stat = state.stat()
+        except (OSError, ValueError):
+            return ""
+        fingerprint = (stat.st_mtime_ns, stat.st_size)
+        with self._cache_lock:
+            cached = self._index_version_cache
+            if cached is not None and cached[:2] == fingerprint:
+                return cached[2]
+        try:
             payload = __import__("json").loads(state.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return ""
-        return str(payload.get("index_version", ""))
+        version = str(payload.get("index_version", ""))
+        with self._cache_lock:
+            self._index_version_cache = (*fingerprint, version)
+        return version
 
     def _cache_get(self, key: tuple[str, ...]) -> list[float] | None:
         with self._cache_lock:

@@ -35,6 +35,7 @@ from app.models import TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import FileRepository, SessionRepository, TaskRepository
 from app.services.auth_service import Principal
+from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_service import SessionService
 from app.services.task_creation_service import TaskCreationService
 
@@ -144,6 +145,12 @@ async def _submit(
                 ]
             }
         )
+    try:
+        prepared_payload = request.app.state.scenario_catalog.enrich_request(
+            prepared_payload
+        )
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     context = dict(getattr(session, "context_data", {}) or {})
     prepared = request.app.state.supervisor.prepare(
         prepared_payload,

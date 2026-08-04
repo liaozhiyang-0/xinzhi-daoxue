@@ -1,0 +1,97 @@
+version: "1.0"
+scenarios:
+  - id: faculty_course_copilot_v1
+    version: "1.0"
+    name: 教师智能备课与课程资源生成
+    summary: 面向教师的课程目标拆解、备课提纲、例题和可追溯课件素材助手。
+    customer_segment: 高校教师与课程团队
+    roles: [teacher]
+    courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    agent_id: TEACH_01_LESSON_PREP_V1
+    intents: [lesson_prep, explain_concept]
+    input_modes: [text, pdf, mixed]
+    retrieval_profile: teaching_authoritative
+    primary_value_metric: 备课资料整理耗时与来源覆盖率
+    evidence_requirements: [课程目标对齐记录, 来源引用与页码, 教师复核记录]
+    demo_steps: [上传课程大纲, 生成教学设计与素材, 教师确认并导出]
+    enabled: true
+
+  - id: assessment_diagnosis_v1
+    version: "1.0"
+    name: 作业批改与首错定位
+    summary: 对学生作答进行步骤级诊断，输出首个关键错误、依据和下一道验证题。
+    customer_segment: 高校教师、助教与智慧教学平台
+    roles: [teacher, student]
+    courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    agent_id: TEACH_02_ASSIGNMENT_REVIEW_V1
+    intents: [assignment_review, check_simple_step, solve_problem]
+    input_modes: [text, image, pdf, mixed]
+    retrieval_profile: assessment_evidence
+    primary_value_metric: 批改周转时间与首错定位一致性
+    evidence_requirements: [标准答案或评分规则, 步骤级诊断, 教师抽检记录]
+    demo_steps: [提交作答图片, 查看首错与提示, 完成验证题并记录结果]
+    enabled: true
+
+  - id: student_learning_path_v1
+    version: "1.0"
+    name: 学情诊断与个性化学习路径
+    summary: 根据学生的作答证据和薄弱点生成分阶段学习建议，并通过验证题闭环。
+    customer_segment: 高校学生、学校教务与在线教育平台
+    roles: [student, teacher]
+    courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
+    intents: [learning_advice, follow_up_question, explain_concept]
+    input_modes: [text, image, mixed]
+    retrieval_profile: student_fast_grounded
+    primary_value_metric: 学习路径完成率与知识点掌握证据覆盖率
+    evidence_requirements: [历史作答证据, 推荐理由, 复测结果]
+    demo_steps: [选择薄弱知识点, 获取三步学习路径, 完成复测并更新建议]
+    enabled: true
+
+  - id: research_frontier_radar_v1
+    version: "1.0"
+    name: 科研前沿检索与证据简报
+    summary: 面向科研人员整理研究问题、前沿文献、关键结论和证据边界。
+    customer_segment: 高校科研团队、研究院与技术企业研发部门
+    roles: [researcher, teacher]
+    courses: [RF, INFO, COMM, DE, DSP, EM, IC]
+    agent_id: RESEARCH_01_ACADEMIC_SEARCH_V1
+    intents: [general_qa, summarize_knowledge, academic_writing]
+    input_modes: [text, pdf, mixed]
+    retrieval_profile: research_citation
+    primary_value_metric: 文献筛选与证据简报产出耗时
+    evidence_requirements: [文献唯一标识, 结论来源, 检索时间与局限性]
+    demo_steps: [输入研究问题, 生成文献证据表, 导出带来源的简报]
+    enabled: true
+
+  - id: research_data_workbench_v1
+    version: "1.0"
+    name: 科研数据分析与可复现解释
+    summary: 将科研数据问题转化为可执行分析步骤、代码或公式，并明确质量与限制。
+    customer_segment: 高校科研团队、实验室与产业研发部门
+    roles: [researcher, teacher]
+    courses: [CT, AE, DE, DSP, RF, INFO, EMBEDDED, IC]
+    agent_id: RESEARCH_03_DATA_ANALYSIS_V1
+    intents: [data_analysis, academic_writing]
+    input_modes: [text, pdf, mixed]
+    retrieval_profile: reproducible_analysis
+    primary_value_metric: 分析方案复现成功率与研究迭代耗时
+    evidence_requirements: [数据质量检查, 可执行代码或公式, 方法与局限性]
+    demo_steps: [上传数据说明, 生成分析方案与代码, 执行检查并导出报告]
+    enabled: true
+
+  - id: department_knowledge_governance_v1
+    version: "1.0"
+    name: 学院知识库治理与课程资产发布
+    summary: 对课程资料进行版本、质量、来源和发布状态治理，支撑学院级知识服务。
+    customer_segment: 高校学院、教务处与教育数字化服务商
+    roles: [teacher, admin]
+    courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
+    agent_id: LEARN_01_KNOWLEDGE_QA_V1
+    intents: [summarize_knowledge, general_qa]
+    input_modes: [text, pdf, mixed]
+    retrieval_profile: governed_knowledge
+    primary_value_metric: 资料入库到可检索发布的周期与引用完整率
+    evidence_requirements: [资产版本, 质量审查结果, 发布审批与访问控制]
+    demo_steps: [提交课程资料, 查看质量问题与审查队列, 发布后验证检索引用]
+    enabled: true

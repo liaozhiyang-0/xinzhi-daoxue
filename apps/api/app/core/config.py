@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     vector_store_path: Path = PROJECT_ROOT / "knowledge_indexes"
     upload_dir: Path = PROJECT_ROOT / "local_storage" / "uploads"
     cache_dir: Path = PROJECT_ROOT / "local_storage" / "cache"
+    scenario_catalog_path: Path = PROJECT_ROOT / "config" / "scenarios.yaml"
 
     spark_enabled: bool = False
     spark_base_url: str = "https://spark-api-open.xf-yun.com/v1/chat/completions"

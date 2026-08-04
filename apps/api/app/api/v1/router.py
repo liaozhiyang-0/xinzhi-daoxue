@@ -20,6 +20,7 @@ from app.api.v1 import (
     models,
     orchestration,
     sessions,
+    scenarios,
     tasks,
 )
 
@@ -30,6 +31,7 @@ api_router.include_router(health.router)
 api_router.include_router(internal_agents.router)
 api_router.include_router(agents.router)
 api_router.include_router(sessions.router)
+api_router.include_router(scenarios.router)
 api_router.include_router(tasks.router)
 api_router.include_router(files.router)
 api_router.include_router(artifacts.router)

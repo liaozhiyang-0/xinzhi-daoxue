@@ -114,6 +114,7 @@ class AgentRequestV2(BaseModel):
     files: list[FileReference] = Field(default_factory=list)
     course_hint: CourseCode | None = None
     intent_hint: OrchestrationIntent | None = None
+    scenario_id: str | None = Field(default=None, max_length=64)
     previous_answer_summary: str | None = Field(default=None, max_length=4_000)
     metadata: dict[str, Any] = Field(default_factory=dict)
     debug: bool = False
