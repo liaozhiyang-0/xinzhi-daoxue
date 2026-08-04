@@ -6,7 +6,17 @@ from pathlib import Path
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,15 +38,56 @@ from app.services.storage import StorageService
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+def _material_field(value: str | None, name: str, maximum: int) -> str | None:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return None
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    if len(cleaned) > maximum or any(character not in allowed for character in cleaned):
+        raise HTTPException(status_code=422, detail=f"{name}格式无效")
+    return cleaned
+
+
 @router.post("", response_model=FileRead, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     upload: UploadFile = File(...),
     task_id: str | None = Form(default=None),
     purpose: str = Form(default="generic"),
+    course_id: str | None = Form(default=None),
+    material_key: str | None = Form(default=None),
+    material_version: str | None = Form(default=None),
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_from_app),
 ) -> FileRead:
+    normalized_course_id = _material_field(course_id, "course_id", 32)
+    normalized_material_key = _material_field(material_key, "material_key", 128)
+    normalized_material_version = _material_field(
+        material_version, "material_version", 64
+    )
+    if purpose == "course_material":
+        if settings.auth_required and (
+            not principal.authenticated or principal.role not in {"teacher", "admin"}
+        ):
+            raise HTTPException(status_code=403, detail="需要教师或管理员权限")
+        if not all(
+            (
+                normalized_course_id,
+                normalized_material_key,
+                normalized_material_version,
+            )
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="course_material必须提供course_id、material_key和material_version",
+            )
+    elif any(
+        (normalized_course_id, normalized_material_key, normalized_material_version)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="只有course_material允许提供课程资料版本字段",
+        )
     task = await TaskRepository(db).get(task_id) if task_id else None
     if task_id and task is None:
         raise NotFoundError("关联任务不存在", details={"task_id": task_id})
@@ -77,6 +128,9 @@ async def upload_file(
         storage_key=storage_key,
         checksum_sha256=sha256(data).hexdigest(),
         purpose=purpose,
+        course_id=normalized_course_id,
+        material_key=normalized_material_key,
+        material_version=normalized_material_version,
         detected_content_type=content_type,
         ingestion_status=(
             FileIngestionStatus.PENDING
@@ -102,6 +156,12 @@ async def upload_file(
             ".docx",
         }:
             await DocumentIngestionService(settings).ingest(model, data, db)
+            model.knowledge_index_status = (
+                "not_indexed"
+                if model.ingestion_status
+                in {FileIngestionStatus.READY, FileIngestionStatus.PARTIAL}
+                else "failed"
+            )
         await db.commit()
         await db.refresh(model)
     except Exception:

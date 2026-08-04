@@ -36,21 +36,38 @@ def upgrade() -> None:
         ),
     )
     op.add_column(
-        "files", sa.Column("page_count", sa.Integer(), nullable=False, server_default="0")
+        "files",
+        sa.Column("page_count", sa.Integer(), nullable=False, server_default="0"),
     )
     op.add_column(
-        "files", sa.Column("extracted_text", sa.Text(), nullable=False, server_default="")
+        "files",
+        sa.Column("extracted_text", sa.Text(), nullable=False, server_default=""),
     )
     op.add_column(
-        "files", sa.Column("extraction_metadata", sa.JSON(), nullable=False, server_default="{}")
+        "files",
+        sa.Column(
+            "extraction_metadata",
+            sa.JSON(),
+            nullable=False,
+            server_default="{}",
+        ),
     )
     op.add_column("files", sa.Column("extraction_error", sa.Text(), nullable=True))
     op.add_column(
         "files",
-        sa.Column("extraction_version", sa.String(length=32), nullable=False, server_default="1"),
+        sa.Column(
+            "extraction_version",
+            sa.String(length=32),
+            nullable=False,
+            server_default="1",
+        ),
     )
-    op.add_column("files", sa.Column("extraction_started_at", sa.DateTime(timezone=True)))
-    op.add_column("files", sa.Column("extraction_completed_at", sa.DateTime(timezone=True)))
+    op.add_column(
+        "files", sa.Column("extraction_started_at", sa.DateTime(timezone=True))
+    )
+    op.add_column(
+        "files", sa.Column("extraction_completed_at", sa.DateTime(timezone=True))
+    )
     op.create_index("ix_files_ingestion_status", "files", ["ingestion_status"])
     op.create_table(
         "file_chunks",
@@ -62,7 +79,9 @@ def upgrade() -> None:
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("char_start", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("char_end", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("source_ref", sa.String(length=512), nullable=False, server_default=""),
+        sa.Column(
+            "source_ref", sa.String(length=512), nullable=False, server_default=""
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("file_id", "ordinal", name="uq_file_chunks_file_ordinal"),

@@ -44,6 +44,19 @@ class AdminPasswordReset(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class AdminFeatureSettingRead(BaseModel):
+    key: str
+    label: str
+    description: str
+    enabled: bool
+    updated_at: datetime | None
+    updated_by: str | None
+
+
+class AdminFeatureSettingUpdate(BaseModel):
+    enabled: bool
+
+
 class AdminSessionRead(BaseModel):
     id: str
     account_id: str
@@ -107,6 +120,34 @@ class AdminTaskSummaryRead(BaseModel):
     completed: int
     failed: int
     status_counts: dict[str, int]
+    failure_category_counts: dict[str, int] = Field(default_factory=dict)
+    provider_counts: dict[str, int] = Field(default_factory=dict)
+    route_status_counts: dict[str, int] = Field(default_factory=dict)
+    cancellation_requested_count: int = 0
+
+
+class AdminTaskObservabilityRead(BaseModel):
+    version: str = "v1"
+    data_source: str = "local_database"
+    window_start: datetime
+    window_end: datetime
+    row_limit: int
+    truncated: bool = False
+    task_count: int
+    status_counts: dict[str, int] = Field(default_factory=dict)
+    failure_category_counts: dict[str, int] = Field(default_factory=dict)
+    provider_counts: dict[str, int] = Field(default_factory=dict)
+    route_status_counts: dict[str, int] = Field(default_factory=dict)
+    cancellation_requested_count: int = 0
+    measured_total_latency_count: int = 0
+    average_total_latency_ms: float | None = None
+    p50_total_latency_ms: float | None = None
+    p95_total_latency_ms: float | None = None
+    measured_queue_latency_count: int = 0
+    average_queue_latency_ms: float | None = None
+    p50_queue_latency_ms: float | None = None
+    p95_queue_latency_ms: float | None = None
+    data_quality_warnings: list[str] = Field(default_factory=list)
 
 
 class AdminFileRead(BaseModel):
@@ -138,3 +179,19 @@ class AdminFileSummaryRead(BaseModel):
     partial: int
     failed: int
     total_bytes: int
+
+
+class AdminEvaluationAttachmentResidueRead(BaseModel):
+    purpose: str
+    as_of: datetime
+    grace_seconds: int
+    cutoff: datetime
+    total_file_count: int
+    total_bytes: int
+    unbound_file_count: int
+    active_task_file_count: int
+    terminal_task_file_count: int
+    missing_task_file_count: int
+    cleanup_candidate_count: int
+    cleanup_candidate_bytes: int
+    oldest_created_at: datetime | None

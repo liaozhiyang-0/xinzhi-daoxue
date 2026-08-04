@@ -46,6 +46,7 @@ from app.services.general_question_service import GeneralQuestionService
 from app.services.hint_policy import HintPolicyService
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_ocr_review_cache import KnowledgeOCRReviewSnapshotCache
 from app.services.knowledge_qa_service import KnowledgeQAService
 from app.services.learning_loop import LearningLoopService
 from app.services.learning_outcome import LearningOutcomeService
@@ -83,6 +84,21 @@ DEBUG_ROOT = Path(__file__).resolve().parent / "static" / "debug"
 
 def error_payload(code: str, message: str, details: Any = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details or {}}}
+
+
+def _create_graph_checkpointer(settings: Settings) -> Any:
+    if (
+        not settings.langgraph_checkpoint_enabled
+        or settings.langgraph_checkpoint_backend == "disabled"
+    ):
+        return None
+    try:
+        from langgraph.checkpoint.memory import InMemorySaver
+    except ImportError:
+        logger.warning("langgraph_checkpoint_unavailable")
+        return None
+    logger.info("langgraph_checkpoint_enabled backend=memory")
+    return InMemorySaver()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -140,11 +156,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         answer_disclosure,
     )
     tool_registry = default_tool_registry()
+    graph_checkpointer = _create_graph_checkpointer(app_settings)
     graph_factory = GraphFactory(
         courses=course_registry,
         capabilities=capability_registry,
         tools=tool_registry,
         model_service=model_service,
+        checkpointer=graph_checkpointer,
     )
     storage = StorageService(app_settings)
     academic_solver = AcademicProblemSolverService(
@@ -205,6 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     context_budget = ContextBudgetManager(app_settings)
     context_cache = ContextAssemblyCache(app_settings)
+    knowledge_ocr_review_cache = KnowledgeOCRReviewSnapshotCache(app_settings)
     context_assembly = ContextAssemblyService(
         app_settings, context_cache, context_budget
     )
@@ -280,6 +299,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.teaching_interactions = teaching_interactions
         app.state.tool_registry = tool_registry
         app.state.graph_factory = graph_factory
+        app.state.graph_checkpointer = graph_checkpointer
         app.state.academic_solver = academic_solver
         app.state.storage = storage
         app.state.internal_agent_hub = internal_agent_hub
@@ -299,6 +319,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.learning_loop = learning_loop
         app.state.context_budget = context_budget
         app.state.context_cache = context_cache
+        app.state.knowledge_ocr_review_cache = knowledge_ocr_review_cache
         app.state.context_assembly = context_assembly
         app.state.session_compaction = session_compaction
         if app_settings.app_env == "test":
@@ -323,6 +344,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": "skipped",
                 "reason": "test_environment_or_disabled",
             }
+        recovered_tasks = await task_executor.recover()
+        if recovered_tasks:
+            logger.info("task_recovery_requeued count=%s", recovered_tasks)
         yield
         await task_executor.shutdown()
         await context_cache.close()
@@ -361,7 +385,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/admin", include_in_schema=True, tags=["management"])
     async def admin_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "admin.html")
+        return FileResponse(
+            DEBUG_ROOT / "admin.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @app.get("/teacher", include_in_schema=True, tags=["teaching"])
+    async def teacher_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "teacher.html")
 
     @app.get("/debug/rag", include_in_schema=True, tags=["development"])
     async def rag_debug_page() -> FileResponse:
@@ -373,11 +404,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/student", include_in_schema=True, tags=["student"])
     async def student_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "workspace.html")
+        return FileResponse(
+            DEBUG_ROOT / "workspace.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.get("/workspace", include_in_schema=True, tags=["student"])
     async def workspace_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "workspace.html")
+        return FileResponse(
+            DEBUG_ROOT / "workspace.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.get("/debug/execution", include_in_schema=True, tags=["development"])
     async def execution_debug_page() -> FileResponse:

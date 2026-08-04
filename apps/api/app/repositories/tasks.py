@@ -1,10 +1,11 @@
+from datetime import datetime
 from typing import cast
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import TaskEventModel, TaskModel
+from app.models import TaskEventModel, TaskModel, TaskStatus
 
 
 class TaskRepository:
@@ -77,3 +78,34 @@ class TaskRepository:
         tasks = list((await self.session.scalars(query)).all())
         tasks.reverse()
         return tasks
+
+    async def list_recoverable(
+        self, now: datetime, *, limit: int = 100, for_update: bool = False
+    ) -> list[TaskModel]:
+        """Return queued tasks and expired running leases for startup recovery."""
+
+        query = (
+            select(TaskModel)
+            .where(
+                or_(
+                    and_(
+                        TaskModel.status == TaskStatus.QUEUED,
+                        or_(
+                            TaskModel.execution_owner.is_(None),
+                            TaskModel.lease_expires_at.is_(None),
+                            TaskModel.lease_expires_at <= now,
+                        ),
+                    ),
+                    and_(
+                        TaskModel.status == TaskStatus.RUNNING,
+                        TaskModel.lease_expires_at.is_not(None),
+                        TaskModel.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(TaskModel.created_at)
+            .limit(limit)
+        )
+        if for_update:
+            query = query.with_for_update(skip_locked=True)
+        return list((await self.session.scalars(query)).all())

@@ -78,9 +78,7 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    updates: dict[str, object] = {
-        "user_id": effective_user_id(principal, data.user_id)
-    }
+    updates: dict[str, object] = {"user_id": effective_user_id(principal, data.user_id)}
     if principal.has_identity:
         try:
             updates["user_role"] = UserRole(principal.role)
@@ -158,7 +156,9 @@ async def _hydrate_document_attachments(
         )
         hydrated.append(updated)
         if model.extracted_text.strip():
-            extracted_blocks.append(f"【附件：{model.filename}】\n{model.extracted_text.strip()}")
+            extracted_blocks.append(
+                f"【附件：{model.filename}】\n{model.extracted_text.strip()}"
+            )
     if not extracted_blocks:
         return data.model_copy(update={"attachments": hydrated})
     canonical = dict(data.canonical_input)
@@ -237,7 +237,9 @@ async def retry_task(
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     await _get_owned_task(db, task_id, principal)
-    task = await TaskControlService(db, provider).retry(task_id)
+    task = await TaskControlService(db, provider, request.app.state.settings).retry(
+        task_id
+    )
     request.app.state.task_runner.submit(task.id)
     return task_read(task)
 
@@ -245,12 +247,17 @@ async def retry_task(
 @router.post("/{task_id}/cancel", response_model=TaskRead)
 async def cancel_task(
     task_id: str,
+    request: Request,
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     await _get_owned_task(db, task_id, principal)
-    return task_read(await TaskControlService(db, provider).cancel(task_id))
+    return task_read(
+        await TaskControlService(db, provider, request.app.state.settings).cancel(
+            task_id
+        )
+    )
 
 
 async def _get_owned_task(

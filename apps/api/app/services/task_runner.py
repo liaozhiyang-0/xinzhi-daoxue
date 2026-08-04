@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from uuid import uuid4
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents import AgentDefinition, AgentRegistry, TaskRouter
@@ -57,6 +58,9 @@ from app.services.agent_runtime import AgentExecutionPlanner
 from app.services.citation_validator import CitationValidator
 from app.services.context_assembly import ContextAssemblyService
 from app.services.conversation_message_service import ConversationMessageService
+from app.services.evaluation_attachment_cleanup import (
+    cleanup_evaluation_attachments,
+)
 from app.services.event_service import append_task_event
 from app.services.external_research_answer import (
     external_search_view,
@@ -174,6 +178,50 @@ class TaskRunner:
         background.add_done_callback(lambda _: self._tasks.pop(task_id, None))
         return True
 
+    async def recover_pending_tasks(self) -> int:
+        """Requeue work left behind by a process restart."""
+
+        if not self.knowledge_base.settings.task_recovery_enabled:
+            return 0
+        now = utc_now()
+        task_ids: list[str] = []
+        async with self.session_factory() as db:
+            repository = TaskRepository(db)
+            try:
+                tasks = await repository.list_recoverable(now, for_update=True)
+            except OperationalError as exc:
+                message = str(exc).casefold()
+                if "no such table" not in message and "does not exist" not in message:
+                    raise
+                await db.rollback()
+                logger.warning(
+                    "task_recovery_skipped_database_unavailable error_type=%s",
+                    type(exc).__name__,
+                )
+                return 0
+            lease_seconds = self.knowledge_base.settings.task_lease_seconds
+            lease_expires_at = now + timedelta(seconds=lease_seconds)
+            for task in tasks:
+                previous_status = task.status.value
+                if task.status == TaskStatus.RUNNING:
+                    task.status = TaskStatus.QUEUED
+                task.execution_owner = self.execution_owner
+                task.heartbeat_at = now
+                task.lease_expires_at = lease_expires_at
+                task.updated_at = now
+                await append_task_event(
+                    db,
+                    task.id,
+                    AgentEventType.TASK_QUEUED,
+                    agent_id=task.agent_id,
+                    data={"recovered": True, "previous_status": previous_status},
+                )
+                task_ids.append(task.id)
+            await db.commit()
+        for task_id in task_ids:
+            self.submit(task_id)
+        return len(task_ids)
+
     async def shutdown(self) -> None:
         active = [
             task
@@ -192,11 +240,20 @@ class TaskRunner:
         conversation_bundle: ConversationContextBundle | None = None
         runner_started = perf_counter()
         started_at = utc_now()
+        lease_task: asyncio.Task[None] | None = None
         try:
             async with self.session_factory() as db:
                 repository = TaskRepository(db)
                 task = await repository.get(task_id, for_update=True)
                 if task is None or task.status != TaskStatus.QUEUED:
+                    return
+                now = utc_now()
+                if (
+                    task.execution_owner is not None
+                    and task.execution_owner != self.execution_owner
+                    and task.lease_expires_at is not None
+                    and task.lease_expires_at > now
+                ):
                     return
                 if task.cancellation_requested:
                     await self._mark_cancelled(db, task_id, "任务在执行前已取消")
@@ -209,8 +266,7 @@ class TaskRunner:
                 active_provider = (
                     "external_retrieval"
                     if agent_definition.mode == "external_search"
-                    else
-                    "local"
+                    else "local"
                     if agent_definition.mode == "retrieval_only"
                     else "local_agent"
                     if internal_available
@@ -221,7 +277,8 @@ class TaskRunner:
                 task.updated_at = started_at
                 task.execution_owner = self.execution_owner
                 task.heartbeat_at = started_at
-                task.lease_expires_at = started_at + timedelta(seconds=60)
+                lease_seconds = self.knowledge_base.settings.task_lease_seconds
+                task.lease_expires_at = started_at + timedelta(seconds=lease_seconds)
                 await append_task_event(
                     db,
                     task_id,
@@ -259,9 +316,7 @@ class TaskRunner:
                     "model_calls": 0,
                 }
                 if self.overall_router is not None:
-                    overall_outcome = await self.overall_router.route(
-                        request, decision
-                    )
+                    overall_outcome = await self.overall_router.route(request, decision)
                     overall_route_latency_ms = overall_outcome.latency_ms
                     overall_route_metadata = dict(overall_outcome.metadata)
                     if overall_outcome.used:
@@ -290,6 +345,10 @@ class TaskRunner:
                 execution_plan = self.execution_planner.build(decision, request)
                 request = self._with_execution_plan(request, execution_plan)
                 await db.commit()
+                lease_task = asyncio.create_task(
+                    self._lease_heartbeat(task_id),
+                    name=f"xzd-lease-{task_id}",
+                )
 
             knowledge_hits: list[KnowledgeHit] = []
             retrieval_result: RetrievalResult | None = None
@@ -393,17 +452,14 @@ class TaskRunner:
             if agent_definition.mode == "external_search" or paper_search_request:
                 if external_result is None:
                     external_result = ExternalRetrievalResult(
-                        query=self._external_query(request)
-                        or "academic paper search",
+                        query=self._external_query(request) or "academic paper search",
                         normalized_query=self._external_query(request)
                         or "academic paper search",
                         source_scopes=list(external_policy.source_scopes),
                         status="failed",
                         warnings=["external retrieval was not executed"],
                     )
-                result = self._build_external_search_result(
-                    agent_id, external_result
-                )
+                result = self._build_external_search_result(agent_id, external_result)
             elif agent_definition.mode == "retrieval_only":
                 if self.knowledge_base.settings.enable_local_knowledge_qa:
                     execution = await self.knowledge_qa.run_with_generation(
@@ -1162,9 +1218,10 @@ class TaskRunner:
                 result.metrics.provider_latency_ms = provider_latency_ms
                 result.metrics.total_latency_ms = total_latency_ms
                 result.metrics.route_latency_ms = overall_route_latency_ms
-                result.metrics.model_calls += self._optional_int(
-                    overall_route_metadata.get("model_calls", 0)
-                ) or 0
+                result.metrics.model_calls += (
+                    self._optional_int(overall_route_metadata.get("model_calls", 0))
+                    or 0
+                )
                 result.metrics.input_tokens = self._sum_optional_metrics(
                     result.metrics.input_tokens,
                     self._optional_int(overall_route_metadata.get("input_tokens")),
@@ -1475,6 +1532,7 @@ class TaskRunner:
                         "latency_ms": total_latency_ms,
                     },
                 )
+                await self._cleanup_terminal_evaluation_attachments(db, task.id)
                 await db.commit()
                 if self.session_compaction is not None:
                     self._schedule_memory_summary(task.id, task.session_id)
@@ -1494,6 +1552,29 @@ class TaskRunner:
             message = exc.message if isinstance(exc, AppError) else "后台任务执行失败"
             code = exc.code if isinstance(exc, AppError) else "background_task_error"
             await self._fail_after_exception(task_id, message, code)
+        finally:
+            if lease_task is not None:
+                lease_task.cancel()
+                await asyncio.gather(lease_task, return_exceptions=True)
+
+    async def _lease_heartbeat(self, task_id: str) -> None:
+        lease_seconds = self.knowledge_base.settings.task_lease_seconds
+        interval = max(5.0, min(30.0, lease_seconds / 3))
+        while True:
+            await asyncio.sleep(interval)
+            now = utc_now()
+            async with self.session_factory() as db:
+                task = await TaskRepository(db).get(task_id, for_update=True)
+                if (
+                    task is None
+                    or task.status != TaskStatus.RUNNING
+                    or task.execution_owner != self.execution_owner
+                ):
+                    return
+                task.heartbeat_at = now
+                task.lease_expires_at = now + timedelta(seconds=lease_seconds)
+                task.updated_at = now
+                await db.commit()
 
     def _schedule_memory_summary(self, task_id: str, session_id: str) -> None:
         existing = self._post_tasks.get(task_id)
@@ -2351,8 +2432,7 @@ class TaskRunner:
                     if item.available
                 ],
                 "candidate_agents": [
-                    item.model_dump(mode="json")
-                    for item in decision.candidate_agents
+                    item.model_dump(mode="json") for item in decision.candidate_agents
                 ],
                 "local_confidence": decision.local_confidence,
                 "_material_extraction": dict(decision.material_extraction),
@@ -2378,9 +2458,11 @@ class TaskRunner:
     def _external_query(cls, request: AgentRequest) -> str:
         current = cls._knowledge_query(request)
         previous_agent = str(request.options.get("previous_agent", ""))
-        previous_query = str(
-            request.options.get("previous_external_query", "")
-        ).split("\nFollow-up requirement:", 1)[0].strip()
+        previous_query = (
+            str(request.options.get("previous_external_query", ""))
+            .split("\nFollow-up requirement:", 1)[0]
+            .strip()
+        )
         if previous_query and is_academic_search_follow_up(
             current,
             previous_agent=previous_agent,
@@ -2558,20 +2640,15 @@ class TaskRunner:
                 max_rounds = max(1, min(policy.max_iterations, 5))
                 round_results: list[ExternalRetrievalResult] = []
                 used_queries: set[str] = set()
-                previous_retrieval = request.options.get(
-                    "previous_external_retrieval"
-                )
-                if (
-                    isinstance(previous_retrieval, dict)
-                    and is_academic_search_follow_up(
-                        self._knowledge_query(request),
-                        previous_agent=str(
-                            request.options.get("previous_agent", "")
-                        ),
-                        previous_answer_summary=str(
-                            request.options.get("previous_answer_summary", "")
-                        ),
-                    )
+                previous_retrieval = request.options.get("previous_external_retrieval")
+                if isinstance(
+                    previous_retrieval, dict
+                ) and is_academic_search_follow_up(
+                    self._knowledge_query(request),
+                    previous_agent=str(request.options.get("previous_agent", "")),
+                    previous_answer_summary=str(
+                        request.options.get("previous_answer_summary", "")
+                    ),
                 ):
                     try:
                         previous_result = ExternalRetrievalResult.model_validate(
@@ -2596,8 +2673,7 @@ class TaskRunner:
                     used_queries.update(query_variants)
                     prefer_high_citation = bool(
                         plan is not None
-                        and plan.citation_preference
-                        in {"prefer_high", "required"}
+                        and plan.citation_preference in {"prefer_high", "required"}
                     )
                     freshness_days = (
                         None if prefer_high_citation else policy.freshness_days
@@ -2612,9 +2688,7 @@ class TaskRunner:
                             source_scopes=policy.source_scopes,
                             freshness_days=freshness_days,
                             prefer_high_citation=prefer_high_citation,
-                            retrieval_trace_id=str(
-                                request.options.get("trace_id", "")
-                            ),
+                            retrieval_trace_id=str(request.options.get("trace_id", "")),
                         )
                     else:
                         round_result = await self.external_search.search(
@@ -2624,9 +2698,7 @@ class TaskRunner:
                             provider_names=policy.providers,
                             source_scopes=policy.source_scopes,
                             freshness_days=freshness_days,
-                            retrieval_trace_id=str(
-                                request.options.get("trace_id", "")
-                            ),
+                            retrieval_trace_id=str(request.options.get("trace_id", "")),
                         )
                     if planner_warning and search_round == 1:
                         round_result.warnings = [
@@ -2663,14 +2735,15 @@ class TaskRunner:
                         or search_round >= max_rounds
                     ):
                         break
-                    next_plan, refinement_warning = (
-                        await self.external_search_planner.refine(
-                            query,
-                            plan,
-                            result,
-                            round_number=search_round,
-                            request_id=str(request.options.get("request_id", "")),
-                        )
+                    (
+                        next_plan,
+                        refinement_warning,
+                    ) = await self.external_search_planner.refine(
+                        query,
+                        plan,
+                        result,
+                        round_number=search_round,
+                        request_id=str(request.options.get("request_id", "")),
                     )
                     if refinement_warning or next_plan is None:
                         result.warnings = [
@@ -2885,6 +2958,9 @@ class TaskRunner:
             "providers": result.provider_status,
             "warnings": result.warnings[:5],
             "latency_ms": result.latency_ms,
+            "cache_hit": result.cache_hit,
+            "review_status": result.review_status,
+            "approved_count": result.approved_count,
             "evidence_ids": [item.evidence_id for item in result.items],
         }
 
@@ -3093,7 +3169,25 @@ class TaskRunner:
             reason="任务已取消。",
         )
         task.assistant_message_id = message.id if message is not None else None
+        await self._cleanup_terminal_evaluation_attachments(db, task_id)
         await db.commit()
+
+    async def _cleanup_terminal_evaluation_attachments(
+        self, db: AsyncSession, task_id: str
+    ) -> None:
+        try:
+            async with db.begin_nested():
+                await cleanup_evaluation_attachments(
+                    db,
+                    self.knowledge_base.settings,
+                    task_id=task_id,
+                )
+        except Exception:
+            logger.warning(
+                "evaluation_attachment_terminal_cleanup_failed task_id=%s",
+                task_id,
+                exc_info=True,
+            )
 
     async def _cancel_after_exception(self, task_id: str, reason: str) -> None:
         async with self.session_factory() as db:
@@ -3154,6 +3248,7 @@ class TaskRunner:
             task.assistant_message_id = (
                 message_model.id if message_model is not None else None
             )
+            await self._cleanup_terminal_evaluation_attachments(db, task_id)
             await db.commit()
             logger.warning(
                 "task_failed task_id=%s session_id=%s agent_id=%s "

@@ -31,6 +31,7 @@ from app.orchestrator.graphs import AcademicProblemSolverGraph
 from app.orchestrator.state import new_graph_state
 from app.services.academic_review import AcademicReviewService
 from app.services.ae_validator import AEValidator
+from app.services.ct_validator import CTValidator
 from app.services.de_validator import DEValidator
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
 from app.services.solver_boundary_policy import SolverBoundaryPolicy
@@ -67,6 +68,7 @@ class AcademicProblemSolverService:
         self.runtime_policy = SolverRuntimePolicy()
         self.boundary_policy = SolverBoundaryPolicy()
         self.ae_validator = AEValidator()
+        self.ct_validator = CTValidator()
         self.de_validator = DEValidator()
         self.review_service = AcademicReviewService()
 
@@ -143,7 +145,12 @@ class AcademicProblemSolverService:
             }
         )
         graph_started = perf_counter()
-        result = self.graph.run(problem, retrieved_chunks=citations, state=state)
+        result = await self.graph.arun(
+            problem,
+            retrieved_chunks=citations,
+            state=state,
+            thread_id=state["thread_id"],
+        )
         node_timings.append(
             self._node_timing(
                 "academic_solver_graph",
@@ -1468,6 +1475,8 @@ class AcademicProblemSolverService:
     ) -> ProfessionalValidationResult:
         if problem.course == "AE":
             return self.ae_validator.validate(problem, result)
+        if problem.course == "CT":
+            return self.ct_validator.validate(problem, result)
         if problem.course == "DE":
             return self.de_validator.validate(problem, result)
         return ProfessionalValidationResult(

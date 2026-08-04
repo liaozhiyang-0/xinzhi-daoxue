@@ -14,6 +14,7 @@ from app.services.knowledge_audit import (
     ImageEvidenceRecord,
     KnowledgeAuditScanner,
     ManifestEntry,
+    extract_pdf_text_pages,
     infer_chapter,
     infer_content_type,
     source_uri,
@@ -135,20 +136,20 @@ def markdown_blocks(text: str, chunk_size: int) -> list[tuple[str, str]]:
     return blocks
 
 
-def semantic_chunks(
+def _semantic_chunks_from_blocks(
     *,
     entry: ManifestEntry,
-    text: str,
+    blocks: Iterable[tuple[str, str, int | None]],
     chunk_size: int,
     overlap_chars: int,
     images: Iterable[ImageEvidenceRecord],
 ) -> list[ChunkRecord]:
-    blocks = markdown_blocks(text, chunk_size)
     image_list = list(images)
     output: list[ChunkRecord] = []
     current_title = "UNKNOWN"
     current_parts: list[str] = []
     current_length = 0
+    current_page: int | None = None
 
     def flush() -> None:
         nonlocal current_parts, current_length
@@ -192,10 +193,12 @@ def semantic_chunks(
                 chunk_index=index,
                 text=content,
                 source_uri=(
-                    f"{source_uri(entry.course_id, entry.relative_path)}#chunk-{index}"
+                    f"{source_uri(entry.course_id, entry.relative_path)}"
+                    f"#chunk-{index}"
                 ),
                 related_images=related,
                 document_version=entry.document_version,
+                page_number=current_page,
                 section_path=tuple(
                     item
                     for item in (entry.inferred_chapter, current_title)
@@ -205,6 +208,11 @@ def semantic_chunks(
                     "source_file": entry.source_file or entry.file_name,
                     "source_relative_path": entry.relative_path,
                     "content_hash": entry.checksum,
+                    **(
+                        {"page_number": current_page}
+                        if current_page is not None
+                        else {}
+                    ),
                 },
             )
         )
@@ -212,9 +220,20 @@ def semantic_chunks(
         current_parts = [overlap] if overlap else []
         current_length = len(overlap)
 
-    for title, block in blocks:
+    for title, block, page_number in blocks:
+        page_changed = (
+            bool(current_parts)
+            and page_number is not None
+            and current_page is not None
+            and page_number != current_page
+        )
         heading_changed = title != current_title
-        if current_parts and (
+        if page_changed:
+            flush()
+            current_parts = []
+            current_length = 0
+            current_page = None
+        elif current_parts and (
             heading_changed or current_length + len(block) + 2 > chunk_size
         ):
             flush()
@@ -227,10 +246,55 @@ def semantic_chunks(
             current_parts = []
             current_length = 0
         current_title = title
+        if current_page is None:
+            current_page = page_number
         current_parts.append(block)
         current_length += len(block) + 2
     flush()
     return output
+
+
+def semantic_chunks(
+    *,
+    entry: ManifestEntry,
+    text: str,
+    chunk_size: int,
+    overlap_chars: int,
+    images: Iterable[ImageEvidenceRecord],
+) -> list[ChunkRecord]:
+    return _semantic_chunks_from_blocks(
+        entry=entry,
+        blocks=(
+            (title, block, None)
+            for title, block in markdown_blocks(text, chunk_size)
+        ),
+        chunk_size=chunk_size,
+        overlap_chars=overlap_chars,
+        images=images,
+    )
+
+
+def pdf_semantic_chunks(
+    *,
+    entry: ManifestEntry,
+    pages: Iterable[tuple[int, str]],
+    chunk_size: int,
+    overlap_chars: int,
+    images: Iterable[ImageEvidenceRecord],
+) -> list[ChunkRecord]:
+    """Chunk PDF text without crossing page boundaries."""
+
+    return _semantic_chunks_from_blocks(
+        entry=entry,
+        blocks=(
+            (entry.title or "UNKNOWN", text, page_number)
+            for page_number, text in pages
+            if text.strip()
+        ),
+        chunk_size=chunk_size,
+        overlap_chars=overlap_chars,
+        images=images,
+    )
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -324,7 +388,7 @@ class KnowledgeIndexBuilder:
         for entry in audit.manifest:
             if not entry.active:
                 continue
-            if entry.source_type not in {"markdown", "text"}:
+            if entry.source_type not in {"markdown", "text", "pdf"}:
                 continue
             if entry.index_status not in {"direct", "clean_before_index"}:
                 continue
@@ -349,19 +413,35 @@ class KnowledgeIndexBuilder:
                 reused += len(parsed)
                 continue
             source = self.roots[entry.course_id] / PurePosixPath(entry.relative_path)
-            try:
-                text = source.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
-                continue
-            chunks.extend(
-                semantic_chunks(
-                    entry=entry,
-                    text=text,
-                    chunk_size=self.chunk_size,
-                    overlap_chars=self.overlap_chars,
-                    images=images_by_document.get(entry.document_id, []),
+            if entry.source_type == "pdf":
+                extraction = extract_pdf_text_pages(
+                    source, self.scanner.max_parse_bytes
                 )
-            )
+                if extraction.parse_status != "parsed":
+                    continue
+                chunks.extend(
+                    pdf_semantic_chunks(
+                        entry=entry,
+                        pages=extraction.pages,
+                        chunk_size=self.chunk_size,
+                        overlap_chars=self.overlap_chars,
+                        images=images_by_document.get(entry.document_id, []),
+                    )
+                )
+            else:
+                try:
+                    text = source.read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    continue
+                chunks.extend(
+                    semantic_chunks(
+                        entry=entry,
+                        text=text,
+                        chunk_size=self.chunk_size,
+                        overlap_chars=self.overlap_chars,
+                        images=images_by_document.get(entry.document_id, []),
+                    )
+                )
             rebuilt += 1
 
         parent_chunks = {

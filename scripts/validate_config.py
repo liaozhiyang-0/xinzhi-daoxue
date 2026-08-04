@@ -25,12 +25,52 @@ def safe_status(value: str, *, required: bool) -> str:
 
 def validate(settings: Settings) -> dict[str, object]:
     registry = AgentRegistry()
+    course_registry = default_course_registry()
     skill_registry = SkillRegistry(
-        default_course_registry(),
+        course_registry,
         default_capability_registry(),
     )
     error_pool_registry = ErrorPoolRegistry()
     learning_outcome = LearningOutcomeService()
+    teaching_courses = ("CT", "AE", "DE")
+    error_pool_coverage: dict[str, object] = {}
+    course_pack_status: dict[str, object] = {}
+    for course_id in teaching_courses:
+        skills = skill_registry.list_for_course(course_id)
+        templates = error_pool_registry.list_for_course(course_id)
+        referenced = {
+            signature
+            for skill in skills
+            for signature in skill.common_error_signatures
+        }
+        usable_templates = {
+            template.error_signature
+            for template in templates
+            if template.enabled
+            and template.teacher_reviewed
+            and template.match_mode == "exact_rule"
+        }
+        covered = referenced.intersection(usable_templates)
+        error_pool_coverage[course_id] = {
+            "skill_count": len(skills),
+            "referenced_error_signature_count": len(referenced),
+            "covered_error_signature_count": len(covered),
+            "coverage_ratio": len(covered) / len(referenced) if referenced else 1.0,
+            "uncovered_error_signatures": sorted(referenced - usable_templates),
+            "usable_template_count": len(usable_templates),
+        }
+        pack = course_registry.get(course_id)
+        course_pack_status[course_id] = {
+            "implementation_status": pack.implementation_status,
+            "supported_problem_type_count": len(pack.supported_problem_types),
+            "verification_rule_count": len(pack.verification_rules),
+            "legacy_yaml_present": (
+                ROOT
+                / "agent_configs"
+                / "course_packs"
+                / f"course_{course_id.lower()}_v1.yaml"
+            ).is_file(),
+        }
     return {
         "valid": True,
         "app_env": settings.app_env,
@@ -101,15 +141,17 @@ def validate(settings: Settings) -> dict[str, object]:
             "default_top_k": settings.knowledge_default_top_k,
         },
         "teaching_foundation": {
-            "supported_courses": ["CT", "AE", "DE"],
+            "supported_courses": list(teaching_courses),
             "skills": {
                 course_id: len(skill_registry.list_for_course(course_id))
-                for course_id in ("CT", "AE", "DE")
+                for course_id in teaching_courses
             },
             "reviewed_error_templates": {
                 course_id: len(error_pool_registry.list_for_course(course_id))
-                for course_id in ("CT", "AE", "DE")
+                for course_id in teaching_courses
             },
+            "error_pool_coverage": error_pool_coverage,
+            "course_packs": course_pack_status,
         },
         "teaching_loop_phase3": {
             "mastery_policy_version": str(learning_outcome.config["version"]),

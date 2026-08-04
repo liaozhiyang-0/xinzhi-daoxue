@@ -1,0 +1,65 @@
+schema_version: "error_pool_proposal.v1"
+course_id: "CT"
+runtime_loaded: false
+review_status: "pending_teacher_review"
+proposals:
+  - proposal_id: "CT.equivalent_resistance_error"
+    error_signature: "equivalent_resistance_error"
+    problem_types: ["thevenin_norton"]
+    skill_ids: ["CT.THEVENIN_NORTON"]
+    error_type: "equivalent_circuit_error"
+    description: "Candidate: the equivalent resistance is formed with the wrong source-deactivation or terminal condition."
+    hint_templates:
+      H1: "Re-check which independent sources are deactivated and keep the target terminals open when forming the equivalent resistance."
+      H2: "Write the terminal test circuit first, then verify the resistance seen from the target terminals before calculating the load response."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "CT.kcl_sign_error"
+    error_signature: "kcl_sign_error"
+    problem_types: ["kcl_kvl", "node_voltage"]
+    skill_ids: ["CT.KCL", "CT.NODAL"]
+    error_type: "equation_sign_error"
+    description: "Candidate: a KCL branch sign or current reference direction is inconsistent with the stated node convention."
+    hint_templates:
+      H1: "Choose one current-into-node convention and apply it to every branch term in the same KCL equation."
+      H2: "Annotate each branch reference direction at the node, then move all terms to one side before solving."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "CT.phase_sign_error"
+    error_signature: "phase_sign_error"
+    problem_types: ["sinusoidal_steady_state"]
+    skill_ids: ["CT.PHASOR"]
+    error_type: "phase_reference_error"
+    description: "Candidate: a phasor phase sign or leading/lagging reference is inconsistent with the time-domain convention."
+    hint_templates:
+      H1: "State the cosine/sine reference and check the sign of every phase before comparing phasors."
+      H2: "Convert the final phasor back to the chosen time-domain convention to verify whether the phase leads or lags."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "CT.power_factor_error"
+    error_signature: "power_factor_error"
+    problem_types: ["power"]
+    skill_ids: ["CT.AC_POWER"]
+    error_type: "power_factor_error"
+    description: "Candidate: the power factor uses the wrong angle, sign, or active/apparent power relationship."
+    hint_templates:
+      H1: "Use the angle between voltage and current phasors and distinguish active power from apparent power."
+      H2: "Check that the reported power factor is bounded by one and that its leading/lagging label matches reactive power."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false

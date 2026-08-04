@@ -32,6 +32,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     styles = client.get("/debug-assets/workspace-v2.css")
 
     assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store, max-age=0"
     assert "知识问答" in page.text
     assert "自然语言自动调度" in page.text
     assert 'id="mode-control"' not in page.text
@@ -60,6 +61,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
     assert "20260730-image-runtime-v7" in page.text
+    assert "workspace.js?v=20260804-history-layout-v2" in page.text
     assert "ui-core.js?v=20260801-auth-entry-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
@@ -77,12 +79,26 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "appendStoredAttachmentImages" in script.text
     assert "/content?user_id=" in script.text
     assert "initializeResizablePanels()" in script.text
+    assert "businessSectionAlreadyInAnswer" in script.text
+    assert "historyRequestSequence" in script.text
+    assert "renderedAssistantTaskIds" in script.text
+    assert "taskId === restoredTask?.id" in script.text
+    assert (
+        'renderBusinessView(structured.business_view || {}, state.lastAnswer)'
+        in script.text
+    )
+    assert "state.activeTaskWait" in script.text
+    assert "已立即停止当前等待" in script.text
+    assert "runSequence !== state.runSequence" in script.text
     assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
     assert "let pendingLearningFollowUp = null" in script.text
     assert 'intent: requestedIntent' in script.text
     assert "source_task_id: learningFollowUp?.source_task_id" in script.text
     assert "pendingLearningFollowUp = result.follow_up_context || null" in script.text
     assert 'id="teaching-mode"' in page.text
+    assert 'id="task-feedback-panel"' in page.text
+    assert 'id="task-feedback-satisfaction"' in page.text
+    assert 'id="task-feedback-review"' in page.text
     assert 'value="direct_answer"' in page.text
     assert 'value="guided_learning"' in page.text
     assert 'value="check_my_work"' in page.text
@@ -97,6 +113,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
         "? { raw_text: studentAttempt } : undefined"
     ) in script.text
     assert "function renderTeachingLoop(structured)" in script.text
+    assert 'api("/api/v1/feedback"' in script.text
+    assert "function submitTaskFeedback()" in script.text
     assert "function usesInteractiveTeaching(structured = {})" in script.text
     assert (
         "if (!loop || !usesInteractiveTeaching(structured))" in script.text
@@ -120,7 +138,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "ownedTaskUrl(state.currentTask.id)" in script.text
     assert 'audience: "student"' in script.text
     assert 'api("/api/v1/capabilities")' in script.text
-    assert "/api/v1/sessions/${state.sessionId}/tasks?limit=50" in script.text
+    assert "/api/v1/sessions/${sessionId}/tasks?limit=50" in script.text
     assert "archiveCurrentAnswer()" in script.text
     assert "scrollbar-gutter: stable" in styles.text
     assert ".workspace-center" in styles.text and "min-height: 0" in styles.text

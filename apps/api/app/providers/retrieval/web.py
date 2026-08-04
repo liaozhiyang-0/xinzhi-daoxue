@@ -8,6 +8,7 @@ from app.contracts import ExternalEvidenceItem, ExternalSourceScope, ExternalSou
 from app.providers.retrieval.academic import (
     AcademicProviderError,
     HttpAcademicProvider,
+    validate_http_url,
 )
 
 
@@ -40,7 +41,14 @@ class JsonWebSearchProvider(HttpAcademicProvider):
         self.api_key = api_key
         self.auth_header = auth_header.strip() or "x-api-key"
 
-    async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        prefer_high_citation: bool = False,
+    ) -> list[ExternalEvidenceItem]:
+        del prefer_high_citation
         headers = {self.auth_header: self.api_key} if self.api_key else None
         response = await self._get_with_headers(
             "",
@@ -72,7 +80,7 @@ class JsonWebSearchProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://web/{evidence_id}",
                     title=title,
-                    canonical_url=url,
+                    canonical_url=validate_http_url(url),
                     content_excerpt=str(
                         record.get("content", record.get("snippet", "")) or ""
                     ).strip(),

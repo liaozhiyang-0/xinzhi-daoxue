@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections import Counter, defaultdict
-from pathlib import Path
+from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
 from statistics import mean, median
 from typing import Any
 
-from app.evaluation.contracts import EvaluationCase, EvaluationResult, SuiteReport
+from app.evaluation.contracts import (
+    EvaluationCase,
+    EvaluationReportSummary,
+    EvaluationResult,
+    EvaluationRunMetadata,
+    SuiteReport,
+)
+
+EVALUATION_ATTACHMENT_EXTENSIONS = {".jpeg", ".jpg", ".pdf", ".png", ".webp"}
 
 
 def build_statistics(
@@ -100,6 +111,198 @@ def write_report(report: SuiteReport, root: Path) -> tuple[Path, Path]:
     json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     markdown_path.write_text(render_markdown(report), encoding="utf-8")
     return json_path, markdown_path
+
+
+def evaluation_case_ids_sha256(case_ids: Iterable[str]) -> str:
+    """Hash the sorted report case-id set using the canonical v1 encoding."""
+
+    return hashlib.sha256("\n".join(sorted(case_ids)).encode("utf-8")).hexdigest()
+
+
+def evaluation_case_catalog_content_sha256(
+    cases: Iterable[EvaluationCase],
+) -> str:
+    """Hash normalized case payloads without exposing their source text."""
+
+    payload = [
+        case.model_dump(mode="json")
+        for case in sorted(cases, key=lambda item: item.case_id)
+    ]
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def evaluation_case_source_files_sha256(root: Path) -> str:
+    """Hash source YAML/JSON paths and bytes for a case catalog manifest."""
+
+    paths = sorted([*root.rglob("*.yaml"), *root.rglob("*.json")])
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def resolve_evaluation_attachment(
+    reference: Any,
+    *,
+    root: Path,
+    case_id: str,
+    ordinal: int,
+) -> tuple[str, Path]:
+    if not isinstance(reference, dict):
+        raise ValueError(
+            f"{case_id}: attachment {ordinal} must be an object with a relative path"
+        )
+    raw_path = reference.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError(
+            f"{case_id}: attachment {ordinal} requires a non-empty path"
+        )
+    normalized = raw_path.replace("\\", "/").strip()
+    posix_path = PurePosixPath(normalized)
+    candidate_path = Path(normalized)
+    if (
+        "\x00" in normalized
+        or candidate_path.is_absolute()
+        or bool(candidate_path.drive)
+        or posix_path.is_absolute()
+        or ".." in posix_path.parts
+    ):
+        raise ValueError(
+            f"{case_id}: attachment {ordinal} path must stay inside the case root"
+        )
+    root_resolved = root.resolve()
+    resolved = (root_resolved / Path(*posix_path.parts)).resolve()
+    try:
+        relative = resolved.relative_to(root_resolved).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            f"{case_id}: attachment {ordinal} path escapes the case root"
+        ) from exc
+    if resolved.suffix.lower() not in EVALUATION_ATTACHMENT_EXTENSIONS:
+        raise ValueError(
+            f"{case_id}: attachment {ordinal} must be an image or PDF file"
+        )
+    if not resolved.is_file():
+        raise ValueError(f"{case_id}: attachment {ordinal} file does not exist")
+    return relative, resolved
+
+
+def _file_sha256(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def evaluation_case_attachment_manifest(
+    cases: Iterable[EvaluationCase], root: Path
+) -> tuple[str, int]:
+    """Hash validated, root-relative image/PDF attachments without exposing paths."""
+
+    entries: list[dict[str, Any]] = []
+    for case in sorted(cases, key=lambda item: item.case_id):
+        for ordinal, reference in enumerate(case.file_refs):
+            relative, path = resolve_evaluation_attachment(
+                reference,
+                root=root,
+                case_id=case.case_id,
+                ordinal=ordinal,
+            )
+            content_sha256, size_bytes = _file_sha256(path)
+            entries.append(
+                {
+                    "case_id": case.case_id,
+                    "ordinal": ordinal,
+                    "relative_path": relative,
+                    "size_bytes": size_bytes,
+                    "content_sha256": content_sha256,
+                }
+            )
+    encoded = json.dumps(
+        entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest(), len(entries)
+
+
+def evaluation_filters_sha256(filters: dict[str, Any] | None) -> str:
+    """Hash report filters using a stable JSON representation."""
+
+    payload = filters or {}
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def build_evaluation_run_metadata(
+    cases: list[EvaluationCase],
+    *,
+    run_id: str,
+    implementation_fingerprint: str,
+    filters: dict[str, Any] | None = None,
+    case_catalog_sha256: str = "",
+    case_catalog_content_sha256: str = "",
+    case_source_files_sha256: str = "",
+    case_attachment_manifest_sha256: str = "",
+    case_attachment_count: int = 0,
+) -> EvaluationRunMetadata:
+    """Build reproducibility metadata without retaining prompts or answers."""
+
+    case_ids = [item.case_id for item in cases]
+    return EvaluationRunMetadata(
+        run_id=run_id,
+        case_count=len(cases),
+        case_ids_sha256=evaluation_case_ids_sha256(case_ids),
+        case_catalog_sha256=case_catalog_sha256,
+        case_catalog_content_sha256=case_catalog_content_sha256,
+        case_catalog_content_version=(
+            "canonical_evaluation_case_payloads.v1"
+            if case_catalog_content_sha256
+            else None
+        ),
+        case_source_files_sha256=case_source_files_sha256,
+        case_source_files_version=(
+            "evaluation_case_source_files.v1"
+            if case_source_files_sha256
+            else None
+        ),
+        case_attachment_manifest_sha256=case_attachment_manifest_sha256,
+        case_attachment_manifest_version=(
+            "evaluation_case_attachments.v1"
+            if case_attachment_manifest_sha256
+            else None
+        ),
+        case_attachment_count=case_attachment_count,
+        filters_sha256=evaluation_filters_sha256(filters),
+        implementation_fingerprint=implementation_fingerprint,
+    )
+
+
+def build_report_summary(report: SuiteReport) -> EvaluationReportSummary:
+    status_counts = Counter(item.status for item in report.results)
+    result_status_counts = {
+        str(status): count for status, count in status_counts.items()
+    }
+    return EvaluationReportSummary(
+        schema_version=report.schema_version,
+        mode=report.mode,
+        started_at=report.started_at,
+        completed_at=report.completed_at,
+        filters=report.filters,
+        summary=report.summary,
+        statistics=report.statistics,
+        run_metadata=report.run_metadata,
+        result_status_counts=result_status_counts,
+    )
 
 
 def render_markdown(report: SuiteReport) -> str:

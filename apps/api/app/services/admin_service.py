@@ -26,16 +26,86 @@ from app.models import (
     AuthSessionModel,
     FileIngestionStatus,
     FileModel,
+    SystemSettingModel,
     TaskModel,
     TaskStatus,
 )
 from app.services.audit_service import record_audit
+from app.services.evaluation_attachment_maintenance import (
+    EvaluationAttachmentResidueReport,
+    inspect_evaluation_attachment_residue,
+)
+from app.services.feature_flags import FEATURE_DEFINITIONS, is_feature_enabled
+from app.services.task_observability import (
+    percentile_ms,
+    task_latency_ms,
+    task_queue_latency_ms,
+)
 
 
 class AdminService:
     def __init__(self, db: AsyncSession, settings: Settings) -> None:
         self.db = db
         self.settings = settings
+
+    async def list_feature_settings(self) -> list[dict[str, object]]:
+        rows = {
+            item.key: item
+            for item in (await self.db.scalars(select(SystemSettingModel))).all()
+        }
+        return [
+            {
+                "key": key,
+                "label": definition["label"],
+                "description": definition["description"],
+                "enabled": await is_feature_enabled(self.db, key),
+                "updated_at": rows[key].updated_at if key in rows else None,
+                "updated_by": rows[key].updated_by if key in rows else None,
+            }
+            for key, definition in FEATURE_DEFINITIONS.items()
+        ]
+
+    async def update_feature_setting(
+        self,
+        key: str,
+        enabled: bool,
+        *,
+        actor_account_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        definition = FEATURE_DEFINITIONS.get(key)
+        if definition is None:
+            raise NotFoundError("功能开关不存在", details={"key": key})
+        row = await self.db.get(SystemSettingModel, key)
+        if row is None:
+            row = SystemSettingModel(
+                key=key,
+                value={"enabled": enabled},
+                updated_by=actor_account_id,
+            )
+            self.db.add(row)
+        else:
+            row.value = {"enabled": enabled}
+            row.updated_by = actor_account_id
+        record_audit(
+            self.db,
+            request,
+            action="admin.feature.toggle",
+            actor_account_id=actor_account_id,
+            target_type="feature",
+            target_id=key,
+            details={"enabled": enabled},
+        )
+        await self.db.commit()
+        await self.db.refresh(row)
+        return {
+            "key": key,
+            "label": definition["label"],
+            "description": definition["description"],
+            "enabled": enabled,
+            "updated_at": row.updated_at,
+            "updated_by": row.updated_by,
+        }
 
     async def list_accounts(
         self,
@@ -361,6 +431,44 @@ class AdminService:
             ).all()
         )
         counts = {str(status): int(count) for status, count in rows}
+        failure_rows = list(
+            (
+                await self.db.execute(
+                    select(TaskModel.failure_category, func.count(TaskModel.id))
+                    .where(
+                        TaskModel.status == TaskStatus.FAILED,
+                        TaskModel.failure_category.is_not(None),
+                    )
+                    .group_by(TaskModel.failure_category)
+                )
+            ).all()
+        )
+        provider_rows = list(
+            (
+                await self.db.execute(
+                    select(TaskModel.provider, func.count(TaskModel.id)).group_by(
+                        TaskModel.provider
+                    )
+                )
+            ).all()
+        )
+        route_rows = list(
+            (
+                await self.db.execute(
+                    select(TaskModel.route_status, func.count(TaskModel.id)).group_by(
+                        TaskModel.route_status
+                    )
+                )
+            ).all()
+        )
+        cancellation_requested_count = int(
+            await self.db.scalar(
+                select(func.count(TaskModel.id)).where(
+                    TaskModel.cancellation_requested.is_(True)
+                )
+            )
+            or 0
+        )
         active = sum(
             counts.get(item.value, 0)
             for item in (
@@ -377,6 +485,119 @@ class AdminService:
             "completed": counts.get(TaskStatus.COMPLETED.value, 0),
             "failed": counts.get(TaskStatus.FAILED.value, 0),
             "status_counts": counts,
+            "failure_category_counts": {
+                str(category): int(count) for category, count in failure_rows
+            },
+            "provider_counts": {
+                str(provider): int(count) for provider, count in provider_rows
+            },
+            "route_status_counts": {
+                str(route_status): int(count) for route_status, count in route_rows
+            },
+            "cancellation_requested_count": cancellation_requested_count,
+        }
+
+    async def task_observability(
+        self,
+        *,
+        window_start: datetime,
+        window_end: datetime,
+        row_limit: int,
+    ) -> dict[str, object]:
+        tasks = list(
+            (
+                await self.db.scalars(
+                    select(TaskModel)
+                    .where(
+                        TaskModel.created_at >= window_start,
+                        TaskModel.created_at < window_end,
+                    )
+                    .order_by(TaskModel.created_at.asc(), TaskModel.id.asc())
+                    .limit(row_limit + 1)
+                )
+            ).all()
+        )
+        truncated = len(tasks) > row_limit
+        tasks = tasks[:row_limit]
+
+        status_counts: dict[str, int] = {}
+        failure_category_counts: dict[str, int] = {}
+        provider_counts: dict[str, int] = {}
+        route_status_counts: dict[str, int] = {}
+        cancellation_requested_count = 0
+        total_latencies: list[int] = []
+        queue_latencies: list[int] = []
+        terminal_count = 0
+        started_count = 0
+        for task in tasks:
+            status = (
+                task.status.value
+                if isinstance(task.status, TaskStatus)
+                else str(task.status)
+            )
+            status_counts[status] = status_counts.get(status, 0) + 1
+            provider_counts[task.provider] = provider_counts.get(task.provider, 0) + 1
+            route_status_counts[task.route_status] = (
+                route_status_counts.get(task.route_status, 0) + 1
+            )
+            if task.failure_category:
+                failure_category_counts[task.failure_category] = (
+                    failure_category_counts.get(task.failure_category, 0) + 1
+                )
+            if task.cancellation_requested:
+                cancellation_requested_count += 1
+            if status in {
+                TaskStatus.COMPLETED.value,
+                TaskStatus.FAILED.value,
+                TaskStatus.CANCELLED.value,
+            }:
+                terminal_count += 1
+                latency = task_latency_ms(task)
+                if latency is not None:
+                    total_latencies.append(latency)
+            if task.started_at is not None:
+                started_count += 1
+                queue_latency = task_queue_latency_ms(task)
+                if queue_latency is not None:
+                    queue_latencies.append(queue_latency)
+
+        warnings: list[str] = []
+        if truncated:
+            warnings.append("task_observability_reached_row_limit")
+        if terminal_count and len(total_latencies) < terminal_count:
+            warnings.append("total_latency_unavailable_for_some_terminal_tasks")
+        if started_count and len(queue_latencies) < started_count:
+            warnings.append("queue_latency_unavailable_for_some_started_tasks")
+        return {
+            "version": "v1",
+            "data_source": "local_database",
+            "window_start": window_start,
+            "window_end": window_end,
+            "row_limit": row_limit,
+            "truncated": truncated,
+            "task_count": len(tasks),
+            "status_counts": status_counts,
+            "failure_category_counts": failure_category_counts,
+            "provider_counts": provider_counts,
+            "route_status_counts": route_status_counts,
+            "cancellation_requested_count": cancellation_requested_count,
+            "measured_total_latency_count": len(total_latencies),
+            "average_total_latency_ms": (
+                sum(total_latencies) / len(total_latencies)
+                if total_latencies
+                else None
+            ),
+            "p50_total_latency_ms": percentile_ms(total_latencies, 0.5),
+            "p95_total_latency_ms": percentile_ms(total_latencies, 0.95),
+            "measured_queue_latency_count": len(queue_latencies),
+            "average_queue_latency_ms": (
+                sum(queue_latencies) / len(queue_latencies)
+                if queue_latencies
+                else None
+            ),
+            "p50_queue_latency_ms": percentile_ms(queue_latencies, 0.5),
+            "p95_queue_latency_ms": percentile_ms(queue_latencies, 0.95),
+            "data_quality_warnings": warnings,
         }
 
     async def list_files(
@@ -437,6 +658,11 @@ class AdminService:
             "failed": counts.get(FileIngestionStatus.FAILED.value, 0),
             "total_bytes": total_bytes,
         }
+
+    async def evaluation_attachment_residue(
+        self,
+    ) -> EvaluationAttachmentResidueReport:
+        return await inspect_evaluation_attachment_residue(self.db, self.settings)
 
     @staticmethod
     def _task_filters(

@@ -10,6 +10,8 @@ class TaskExecutor(Protocol):
 
     def submit(self, task_id: str) -> bool: ...
 
+    async def recover(self) -> int: ...
+
     async def shutdown(self) -> None: ...
 
 
@@ -20,6 +22,9 @@ class LocalTaskExecutor:
     def submit(self, task_id: str) -> bool:
         return self.runner.submit(task_id)
 
+    async def recover(self) -> int:
+        return await self.runner.recover_pending_tasks()
+
     async def shutdown(self) -> None:
         await self.runner.shutdown()
 
@@ -28,6 +33,9 @@ class QueueTaskExecutor:
     """Explicit extension point; it never silently falls back to local execution."""
 
     def submit(self, task_id: str) -> bool:
+        raise RuntimeError("QueueTaskExecutor 尚未配置消息队列后端")
+
+    async def recover(self) -> int:
         raise RuntimeError("QueueTaskExecutor 尚未配置消息队列后端")
 
     async def shutdown(self) -> None:

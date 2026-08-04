@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from app.contracts import KnowledgeHit, RetrievalContextPacket
@@ -156,6 +157,11 @@ def test_qdrant_named_vectors_upsert_filter_and_persist(tmp_path: Path) -> None:
     assert [item.item_id for item in hits] == ["ct-1"]
     assert not store.search_text(query, course_id="DE", limit=3)
     assert store.health()["text_vector_count"] == 2
+    metrics = store.metrics()
+    assert metrics["ensure_collections"]["count"] == 1
+    assert metrics["upsert_text"]["count"] == 1
+    assert metrics["search_text"]["count"] == 2
+    assert store.health()["backend"] == "embedded_sqlite"
     store.close()
 
     reopened = store_for(config)
@@ -263,8 +269,11 @@ def test_retrieval_warmup_reports_optional_model_failure(
     assert result["failed_components"] == ["image"]
     assert result["components"]["text"]["warmup_status"] == "ready"
     assert result["components"]["image"]["warmup_status"] == "failed"
-    assert service.health()["rag_status"] == "degraded"
-    assert "image_model_not_loaded" in service.health()["degraded_reasons"]
+    health = service.health()
+    assert health["rag_status"] == "degraded"
+    assert "image_model_not_loaded" in health["degraded_reasons"]
+    assert health["vector_store_backend"] == "embedded_sqlite"
+    assert isinstance(health["vector_store_metrics"], dict)
     service.close()
 
 
@@ -389,6 +398,49 @@ def test_incremental_multimodal_index_reuses_unchanged_points(
     assert (first.text_points, first.image_points) == (1, 1)
     assert (second.text_points, second.image_points) == (0, 0)
     assert (second.reused_text_points, second.reused_image_points) == (1, 1)
+    store.close()
+
+
+def test_rag_index_includes_published_course_material_chunks(tmp_path: Path) -> None:
+    config = settings(tmp_path)
+    chunk_path = config.knowledge_index_path / "cache" / "course_material_chunks.jsonl"
+    chunk_path.parent.mkdir(parents=True)
+    chunk_path.write_text(
+        json.dumps(
+            {
+                "chunk_id": "material-file-1-0",
+                "document_id": "file-1",
+                "document_checksum": "material-sum-1",
+                "course_id": "CT",
+                "relative_path": "materials/file-1/lesson.txt",
+                "title": "kcl-intro",
+                "chapter": "KCL",
+                "content_type": "course_material",
+                "chunk_index": 0,
+                "text": "KCL course material",
+                "source_uri": "kb-material://CT/file-1#chunk-0",
+                "related_images": [],
+                "metadata": {"material_file_id": "file-1"},
+                "is_active": True,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store = store_for(config)
+    indexer = MultimodalRAGIndexer(
+        config,
+        DeterministicFakeTextEmbeddingProvider(),
+        DeterministicFakeImageEmbeddingProvider(),
+        store,
+    )
+
+    result = indexer.build(include_images=False)
+
+    assert result.text_points == 1
+    state = json.loads(indexer.state_path.read_text(encoding="utf-8"))
+    assert state["material_checksums"] == {"file-1": "material-sum-1"}
+    assert store.health()["text_vector_count"] == 1
     store.close()
 
 

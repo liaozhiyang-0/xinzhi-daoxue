@@ -53,4 +53,9 @@ def create_external_search_service(settings: Settings) -> AcademicSearchService:
                 timeout_seconds=settings.external_web_search_timeout_seconds,
             )
         )
-    return AcademicSearchService(providers)
+    return AcademicSearchService(
+        providers,
+        cache_size=settings.external_retrieval_cache_size,
+        cache_ttl_seconds=settings.external_retrieval_cache_ttl_seconds,
+        max_retries=settings.external_retrieval_provider_retries,
+    )

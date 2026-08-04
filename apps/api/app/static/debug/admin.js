@@ -373,6 +373,55 @@ async function loadAdminSystem() {
   );
 }
 
+async function updateFeatureSetting(item, toggle) {
+  const enabled = toggle.getAttribute("aria-pressed") !== "true";
+  toggle.disabled = true;
+  try {
+    await api(`/api/v1/admin/settings/features/${encodeURIComponent(item.key)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    toast(`${item.label}已${enabled ? "开启" : "关闭"}`);
+    await loadAdminFeatureSettings();
+  } catch (error) {
+    toast(error.message, "failed");
+  } finally {
+    if (toggle.isConnected) toggle.disabled = false;
+  }
+}
+
+function renderFeatureSettings(items) {
+  const root = $("#admin-feature-settings");
+  if (!items.length) {
+    root.replaceChildren(el("p", { class: "empty-state", text: "暂无可配置功能" }));
+    return;
+  }
+  root.replaceChildren(...items.map((item) => {
+    const enabled = Boolean(item.enabled);
+    const toggle = el("button", {
+      type: "button",
+      class: "feature-toggle-button",
+      "data-feature-key": item.key,
+      "aria-pressed": String(enabled),
+      "aria-label": `切换${item.label}，当前${enabled ? "已开启" : "已关闭"}`,
+      text: enabled ? "已开启" : "已关闭",
+    });
+    toggle.addEventListener("click", () => updateFeatureSetting(item, toggle));
+    return el("article", { class: "admin-service-card" }, [
+      el("strong", { text: item.label }),
+      el("p", { text: item.description }),
+      el("div", { class: "feature-toggle" }, [toggle, el("span", { text: enabled ? "允许使用" : "暂不使用" })]),
+      el("small", { text: item.updated_at ? `最近更新：${dateText(item.updated_at)}` : "当前使用默认配置：开启" }),
+    ]);
+  }));
+}
+
+async function loadAdminFeatureSettings() {
+  const items = await api("/api/v1/admin/settings/features");
+  renderFeatureSettings(items || []);
+}
+
 function selectManagementModule(id) {
   const target = managementModules.has(id) ? id : "overview";
   all("[data-admin-module]").forEach((section) => { section.hidden = section.dataset.adminModule !== target; });
@@ -389,12 +438,14 @@ function initManagementModules() {
   registerManagementModule("tasks", loadAdminTasks);
   registerManagementModule("files", loadAdminFiles);
   registerManagementModule("agents", loadAdminAgents);
+  registerManagementModule("settings", loadAdminFeatureSettings);
   registerManagementModule("system", loadAdminSystem);
   all("[data-admin-module-target]").forEach((button) => button.addEventListener("click", () => selectManagementModule(button.dataset.adminModuleTarget)));
   $("#admin-task-filters").addEventListener("submit", (event) => { event.preventDefault(); loadAdminTasks().catch((error) => toast(error.message, "failed")); });
   $("#admin-file-filters").addEventListener("submit", (event) => { event.preventDefault(); loadAdminFiles().catch((error) => toast(error.message, "failed")); });
   $("#admin-file-refresh").addEventListener("click", () => loadAdminFiles().catch((error) => toast(error.message, "failed")));
   $("#admin-agent-refresh").addEventListener("click", () => loadAdminAgents().catch((error) => toast(error.message, "failed")));
+  $("#admin-settings-refresh").addEventListener("click", () => loadAdminFeatureSettings().catch((error) => toast(error.message, "failed")));
   $("#admin-system-refresh").addEventListener("click", () => loadAdminSystem().catch((error) => toast(error.message, "failed")));
   selectManagementModule("overview");
 }

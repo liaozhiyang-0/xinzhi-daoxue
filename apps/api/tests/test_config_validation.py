@@ -25,6 +25,13 @@ def test_missing_xingchen_fields_are_not_required() -> None:
     assert isinstance(knowledge, dict)
     assert knowledge["enabled"] is True
     assert set(knowledge["sources"]) == {"CT", "AE", "DE", "SS", "DSP", "COMM"}
+    teaching = result["teaching_foundation"]
+    assert isinstance(teaching, dict)
+    assert teaching["error_pool_coverage"]["AE"]["covered_error_signature_count"] == 3
+    assert "bjt_region_error" in teaching["error_pool_coverage"]["AE"][
+        "uncovered_error_signatures"
+    ]
+    assert teaching["course_packs"]["CT"]["implementation_status"] == "implemented"
 
 
 def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:
@@ -37,6 +44,39 @@ def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:
             app_env="test",
             _env_file=None,
             xingchen_timeout_seconds=601,
+        )
+
+
+def test_production_requires_server_qdrant() -> None:
+    with pytest.raises(ValidationError, match="QDRANT_MODE must be server"):
+        Settings(
+            app_env="production",
+            auth_required=True,
+            auth_allow_guest=False,
+            qdrant_mode="local",
+            _env_file=None,
+        )
+
+    settings = Settings(
+        app_env="production",
+        auth_required=True,
+        auth_allow_guest=False,
+        qdrant_mode="server",
+        langgraph_checkpoint_enabled=False,
+        langgraph_checkpoint_backend="disabled",
+        _env_file=None,
+    )
+    assert settings.qdrant_mode == "server"
+
+
+def test_production_rejects_process_local_langgraph_checkpoints() -> None:
+    with pytest.raises(ValidationError, match="LANGGRAPH_CHECKPOINT_BACKEND=memory"):
+        Settings(
+            app_env="production",
+            auth_required=True,
+            auth_allow_guest=False,
+            qdrant_mode="server",
+            _env_file=None,
         )
 
 

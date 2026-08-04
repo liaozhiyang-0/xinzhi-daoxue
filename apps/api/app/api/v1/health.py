@@ -17,4 +17,9 @@ async def health(
     session_factory: async_sessionmaker[AsyncSession] = (
         request.app.state.session_factory
     )
-    return await build_health(settings, session_factory, request.app.state.provider)
+    return await build_health(
+        settings,
+        session_factory,
+        request.app.state.provider,
+        request.app.state.external_search,
+    )

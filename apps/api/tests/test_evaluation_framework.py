@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -16,13 +20,24 @@ from app.evaluation.contracts import (
     SuiteReport,
 )
 from app.evaluation.loader import EvaluationCaseLoader
-from app.evaluation.reporting import build_statistics, render_markdown, write_report
+from app.evaluation.reporting import (
+    build_evaluation_run_metadata,
+    build_statistics,
+    evaluation_case_attachment_manifest,
+    evaluation_case_catalog_content_sha256,
+    evaluation_case_source_files_sha256,
+    render_markdown,
+    write_report,
+)
 from app.evaluation.runner import EvaluationRunner, evaluation_timeout_decision
 from app.evaluation.scorers import EvaluationScorer, normalize_text
 from app.observability import ModelTracer
+from app.repositories import FileRepository
 from app.tools import default_tool_registry
 from fastapi import FastAPI
+from PIL import Image
 from pydantic import ValidationError
+from pypdf import PdfWriter
 
 from scripts.run_evaluation import parse_args, validate_cases, validate_paid_guard
 
@@ -201,8 +216,7 @@ def test_teaching_hint_scoring_accepts_only_more_conservative_disclosure() -> No
     assert "conservative_hint_level:H0<expected:H1" in conservative.warnings
     assert over_disclosed.status == "failed"
     assert (
-        EvaluationErrorType.TEACHING_FOUNDATION_MISMATCH
-        in over_disclosed.error_types
+        EvaluationErrorType.TEACHING_FOUNDATION_MISMATCH in over_disclosed.error_types
     )
 
 
@@ -339,6 +353,120 @@ def test_markdown_and_json_report_generation(tmp_path: Path) -> None:
     assert "完整模型回答" not in render_markdown(report)
 
 
+def test_evaluation_run_metadata_is_reproducible_and_safe() -> None:
+    cases = [make_case(case_id="CASE_002"), make_case(case_id="CASE_001")]
+
+    metadata = build_evaluation_run_metadata(
+        cases,
+        run_id="eval_run_test",
+        implementation_fingerprint="fingerprint-test",
+        filters={"mode": "offline", "tags": []},
+        case_catalog_sha256="catalog-test",
+        case_catalog_content_sha256="content-test",
+        case_source_files_sha256="source-test",
+        case_attachment_manifest_sha256="attachment-test",
+        case_attachment_count=2,
+    )
+
+    assert metadata.run_id == "eval_run_test"
+    assert metadata.case_count == 2
+    assert metadata.case_ids_sha256 == hashlib.sha256(b"CASE_001\nCASE_002").hexdigest()
+    assert metadata.implementation_fingerprint == "fingerprint-test"
+    assert metadata.case_catalog_sha256 == "catalog-test"
+    assert metadata.case_catalog_content_sha256 == "content-test"
+    assert metadata.case_catalog_content_version == (
+        "canonical_evaluation_case_payloads.v1"
+    )
+    assert metadata.case_source_files_sha256 == "source-test"
+    assert metadata.case_source_files_version == "evaluation_case_source_files.v1"
+    assert metadata.case_attachment_manifest_sha256 == "attachment-test"
+    assert metadata.case_attachment_manifest_version == (
+        "evaluation_case_attachments.v1"
+    )
+    assert metadata.case_attachment_count == 2
+    assert metadata.filters_sha256
+    assert metadata.raw_prompts_stored is False
+    assert "prompt" not in metadata.model_dump()
+    assert "answer" not in metadata.model_dump()
+
+
+def test_case_catalog_content_fingerprint_is_order_independent_and_sensitive() -> None:
+    first = make_case(case_id="CASE_001")
+    second = make_case(case_id="CASE_002")
+    changed = first.model_copy(update={"message": "changed content"})
+
+    original = evaluation_case_catalog_content_sha256([first, second])
+    reordered = evaluation_case_catalog_content_sha256([second, first])
+    modified = evaluation_case_catalog_content_sha256([changed, second])
+
+    assert len(original) == 64
+    assert original == reordered
+    assert original != modified
+
+
+def test_case_source_files_fingerprint_tracks_paths_and_bytes(tmp_path: Path) -> None:
+    first = tmp_path / "a.yaml"
+    second = tmp_path / "nested" / "b.json"
+    second.parent.mkdir()
+    first.write_text("cases: []\n", encoding="utf-8")
+    second.write_text('{"cases": []}\n', encoding="utf-8")
+
+    original = evaluation_case_source_files_sha256(tmp_path)
+    second.rename(tmp_path / "nested" / "renamed.json")
+    renamed = evaluation_case_source_files_sha256(tmp_path)
+    assert original != renamed
+
+    renamed_path = tmp_path / "nested" / "renamed.json"
+    renamed_path.write_text('{"cases": [{"case_id": "changed"}]}\n', encoding="utf-8")
+    modified = evaluation_case_source_files_sha256(tmp_path)
+
+    assert len(original) == 64
+    assert renamed != modified
+
+
+def test_case_attachment_manifest_is_root_limited_and_byte_sensitive(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "diagram.png"
+    pdf = tmp_path / "nested" / "lesson.pdf"
+    pdf.parent.mkdir()
+    image.write_bytes(b"png-like-content")
+    pdf.write_bytes(b"pdf-like-content")
+    first_cases = [
+        make_case(
+            case_id="CASE_002",
+            input_type="text_and_image",
+            file_refs=[{"path": "nested/lesson.pdf"}],
+        ),
+        make_case(
+            case_id="CASE_001",
+            input_type="text_and_image",
+            file_refs=[{"path": "diagram.png"}],
+        ),
+    ]
+
+    original, count = evaluation_case_attachment_manifest(first_cases, tmp_path)
+    reordered, reordered_count = evaluation_case_attachment_manifest(
+        list(reversed(first_cases)), tmp_path
+    )
+    assert len(original) == 64
+    assert count == reordered_count == 2
+    assert original == reordered
+
+    image.write_bytes(b"changed-image")
+    changed, _ = evaluation_case_attachment_manifest(first_cases, tmp_path)
+    assert original != changed
+
+    unsafe = make_case(file_refs=[{"path": "../diagram.png"}])
+    with pytest.raises(ValueError, match="case root"):
+        evaluation_case_attachment_manifest([unsafe], tmp_path)
+
+    unsupported = make_case(file_refs=[{"path": "diagram.txt"}])
+    (tmp_path / "diagram.txt").write_text("not an attachment", encoding="utf-8")
+    with pytest.raises(ValueError, match="image or PDF"):
+        evaluation_case_attachment_manifest([unsupported], tmp_path)
+
+
 def test_report_separates_execution_success_from_answer_quality_failure() -> None:
     case = make_case()
     result = score(case, make_actual())
@@ -411,8 +539,13 @@ def test_live_default_limit_is_not_silently_unbounded() -> None:
     args = parse_args(["--live", "--confirm-paid"])
     assert args.max_cases is None
     assert args.live is True
-    selected, _summary = validate_cases(args)
+    selected, summary = validate_cases(args)
     assert len(selected) == 3
+    assert len(str(summary["case_catalog_sha256"])) == 64
+    assert len(str(summary["case_catalog_content_sha256"])) == 64
+    assert len(str(summary["case_source_files_sha256"])) == 64
+    assert len(str(summary["case_attachment_manifest_sha256"])) == 64
+    assert summary["case_attachment_count"] == 0
 
 
 def fake_task(*, answer: str = "x=2 V") -> dict[str, Any]:
@@ -482,6 +615,346 @@ async def test_runner_uses_cached_result_without_reexecuting(
     assert second.status == "passed"
     assert "result_loaded_from_cache" in second.warnings
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_runner_suite_writes_complete_run_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = runner_without_lifespan(tmp_path)
+    cases = [make_case(case_id="CASE_002"), make_case(case_id="CASE_001")]
+
+    async def run_case(_case: EvaluationCase) -> EvaluationResult:
+        return score(_case, make_actual())
+
+    monkeypatch.setattr(runner, "run_case", run_case)
+    report = await runner.run_suite(
+        cases,
+        filters={"mode": "offline"},
+        case_catalog_sha256="catalog-test",
+        case_catalog_content_sha256="content-test",
+        case_source_files_sha256="source-test",
+        case_attachment_manifest_sha256="attachment-test",
+        case_attachment_count=0,
+    )
+
+    assert report.run_metadata.run_id.startswith("eval_run_")
+    assert report.run_metadata.case_count == 2
+    assert (
+        report.run_metadata.case_ids_sha256
+        == hashlib.sha256(b"CASE_001\nCASE_002").hexdigest()
+    )
+    assert report.run_metadata.implementation_fingerprint == "test"
+    assert report.run_metadata.case_catalog_sha256 == "catalog-test"
+    assert report.run_metadata.case_catalog_content_sha256 == "content-test"
+    assert report.run_metadata.case_source_files_sha256 == "source-test"
+    assert report.run_metadata.case_attachment_manifest_sha256 == "attachment-test"
+    assert report.run_metadata.case_attachment_count == 0
+    assert report.run_metadata.filters_sha256
+    assert report.run_metadata.raw_prompts_stored is False
+    persisted = json.loads((tmp_path / "latest.json").read_text(encoding="utf-8"))
+    assert persisted["run_metadata"]["run_id"] == report.run_metadata.run_id
+    assert persisted["run_metadata"]["raw_prompts_stored"] is False
+
+
+@pytest.mark.asyncio
+async def test_runner_adapts_root_relative_files_to_attachment_refs(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "diagram.png"
+    pdf = tmp_path / "lesson.pdf"
+    image.write_bytes(b"image-bytes")
+    pdf.write_bytes(b"pdf-bytes")
+    runner = runner_without_lifespan(tmp_path)
+    runner._case_attachment_root = tmp_path
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        async def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.calls.append({"url": url, **kwargs})
+            ordinal = len(self.calls)
+            return FakeResponse(
+                {
+                    "id": f"file_{ordinal}",
+                    "filename": str(kwargs["files"]["upload"][0]),  # type: ignore[index]
+                    "content_type": str(kwargs["files"]["upload"][2]),  # type: ignore[index]
+                    "size_bytes": 10,
+                    "storage_key": f"local:key-{ordinal}",
+                    "checksum_sha256": f"checksum-{ordinal}",
+                    "ingestion_status": "ready",
+                    "page_count": 0,
+                    "extracted_text": "",
+                    "extraction_metadata": {},
+                }
+            )
+
+    fake_client = FakeClient()
+    runner.client = fake_client  # type: ignore[assignment]
+    attachments = await runner._build_evaluation_attachments(
+        make_case(
+            input_type="text_and_image",
+            file_refs=[{"path": "diagram.png"}, {"path": "lesson.pdf"}],
+        )
+    )
+
+    assert [item["file_id"] for item in attachments] == ["file_1", "file_2"]
+    assert all("path" not in item for item in attachments)
+    assert [call["url"] for call in fake_client.calls] == [
+        "/api/v1/files",
+        "/api/v1/files",
+    ]
+    assert fake_client.calls[0]["data"] == {"purpose": "evaluation_attachment"}
+
+
+@pytest.mark.asyncio
+async def test_runner_rejects_case_files_without_explicit_root(tmp_path: Path) -> None:
+    runner = runner_without_lifespan(tmp_path)
+    with pytest.raises(ValueError, match="explicit case attachment root"):
+        await runner._build_evaluation_attachments(
+            make_case(file_refs=[{"path": "diagram.png"}])
+        )
+
+
+@pytest.mark.asyncio
+async def test_runner_uses_local_file_api_for_mock_attachment_upload(
+    app: FastAPI,
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "diagram.png"
+    image.write_bytes(b"local-image-bytes")
+    runner = EvaluationRunner(
+        app,
+        mode="offline",
+        cache=EvaluationCache(tmp_path / "cache", fingerprint="test"),
+        report_root=tmp_path / "reports",
+    )
+
+    async with runner:
+        runner._case_attachment_root = tmp_path
+        attachments = await runner._build_evaluation_attachments(
+            make_case(file_refs=[{"path": "diagram.png"}])
+        )
+
+    assert len(attachments) == 1
+    assert attachments[0]["file_id"]
+    assert attachments[0]["storage_key"]
+    assert attachments[0]["checksum_sha256"]
+    assert attachments[0]["content_type"] == "image/png"
+    assert "path" not in attachments[0]
+    assert settings.local_storage_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_runner_local_task_flow_hydrates_and_cleans_evaluation_attachment(
+    app: FastAPI,
+    settings: Settings,
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "diagram.png"
+    with Image.new("RGB", (2, 2), color="white") as generated:
+        generated.save(image, format="PNG")
+    runner = EvaluationRunner(
+        app,
+        mode="offline",
+        cache=EvaluationCache(tmp_path / "cache", fingerprint="test"),
+        report_root=tmp_path / "reports",
+    )
+
+    async with runner:
+        runner._case_attachment_root = tmp_path
+        task = await runner._execute(
+            make_case(
+                input_type="text_and_image",
+                file_refs=[{"path": "diagram.png"}],
+            ),
+            "trace-local-attachment",
+        )
+
+    assert task["status"] in {"completed", "failed", "cancelled"}
+    task_attachment = task["input_content"]["attachments"][0]
+    assert task_attachment["filename"] == "diagram.png"
+    assert "path" not in task_attachment
+    storage_key = str(task_attachment["storage_key"])
+    if storage_key.startswith("local:"):
+        assert not (
+            settings.local_storage_path / storage_key.removeprefix("local:")
+        ).exists()
+    async with app.state.session_factory() as db:
+        assert await FileRepository(db).get(str(task_attachment["file_id"])) is None
+
+
+@pytest.mark.asyncio
+async def test_runner_task_payload_uses_attachment_ref_not_case_path(
+    tmp_path: Path,
+) -> None:
+    image = tmp_path / "diagram.png"
+    image.write_bytes(b"local-image-bytes")
+    runner = runner_without_lifespan(tmp_path)
+    runner._case_attachment_root = tmp_path
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.task_payload: dict[str, Any] | None = None
+
+        async def post(self, url: str, **kwargs: object) -> FakeResponse:
+            if url == "/api/v1/files":
+                return FakeResponse(
+                    {
+                        "id": "file_1",
+                        "filename": "diagram.png",
+                        "content_type": "image/png",
+                        "size_bytes": 17,
+                        "storage_key": "local:diagram.png",
+                        "checksum_sha256": "checksum-1",
+                        "ingestion_status": "ready",
+                        "page_count": 0,
+                        "extracted_text": "",
+                        "extraction_metadata": {},
+                    }
+                )
+            if url == "/api/v1/sessions":
+                return FakeResponse({"id": "session_1"})
+            if url == "/api/v1/tasks":
+                self.task_payload = dict(kwargs["json"])  # type: ignore[arg-type]
+                return FakeResponse({"status": "completed", "id": "task_1"})
+            raise AssertionError(f"unexpected URL: {url}")
+
+    fake_client = FakeClient()
+    runner.client = fake_client  # type: ignore[assignment]
+    task = await runner._execute(
+        make_case(
+            input_type="text_and_image",
+            file_refs=[{"path": "diagram.png"}],
+        ),
+        "trace-1",
+    )
+
+    assert task["status"] == "completed"
+    assert fake_client.task_payload is not None
+    attachment = fake_client.task_payload["attachments"][0]
+    assert attachment["file_id"] == "file_1"
+    assert attachment["storage_key"] == "local:diagram.png"
+    assert "path" not in attachment
+
+
+@pytest.mark.asyncio
+async def test_runner_does_not_cleanup_attachment_while_task_is_non_terminal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = tmp_path / "diagram.png"
+    image.write_bytes(b"local-image-bytes")
+    runner = runner_without_lifespan(tmp_path)
+    runner._case_attachment_root = tmp_path
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class FakeClient:
+        async def post(self, url: str, **kwargs: object) -> FakeResponse:
+            if url == "/api/v1/files":
+                return FakeResponse(
+                    {
+                        "id": "file_1",
+                        "filename": "diagram.png",
+                        "content_type": "image/png",
+                        "size_bytes": 17,
+                        "storage_key": "local:diagram.png",
+                        "checksum_sha256": "checksum-1",
+                        "ingestion_status": "ready",
+                        "page_count": 0,
+                        "extracted_text": "",
+                        "extraction_metadata": {},
+                    }
+                )
+            if url == "/api/v1/sessions":
+                return FakeResponse({"id": "session_1"})
+            if url == "/api/v1/tasks":
+                return FakeResponse({"status": "queued", "id": "task_1"})
+            raise AssertionError(f"unexpected URL: {url}")
+
+        async def get(self, url: str, **kwargs: object) -> FakeResponse:
+            assert url.startswith("/api/v1/tasks/task_1")
+            return FakeResponse({"status": "queued", "id": "task_1"})
+
+    cleanup_calls = 0
+
+    async def record_cleanup(_attachments: list[dict[str, Any]]) -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+
+    monkeypatch.setattr(runner, "_cleanup_evaluation_attachments", record_cleanup)
+    runner.client = FakeClient()  # type: ignore[assignment]
+    operation = asyncio.create_task(
+        runner._execute(
+            make_case(
+                input_type="text_and_image",
+                file_refs=[{"path": "diagram.png"}],
+            ),
+            "trace-timeout-attachment",
+        )
+    )
+    await asyncio.sleep(0.03)
+    operation.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+    assert cleanup_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_runner_rejects_pdf_when_local_ingestion_requires_ocr(
+    app: FastAPI,
+    tmp_path: Path,
+) -> None:
+    pdf = tmp_path / "scan.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=300, height=300)
+    output = BytesIO()
+    writer.write(output)
+    pdf.write_bytes(output.getvalue())
+    runner = EvaluationRunner(
+        app,
+        mode="offline",
+        cache=EvaluationCache(tmp_path / "cache", fingerprint="test"),
+        report_root=tmp_path / "reports",
+    )
+
+    async with runner:
+        runner._case_attachment_root = tmp_path
+        with pytest.raises(ValueError, match="ingestion failed"):
+            await runner._build_evaluation_attachments(
+                make_case(file_refs=[{"path": "scan.pdf"}])
+            )
 
 
 @pytest.mark.asyncio

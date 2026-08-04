@@ -57,6 +57,20 @@ class FileIngestionStatus(StrEnum):
     FAILED = "failed"
 
 
+class KnowledgeMaterialStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    SUPERSEDED = "superseded"
+    WITHDRAWN = "withdrawn"
+
+
+class CourseMaterialReviewStatus(StrEnum):
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 task_status_enum = Enum(
     TaskStatus,
     values_callable=lambda enum: [item.value for item in enum],
@@ -160,6 +174,17 @@ class AuditLogModel(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
+    )
+
+
+class SystemSettingModel(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
 
@@ -399,6 +424,46 @@ class FileModel(Base):
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     checksum_sha256: Mapped[str] = mapped_column(String(64), index=True)
     purpose: Mapped[str] = mapped_column(String(64), default="generic")
+    course_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    material_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    material_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    knowledge_status: Mapped[KnowledgeMaterialStatus] = mapped_column(
+        Enum(
+            KnowledgeMaterialStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=KnowledgeMaterialStatus.DRAFT,
+        index=True,
+    )
+    knowledge_index_status: Mapped[str] = mapped_column(
+        String(32), default="not_indexed"
+    )
+    knowledge_published_by: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    knowledge_published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    material_review_status: Mapped[CourseMaterialReviewStatus] = mapped_column(
+        String(32), default=CourseMaterialReviewStatus.NOT_REQUIRED, index=True
+    )
+    material_reviewed_by: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    material_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    material_review_note: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True
+    )
     detected_content_type: Mapped[str] = mapped_column(
         String(128), default="application/octet-stream"
     )
@@ -514,6 +579,45 @@ class TaskEventModel(Base):
     )
 
     task: Mapped[TaskModel] = relationship(back_populates="events")
+
+
+class TaskFeedbackModel(Base):
+    __tablename__ = "task_feedback"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id", "user_id", name="uq_task_feedback_task_user"
+        ),
+        Index("ix_task_feedback_created_course", "created_at", "course_id"),
+        Index("ix_task_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_role: Mapped[str] = mapped_column(String(32), default="student")
+    course_id: Mapped[str] = mapped_column(String(32), index=True)
+    task_type: Mapped[str] = mapped_column(String(64))
+    agent_id: Mapped[str] = mapped_column(String(64))
+    agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), default="unknown")
+    model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rag_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    retrieval_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    satisfaction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    problem_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    manual_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    citation_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
 
 class LearnerKnowledgeStateModel(Base):

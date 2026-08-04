@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.errors import ValidationAppError
-from app.models import DocumentChunkModel, FileIngestionStatus, FileModel
+from app.models import (
+    CourseMaterialReviewStatus,
+    DocumentChunkModel,
+    FileIngestionStatus,
+    FileModel,
+)
+from app.multimodal.quality import PDF_PAGE_TEXT_REVIEW_THRESHOLD
 
 W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 SUPPORTED_DOCUMENT_EXTENSIONS = {
@@ -30,6 +37,14 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     ".doc",
     ".docx",
 }
+HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s+.+|第[一二三四五六七八九十百千万0-9]+[章节篇]|"
+    r"(?:例题|习题|练习|问题)\s*[0-9一二三四五六七八九十百千万]*)\s*$"
+)
+QUESTION_RE = re.compile(
+    r"^\s*(?:(?:[0-9]{1,3}|[一二三四五六七八九十百千万]+)[.、)]|"
+    r"[（(][0-9]{1,3}[）)]|(?:例题|习题|练习|问题)\s*)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +73,50 @@ def _normalise_text(value: str) -> str:
     value = re.sub(r"[ \t]+\n", "\n", value)
     value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip()
+
+
+def _quality_report(
+    text: str,
+    chunks: list[ChunkDraft],
+    *,
+    page_char_counts: Iterable[int] = (),
+    ocr_required: bool = False,
+    low_text_page_count: int = 0,
+    ocr_candidate_pages: Iterable[int] = (),
+    warnings: Iterable[str] = (),
+) -> dict[str, object]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    headings = [line[:160] for line in lines if HEADING_RE.match(line)]
+    page_counts = tuple(page_char_counts)
+    nonempty_pages = sum(count > 0 for count in page_counts)
+    quality_status = "ready"
+    if not text:
+        quality_status = "failed" if ocr_required else "review"
+    elif ocr_required or not chunks:
+        quality_status = "review"
+    return {
+        "version": "1",
+        "quality_status": quality_status,
+        "text_char_count": len(text),
+        "non_whitespace_char_count": len(re.sub(r"\s+", "", text)),
+        "chunk_count": len(chunks),
+        "heading_count": len(headings),
+        "question_count": sum(bool(QUESTION_RE.match(line)) for line in lines),
+        "heading_candidates": headings[:20],
+        "page_count": len(page_counts),
+        "nonempty_page_count": nonempty_pages,
+        "page_coverage_ratio": (
+            round(nonempty_pages / len(page_counts), 4) if page_counts else None
+        ),
+        "low_text_page_count": low_text_page_count,
+        "ocr_candidate_pages": list(ocr_candidate_pages),
+        "ocr_required": ocr_required,
+        "ocr_status": "required" if ocr_required else "not_required",
+        "ocr_confidence": None,
+        "ocr_confidence_source": "not_available",
+        "manual_review_required": ocr_required or not chunks,
+        "warnings": list(warnings),
+    }
 
 
 def _decode_text(data: bytes) -> tuple[str, str]:
@@ -144,7 +203,11 @@ def _extract_docx(data: bytes, settings: Settings) -> ExtractionResult:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         text,
         0,
-        {"format": "docx", "paragraph_count": len(blocks)},
+        {
+            "format": "docx",
+            "paragraph_count": len(blocks),
+            "quality_report": _quality_report(text, chunks),
+        },
         chunks,
         status,
     )
@@ -197,6 +260,7 @@ def _extract_pdf(data: bytes, settings: Settings) -> ExtractionResult:
         )
     blocks: list[tuple[str, int | None, str]] = []
     empty_pages = 0
+    page_char_counts: list[int] = []
     for index, page in enumerate(reader.pages, start=1):
         try:
             page_text = _normalise_text(page.extract_text() or "")
@@ -204,10 +268,27 @@ def _extract_pdf(data: bytes, settings: Settings) -> ExtractionResult:
             page_text = ""
         if not page_text:
             empty_pages += 1
+        page_char_counts.append(len(page_text))
         blocks.append((page_text, index, f"page={index}"))
+    low_text_pages = [
+        index
+        for index, count in enumerate(page_char_counts, start=1)
+        if 0 < count < PDF_PAGE_TEXT_REVIEW_THRESHOLD
+    ]
+    ocr_candidate_pages = sorted(
+        {
+            *low_text_pages,
+            *[
+                index
+                for index, count in enumerate(page_char_counts, start=1)
+                if count == 0
+            ],
+        }
+    )
+    ocr_required = bool(ocr_candidate_pages)
     text, chunks = _chunk_blocks(blocks, settings)
     status = FileIngestionStatus.READY
-    if empty_pages:
+    if ocr_required:
         status = FileIngestionStatus.PARTIAL if text else FileIngestionStatus.FAILED
     return ExtractionResult(
         "application/pdf",
@@ -216,7 +297,27 @@ def _extract_pdf(data: bytes, settings: Settings) -> ExtractionResult:
         {
             "format": "pdf",
             "empty_page_count": empty_pages,
-            "ocr_required": empty_pages > 0,
+            "low_text_page_count": len(low_text_pages),
+            "ocr_candidate_pages": ocr_candidate_pages,
+            "ocr_required": ocr_required,
+            "quality_report": _quality_report(
+                text,
+                chunks,
+                page_char_counts=page_char_counts,
+                ocr_required=ocr_required,
+                low_text_page_count=len(low_text_pages),
+                ocr_candidate_pages=ocr_candidate_pages,
+                warnings=tuple(
+                    item
+                    for item in (
+                        "empty_pages_require_ocr" if empty_pages else "",
+                        "low_text_pages_require_ocr_review"
+                        if low_text_pages
+                        else "",
+                    )
+                    if item
+                ),
+            ),
         },
         chunks,
         status,
@@ -255,7 +356,11 @@ def extract_document(
             detected_content_type,
             text,
             0,
-            {"format": extension.removeprefix("."), "encoding": encoding},
+            {
+                "format": extension.removeprefix("."),
+                "encoding": encoding,
+                "quality_report": _quality_report(text, chunks),
+            },
             chunks,
             FileIngestionStatus.READY if text else FileIngestionStatus.PARTIAL,
         )
@@ -292,6 +397,18 @@ class DocumentIngestionService:
             model.page_count = result.page_count
             model.extracted_text = result.text
             model.extraction_metadata = result.metadata
+            if model.purpose == "course_material":
+                quality_report = result.metadata.get("quality_report", {})
+                requires_review = (
+                    result.status != FileIngestionStatus.READY
+                    or not isinstance(quality_report, dict)
+                    or bool(quality_report.get("manual_review_required"))
+                )
+                model.material_review_status = (
+                    CourseMaterialReviewStatus.PENDING
+                    if requires_review
+                    else CourseMaterialReviewStatus.NOT_REQUIRED
+                )
             model.extraction_error = (
                 "扫描版 PDF 存在未提取页面，已保留可读文本；OCR 尚未配置"
                 if result.metadata.get("ocr_required")
@@ -313,6 +430,8 @@ class DocumentIngestionService:
             )
         except Exception as exc:
             model.ingestion_status = FileIngestionStatus.FAILED
+            if model.purpose == "course_material":
+                model.material_review_status = CourseMaterialReviewStatus.PENDING
             model.extraction_error = str(exc)
             model.extraction_metadata = {"format": Path(model.filename).suffix.lower()}
             model.extraction_completed_at = datetime.now(UTC)

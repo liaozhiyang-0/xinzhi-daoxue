@@ -198,6 +198,9 @@ class Settings(BaseSettings):
 
     max_upload_size_mb: int = Field(default=20, gt=0)
     document_max_files_per_task: int = Field(default=8, ge=1, le=32)
+    evaluation_attachment_cleanup_grace_seconds: int = Field(
+        default=86_400, ge=60, le=2_592_000
+    )
     document_max_pages: int = Field(default=200, ge=1, le=2000)
     document_max_extracted_chars: int = Field(default=80_000, ge=4_000, le=500_000)
     document_chunk_size_chars: int = Field(default=1_200, ge=200, le=10_000)
@@ -222,6 +225,16 @@ class Settings(BaseSettings):
     knowledge_max_file_size_mb: int = Field(default=5, ge=1, le=100)
     knowledge_config_path: Path = PROJECT_ROOT / "knowledge_config"
     knowledge_index_path: Path = PROJECT_ROOT / "knowledge_indexes"
+    knowledge_ocr_decisions_path: Path = (
+        PROJECT_ROOT / ".local_outputs" / "ocr_decisions"
+    )
+    knowledge_ocr_review_cache_enabled: bool = True
+    knowledge_ocr_review_cache_path: Path = (
+        PROJECT_ROOT / ".local_outputs" / "ocr_review_snapshots"
+    )
+    knowledge_ocr_review_cache_ttl_seconds: int = Field(
+        default=300, ge=1, le=86_400
+    )
     knowledge_min_score_v2: float = Field(default=0.35, ge=0)
     knowledge_low_confidence_threshold: float = Field(default=0.45, ge=0, le=1)
     knowledge_max_hits_per_document: int = Field(default=2, ge=1, le=10)
@@ -275,6 +288,12 @@ class Settings(BaseSettings):
     qdrant_text_collection: str = "xinzhi_kb_text_v2"
     qdrant_image_collection: str = "xinzhi_kb_image_v2"
 
+    # LangGraph checkpoints are process-local until a durable saver is wired.
+    # Keep the backend explicit so production cannot mistake memory for a
+    # restart-safe persistence layer.
+    langgraph_checkpoint_enabled: bool = True
+    langgraph_checkpoint_backend: Literal["disabled", "memory"] = "memory"
+
     rag_dense_candidate_k: int = Field(default=20, ge=1, le=100)
     rag_sparse_candidate_k: int = Field(default=20, ge=1, le=100)
     rag_image_candidate_k: int = Field(default=12, ge=1, le=100)
@@ -311,6 +330,11 @@ class Settings(BaseSettings):
     )
     external_retrieval_review_timeout_seconds: float = Field(default=10, gt=0, le=60)
     external_retrieval_review_max_tokens: int = Field(default=2400, ge=512, le=8000)
+    external_retrieval_provider_retries: int = Field(default=1, ge=0, le=3)
+    external_retrieval_cache_size: int = Field(default=128, ge=0, le=10_000)
+    external_retrieval_cache_ttl_seconds: float = Field(
+        default=120, ge=0, le=86_400
+    )
     external_retrieval_max_results: int = Field(default=8, ge=1, le=50)
     external_retrieval_max_fetches: int = Field(default=4, ge=0, le=20)
     external_retrieval_allow_full_text: bool = False
@@ -387,6 +411,8 @@ class Settings(BaseSettings):
     retrieval_p95_target_ms: int = Field(default=600, ge=1, le=30000)
     context_format_budget_ms: int = Field(default=50, ge=1, le=5000)
     local_total_p95_target_ms: int = Field(default=1000, ge=1, le=30000)
+    task_lease_seconds: int = Field(default=120, ge=30, le=3600)
+    task_recovery_enabled: bool = True
 
     @field_validator("log_level")
     @classmethod
@@ -424,6 +450,16 @@ class Settings(BaseSettings):
     def validate_authentication(self) -> Settings:
         if self.app_env == "production" and not self.auth_required:
             raise ValueError("AUTH_REQUIRED must be true in production")
+        if self.app_env == "production" and self.qdrant_mode != "server":
+            raise ValueError("QDRANT_MODE must be server in production")
+        if (
+            self.app_env == "production"
+            and self.langgraph_checkpoint_enabled
+            and self.langgraph_checkpoint_backend == "memory"
+        ):
+            raise ValueError(
+                "LANGGRAPH_CHECKPOINT_BACKEND=memory is not restart-safe in production"
+            )
         if (
             self.app_env == "production"
             and self.auth_allow_guest

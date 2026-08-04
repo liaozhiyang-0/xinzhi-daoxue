@@ -10,6 +10,7 @@ from app.api.v1 import (
     debug_rag,
     debug_traces,
     evaluation,
+    feedback,
     files,
     health,
     internal_agents,
@@ -42,3 +43,4 @@ api_router.include_router(debug_agents.router)
 api_router.include_router(debug_execution.router)
 api_router.include_router(debug_traces.router)
 api_router.include_router(evaluation.router)
+api_router.include_router(feedback.router)

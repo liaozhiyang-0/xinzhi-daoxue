@@ -124,6 +124,37 @@ class FeedbackUptakeV1(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class LearningMetricsRead(BaseModel):
+    """Aggregated learning telemetry for teacher/admin review.
+
+    Counts are operational telemetry, not learner accuracy or causal impact
+    measurements. Student identifiers are intentionally excluded.
+    """
+
+    version: Literal["v1"] = "v1"
+    course_id: str | None = None
+    window_start: datetime
+    window_end: datetime
+    data_source: Literal["local_database"] = "local_database"
+    attempt_count: int = Field(ge=0)
+    attempt_status_counts: dict[str, int] = Field(default_factory=dict)
+    verification_status_counts: dict[str, int] = Field(default_factory=dict)
+    manual_review_count: int = Field(ge=0)
+    feedback_uptake_event_count: int = Field(ge=0)
+    feedback_uptake_status_counts: dict[str, int] = Field(default_factory=dict)
+    feedback_uptake_determinate_count: int = Field(ge=0)
+    feedback_uptake_determinate_rate: float | None = Field(
+        default=None, ge=0, le=1
+    )
+    feedback_uptake_applied_correctly_count: int = Field(ge=0)
+    feedback_uptake_correct_rate: float | None = Field(default=None, ge=0, le=1)
+    retest_count: int = Field(ge=0)
+    retest_status_counts: dict[str, int] = Field(default_factory=dict)
+    row_limit: int = Field(ge=1)
+    truncated: bool = False
+    data_quality_warnings: list[str] = Field(default_factory=list)
+
+
 class MasteryEvidenceType(StrEnum):
     INDEPENDENT_CORRECT = "independent_correct"
     H0_H1_CORRECT = "h0_h1_correct"

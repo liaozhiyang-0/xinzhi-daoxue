@@ -14,6 +14,7 @@
     ] },
     { group: "管理", items: [
       { id: "admin", href: "/admin", label: "管理总览", short: "管" },
+      { id: "teacher", href: "/teacher", label: "教师工作台", short: "师" },
     ] },
     { group: "演示", items: [
       { id: "demo", href: "/demo", label: "演示中心", short: "演" },

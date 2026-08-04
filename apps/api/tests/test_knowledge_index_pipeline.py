@@ -185,6 +185,83 @@ def test_dry_run_writes_nothing(tmp_path: Path) -> None:
     assert not output.exists()
 
 
+def test_pdf_text_layer_is_audited_and_chunked_by_page(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    values = roots(tmp_path)
+    document = values["CT"] / "chapter.pdf"
+    document.write_bytes(b"test pdf")
+
+    class FakePage:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def extract_text(self) -> str:
+            return self.text
+
+    class FakeReader:
+        pages = [
+            FakePage("This is a sufficiently long first page text for indexing."),
+            FakePage("短页"),
+        ]
+
+    monkeypatch.setattr(
+        "app.services.knowledge_audit.PdfReader", lambda _path: FakeReader()
+    )
+    audit, result = builder(values, tmp_path / "indexes").build(
+        ["CT"], incremental=False
+    )
+
+    entry = next(item for item in audit.manifest if item.source_type == "pdf")
+    chunks = [
+        json.loads(line)
+        for line in (tmp_path / "indexes" / "cache" / "knowledge_base_chunks.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    pdf_chunks = [item for item in chunks if item["document_id"] == entry.document_id]
+
+    assert result.rebuilt_document_count == 1
+    assert entry.parse_status == "parsed"
+    assert entry.page_count == 2
+    assert entry.ocr_required is True
+    assert entry.ocr_candidate_pages == (2,)
+    assert entry.index_status == "clean_before_index"
+    assert {item["page_number"] for item in pdf_chunks} == {1, 2}
+    assert all("#chunk-" in item["source_uri"] for item in pdf_chunks)
+
+
+def test_scanned_pdf_is_marked_for_ocr_without_fabricated_confidence(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    values = roots(tmp_path)
+    document = values["CT"] / "scanned.pdf"
+    document.write_bytes(b"test pdf")
+
+    class FakePage:
+        def extract_text(self) -> str:
+            return ""
+
+    class FakeReader:
+        pages = [FakePage(), FakePage()]
+
+    monkeypatch.setattr(
+        "app.services.knowledge_audit.PdfReader", lambda _path: FakeReader()
+    )
+    result = scanner(values).scan(["CT"])
+    entry = result.manifest[0]
+
+    assert entry.parse_status == "ocr_required"
+    assert entry.index_status == "do_not_index"
+    assert entry.ocr_required is True
+    assert entry.ocr_status == "required"
+    assert entry.ocr_candidate_pages == (1, 2)
+    assert entry.ocr_confidence is None
+    assert entry.ocr_confidence_source == "not_available"
+    assert entry.manual_review_required is True
+    assert any(item.issue_type == "pdf_no_extractable_text" for item in result.issues)
+
+
 def test_semantic_chunks_keep_heading_formula_and_image_context(
     tmp_path: Path,
 ) -> None:

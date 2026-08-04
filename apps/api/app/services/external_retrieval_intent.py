@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal, cast
 
 from app.contracts.agent import AgentRequest
 from app.contracts.external_retrieval import (
@@ -8,10 +9,20 @@ from app.contracts.external_retrieval import (
     ExternalRetrievalPolicy,
 )
 
+ExternalIntentCategory = Literal[
+    "explicit_request",
+    "freshness",
+    "research",
+    "citation",
+    "current_facts",
+    "agent_intent",
+    "none",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class _SignalGroup:
-    category: str
+    category: ExternalIntentCategory
     reason_code: str
     weight: int
     terms: tuple[str, ...]
@@ -174,19 +185,22 @@ class ExternalRetrievalIntentRecognizer:
             )
 
         if score >= threshold:
-            category = next(
-                (
-                    value
-                    for value in (
-                        "explicit_request",
-                        "current_facts",
-                        "research",
-                        "citation",
-                        "freshness",
-                    )
-                    if value in categories
+            category = cast(
+                ExternalIntentCategory,
+                next(
+                    (
+                        value
+                        for value in (
+                            "explicit_request",
+                            "current_facts",
+                            "research",
+                            "citation",
+                            "freshness",
+                        )
+                        if value in categories
+                    ),
+                    "research",
                 ),
-                "research",
             )
             return ExternalRetrievalIntentDecision(
                 decision="retrieve",

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
@@ -56,11 +58,32 @@ class VectorStoreAdapter(Protocol):
 
     def health(self) -> dict[str, Any]: ...
 
+    def metrics(self) -> dict[str, dict[str, Any]]: ...
+
     def close(self) -> None: ...
 
 
 def qdrant_point_id(item_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"xinzhi-daoxue:{item_id}"))
+
+
+def _observe(operation: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(function)
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            started = perf_counter()
+            error: str | None = None
+            try:
+                return function(self, *args, **kwargs)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                raise
+            finally:
+                self._record_operation(operation, perf_counter() - started, error)
+
+        return wrapper
+
+    return decorator
 
 
 class QdrantVectorStoreAdapter:
@@ -84,6 +107,13 @@ class QdrantVectorStoreAdapter:
         self.trust_env = trust_env
         self._client: QdrantClient | None = None
         self._error: str | None = None
+        self._operation_metrics: dict[str, dict[str, Any]] = {}
+
+    def __enter__(self) -> QdrantVectorStoreAdapter:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
     @property
     def client(self) -> QdrantClient:
@@ -108,6 +138,7 @@ class QdrantVectorStoreAdapter:
     def _exists(self, collection: str) -> bool:
         return self.client.collection_exists(collection)
 
+    @_observe("ensure_collections")
     def ensure_collections(
         self, text_dimension: int, image_dimension: int, *, recreate: bool = False
     ) -> None:
@@ -136,6 +167,11 @@ class QdrantVectorStoreAdapter:
                     ),
                 },
             )
+        # Embedded Qdrant already evaluates payload filters locally. Creating
+        # payload indexes there is a no-op and emits a warning on every index
+        # build, while server Qdrant still benefits from explicit indexes.
+        if self.mode == "local":
+            return
         for collection in (self.text_collection, self.image_collection):
             try:
                 self.client.create_payload_index(
@@ -148,6 +184,7 @@ class QdrantVectorStoreAdapter:
                 # Embedded Qdrant can filter without an explicit payload index.
                 continue
 
+    @_observe("upsert_text")
     def upsert_text(
         self, records: Sequence[dict[str, Any]], vectors: Sequence[Sequence[float]]
     ) -> None:
@@ -166,6 +203,7 @@ class QdrantVectorStoreAdapter:
                 collection_name=self.text_collection, points=points, wait=True
             )
 
+    @_observe("upsert_images")
     def upsert_images(
         self,
         records: Sequence[dict[str, Any]],
@@ -208,6 +246,7 @@ class QdrantVectorStoreAdapter:
             )
         return models.Filter(must=conditions)
 
+    @_observe("search_text")
     def search_text(
         self,
         vector: Sequence[float],
@@ -226,6 +265,7 @@ class QdrantVectorStoreAdapter:
         )
         return [self._hit(item) for item in response.points]
 
+    @_observe("search_images")
     def search_images(
         self,
         vector: Sequence[float],
@@ -246,6 +286,7 @@ class QdrantVectorStoreAdapter:
         )
         return [self._hit(item) for item in response.points]
 
+    @_observe("retrieve_text")
     def retrieve_text(self, chunk_ids: Sequence[str]) -> list[VectorSearchHit]:
         if not chunk_ids:
             return []
@@ -267,6 +308,7 @@ class QdrantVectorStoreAdapter:
             )
         return output
 
+    @_observe("prune")
     def prune(self, *, text_ids: set[str], image_ids: set[str]) -> dict[str, int]:
         return {
             "text_deleted": self._prune_collection(
@@ -315,6 +357,32 @@ class QdrantVectorStoreAdapter:
             item_id=item_id, score=float(item.score), payload=payload
         )
 
+    def _record_operation(
+        self, operation: str, elapsed_seconds: float, error: str | None
+    ) -> None:
+        metrics = self._operation_metrics.setdefault(
+            operation,
+            {
+                "count": 0,
+                "error_count": 0,
+                "total_latency_ms": 0.0,
+                "last_latency_ms": 0.0,
+                "last_error": None,
+            },
+        )
+        metrics["count"] += 1
+        metrics["error_count"] += int(error is not None)
+        metrics["total_latency_ms"] += elapsed_seconds * 1000
+        metrics["last_latency_ms"] = round(elapsed_seconds * 1000, 3)
+        metrics["last_error"] = error
+
+    def metrics(self) -> dict[str, dict[str, Any]]:
+        return {
+            operation: dict(values)
+            for operation, values in self._operation_metrics.items()
+        }
+
+    @_observe("health")
     def health(self) -> dict[str, Any]:
         try:
             text_count = (
@@ -336,6 +404,8 @@ class QdrantVectorStoreAdapter:
                 "text_vector_count": int(text_count),
                 "image_vector_count": int(image_count),
                 "reason": None,
+                "backend": "embedded_sqlite" if self.mode == "local" else "remote_http",
+                "metrics": self.metrics(),
             }
         except Exception as exc:
             self._error = f"{type(exc).__name__}: {exc}"
@@ -348,9 +418,11 @@ class QdrantVectorStoreAdapter:
                 "text_vector_count": 0,
                 "image_vector_count": 0,
                 "reason": self._error,
+                "backend": "embedded_sqlite" if self.mode == "local" else "remote_http",
+                "metrics": self.metrics(),
             }
 
     def close(self) -> None:
         if self._client is not None:
-            self._client.close()
-        self._client = None
+            client, self._client = self._client, None
+            client.close()

@@ -124,6 +124,13 @@ class FileRead(BaseModel):
     id: str
     task_id: str | None
     filename: str
+    course_id: str | None = None
+    material_key: str | None = None
+    material_version: str | None = None
+    knowledge_status: str = "draft"
+    knowledge_index_status: str = "not_indexed"
+    knowledge_published_by: str | None = None
+    knowledge_published_at: datetime | None = None
     content_type: str
     size_bytes: int
     storage_key: str
@@ -167,3 +174,4 @@ class HealthRead(BaseModel):
     xingchen_publication_status: str
     xingchen_runtime_available: bool
     version: str
+    external_retrieval: dict[str, Any] = Field(default_factory=dict)

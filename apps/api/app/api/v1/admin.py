@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.admin import (
@@ -11,11 +12,15 @@ from app.contracts.admin import (
     AdminAccountCreate,
     AdminAccountRead,
     AdminAccountUpdate,
+    AdminEvaluationAttachmentResidueRead,
+    AdminFeatureSettingRead,
+    AdminFeatureSettingUpdate,
     AdminFileRead,
     AdminFileSummaryRead,
     AdminOverviewRead,
     AdminPasswordReset,
     AdminSessionRead,
+    AdminTaskObservabilityRead,
     AdminTaskRead,
     AdminTaskSummaryRead,
     AuditLogRead,
@@ -24,6 +29,7 @@ from app.dependencies import get_current_principal, get_db, require_admin_accoun
 from app.models import TaskStatus
 from app.services.admin_service import AdminService
 from app.services.auth_service import Principal
+from app.services.evaluation_attachment_cleanup import EVALUATION_ATTACHMENT_PURPOSE
 
 router = APIRouter(
     prefix="/admin",
@@ -57,6 +63,34 @@ async def overview(
     db: AsyncSession = Depends(get_db),
 ) -> AdminOverviewRead:
     return AdminOverviewRead(**(await _service(request, db).overview()))
+
+
+@router.get("/settings/features", response_model=list[AdminFeatureSettingRead])
+async def list_feature_settings(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminFeatureSettingRead]:
+    items = await _service(request, db).list_feature_settings()
+    return [AdminFeatureSettingRead.model_validate(item) for item in items]
+
+
+@router.patch(
+    "/settings/features/{key}", response_model=AdminFeatureSettingRead
+)
+async def update_feature_setting(
+    key: str,
+    data: AdminFeatureSettingUpdate,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> AdminFeatureSettingRead:
+    item = await _service(request, db).update_feature_setting(
+        key,
+        data.enabled,
+        actor_account_id=principal.account_id,
+        request=request,
+    )
+    return AdminFeatureSettingRead.model_validate(item)
 
 
 def _task_read(task: Any, account: Any | None) -> AdminTaskRead:
@@ -117,6 +151,14 @@ async def task_summary(
         completed=int(cast(int, data["completed"])),
         failed=int(cast(int, data["failed"])),
         status_counts=cast(dict[str, int], data["status_counts"]),
+        failure_category_counts=cast(
+            dict[str, int], data["failure_category_counts"]
+        ),
+        provider_counts=cast(dict[str, int], data["provider_counts"]),
+        route_status_counts=cast(dict[str, int], data["route_status_counts"]),
+        cancellation_requested_count=int(
+            cast(int, data["cancellation_requested_count"])
+        ),
     )
 
 
@@ -149,12 +191,60 @@ async def list_tasks(
     }
 
 
+@router.get("/task-observability", response_model=AdminTaskObservabilityRead)
+async def task_observability(
+    request: Request,
+    window_start: datetime | None = Query(default=None),
+    window_end: datetime | None = Query(default=None),
+    row_limit: int = Query(default=2_000, ge=1, le=20_000),
+    db: AsyncSession = Depends(get_db),
+) -> AdminTaskObservabilityRead:
+    end = window_end or datetime.now(UTC)
+    start = window_start or end - timedelta(days=30)
+    if start >= end:
+        raise HTTPException(
+            status_code=422, detail="window_start must be before window_end"
+        )
+    data = await _service(request, db).task_observability(
+        window_start=start,
+        window_end=end,
+        row_limit=row_limit,
+    )
+    return AdminTaskObservabilityRead.model_validate(data)
+
+
 @router.get("/file-summary", response_model=AdminFileSummaryRead)
 async def file_summary(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AdminFileSummaryRead:
     return AdminFileSummaryRead(**(await _service(request, db).file_summary()))
+
+
+@router.get(
+    "/evaluation-attachment-residue",
+    response_model=AdminEvaluationAttachmentResidueRead,
+)
+async def evaluation_attachment_residue(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AdminEvaluationAttachmentResidueRead:
+    report = await _service(request, db).evaluation_attachment_residue()
+    return AdminEvaluationAttachmentResidueRead(
+        purpose=EVALUATION_ATTACHMENT_PURPOSE,
+        as_of=report.as_of,
+        grace_seconds=report.grace_seconds,
+        cutoff=report.cutoff,
+        total_file_count=report.total_file_count,
+        total_bytes=report.total_bytes,
+        unbound_file_count=report.unbound_file_count,
+        active_task_file_count=report.active_task_file_count,
+        terminal_task_file_count=report.terminal_task_file_count,
+        missing_task_file_count=report.missing_task_file_count,
+        cleanup_candidate_count=report.cleanup_candidate_count,
+        cleanup_candidate_bytes=report.cleanup_candidate_bytes,
+        oldest_created_at=report.oldest_created_at,
+    )
 
 
 @router.get("/files")

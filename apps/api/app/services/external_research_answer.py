@@ -161,7 +161,7 @@ def normalize_academic_search_query(query: str) -> str:
     normalized = " ".join(normalized.split())
     normalized = normalized.replace(
         "电子信息领域",
-        "electronics telecommunications signal processing semiconductor",
+        "electronics engineering information technology",
     )
     normalized = normalized.replace(
         "人工智能领域",
@@ -174,7 +174,7 @@ def normalize_academic_search_query(query: str) -> str:
     normalized = normalized.replace("电子信息", "electronics information")
     normalized = " ".join(normalized.split())
     return normalized or (
-        "electronics telecommunications signal processing semiconductor"
+        "electronics engineering information technology"
     )
 
 

@@ -140,6 +140,20 @@
             <button type="button" class="text-button" data-learning-action="related_knowledge">讲解关联知识</button>
             <button type="button" class="text-button" data-learning-action="mark_mastered">标记已掌握</button>
           </div>
+          <section id="task-feedback-panel" class="task-feedback-panel" hidden aria-labelledby="task-feedback-title">
+            <div>
+              <span class="eyebrow">反馈闭环</span>
+              <h3 id="task-feedback-title">这次回答是否有帮助？</h3>
+            </div>
+            <div class="task-feedback-grid">
+              <label>是否解决问题<select id="task-feedback-resolved"><option value="">暂不判断</option><option value="true">已解决</option><option value="false">未解决</option></select></label>
+              <label>满意度<select id="task-feedback-satisfaction"><option value="">暂不评价</option><option value="satisfied">满意</option><option value="neutral">一般</option><option value="unsatisfied">不满意</option></select></label>
+              <label>问题类型<select id="task-feedback-problem-type"><option value="">未指定</option><option value="answer_quality">答案质量</option><option value="citation">资料引用</option><option value="retrieval">资料检索</option><option value="latency">响应速度</option><option value="usability">使用体验</option><option value="other">其他</option></select></label>
+              <label class="task-feedback-checkbox"><input id="task-feedback-review" type="checkbox">需要人工复核</label>
+            </div>
+            <textarea id="task-feedback-comment" maxlength="2000" rows="2" placeholder="可选：补充问题描述，不要填写个人敏感信息"></textarea>
+            <div class="task-feedback-actions"><button id="submit-task-feedback" class="button secondary" type="button">提交反馈</button><span id="task-feedback-message" role="status"></span></div>
+          </section>
           <details id="source-details" class="legacy-source-fallback" hidden>
             <summary><span id="source-summary">参考课程资料 0</span></summary>
             <div id="source-list"></div><div id="related-images"></div>
@@ -224,6 +238,6 @@
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260801-auth-entry-v1"></script>
-<script src="/debug-assets/workspace.js?v=20260801-auth-entry-v1"></script>
+<script src="/debug-assets/workspace.js?v=20260804-history-layout-v2"></script>
 </body>
 </html>

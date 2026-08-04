@@ -26,7 +26,9 @@ from app.services.external_retrieval import (
 
 
 def test_academic_writing_follow_up_reuses_a_prior_paper() -> None:
-    query = "\u8bf7\u5c06\u4e0a\u9762\u7b2c1\u7bc7\u8bba\u6587\u6539\u5199\u6210\u4e2d\u6587\u6458\u8981"
+    query = (
+        "\u8bf7\u5c06\u4e0a\u9762\u7b2c1\u7bc7\u8bba\u6587\u6539\u5199\u6210\u4e2d\u6587\u6458\u8981"
+    )
 
     assert is_academic_writing_source_follow_up(
         query,
@@ -183,6 +185,7 @@ def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) 
     app.state.settings.external_retrieval_enabled = True
     app.state.knowledge_base.settings.external_retrieval_enabled = True
     app.state.task_runner.external_search = FakeSearch()
+    app.state.task_runner.external_paper_reviewer = None
     session = api.create_session()
     payload = api.task_payload(session["id"], intent="unknown")
     payload["canonical_input"]["text"] = "帮我查找最新的电子信息相关论文并提供链接"

@@ -11,9 +11,11 @@ from app.contracts.solver import AcademicProblem
 from app.core.config import Settings
 from app.courses import default_course_registry
 from app.orchestrator.graphs import AcademicProblemSolverGraph
+from app.orchestrator.state import new_graph_state
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.model_registry import ModelRegistry
 from app.tools import default_tool_registry
+from langgraph.checkpoint.memory import InMemorySaver
 from PIL import Image
 
 
@@ -50,6 +52,82 @@ def test_academic_reasoning_routes_by_problem_complexity() -> None:
     assert complex_route.fallback == "spark_reasoner"
     assert standard_route.primary == "spark_reasoner"
     assert standard_route.fallback == "qwen_vision_primary"
+
+
+def test_langgraph_populates_real_preparation_state() -> None:
+    state = new_graph_state(request_id="audit-graph-001", message="KCL")
+    result = graph().run(
+        AcademicProblem(
+            course="CT",
+            problem_text="使用 KCL 列写节点方程",
+            extraction_confidence=0.9,
+        ),
+        state=state,
+        retrieved_chunks=[{"evidence_id": "kb-1", "title": "KCL"}],
+    )
+
+    assert result.course == "CT"
+    assert state["selected_course_pack"] == "CT"
+    assert state["problem_type"] == "kcl_kvl"
+    assert state["selected_capabilities"]
+    assert state["selected_tools"]
+    assert state["execution_path"] == "FAST"
+    assert state["citations"] == [{"evidence_id": "kb-1", "title": "KCL"}]
+
+
+def test_langgraph_checkpoint_can_interrupt_and_resume() -> None:
+    checkpointed = AcademicProblemSolverGraph(
+        default_course_registry(),
+        default_capability_registry(),
+        default_tool_registry(),
+        checkpointer=InMemorySaver(),
+    )
+    state = new_graph_state(request_id="audit-checkpoint-001", message="KCL")
+    problem = AcademicProblem(
+        course="CT",
+        problem_text="浣跨敤 KCL 鍒楀啓鑺傜偣鏂圭▼",
+        extraction_confidence=0.9,
+    )
+
+    interrupted = checkpointed.invoke_state(
+        problem,
+        state=state,
+        thread_id="audit-thread-001",
+        interrupt_before=["format_course_answer"],
+    )
+
+    assert not interrupted.get("structured_result")
+    checkpoint = checkpointed.checkpoint_state(thread_id="audit-thread-001")
+    assert checkpoint["next"] == ["format_course_answer"]
+    assert checkpoint["values"]["current_stage"] == "generate_learning_feedback"
+
+    resumed = checkpointed.resume_state(thread_id="audit-thread-001")
+
+    assert "structured_result" in resumed
+    assert resumed["current_stage"] == "finalize_solver_response"
+    assert resumed["structured_result"]["course"] == "CT"
+
+    same_session_other_task = new_graph_state(
+        request_id="audit-checkpoint-002", session_id="same-session", message="KCL"
+    )
+    assert state["thread_id"] != same_session_other_task["thread_id"]
+
+
+@pytest.mark.asyncio
+async def test_langgraph_async_run_returns_solution() -> None:
+    state = new_graph_state(request_id="audit-async-001", message="KCL")
+    result = await graph().arun(
+        AcademicProblem(
+            course="CT",
+            problem_text="浣跨敤 KCL 鍒楀啓鑺傜偣鏂圭▼",
+            extraction_confidence=0.9,
+        ),
+        state=state,
+        thread_id=state["thread_id"],
+    )
+
+    assert result.course == "CT"
+    assert state["current_stage"] == "finalize_solver_response"
 
 
 @pytest.mark.parametrize(

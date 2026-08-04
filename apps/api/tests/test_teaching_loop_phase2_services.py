@@ -111,6 +111,36 @@ def test_finite_verification_unit_numeric_and_manual_review() -> None:
     assert manual.manual_review_required is True
 
 
+def test_finite_ct_rule_evidence_covers_direction_units_and_initial_condition() -> None:
+    verifier = StudentVerificationService()
+
+    direction_report, _ = verifier.verify(
+        StudentAttempt(raw_text="P=-20 W"),
+        packet(),
+    )
+    incompatible_report, _ = verifier.verify(
+        StudentAttempt(raw_text="P=20 V"),
+        packet(),
+    )
+    initial_condition_report, _ = verifier.verify(
+        StudentAttempt(raw_text="电容电压可以突变"),
+        packet(
+            problem_type="first_order",
+            answer="v_C(0+)=v_C(0-)",
+            unit="",
+            skills=["CT.FIRST_ORDER_INITIAL"],
+        ),
+    )
+
+    assert direction_report.step_results[0].repair_hint_key == (
+        "reference_direction_error"
+    )
+    assert incompatible_report.step_results[0].error_type.value == "unit_incompatible"
+    assert initial_condition_report.step_results[0].repair_hint_key == (
+        "capacitor_voltage_continuity"
+    )
+
+
 def test_finite_course_rules_cover_ae_and_de_without_fuzzy_first_error() -> None:
     verifier = StudentVerificationService()
     ae_report, _ = verifier.verify(

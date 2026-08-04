@@ -70,6 +70,13 @@ local_knowledge/COMM/*
 /knowledge_indexes/
 /model_cache/
 
+# Local review/runtime artifacts and private test-bank payloads.
+/.codex-tmp/
+/真实测试题/*
+!/真实测试题/*.py
+!/真实测试题/README.md
+!/真实测试题/EVALUATION_STRATEGY.md
+
 # 防止误在仓库根目录再次 clone 后把嵌套仓库及其中的 .env 提交。
 /xinzhi-daoxue/
 

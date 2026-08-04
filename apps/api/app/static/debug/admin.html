@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/admin.css">
+  <link rel="stylesheet" href="/debug-assets/admin.css?v=20260804-feature-switch-v2">
 </head>
 <body>
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -46,6 +46,7 @@
         <button type="button" data-admin-module-target="tasks">任务中心</button>
         <button type="button" data-admin-module-target="files">文件中心</button>
         <button type="button" data-admin-module-target="agents">Agent 中心</button>
+        <button type="button" data-admin-module-target="settings">功能开关</button>
         <button type="button" data-admin-module-target="system">系统状态</button>
       </nav>
 
@@ -138,6 +139,14 @@
         </section>
       </section>
 
+      <section data-admin-module="settings" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">FEATURE CONTROLS</p><h2>功能开关</h2><p>动态控制可选业务闭环；修改后立即对新请求生效，并记录管理员审计。</p></div>
+          <button id="admin-settings-refresh" class="button secondary" type="button">刷新开关</button>
+        </header>
+        <section id="admin-feature-settings" class="admin-service-grid" aria-live="polite"></section>
+      </section>
+
       <section data-admin-module="system" hidden>
         <header class="module-header">
           <div><p class="eyebrow">SYSTEM STATUS</p><h2>系统状态</h2><p>集中展示 API、数据库、Provider、RAG、Agent 注册和运行依赖状态，不触发大模型预热或云端调用。</p></div>
@@ -164,6 +173,6 @@
 
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <script src="/debug-assets/ui-core.js"></script>
-  <script src="/debug-assets/admin.js"></script>
+  <script src="/debug-assets/admin.js?v=20260804-feature-switch-v2"></script>
 </body>
 </html>

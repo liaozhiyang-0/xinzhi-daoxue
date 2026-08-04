@@ -7,8 +7,10 @@ import inspect
 import re
 import xml.etree.ElementTree as ElementTree
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import Any, Literal, Protocol
 
 import httpx
@@ -113,7 +115,13 @@ class HttpAcademicProvider(ABC):
             ) from exc
 
     @abstractmethod
-    async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]: ...
+    async def search(
+        self,
+        query: str,
+        *,
+        limit: int,
+        prefer_high_citation: bool = False,
+    ) -> list[ExternalEvidenceItem]: ...
 
 
 class ArxivAcademicProvider(HttpAcademicProvider):
@@ -156,7 +164,7 @@ class ArxivAcademicProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://arxiv/{paper_id}",
                     title=title,
-                    canonical_url=_http_url(abstract_url),
+                    canonical_url=validate_http_url(abstract_url),
                     content_excerpt=_clean_text(_text(entry, "summary")),
                     authors=authors,
                     published_at=_parse_datetime(_text(entry, "published")),
@@ -217,7 +225,7 @@ class CrossrefAcademicProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://crossref/{stable_id}",
                     title=title,
-                    canonical_url=_http_url(url),
+                    canonical_url=validate_http_url(url),
                     content_excerpt=_clean_text(str(record.get("abstract", ""))),
                     authors=_authors(record.get("author")),
                     venue=_first_string(record.get("container-title")),
@@ -299,7 +307,7 @@ class SemanticScholarAcademicProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://semantic-scholar/{paper_id}",
                     title=title,
-                    canonical_url=_http_url(url),
+                    canonical_url=validate_http_url(url),
                     content_excerpt=str(record.get("abstract", "") or "").strip(),
                     authors=[
                         str(author.get("name", "")).strip()
@@ -396,7 +404,7 @@ class OpenAlexAcademicProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://openalex/{work_id.rsplit('/', 1)[-1]}",
                     title=title,
-                    canonical_url=_http_url(canonical_url),
+                    canonical_url=validate_http_url(canonical_url),
                     content_excerpt=_openalex_abstract(record.get("abstract_inverted_index")),
                     authors=_openalex_authors(record.get("authorships")),
                     venue=str(source.get("display_name", "") or "").strip(),
@@ -478,7 +486,7 @@ class CnkiAcademicProvider(HttpAcademicProvider):
                     provider=self.provider_name,
                     source_ref=f"external://cnki/{_safe_id(url)}",
                     title=title,
-                    canonical_url=_http_url(url),
+                    canonical_url=validate_http_url(url),
                     content_excerpt=str(
                         record.get(
                             "abstract", record.get("content", record.get("snippet", ""))
@@ -509,8 +517,22 @@ class CnkiAcademicProvider(HttpAcademicProvider):
 class AcademicSearchService:
     """Fan out to academic providers and return a bounded, deduplicated result."""
 
-    def __init__(self, providers: Sequence[AcademicSearchProvider]) -> None:
+    def __init__(
+        self,
+        providers: Sequence[AcademicSearchProvider],
+        *,
+        cache_size: int = 128,
+        cache_ttl_seconds: float = 120,
+        max_retries: int = 1,
+    ) -> None:
         self.providers = tuple(providers)
+        self.cache_size = max(0, cache_size)
+        self.cache_ttl_seconds = max(0.0, cache_ttl_seconds)
+        self.max_retries = max(0, max_retries)
+        self._cache: OrderedDict[
+            tuple[object, ...], tuple[float, ExternalRetrievalResult]
+        ] = OrderedDict()
+        self._last_provider_status: dict[str, str] = {}
 
     async def search(
         self,
@@ -525,6 +547,23 @@ class AcademicSearchService:
         prefer_high_citation: bool = False,
     ) -> ExternalRetrievalResult:
         normalized = " ".join((normalized_query or query).split())
+        cache_key = self._cache_key(
+            normalized,
+            limit=limit,
+            provider_names=provider_names,
+            source_scopes=source_scopes,
+            freshness_days=freshness_days,
+            prefer_high_citation=prefer_high_citation,
+        )
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached.model_copy(
+                update={
+                    "query": query,
+                    "retrieval_trace_id": retrieval_trace_id,
+                    "cache_hit": True,
+                }
+            )
         allowed = (
             {name.casefold() for name in provider_names} if provider_names else None
         )
@@ -540,13 +579,15 @@ class AcademicSearchService:
             )
         )
         if not providers:
-            return ExternalRetrievalResult(
+            result = ExternalRetrievalResult(
                 query=query,
                 normalized_query=normalized,
                 source_scopes=[],
                 status="disabled",
                 retrieval_trace_id=retrieval_trace_id,
             )
+            self._cache_put(cache_key, result)
+            return result
 
         async def run_provider(
             provider: AcademicSearchProvider,
@@ -558,7 +599,17 @@ class AcademicSearchService:
                 provider.search
             ).parameters:
                 kwargs["prefer_high_citation"] = True
-            return await provider.search(normalized, **kwargs)
+            last_error: AcademicProviderError | None = None
+            for attempt in range(self.max_retries + 1):
+                try:
+                    return await provider.search(normalized, **kwargs)
+                except AcademicProviderError as exc:
+                    last_error = exc
+                    if attempt >= self.max_retries:
+                        raise
+                    await asyncio.sleep(0.05 * (2**attempt))
+            assert last_error is not None
+            raise last_error
 
         responses = await asyncio.gather(
             *(run_provider(provider) for provider in providers),
@@ -633,7 +684,7 @@ class AcademicSearchService:
             status = "partial"
         else:
             status = "failed"
-        return ExternalRetrievalResult(
+        result = ExternalRetrievalResult(
             query=query,
             normalized_query=normalized,
             source_scopes=scopes,
@@ -643,6 +694,84 @@ class AcademicSearchService:
             provider_status=provider_status,
             retrieval_trace_id=retrieval_trace_id,
         )
+        self._last_provider_status = dict(provider_status)
+        self._cache_put(cache_key, result)
+        return result
+
+    def health(self) -> dict[str, object]:
+        """Return configuration-only provider health without network calls."""
+
+        return {
+            "configured": bool(self.providers),
+            "providers": [
+                {
+                    "name": provider.provider_name,
+                    "scope": getattr(
+                        provider, "source_scope", ExternalSourceScope.ACADEMIC
+                    ).value,
+                    "last_status": self._last_provider_status.get(
+                        provider.provider_name, "not_checked"
+                    ),
+                }
+                for provider in self.providers
+            ],
+            "cache": {
+                "enabled": self.cache_size > 0 and self.cache_ttl_seconds > 0,
+                "entries": len(self._cache),
+                "max_entries": self.cache_size,
+                "ttl_seconds": self.cache_ttl_seconds,
+            },
+            "max_retries": self.max_retries,
+        }
+
+    @staticmethod
+    def _cache_key(
+        normalized: str,
+        *,
+        limit: int,
+        provider_names: Sequence[str] | None,
+        source_scopes: Sequence[ExternalSourceScope] | None,
+        freshness_days: int | None,
+        prefer_high_citation: bool,
+    ) -> tuple[object, ...]:
+        return (
+            normalized,
+            limit,
+            tuple(sorted(name.casefold() for name in provider_names or ())),
+            tuple(sorted(scope.value for scope in source_scopes or ())),
+            freshness_days,
+            prefer_high_citation,
+        )
+
+    def _cache_get(
+        self, key: tuple[object, ...]
+    ) -> ExternalRetrievalResult | None:
+        if self.cache_size <= 0 or self.cache_ttl_seconds <= 0:
+            return None
+        cached = self._cache.get(key)
+        if cached is None:
+            return None
+        created, result = cached
+        if monotonic() - created > self.cache_ttl_seconds:
+            self._cache.pop(key, None)
+            return None
+        self._cache.move_to_end(key)
+        return result.model_copy(deep=True)
+
+    def _cache_put(
+        self, key: tuple[object, ...], result: ExternalRetrievalResult
+    ) -> None:
+        if (
+            self.cache_size <= 0
+            or self.cache_ttl_seconds <= 0
+            or result.status not in {"completed", "partial"}
+            or not result.items
+        ):
+            return
+        self._cache[key] = (monotonic(), result.model_copy(deep=True))
+        self._cache.move_to_end(key)
+        while len(self._cache) > self.cache_size:
+            self._cache.popitem(last=False)
 
     async def search_many(
         self,
@@ -833,7 +962,7 @@ def _text(element: ElementTree.Element, name: str) -> str:
     return child.text or "" if child is not None else ""
 
 
-def _http_url(value: str) -> AnyHttpUrl:
+def validate_http_url(value: str) -> AnyHttpUrl:
     return _HTTP_URL_ADAPTER.validate_python(value)
 
 

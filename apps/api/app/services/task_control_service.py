@@ -12,11 +12,15 @@ from app.contracts import (
     new_id,
 )
 from app.contracts.conversation import MessageStatus
+from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import TaskRepository
 from app.services.conversation_message_service import ConversationMessageService
+from app.services.evaluation_attachment_cleanup import (
+    cleanup_evaluation_attachments,
+)
 from app.services.event_service import append_task_event
 from app.services.task_creation_service import TaskCreationService
 
@@ -37,9 +41,12 @@ TERMINAL_STATUSES = {
 
 
 class TaskControlService:
-    def __init__(self, db: AsyncSession, provider: AgentProvider) -> None:
+    def __init__(
+        self, db: AsyncSession, provider: AgentProvider, settings: Settings
+    ) -> None:
         self.db = db
         self.provider = provider
+        self._settings = settings
         self.repository = TaskRepository(db)
 
     async def retry(self, task_id: str) -> TaskModel:
@@ -135,14 +142,19 @@ class TaskControlService:
                 agent_id=task.agent_id,
                 data={"reason": "queued task cancelled"},
             )
-            message = await ConversationMessageService(
-                self.db
-            ).append_terminal_failure(
+            message = await ConversationMessageService(self.db).append_terminal_failure(
                 task,
                 status=MessageStatus.CANCELLED,
                 reason="任务已取消。",
             )
             task.assistant_message_id = message.id if message is not None else None
         await self.provider.cancel(task.id)
+        if task.status in TERMINAL_STATUSES:
+            async with self.db.begin_nested():
+                await cleanup_evaluation_attachments(
+                    self.db,
+                    self._settings,
+                    task_id=task.id,
+                )
         await self.db.commit()
         return task

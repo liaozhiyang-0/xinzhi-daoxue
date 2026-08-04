@@ -1,0 +1,73 @@
+schema_version: "course_asset_manifest.v1"
+course_id: "CT"
+runtime_loaded: false
+runtime_source: "apps/api/app/courses/registry.py"
+runtime_course_pack_status: "implemented"
+runtime_solver_entrypoint: "ACADEMIC_PROBLEM_SOLVER"
+frozen_fallback_reference: "SOLVER_CT_V1"
+sources:
+  skills: "config/skills/CT.yaml"
+  reviewed_error_pool: "config/error_pool/CT.yaml"
+  error_pool_proposals: "config/error_pool/proposals/CT.yaml"
+  knowledge_manifest: "knowledge_indexes/knowledge_base_manifest.jsonl"
+  evaluation_cases: "evaluation/cases"
+compatibility_yaml: "agent_configs/course_packs/course_ct_v1.yaml"
+verification_rule_evidence:
+  schema_version: "verification_rule_evidence.v1"
+  validator_id: "ct_deterministic_v1"
+  validator_path: "apps/api/app/services/ct_validator.py"
+  rules:
+    kcl_kvl_consistency:
+      conflict_types: ["kcl_kvl_consistency"]
+      test_files:
+        - "apps/api/tests/test_ct_validator.py"
+    reference_direction:
+      validator_id: "student_verification_v1"
+      validator_path: "apps/api/app/services/student_verification.py"
+      conflict_types: ["reference_direction_error"]
+      test_files:
+        - "apps/api/tests/test_teaching_loop_phase2_services.py"
+    unit_consistency:
+      validator_id: "student_verification_v1"
+      validator_path: "apps/api/app/services/student_verification.py"
+      conflict_types: ["unit_missing", "unit_incompatible"]
+      test_files:
+        - "apps/api/tests/test_teaching_loop_phase2_services.py"
+    initial_condition_continuity:
+      validator_id: "student_verification_v1"
+      validator_path: "apps/api/app/services/student_verification.py"
+      conflict_types: ["capacitor_voltage_continuity"]
+      test_files:
+        - "apps/api/tests/test_teaching_loop_phase2_services.py"
+    power_energy_balance:
+      conflict_types: ["power_energy_balance"]
+      test_files:
+        - "apps/api/tests/test_ct_validator.py"
+error_signature_evidence:
+  schema_version: "error_signature_evidence.v1"
+  evidence_scope: "structured_fields_only"
+  evidence_note: "Only applies when the declared structured numeric fields are present; missing fields are not automatically classified."
+  validator_id: "ct_deterministic_v1"
+  validator_path: "apps/api/app/services/ct_validator.py"
+  test_files: ["apps/api/tests/test_ct_validator.py"]
+  mappings:
+    equivalent_resistance_error:
+      conflict_types: ["equivalent_resistance_error"]
+    kcl_sign_error:
+      conflict_types: ["kcl_sign_error"]
+    phase_sign_error:
+      conflict_types: ["phase_sign_error"]
+    power_factor_error:
+      conflict_types: ["power_factor_error"]
+readiness:
+  material_lifecycle: "implemented"
+  teacher_review_gate: "implemented"
+  user_feedback_metrics: "implemented"
+  runtime_error_template_coverage: "partial"
+  official_rules: "pending"
+  demonstration_cases: "owner_designed_pending"
+  real_user_outcomes: "pending"
+boundaries:
+  duplicates_solver_graph: false
+  performs_provider_calls: false
+  modifies_frozen_baseline: false

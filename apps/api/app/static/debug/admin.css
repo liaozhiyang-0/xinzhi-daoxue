@@ -18,6 +18,11 @@
 .admin-service-card strong, .admin-service-card span, .admin-service-card p { display: block; }
 .admin-service-card span { margin-top: 8px; color: var(--text-secondary); font-size: 14px; }
 .admin-service-card p { margin: 6px 0 0; color: var(--text-muted); font-size: 13px; }
+.feature-toggle { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--text-secondary); font-size: 14px; }
+.feature-toggle-button { min-width: 76px; padding: 7px 12px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.feature-toggle-button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.feature-toggle-button:disabled { cursor: wait; opacity: .55; }
+.admin-service-card small { display: block; margin-top: 10px; color: var(--text-muted); font-size: 12px; }
 .identity-chip { padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 14px; }
 .admin-metric-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .admin-metric { min-height: 128px; padding: 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }

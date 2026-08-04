@@ -13,6 +13,7 @@ from app.providers.retrieval import (
     OpenAlexAcademicProvider,
     SemanticScholarAcademicProvider,
 )
+from app.providers.retrieval.academic import AcademicProviderError
 
 ARXIV_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -131,7 +132,11 @@ async def test_openalex_provider_reconstructs_abstract_and_metadata() -> None:
                 "title": "An electronics paper",
                 "doi": "https://doi.org/10.1234/electronics",
                 "publication_date": "2025-02-03",
-                "abstract_inverted_index": {"An": [0], "electronics": [1], "abstract.": [2]},
+                "abstract_inverted_index": {
+                    "An": [0],
+                    "electronics": [1],
+                    "abstract.": [2],
+                },
                 "authorships": [{"author": {"display_name": "Alice Example"}}],
                 "primary_location": {
                     "landing_page_url": "https://example.org/paper",
@@ -257,7 +262,8 @@ async def test_academic_search_service_filters_and_sorts_by_freshness() -> None:
     assert [item.evidence_id for item in result.items] == ["new-paper"]
 
 
-async def test_academic_search_service_keeps_available_fallback_when_window_is_empty() -> None:
+async def test_academic_search_service_keeps_available_fallback_when_window_is_empty(
+) -> None:
     now = datetime.now(UTC)
 
     class Provider:
@@ -286,3 +292,40 @@ async def test_academic_search_service_keeps_available_fallback_when_window_is_e
     assert result.warnings == [
         "no results within the last 30 days; showing the most recent available records"
     ]
+
+
+async def test_academic_search_service_retries_and_caches_successful_results() -> None:
+    calls = 0
+
+    class Provider:
+        provider_name = "retry-fixture"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            nonlocal calls
+            del query, limit
+            calls += 1
+            if calls == 1:
+                raise AcademicProviderError("retry-fixture: timeout")
+            return [
+                ExternalEvidenceItem(
+                    evidence_id="retry-paper",
+                    source_type=ExternalSourceType.ACADEMIC_PAPER,
+                    provider=self.provider_name,
+                    source_ref="external://fixture/retry",
+                    title="Retry paper",
+                    canonical_url="https://example.org/retry",
+                    retrieved_at=datetime.now(UTC),
+                )
+            ]
+
+    service = AcademicSearchService(
+        [Provider()], cache_size=4, cache_ttl_seconds=60, max_retries=1
+    )
+    first = await service.search("retry query", limit=3, retrieval_trace_id="trace-1")
+    second = await service.search("retry query", limit=3, retrieval_trace_id="trace-2")
+
+    assert first.items[0].evidence_id == "retry-paper"
+    assert calls == 2
+    assert second.cache_hit is True
+    assert second.retrieval_trace_id == "trace-2"
+    assert service.health()["cache"]["entries"] == 1
