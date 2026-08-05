@@ -694,6 +694,16 @@ function renderContextUsage(result = {}) {
 }
 
 function renderInfo(task, result, summary, presentation, renderMs = 0) {
+  const scenarioReview = result.structured_result?.scenario_evidence_review || {};
+  const scenarioReviewStatus = scenarioReview.status === "approved"
+    ? "证据审查通过"
+    : scenarioReview.status === "rejected"
+      ? "证据审查拒绝"
+      : scenarioReview.status === "needs_manual_review"
+        ? "需要人工复核"
+        : scenarioReview.status === "pending_manual_review"
+          ? "等待人工复核"
+          : "未执行场景审查";
   const collaboration = result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
   const rows = [
     ["完成能力", presentation.title || summary.agent_label || "智能任务"],
@@ -703,6 +713,7 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
     ["知识增强", ragLabels[summary.rag_mode] || "按需启用"],
     ["资料使用", `${summary.used_evidence_count || 0} / ${summary.evidence_count || 0} 条`],
     ["结果检查", summary.citation_status === "passed" ? "通过" : summary.citation_status === "failed" ? "需要复核" : "已完成结构检查"],
+    ["场景证据审查", scenarioReviewStatus],
     ["答案质量", presentation.answer_quality_status === "checked" ? "已检查" : presentation.requires_review ? "需要复核" : "未检查"],
     ["后备能力", summary.fallback ? "已启用" : "未启用"],
     ["检索耗时", `${(summary.timings?.retrieval_ms || 0)} ms`],
@@ -817,6 +828,18 @@ function renderResult(task) {
   });
   if (presentation.fallback_message) notices.push({ status: "warning", text: presentation.fallback_message });
   if (presentation.evidence_message) notices.push({ status: "", text: presentation.evidence_message });
+  const scenarioReview = structured.scenario_evidence_review || {};
+  if (["pending_manual_review", "needs_manual_review"].includes(scenarioReview.status)) {
+    notices.push({
+      status: "warning",
+      text: "当前场景要求人工复核外部证据；系统不会把合成资料或未核验来源当作正式结论。",
+    });
+  } else if (scenarioReview.status === "rejected") {
+    notices.push({
+      status: "warning",
+      text: "当前场景的外部证据未通过审查，请先替换或核验来源后再用于正式交付。",
+    });
+  }
   if (structured.teaching?.warning) notices.push({ status: "warning", text: structured.teaching.warning });
   if (structured.teaching?.teaching_mode === "check_my_work") notices.push({ status: "warning", text: structured.teaching.diagnostic_scope });
   if (structured.student_attempt_review?.feedback?.length) notices.push({ status: "", text: structured.student_attempt_review.feedback.join("；") });
