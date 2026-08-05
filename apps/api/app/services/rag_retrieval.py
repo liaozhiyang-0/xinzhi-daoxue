@@ -646,6 +646,7 @@ class RAGRetrievalService:
         with self._cache_lock:
             cached = self._index_version_cache
             if cached is not None and cached[:2] == fingerprint:
+                self._metrics["rag_index_version_cache_hit_total"] += 1
                 return cached[2]
         try:
             payload = __import__("json").loads(state.read_text(encoding="utf-8"))
@@ -654,6 +655,7 @@ class RAGRetrievalService:
         version = str(payload.get("index_version", ""))
         with self._cache_lock:
             self._index_version_cache = (*fingerprint, version)
+            self._metrics["rag_index_version_read_total"] += 1
         return version
 
     def _cache_get(self, key: tuple[str, ...]) -> list[float] | None:
