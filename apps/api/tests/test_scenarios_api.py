@@ -23,6 +23,26 @@ def test_scenario_catalog_endpoint_returns_detail(client: TestClient) -> None:
     assert response.json()["agent_id"] == "RESEARCH_03_DATA_ANALYSIS_V1"
 
 
+def test_scenario_evidence_review_endpoint_returns_review_state(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/v1/scenarios/faculty_course_copilot_v1/evidence-review",
+        json={
+            "sources": [
+                {
+                    "source_type": "course_asset_manifest",
+                    "source_ref": "config/course_assets/CT.yaml",
+                    "cited": True,
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "needs_manual_review"
+
+
 def test_chat_rejects_invalid_scenario_before_task_creation(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat",

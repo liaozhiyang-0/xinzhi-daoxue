@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from app.contracts.scenarios import ScenarioDefinition
+from app.contracts.scenarios import (
+    ScenarioDefinition,
+    ScenarioEvidenceReviewRequest,
+    ScenarioEvidenceReviewResponse,
+)
 from app.services.scenario_catalog import ScenarioCatalogError
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
@@ -26,3 +30,19 @@ async def get_scenario(scenario_id: str, request: Request) -> ScenarioDefinition
         return request.app.state.scenario_catalog.get(scenario_id)
     except ScenarioCatalogError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{scenario_id}/evidence-review",
+    response_model=ScenarioEvidenceReviewResponse,
+)
+async def review_scenario_evidence(
+    scenario_id: str,
+    payload: ScenarioEvidenceReviewRequest,
+    request: Request,
+) -> ScenarioEvidenceReviewResponse:
+    try:
+        scenario = request.app.state.scenario_catalog.get(scenario_id)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return request.app.state.scenario_evidence_review.review(scenario, payload)

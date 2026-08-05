@@ -67,6 +67,7 @@ from app.services.retrieval_context import (
     RetrievalContextService,
 )
 from app.services.scenario_catalog import ScenarioCatalog
+from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
 from app.services.skill_registry import SkillRegistry
 from app.services.solution_packet_adapter import SolutionPacketAdapterService
@@ -225,6 +226,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     context_budget = ContextBudgetManager(app_settings)
     context_cache = ContextAssemblyCache(app_settings)
     scenario_catalog = ScenarioCatalog(app_settings.scenario_catalog_path)
+    scenario_evidence_review = ScenarioEvidenceReviewService()
     knowledge_ocr_review_cache = KnowledgeOCRReviewSnapshotCache(app_settings)
     context_assembly = ContextAssemblyService(
         app_settings, context_cache, context_budget
@@ -322,6 +324,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.context_budget = context_budget
         app.state.context_cache = context_cache
         app.state.scenario_catalog = scenario_catalog
+        app.state.scenario_evidence_review = scenario_evidence_review
         app.state.knowledge_ocr_review_cache = knowledge_ocr_review_cache
         app.state.context_assembly = context_assembly
         app.state.session_compaction = session_compaction

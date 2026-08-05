@@ -27,9 +27,27 @@
 GET /api/v1/scenarios
 GET /api/v1/scenarios/{scenario_id}
 POST /api/v1/chat  // 请求体增加 scenario_id
+POST /api/v1/scenarios/{scenario_id}/evidence-review
 ```
 
 当请求带有 `scenario_id` 时，服务会校验课程和输入类型，并把场景版本、目标 Agent、检索画像写入任务选项；若未指定 `intent_hint`，使用场景的第一个意图作为默认值。场景绑定只复用现有 Supervisor、TaskRunner 和 Provider 链路，不绕过任务队列，也不包含密钥或私有知识库内容。
+
+证据审查接口只接收来源元数据，不触发网络或模型调用。例如：
+
+```json
+{
+  "sources": [
+    {
+      "source_type": "course_asset_manifest",
+      "source_ref": "config/course_assets/CT.yaml",
+      "cited": true,
+      "synthetic": false
+    }
+  ]
+}
+```
+
+返回状态为 `approved`、`needs_manual_review` 或 `rejected`，可用于 Demo 前置检查和评测报告汇总。
 
 RAG 热路径继续复用现有的查询向量缓存和结果缓存；本阶段只增加索引版本文件的元数据缓存，索引文件的修改时间或大小变化时自动重新读取，避免每次检索都解析同一份状态 JSON。
 

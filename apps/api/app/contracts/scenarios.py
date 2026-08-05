@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -21,6 +24,34 @@ class KnowledgeEvidencePolicy(BaseModel):
     manual_review_required: bool = True
     allow_synthetic: bool = False
     freshness_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ScenarioEvidenceSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_type: str = Field(min_length=1, max_length=80)
+    source_ref: str = Field(min_length=1, max_length=512)
+    cited: bool = False
+    synthetic: bool = False
+    published_at: datetime | None = None
+
+
+class ScenarioEvidenceReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sources: list[ScenarioEvidenceSource] = Field(max_length=50)
+
+
+class ScenarioEvidenceReviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scenario_id: str
+    status: Literal["approved", "needs_manual_review", "rejected"]
+    checked_count: int = Field(ge=0)
+    cited_count: int = Field(ge=0)
+    accepted_source_refs: list[str] = Field(default_factory=list)
+    rejected_source_refs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ScenarioDefinition(BaseModel):
