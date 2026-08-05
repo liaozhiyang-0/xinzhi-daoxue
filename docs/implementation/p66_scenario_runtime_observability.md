@@ -38,4 +38,5 @@ provider_calls 0
 .venv\Scripts\python.exe scripts\validate_commercial_scenarios.py
 .venv\Scripts\python.exe -m pytest apps\api\tests\test_scenario_catalog.py apps\api\tests\test_task_router.py apps\api\tests\test_task_api.py -q --no-cov
 .venv\Scripts\python.exe scripts\run_commercial_scenario_preflight.py
+# 该预检同时核验 Agent 路由、课程绑定、默认意图，并保证不调用网络或 Provider
 ```

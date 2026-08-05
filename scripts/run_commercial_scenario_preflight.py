@@ -79,6 +79,8 @@ def run() -> dict[str, object]:
                 "expected_agent": case.expected_agent,
                 "routed_agent": decision.agent_id,
                 "primary_agent_match": decision.agent_id == case.expected_agent,
+                "course_match": bound.course_id == case.expected_course_pack,
+                "intent_match": bound.intent.value == case.intent,
                 "route_passed": (
                     decision.agent_id == case.expected_agent
                     or decision.original_agent_id == case.expected_agent
@@ -93,11 +95,22 @@ def run() -> dict[str, object]:
             }
         )
 
-    passed = sum(bool(row["route_passed"]) for row in rows)
+    route_passed = sum(bool(row["route_passed"]) for row in rows)
+    course_passed = sum(bool(row["course_match"]) for row in rows)
+    intent_passed = sum(bool(row["intent_match"]) for row in rows)
+    passed = sum(
+        bool(row["route_passed"])
+        and bool(row["course_match"])
+        and bool(row["intent_match"])
+        for row in rows
+    )
     return {
         "valid": passed == len(rows),
         "case_count": len(rows),
         "route_passed_count": passed,
+        "route_only_passed_count": route_passed,
+        "course_passed_count": course_passed,
+        "intent_passed_count": intent_passed,
         "p50_us": percentile(timings, 0.50) / 1_000,
         "p95_us": percentile(timings, 0.95) / 1_000,
         "network_calls": 0,
