@@ -25,6 +25,20 @@ def validate() -> dict[str, object]:
             raise ValueError(
                 f"{case.case_id}: expected_agent 与场景 Agent 不一致"
             )
+        if (
+            case.provenance.source_type == "synthetic"
+            and not scenario.evidence_policy.allow_synthetic
+        ):
+            raise ValueError(f"{case.case_id}: 场景策略不允许 synthetic 来源")
+        if scenario.evidence_policy.citation_required != (
+            case.expected_citations is True
+        ):
+            raise ValueError(f"{case.case_id}: 引用要求与场景证据策略不一致")
+        if (
+            scenario.evidence_policy.manual_review_required
+            and not case.requires_manual_review
+        ):
+            raise ValueError(f"{case.case_id}: 场景策略要求人工复核")
         if case.provenance.source_type != "synthetic":
             raise ValueError(f"{case.case_id}: 当前基线必须明确标记为 synthetic")
         if not case.requires_manual_review:
