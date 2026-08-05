@@ -255,6 +255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         external_paper_reviewer=academic_paper_review,
         external_search_planner=academic_search_planner,
         overall_router=overall_router,
+        scenario_evidence_review=scenario_evidence_review,
     )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,

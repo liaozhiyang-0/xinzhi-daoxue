@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
+from app.contracts.external_retrieval import ExternalRetrievalResult
 from app.contracts.scenarios import (
+    KnowledgeEvidencePolicy,
     ScenarioDefinition,
     ScenarioEvidenceReviewRequest,
     ScenarioEvidenceReviewResponse,
+    ScenarioEvidenceSource,
 )
 
 
 class ScenarioEvidenceReviewService:
     """Apply a scenario's source and citation policy without contacting providers."""
+
+    _EXTERNAL_SOURCE_TYPES = frozenset(
+        {"academic_paper", "web_page", "user_source"}
+    )
 
     def review(
         self,
@@ -20,10 +28,54 @@ class ScenarioEvidenceReviewService:
         *,
         now: datetime | None = None,
     ) -> ScenarioEvidenceReviewResponse:
-        policy = scenario.evidence_policy
-        allowed = set(policy.authoritative_source_types) | set(
-            policy.supplemental_source_types
+        return self._review(
+            scenario.id,
+            scenario.evidence_policy,
+            request,
+            now=now,
         )
+
+    def review_external_result(
+        self,
+        *,
+        scenario_id: str,
+        policy: KnowledgeEvidencePolicy,
+        result: ExternalRetrievalResult,
+        cited_evidence_ids: Collection[str] = (),
+        now: datetime | None = None,
+    ) -> ScenarioEvidenceReviewResponse:
+        """Review provider-neutral external evidence against a bound scenario.
+
+        External retrieval providers do not know the product scenario policy.
+        This adapter converts their provenance-preserving result into the same
+        review contract used by the API endpoint, keeping citation and manual
+        review decisions in one place.
+        """
+
+        cited = set(cited_evidence_ids)
+        request = ScenarioEvidenceReviewRequest(
+            sources=[
+                ScenarioEvidenceSource(
+                    source_type=item.source_type.value,
+                    source_ref=item.source_ref,
+                    cited=item.evidence_id in cited,
+                    synthetic=item.metadata.get("synthetic") is True,
+                    published_at=item.published_at,
+                )
+                for item in result.items
+            ]
+        )
+        return self._review(scenario_id, policy, request, now=now)
+
+    @classmethod
+    def _review(
+        cls,
+        scenario_id: str,
+        policy: KnowledgeEvidencePolicy,
+        request: ScenarioEvidenceReviewRequest,
+        *,
+        now: datetime | None = None,
+    ) -> ScenarioEvidenceReviewResponse:
         accepted: list[str] = []
         rejected: list[str] = []
         warnings: list[str] = []
@@ -42,7 +94,8 @@ class ScenarioEvidenceReviewService:
                 continue
             seen_refs.add(source.source_ref)
             rejected_reason: str | None = None
-            if source.source_type not in allowed:
+            policy_source_type = cls._policy_source_type(source.source_type, policy)
+            if policy_source_type is None:
                 rejected_reason = f"unsupported_source_type:{source.source_type}"
             elif source.synthetic and not policy.allow_synthetic:
                 rejected_reason = "synthetic_source_not_allowed"
@@ -61,7 +114,7 @@ class ScenarioEvidenceReviewService:
                 continue
             accepted.append(source.source_ref)
             cited_count += int(source.cited)
-            if source.source_type in policy.supplemental_source_types:
+            if policy_source_type in policy.supplemental_source_types:
                 warnings.append(f"supplemental_source_requires_review:{source.source_ref}")
 
         if policy.citation_required and accepted and cited_count == 0:
@@ -74,7 +127,7 @@ class ScenarioEvidenceReviewService:
         else:
             status = "approved"
         return ScenarioEvidenceReviewResponse(
-            scenario_id=scenario.id,
+            scenario_id=scenario_id,
             status=status,
             checked_count=len(request.sources),
             cited_count=cited_count,
@@ -82,3 +135,19 @@ class ScenarioEvidenceReviewService:
             rejected_source_refs=rejected,
             warnings=warnings,
         )
+
+    @classmethod
+    def _policy_source_type(
+        cls, source_type: str, policy: KnowledgeEvidencePolicy
+    ) -> str | None:
+        allowed = set(policy.authoritative_source_types) | set(
+            policy.supplemental_source_types
+        )
+        if source_type in allowed:
+            return source_type
+        if (
+            source_type in cls._EXTERNAL_SOURCE_TYPES
+            and "external_reference" in policy.supplemental_source_types
+        ):
+            return "external_reference"
+        return None

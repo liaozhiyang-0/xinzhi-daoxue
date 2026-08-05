@@ -35,6 +35,10 @@ from app.contracts.conversation import (
     MessageStatus,
 )
 from app.contracts.learning import StudentAttempt, TeachingMode
+from app.contracts.scenarios import (
+    KnowledgeEvidencePolicy,
+    ScenarioEvidenceReviewResponse,
+)
 from app.contracts.solver import AcademicProblem, SolverResult
 from app.core.errors import AppError, NotConfiguredError, ProviderCancelledError
 from app.courses import CourseRegistry
@@ -87,6 +91,7 @@ from app.services.math_formatting_service import MathFormattingService
 from app.services.memory_service import MemoryService
 from app.services.overall_routing import OverallRoutingService
 from app.services.rag_retrieval import RAGRetrievalService
+from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
@@ -135,6 +140,7 @@ class TaskRunner:
         external_paper_reviewer: AcademicPaperReviewService | None = None,
         external_search_planner: AcademicSearchPlannerService | None = None,
         overall_router: OverallRoutingService | None = None,
+        scenario_evidence_review: ScenarioEvidenceReviewService | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -153,6 +159,7 @@ class TaskRunner:
         self.external_paper_reviewer = external_paper_reviewer
         self.external_search_planner = external_search_planner
         self.overall_router = overall_router
+        self.scenario_evidence_review = scenario_evidence_review
         self.external_intent_recognizer = ExternalRetrievalIntentRecognizer()
         self.student_attempts = StudentAttemptService()
         self.solver_quality_gate = SolverQualityGateService()
@@ -1080,17 +1087,36 @@ class TaskRunner:
             scenario_policy = self._scenario_evidence_policy(request)
             if isinstance(scenario_policy, dict):
                 result.structured_result["scenario_evidence_policy"] = scenario_policy
-                result.structured_result["scenario_evidence_review"] = {
-                    "status": "pending_manual_review"
-                    if bool(scenario_policy.get("manual_review_required", True))
-                    else "automated_only",
-                    "citation_required": bool(
-                        scenario_policy.get("citation_required", True)
-                    ),
-                    "synthetic_allowed": bool(
-                        scenario_policy.get("allow_synthetic", False)
-                    ),
-                }
+                scenario_review = (
+                    self._review_scenario_external_evidence(
+                        request,
+                        external_result,
+                        external_validation.valid_ids,
+                    )
+                    if external_result is not None
+                    else None
+                )
+                if scenario_review is not None:
+                    result.structured_result["scenario_evidence_review"] = (
+                        scenario_review.model_dump(mode="json")
+                    )
+                    result.warnings.extend(
+                        f"scenario_evidence:{warning}"
+                        for warning in scenario_review.warnings
+                        if f"scenario_evidence:{warning}" not in result.warnings
+                    )
+                else:
+                    result.structured_result["scenario_evidence_review"] = {
+                        "status": "pending_manual_review"
+                        if bool(scenario_policy.get("manual_review_required", True))
+                        else "automated_only",
+                        "citation_required": bool(
+                            scenario_policy.get("citation_required", True)
+                        ),
+                        "synthetic_allowed": bool(
+                            scenario_policy.get("allow_synthetic", False)
+                        ),
+                    }
             execution_plan.evidence_count = len(knowledge_hits)
             execution_plan.context_injected = context_injected
             if knowledge_hits and (
@@ -2623,6 +2649,33 @@ class TaskRunner:
             return None
         policy = request.options.get("scenario_evidence_policy")
         return policy if isinstance(policy, dict) else None
+
+    def _review_scenario_external_evidence(
+        self,
+        request: AgentRequest,
+        external_result: ExternalRetrievalResult,
+        cited_evidence_ids: tuple[str, ...],
+    ) -> ScenarioEvidenceReviewResponse | None:
+        if self.scenario_evidence_review is None:
+            return None
+        scenario_id = request.options.get("scenario_id")
+        raw_policy = self._scenario_evidence_policy(request)
+        if not isinstance(scenario_id, str) or not isinstance(raw_policy, dict):
+            return None
+        try:
+            policy = KnowledgeEvidencePolicy.model_validate(raw_policy)
+        except ValueError:
+            logger.warning(
+                "scenario_evidence_policy_invalid_for_runtime scenario_id=%s",
+                scenario_id,
+            )
+            return None
+        return self.scenario_evidence_review.review_external_result(
+            scenario_id=scenario_id,
+            policy=policy,
+            result=external_result,
+            cited_evidence_ids=cited_evidence_ids,
+        )
 
     async def _retrieve_external(
         self,
