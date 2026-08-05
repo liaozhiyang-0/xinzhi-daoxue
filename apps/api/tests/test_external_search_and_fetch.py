@@ -164,6 +164,7 @@ def test_academic_search_answer_exposes_link_and_abstract_view() -> None:
     assert "修改说明" not in answer
     assert "引用检查" not in answer
     assert is_academic_search_request("查找最新的电子信息论文") is True
+    assert is_academic_search_request("近三年柔性电子器件的关键进展是什么？") is False
     assert is_academic_search_request("把这段内容改写成论文摘要") is False
     assert normalize_academic_search_query(
         "帮我查找最新的电子信息领域相关论文，并提供链接和摘要"

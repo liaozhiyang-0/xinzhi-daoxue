@@ -556,7 +556,7 @@ agents:
       output_schema: external_academic_search_v1
     enabled: true
     publication_status: local
-    mode: external_search
+    mode: local_model
     execution_mode: local
     priority: 95
     capabilities:

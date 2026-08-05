@@ -456,7 +456,9 @@ class TaskRunner:
             paper_search_request = is_academic_search_request(
                 self._knowledge_query(request)
             )
-            if agent_definition.mode == "external_search" or paper_search_request:
+            if agent_definition.mode == "external_search" or (
+                paper_search_request and external_policy.enabled
+            ):
                 if external_result is None:
                     external_result = ExternalRetrievalResult(
                         query=self._external_query(request) or "academic paper search",

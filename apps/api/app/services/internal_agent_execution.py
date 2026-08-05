@@ -17,6 +17,9 @@ from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.general_question_service import GeneralQuestionService
 
 Formatter = Callable[[dict[str, Any]], tuple[str, dict[str, Any], list[str], list[str]]]
+GENERAL_WORKFLOW_AGENT_IDS = frozenset(
+    {"GENERAL_QUESTION_V1", "RESEARCH_01_ACADEMIC_SEARCH_V1"}
+)
 
 
 class InternalAgentExecutionService:
@@ -41,7 +44,7 @@ class InternalAgentExecutionService:
     def available(self, workflow_agent_id: str) -> bool:
         if workflow_agent_id == AcademicProblemSolverService.agent_id:
             return self.academic_solver is not None
-        if workflow_agent_id == GeneralQuestionService.agent_id:
+        if workflow_agent_id in GENERAL_WORKFLOW_AGENT_IDS:
             return self.general_question is not None
         internal_id = WORKFLOW_INTERNAL_AGENT_MAP.get(workflow_agent_id)
         if internal_id is None:
@@ -63,10 +66,11 @@ class InternalAgentExecutionService:
             if self.academic_solver is None:
                 raise RuntimeError("通用专业求解服务未注入")
             return await self.academic_solver.run(request, context)
-        if workflow_agent_id == GeneralQuestionService.agent_id:
+        if workflow_agent_id in GENERAL_WORKFLOW_AGENT_IDS:
             if self.general_question is None:
                 raise RuntimeError("通用问题回答服务未注入")
-            return await self.general_question.run(request)
+            result = await self.general_question.run(request)
+            return result.model_copy(update={"agent_id": workflow_agent_id})
         internal_id = WORKFLOW_INTERNAL_AGENT_MAP[workflow_agent_id]
         internal = await self.hub.run_text(
             internal_id,

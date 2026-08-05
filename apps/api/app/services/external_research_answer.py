@@ -31,6 +31,15 @@ PAPER_TERMS = (
     "literature",
     "article",
 )
+EXPLICIT_PAPER_TERMS = (
+    "论文",
+    "文献",
+    "paper",
+    "papers",
+    "publication",
+    "literature",
+    "article",
+)
 FRESHNESS_TERMS = (
     "最新",
     "近期",
@@ -95,9 +104,14 @@ def is_academic_search_request(query: str) -> bool:
 
     normalized = " ".join(query.casefold().split())
     has_paper = any(term.casefold() in normalized for term in PAPER_TERMS)
+    has_explicit_paper = any(
+        term.casefold() in normalized for term in EXPLICIT_PAPER_TERMS
+    )
     has_search = any(term.casefold() in normalized for term in SEARCH_TERMS)
     has_freshness = any(term.casefold() in normalized for term in FRESHNESS_TERMS)
-    return has_paper and (has_search or has_freshness)
+    return has_explicit_paper and (has_search or has_freshness) or (
+        has_search and has_paper
+    )
 
 
 def is_academic_search_follow_up(

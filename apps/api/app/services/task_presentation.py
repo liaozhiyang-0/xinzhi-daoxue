@@ -65,6 +65,7 @@ def build_task_views(
     course_label = COURSE_LABELS.get(result.course_id, result.course_id or "课程")
     is_solver = rag_mode == RAGInteractionMode.METHOD_REFERENCE
     is_general = definition.agent_id == "GENERAL_QUESTION_V1"
+    is_local_research = definition.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     is_external_search_result = bool(
         result.structured_result.get("external_search", False)
     )
@@ -87,9 +88,11 @@ def build_task_views(
     if external_count:
         source_summary = f"外部论文 {external_count} 篇"
         evidence_message = "已完成外部学术检索；在资料依据中可查看摘要、来源和原文链接"
-    elif definition.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1":
-        source_summary = "外部论文 0 篇"
-        evidence_message = "本次未找到可展示的外部论文；请调整关键词或时间范围"
+    elif is_local_research:
+        source_summary = "本地模型知识"
+        evidence_message = (
+            "本次使用本地智能体回答，未调用外部论文检索；具体文献需人工核验"
+        )
     elif is_solver:
         source_summary = (
             f"方法参考 {evidence_count} 条" if evidence_count else "暂无方法参考"
@@ -151,7 +154,7 @@ def build_task_views(
             "检索结果已完成来源、时间和链接字段整理；摘要内容仍建议打开原文核对。"
         )
     elif (
-        is_general
+        (is_general or is_local_research)
         and isinstance(model_execution, dict)
         and model_execution.get("status") == "success"
     ):
