@@ -26,7 +26,7 @@ artifacts:
     status: "local_evidence_only"
   - id: "test_scripts_and_materials"
     path: "07_test_scripts_and_materials.md"
-    status: "drafted_with_pending_cases"
+    status: "drafted_with_synthetic_cases_pending_manual_review"
   - id: "user_pilot_log"
     path: "08_user_pilot_log.md"
     status: "pending_authorized_pilot"

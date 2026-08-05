@@ -35,3 +35,11 @@ RAG 热路径继续复用现有的查询向量缓存和结果缓存；本阶段�
 ```
 
 本阶段不宣称真实用户效果或准确率；后续需为至少三个典型问题建立标准答案、权威来源和人工复核记录，再接入自动评测。
+
+首批合成基线位于 `evaluation/cases/contest_scenarios/synthetic_contest.yaml`，覆盖备课、作业诊断和科研数据分析。使用以下命令做低成本结构审查：
+
+```powershell
+.venv\Scripts\python.exe scripts\validate_contest_cases.py
+```
+
+该审查只验证场景与 Agent 的绑定、证据字段、合成标记和人工复核门槛，不生成真实准确率，也不替代授权用户试用。

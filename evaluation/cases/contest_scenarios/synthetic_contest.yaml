@@ -1,0 +1,116 @@
+cases:
+  - case_id: CONTEST_TEACH_001
+    title: 课程大纲到可追溯教学设计
+    course: CT
+    task_family: LESSON_PREP
+    intent: lesson_prep
+    difficulty: medium
+    input_type: text
+    message: 请根据数字电路课程的章节目标生成一份两课时教学设计，区分学习目标、先修知识、课堂活动和课后验证，并为知识性表述保留来源位置。
+    task_options:
+      scenario_id: faculty_course_copilot_v1
+      user_role: teacher
+    expected_agent: TEACH_01_LESSON_PREP_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 2
+    required_keywords: [学习目标, 先修知识, 课堂活动, 来源]
+    required_steps: [目标对齐, 课堂活动, 课后验证]
+    reference_solution:
+      required_sections: [learning_objectives, prerequisites, activity_design, source_refs]
+      source_rule: 每个外部事实必须能回指课程资料或明确标记为待教师确认
+    tags: [contest, scenario, teaching, synthetic]
+    source: owner-designed contest scenario catalog
+    notes: 合成基线；不代表真实教师反馈或真实模型效果。
+    input_source: synthetic
+    evidence_requirements:
+      standard_answer: 由课程负责人复核章节目标与教学设计结构
+      authoritative_sources: 课程大纲、已审核课程资料
+      user_validation: 至少一名真实教师完成结构化复核
+    provenance:
+      source_type: synthetic
+      source_name: owner-designed contest scenario catalog
+      license_or_authorization: synthetic content created for local evaluation
+      publishable: true
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: CONTEST_ASSESS_001
+    title: 作答步骤首错定位与验证题
+    course: CT
+    task_family: ASSIGNMENT_REVIEW
+    intent: assignment_review
+    difficulty: medium
+    input_type: text
+    message: 学生把串联电阻等效值写成较小电阻，且后续电流计算沿用了这个结果。请指出首个关键错误，给出依据、分步提示和一道不直接泄露答案的验证题。
+    task_options:
+      scenario_id: assessment_diagnosis_v1
+      user_role: teacher
+    expected_agent: TEACH_02_ASSIGNMENT_REVIEW_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [首个关键错误, 依据, 验证题]
+    required_steps: [定位首错, 解释依据, 生成验证题]
+    forbidden_claims: [已通过真实教师验证, 准确率达到]
+    reference_solution:
+      required_sections: [first_error, evidence, hint_level, next_check]
+      disclosure_rule: 不直接输出完整修正过程，除非用户明确请求并满足披露策略
+    tags: [contest, scenario, assessment, synthetic]
+    source: owner-designed contest scenario catalog
+    notes: 合成基线；标准答案需由教师按评分规则复核。
+    input_source: synthetic
+    evidence_requirements:
+      standard_answer: 教师评分规则与首错位置
+      authoritative_sources: 课程知识库中的串联电阻方法资料
+      user_validation: 至少一名真实教师完成首错与提示质量复核
+    provenance:
+      source_type: synthetic
+      source_name: owner-designed contest scenario catalog
+      license_or_authorization: synthetic content created for local evaluation
+      publishable: true
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: CONTEST_RESEARCH_001
+    title: 科研数据分析方案与可复现边界
+    course: DE
+    task_family: DATA_ANALYSIS
+    intent: data_analysis
+    difficulty: hard
+    input_type: text
+    message: 请为一组数字电路实验测量数据设计分析方案，说明数据质量检查、统计方法、可执行代码或公式、结果解释和研究局限性，并区分已知信息与需要补充的实验条件。
+    task_options:
+      scenario_id: research_data_workbench_v1
+      user_role: researcher
+    expected_agent: RESEARCH_03_DATA_ANALYSIS_V1
+    expected_course_pack: DE
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [数据质量, 分析方法, 可执行, 局限性]
+    required_steps: [数据检查, 方法说明, 可复现产物, 局限性说明]
+    forbidden_claims: [已完成真实实验复现, 结果具有统计显著性]
+    reference_solution:
+      required_sections: [data_quality, method, executable_artifact, limitations, citations]
+      reproducibility_rule: 输入、参数、代码或公式和环境假设必须可复核
+    tags: [contest, scenario, research, reproducibility, synthetic]
+    source: owner-designed contest scenario catalog
+    notes: 合成基线；没有上传真实数据时不得输出实验结论或准确率。
+    input_source: synthetic
+    evidence_requirements:
+      standard_answer: 科研人员复核分析步骤、公式和限制条件
+      authoritative_sources: 实验方案、数据字典、经授权的研究资料
+      user_validation: 至少一名真实科研人员完成可复现性复核
+    provenance:
+      source_type: synthetic
+      source_name: owner-designed contest scenario catalog
+      license_or_authorization: synthetic content created for local evaluation
+      publishable: true
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
