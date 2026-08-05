@@ -1,5 +1,23 @@
 const { $, api, el, initShell, toast } = XinzhiUI;
 const presentation = new URLSearchParams(location.search).get("presentation") === "1";
+const readinessLabels = {
+  evidence_requires_manual_review: "外部证据需要人工复核",
+  demo_uses_mock_or_local_fallback: "演示使用 Mock 或本地降级能力",
+  no_runtime_or_mock_available: "暂无可用的运行能力或演示 Mock",
+  commercialization_plan_incomplete: "商业化交付信息尚未完整配置",
+};
+
+function formatReadinessMessage(value) {
+  const message = String(value || "");
+  if (readinessLabels[message]) return readinessLabels[message];
+  if (message.startsWith("demo_uses_declared_fallback:")) {
+    return `演示将使用已声明的降级 Agent：${message.slice("demo_uses_declared_fallback:".length)}`;
+  }
+  if (message.startsWith("agent_publication_status:")) {
+    return `Agent 发布状态：${message.slice("agent_publication_status:".length)}`;
+  }
+  return message;
+}
 
 function scenarioTheme(scenario, index) {
   const prompt = scenario.demo_steps?.[0] || scenario.summary;
@@ -31,8 +49,8 @@ async function scenarioWithPreflight(scenario, index, preflight = null) {
         ? "Mock/降级可演示"
         : "待配置";
     theme.readinessDetail = readiness.blockers?.length
-      ? `阻塞：${readiness.blockers.join("、")}`
-      : (readiness.warnings || []).join("、") || "无阻塞项";
+      ? `阻塞：${readiness.blockers.map(formatReadinessMessage).join("、")}`
+      : (readiness.warnings || []).map(formatReadinessMessage).join("、") || "无阻塞项";
   } catch (error) {
     theme.readiness = "预检失败";
     theme.readinessDetail = error.message;
