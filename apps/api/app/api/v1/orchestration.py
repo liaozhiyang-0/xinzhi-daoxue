@@ -112,6 +112,10 @@ async def _submit(
     principal: Principal,
 ) -> tuple[Any, ChatSubmission]:
     user_id = effective_user_id(principal, payload.user_id) or "local-user"
+    try:
+        prepared_payload = request.app.state.scenario_catalog.enrich_request(payload)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if payload.session_id:
         session = await SessionRepository(db).get(payload.session_id)
         if session is None:
@@ -126,31 +130,24 @@ async def _submit(
             )
         )
         session_id = session.id
-    attachment_refs = await _attachments(db, payload, principal)
+    attachment_refs = await _attachments(db, prepared_payload, principal)
     document_blocks = [
         f"【附件：{item.filename}】\n{item.extracted_text.strip()}"
         for item in attachment_refs
         if item.extracted_text.strip()
     ]
-    prepared_payload = payload
     if document_blocks:
         combined = "\n\n".join(document_blocks)
         message = "\n\n".join(
-            part for part in (payload.message.strip(), combined) if part
+            part for part in (prepared_payload.message.strip(), combined) if part
         )
-        prepared_payload = payload.model_copy(
+        prepared_payload = prepared_payload.model_copy(
             update={
                 "message": message[
                     : request.app.state.settings.document_max_extracted_chars
                 ]
             }
         )
-    try:
-        prepared_payload = request.app.state.scenario_catalog.enrich_request(
-            prepared_payload
-        )
-    except ScenarioCatalogError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     context = dict(getattr(session, "context_data", {}) or {})
     prepared = request.app.state.supervisor.prepare(
         prepared_payload,
