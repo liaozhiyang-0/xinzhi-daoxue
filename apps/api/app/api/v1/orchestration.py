@@ -166,6 +166,7 @@ async def _submit(
         session_id=session_id,
         task_id=task.id,
         trace_id=prepared.state["trace_id"],
+        scenario_id=prepared_payload.scenario_id,
         status=task.status.value,
         stream_url=f"/api/v1/tasks/{task.id}/stream",
         result_url=f"/api/v1/chat/{task.id}",

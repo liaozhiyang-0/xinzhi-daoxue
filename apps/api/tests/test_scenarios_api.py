@@ -43,6 +43,20 @@ def test_scenario_evidence_review_endpoint_returns_review_state(
     assert response.json()["status"] == "needs_manual_review"
 
 
+def test_chat_submission_returns_bound_scenario_id(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/chat",
+        json={
+            "message": "生成课程设计",
+            "course_hint": "CT",
+            "scenario_id": "faculty_course_copilot_v1",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["scenario_id"] == "faculty_course_copilot_v1"
+
+
 def test_chat_rejects_invalid_scenario_before_task_creation(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat",

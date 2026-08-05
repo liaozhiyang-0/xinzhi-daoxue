@@ -88,8 +88,8 @@ scenarios:
     customer_segment: 高校科研团队、研究院与技术企业研发部门
     roles: [researcher, teacher]
     evidence_policy:
-      authoritative_source_types: [external_academic, indexed_publication, local_knowledge]
-      supplemental_source_types: [web_search, synthetic]
+      authoritative_source_types: [academic_paper, local_knowledge]
+      supplemental_source_types: [web_page, synthetic]
       citation_required: true
       manual_review_required: true
       allow_synthetic: true

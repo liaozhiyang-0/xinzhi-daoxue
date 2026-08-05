@@ -179,6 +179,7 @@ class ChatSubmission(BaseModel):
     session_id: str
     task_id: str
     trace_id: str
+    scenario_id: str | None = None
     status: str = "queued"
     stream_url: str
     result_url: str
