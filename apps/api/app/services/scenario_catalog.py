@@ -93,6 +93,9 @@ class ScenarioCatalog:
                 "scenario_name": scenario.name,
                 "scenario_agent_id": scenario.agent_id,
                 "scenario_retrieval_profile": scenario.retrieval_profile,
+                "scenario_evidence_policy": scenario.evidence_policy.model_dump(
+                    mode="json"
+                ),
             }
         )
         default_intent = OrchestrationIntent(scenario.intents[0])

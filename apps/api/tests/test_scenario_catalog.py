@@ -45,6 +45,7 @@ def test_scenario_filters_and_request_enrichment() -> None:
     assert len(teacher_cases) == 6
     assert enriched.metadata["scenario_id"] == "faculty_course_copilot_v1"
     assert enriched.metadata["scenario_retrieval_profile"] == "teaching_authoritative"
+    assert enriched.metadata["scenario_evidence_policy"]["citation_required"] is True
 
 
 def test_scenario_rejects_unsupported_input_mode() -> None:

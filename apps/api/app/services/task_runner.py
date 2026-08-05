@@ -1053,7 +1053,8 @@ class TaskRunner:
                     result.answer,
                     external_result.items,
                     declared_external if isinstance(declared_external, list) else [],
-                    require_citations=external_policy.require_citations,
+                    require_citations=external_policy.require_citations
+                    or self._scenario_citations_required(request),
                 )
                 result.structured_result["external_citation_validation"] = {
                     "status": "passed" if external_validation.valid else "failed",
@@ -1076,6 +1077,20 @@ class TaskRunner:
                 )
                 if not external_validation.valid:
                     result.warnings.extend(external_validation.warnings)
+            scenario_policy = request.options.get("scenario_evidence_policy")
+            if isinstance(scenario_policy, dict):
+                result.structured_result["scenario_evidence_policy"] = scenario_policy
+                result.structured_result["scenario_evidence_review"] = {
+                    "status": "pending_manual_review"
+                    if bool(scenario_policy.get("manual_review_required", True))
+                    else "automated_only",
+                    "citation_required": bool(
+                        scenario_policy.get("citation_required", True)
+                    ),
+                    "synthetic_allowed": bool(
+                        scenario_policy.get("allow_synthetic", False)
+                    ),
+                }
             execution_plan.evidence_count = len(knowledge_hits)
             execution_plan.context_injected = context_injected
             if knowledge_hits and (
@@ -2596,6 +2611,11 @@ class TaskRunner:
             and not writing_source_follow_up
             and (intent_decision.decision == "retrieve" or academic_follow_up)
         )
+
+    @staticmethod
+    def _scenario_citations_required(request: AgentRequest) -> bool:
+        policy = request.options.get("scenario_evidence_policy")
+        return isinstance(policy, dict) and bool(policy.get("citation_required", False))
 
     async def _retrieve_external(
         self,
