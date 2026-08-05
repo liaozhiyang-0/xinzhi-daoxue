@@ -58,3 +58,19 @@ def test_scenario_rejects_unsupported_input_mode() -> None:
 
     with pytest.raises(ScenarioCatalogError, match="不支持输入类型"):
         catalog.enrich_request(request)
+
+
+def test_unbound_reserved_metadata_is_removed() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    request = AgentRequestV2(
+        message="普通问题",
+        metadata={
+            "scenario_evidence_policy": {"allow_synthetic": True},
+            "_scenario_catalog_bound": True,
+        },
+    )
+
+    cleaned = catalog.enrich_request(request)
+
+    assert "scenario_evidence_policy" not in cleaned.metadata
+    assert "_scenario_catalog_bound" not in cleaned.metadata

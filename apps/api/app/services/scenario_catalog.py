@@ -20,6 +20,18 @@ class ScenarioCatalogError(ValueError):
 class ScenarioCatalog:
     """Validated, immutable-at-runtime catalog for product scenarios."""
 
+    _RESERVED_METADATA_KEYS = frozenset(
+        {
+            "scenario_id",
+            "scenario_version",
+            "scenario_name",
+            "scenario_agent_id",
+            "scenario_retrieval_profile",
+            "scenario_evidence_policy",
+            "_scenario_catalog_bound",
+        }
+    )
+
     def __init__(self, path: Path) -> None:
         self.path = path
         self.document = self._load(path)
@@ -76,7 +88,14 @@ class ScenarioCatalog:
 
     def enrich_request(self, payload: AgentRequestV2) -> AgentRequestV2:
         if payload.scenario_id is None:
-            return payload
+            metadata = {
+                key: value
+                for key, value in payload.metadata.items()
+                if key not in self._RESERVED_METADATA_KEYS
+            }
+            return payload if metadata == payload.metadata else payload.model_copy(
+                update={"metadata": metadata}
+            )
         scenario = self.get(payload.scenario_id)
         course = payload.course_hint.value if payload.course_hint else None
         if course and course not in scenario.courses:
@@ -96,6 +115,7 @@ class ScenarioCatalog:
                 "scenario_evidence_policy": scenario.evidence_policy.model_dump(
                     mode="json"
                 ),
+                "_scenario_catalog_bound": True,
             }
         )
         default_intent = OrchestrationIntent(scenario.intents[0])

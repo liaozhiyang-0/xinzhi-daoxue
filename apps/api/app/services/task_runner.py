@@ -1077,7 +1077,7 @@ class TaskRunner:
                 )
                 if not external_validation.valid:
                     result.warnings.extend(external_validation.warnings)
-            scenario_policy = request.options.get("scenario_evidence_policy")
+            scenario_policy = self._scenario_evidence_policy(request)
             if isinstance(scenario_policy, dict):
                 result.structured_result["scenario_evidence_policy"] = scenario_policy
                 result.structured_result["scenario_evidence_review"] = {
@@ -2614,8 +2614,15 @@ class TaskRunner:
 
     @staticmethod
     def _scenario_citations_required(request: AgentRequest) -> bool:
-        policy = request.options.get("scenario_evidence_policy")
+        policy = TaskRunner._scenario_evidence_policy(request)
         return isinstance(policy, dict) and bool(policy.get("citation_required", False))
+
+    @staticmethod
+    def _scenario_evidence_policy(request: AgentRequest) -> dict[str, object] | None:
+        if request.options.get("_scenario_catalog_bound") is not True:
+            return None
+        policy = request.options.get("scenario_evidence_policy")
+        return policy if isinstance(policy, dict) else None
 
     async def _retrieve_external(
         self,
