@@ -19,6 +19,8 @@
 
 `evidence_policy` 约束知识来源：`authoritative_source_types` 是可直接支撑结论的来源，`supplemental_source_types` 只能作为补充；`citation_required`、`manual_review_required` 和 `allow_synthetic` 分别控制引用、人工审查和合成材料边界。网络检索或 AI 合成资料接入前，必须先归类为补充来源并经过该策略对应的审查。
 
+运行时，只有通过 `scenario_id` 目录校验的请求才会携带 `_scenario_catalog_bound` 和证据策略；未绑定请求中的同名保留字段会被清理。TaskRunner 会把策略写入结构化结果，并在外部检索引用校验时合并场景的引用要求，人工复核仍以 `pending_manual_review` 显式标记，不会被误报为已完成。
+
 ## API 使用
 
 ```text
