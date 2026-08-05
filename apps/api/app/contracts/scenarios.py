@@ -12,6 +12,17 @@ class CommercializationPlan(BaseModel):
     expansion_path: str = Field(min_length=1, max_length=200)
 
 
+class KnowledgeEvidencePolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    authoritative_source_types: list[str] = Field(min_length=1, max_length=12)
+    supplemental_source_types: list[str] = Field(default_factory=list, max_length=12)
+    citation_required: bool = True
+    manual_review_required: bool = True
+    allow_synthetic: bool = False
+    freshness_days: int | None = Field(default=None, ge=1, le=3650)
+
+
 class ScenarioDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -21,6 +32,7 @@ class ScenarioDefinition(BaseModel):
     summary: str = Field(min_length=1, max_length=500)
     customer_segment: str = Field(min_length=1, max_length=160)
     commercialization: CommercializationPlan
+    evidence_policy: KnowledgeEvidencePolicy
     roles: list[str] = Field(min_length=1, max_length=8)
     courses: list[str] = Field(min_length=1, max_length=32)
     agent_id: str = Field(min_length=1, max_length=100)

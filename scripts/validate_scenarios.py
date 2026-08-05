@@ -40,6 +40,14 @@ def validate() -> dict[str, object]:
                 f"intents={sorted(unsupported_intents)} "
                 f"inputs={sorted(unsupported_inputs)}"
             )
+        policy = item.evidence_policy
+        if policy.citation_required and not item.evidence_requirements:
+            raise ValueError(f"{item.id}: 引用要求缺少场景证据要求")
+        if (
+            policy.allow_synthetic
+            and "synthetic" not in policy.supplemental_source_types
+        ):
+            raise ValueError(f"{item.id}: allow_synthetic 必须声明 synthetic 补充来源")
     missing_agent_list = sorted(missing_agents)
     if missing_agent_list:
         raise ValueError(f"场景引用了不存在的 Agent: {', '.join(missing_agent_list)}")
@@ -48,6 +56,7 @@ def validate() -> dict[str, object]:
         "catalog_version": catalog.document.version,
         "scenario_count": len(catalog.list(enabled_only=False)),
         "enabled_count": len(catalog.list()),
+        "evidence_policy_count": len(catalog.list()),
         "agent_ids": sorted({item.agent_id for item in catalog.list()}),
     }
 

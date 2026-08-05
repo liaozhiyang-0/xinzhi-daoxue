@@ -6,6 +6,12 @@ scenarios:
     summary: 面向教师的课程目标拆解、备课提纲、例题和可追溯课件素材助手。
     customer_segment: 高校教师与课程团队
     roles: [teacher]
+    evidence_policy:
+      authoritative_source_types: [course_asset_manifest, teacher_reviewed_knowledge]
+      supplemental_source_types: [synthetic, external_reference]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
     commercialization:
       buyer: 学院课程负责人或教师发展中心
       delivery_unit: 单门课程备课工作台
@@ -27,6 +33,12 @@ scenarios:
     summary: 对学生作答进行步骤级诊断，输出首个关键错误、依据和下一道验证题。
     customer_segment: 高校教师、助教与智慧教学平台
     roles: [teacher]
+    evidence_policy:
+      authoritative_source_types: [course_pack, reviewed_error_pool, scoring_rubric]
+      supplemental_source_types: [synthetic, external_reference]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
     commercialization:
       buyer: 学院教务与智慧教学平台
       delivery_unit: 作业批次与教师审核席位
@@ -48,6 +60,12 @@ scenarios:
     summary: 根据学生的作答证据和薄弱点生成分阶段学习建议，并通过验证题闭环。
     customer_segment: 高校学生、学校教务与在线教育平台
     roles: [student, teacher]
+    evidence_policy:
+      authoritative_source_types: [learning_outcome, reviewed_error_pool, local_knowledge]
+      supplemental_source_types: [synthetic, external_reference]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
     commercialization:
       buyer: 学校教务处或在线教育平台
       delivery_unit: 学生学习路径与课程知识点
@@ -69,6 +87,13 @@ scenarios:
     summary: 面向科研人员整理研究问题、前沿文献、关键结论和证据边界。
     customer_segment: 高校科研团队、研究院与技术企业研发部门
     roles: [researcher, teacher]
+    evidence_policy:
+      authoritative_source_types: [external_academic, indexed_publication, local_knowledge]
+      supplemental_source_types: [web_search, synthetic]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
+      freshness_days: 1095
     commercialization:
       buyer: 科研院所、企业研发部门或科研服务平台
       delivery_unit: 研究问题证据简报
@@ -90,6 +115,12 @@ scenarios:
     summary: 将科研数据问题转化为可执行分析步骤、代码或公式，并明确质量与限制。
     customer_segment: 高校科研团队、实验室与产业研发部门
     roles: [researcher, teacher]
+    evidence_policy:
+      authoritative_source_types: [authorized_dataset, method_reference, experiment_protocol]
+      supplemental_source_types: [synthetic, external_reference]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
     commercialization:
       buyer: 实验室负责人或产业研发部门
       delivery_unit: 单个研究数据分析任务
@@ -111,6 +142,12 @@ scenarios:
     summary: 对课程资料进行版本、质量、来源和发布状态治理，支撑学院级知识服务。
     customer_segment: 高校学院、教务处与教育数字化服务商
     roles: [teacher]
+    evidence_policy:
+      authoritative_source_types: [knowledge_manifest, asset_review_queue, published_course_asset]
+      supplemental_source_types: [synthetic, external_reference]
+      citation_required: true
+      manual_review_required: true
+      allow_synthetic: true
     commercialization:
       buyer: 学院、教务处或教育数字化服务商
       delivery_unit: 学院级课程资产与知识库治理空间

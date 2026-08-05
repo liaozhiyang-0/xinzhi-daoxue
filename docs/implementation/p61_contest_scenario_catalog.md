@@ -17,6 +17,8 @@
 
 每个场景还记录 `commercialization.buyer`、`delivery_unit`、`value_capture` 和 `expansion_path`，用于把技术 Demo 映射到采购对象、交付边界和后续产品线；这些是产品假设，不是已验证收入或客户承诺。
 
+`evidence_policy` 约束知识来源：`authoritative_source_types` 是可直接支撑结论的来源，`supplemental_source_types` 只能作为补充；`citation_required`、`manual_review_required` 和 `allow_synthetic` 分别控制引用、人工审查和合成材料边界。网络检索或 AI 合成资料接入前，必须先归类为补充来源并经过该策略对应的审查。
+
 ## API 使用
 
 ```text

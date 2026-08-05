@@ -17,6 +17,8 @@ def test_contest_scenario_catalog_has_six_enabled_cases() -> None:
     assert len(scenarios) == 6
     assert all(item.commercialization.buyer for item in scenarios)
     assert all(item.commercialization.expansion_path for item in scenarios)
+    assert all(item.evidence_policy.citation_required for item in scenarios)
+    assert all(item.evidence_policy.manual_review_required for item in scenarios)
     assert {item.id for item in scenarios} == {
         "faculty_course_copilot_v1",
         "assessment_diagnosis_v1",

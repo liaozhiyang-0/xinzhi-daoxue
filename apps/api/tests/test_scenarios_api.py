@@ -13,6 +13,7 @@ def test_scenario_catalog_endpoint_lists_and_filters(client: TestClient) -> None
         "faculty_course_copilot_v1",
         "assessment_diagnosis_v1",
     }
+    assert all(item["evidence_policy"]["manual_review_required"] for item in payload)
 
 
 def test_scenario_catalog_endpoint_returns_detail(client: TestClient) -> None:
