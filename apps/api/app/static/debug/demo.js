@@ -17,22 +17,22 @@ function scenarioTheme(scenario, index) {
   };
 }
 
-async function scenarioWithPreflight(scenario, index) {
+async function scenarioWithPreflight(scenario, index, preflight = null) {
   const theme = scenarioTheme(scenario, index);
   try {
-    const preflight = await api(
+    const readiness = preflight || await api(
       `/api/v1/scenarios/${encodeURIComponent(scenario.id)}/preflight`,
       {},
       30_000,
     );
-    theme.readiness = preflight.production_ready
+    theme.readiness = readiness.production_ready
       ? "生产可用"
-      : preflight.demo_ready
+      : readiness.demo_ready
         ? "Mock/降级可演示"
         : "待配置";
-    theme.readinessDetail = preflight.blockers?.length
-      ? `阻塞：${preflight.blockers.join("、")}`
-      : (preflight.warnings || []).join("、") || "无阻塞项";
+    theme.readinessDetail = readiness.blockers?.length
+      ? `阻塞：${readiness.blockers.join("、")}`
+      : (readiness.warnings || []).join("、") || "无阻塞项";
   } catch (error) {
     theme.readiness = "预检失败";
     theme.readinessDetail = error.message;
@@ -59,8 +59,18 @@ function themeCard(theme) {
 
 async function loadScenarios() {
   try {
-    const scenarios = await api("/api/v1/scenarios", {}, 30_000);
-    const themes = await Promise.all(scenarios.map(scenarioWithPreflight));
+    const [scenarios, readiness] = await Promise.all([
+      api("/api/v1/scenarios", {}, 30_000),
+      api("/api/v1/scenarios/readiness", {}, 30_000),
+    ]);
+    const readinessById = new Map(readiness.map((item) => [item.scenario_id, item]));
+    const themes = await Promise.all(
+      scenarios.map((scenario, index) => scenarioWithPreflight(
+        scenario,
+        index,
+        readinessById.get(scenario.id) || null,
+      )),
+    );
     $("#demo-themes").replaceChildren(...themes.map(themeCard));
   } catch (error) {
     $("#demo-themes").replaceChildren(

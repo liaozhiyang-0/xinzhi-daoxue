@@ -14,6 +14,30 @@ from app.services.scenario_preflight import ScenarioPreflightService
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
 
+def _preflight_for_scenario(
+    scenario: ScenarioDefinition, request: Request
+) -> ScenarioPreflightResponse:
+    try:
+        definition = request.app.state.agent_registry.get(scenario.agent_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    mock_available = bool(
+        definition.development.mock_enabled
+        and request.app.state.development_mock_provider.profile_exists(
+            definition.development.mock_profile
+        )
+        and request.app.state.development_mock_provider.is_allowed(
+            definition.agent_id
+        )
+    )
+    return ScenarioPreflightService().check(
+        scenario,
+        registry=request.app.state.agent_registry,
+        settings=request.app.state.settings,
+        mock_available=mock_available,
+    )
+
+
 @router.get("", response_model=list[ScenarioDefinition])
 async def list_scenarios(
     request: Request,
@@ -22,6 +46,18 @@ async def list_scenarios(
 ) -> list[ScenarioDefinition]:
     try:
         return request.app.state.scenario_catalog.list(course=course, role=role)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get(
+    "/readiness",
+    response_model=list[ScenarioPreflightResponse],
+)
+async def list_scenario_readiness(request: Request) -> list[ScenarioPreflightResponse]:
+    try:
+        scenarios = request.app.state.scenario_catalog.list()
+        return [_preflight_for_scenario(scenario, request) for scenario in scenarios]
     except ScenarioCatalogError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -43,24 +79,9 @@ async def preflight_scenario(
 ) -> ScenarioPreflightResponse:
     try:
         scenario = request.app.state.scenario_catalog.get(scenario_id)
-        definition = request.app.state.agent_registry.get(scenario.agent_id)
-    except (ScenarioCatalogError, KeyError) as exc:
+    except ScenarioCatalogError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    mock_available = bool(
-        definition.development.mock_enabled
-        and request.app.state.development_mock_provider.profile_exists(
-            definition.development.mock_profile
-        )
-        and request.app.state.development_mock_provider.is_allowed(
-            definition.agent_id
-        )
-    )
-    return ScenarioPreflightService().check(
-        scenario,
-        registry=request.app.state.agent_registry,
-        settings=request.app.state.settings,
-        mock_available=mock_available,
-    )
+    return _preflight_for_scenario(scenario, request)
 
 
 @router.post(

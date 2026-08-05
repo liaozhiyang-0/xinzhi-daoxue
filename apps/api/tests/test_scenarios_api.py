@@ -73,6 +73,21 @@ def test_scenario_preflight_exposes_demo_and_production_readiness(
     assert payload["evidence_review_required"] is True
 
 
+def test_scenario_readiness_endpoint_batches_all_scenarios(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/scenarios/readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 6
+    assert {item["scenario_id"] for item in payload} >= {
+        "faculty_course_copilot_v1",
+        "research_data_workbench_v1",
+    }
+    assert all(item["evidence_review_required"] for item in payload)
+
+
 def test_chat_rejects_invalid_scenario_before_task_creation(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat",
