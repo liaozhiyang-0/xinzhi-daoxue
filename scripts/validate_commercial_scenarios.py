@@ -37,8 +37,16 @@ def validate() -> dict[str, object]:
             raise ValueError(f"{case.case_id}: standard answer sections missing")
         if not case.evidence_requirements:
             raise ValueError(f"{case.case_id}: evidence requirements missing")
-        if not scenario.commercialization.buyer:
-            raise ValueError(f"{case.case_id}: commercialization buyer missing")
+        commercialization = scenario.commercialization
+        if not all(
+            (
+                commercialization.buyer,
+                commercialization.delivery_unit,
+                commercialization.value_capture,
+                commercialization.expansion_path,
+            )
+        ):
+            raise ValueError(f"{case.case_id}: commercialization plan incomplete")
     if len(cases) != 6 or actual_ids != expected_ids:
         raise ValueError(
             f"commercial scenario coverage mismatch: expected={sorted(expected_ids)} "

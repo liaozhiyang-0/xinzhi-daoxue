@@ -1087,6 +1087,9 @@ class TaskRunner:
             scenario_policy = self._scenario_evidence_policy(request)
             if isinstance(scenario_policy, dict):
                 result.structured_result["scenario_evidence_policy"] = scenario_policy
+                result.structured_result["scenario_id"] = request.options.get(
+                    "scenario_id"
+                )
                 scenario_review = (
                     self._review_scenario_external_evidence(
                         request,

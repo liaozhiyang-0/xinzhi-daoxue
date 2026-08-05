@@ -47,3 +47,7 @@ def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:
     assert (
         created["input_content"]["options"]["_scenario_catalog_bound"] is True
     )
+    completed = api.wait_for_task(created["id"])
+    assert completed["result_content"]["structured_result"]["scenario_id"] == (
+        "faculty_course_copilot_v1"
+    )
