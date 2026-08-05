@@ -31,6 +31,13 @@ def validate() -> dict[str, object]:
             raise ValueError(f"{case.case_id}: 赛题基线必须保留人工复核门槛")
         if not case.evidence_requirements:
             raise ValueError(f"{case.case_id}: 缺少证据要求")
+        required_sections = case.reference_solution.get("required_sections")
+        if not isinstance(required_sections, list) or not required_sections:
+            raise ValueError(f"{case.case_id}: 缺少标准答案结构")
+        if not case.required_keywords or not case.required_steps:
+            raise ValueError(f"{case.case_id}: 缺少关键词或步骤验收标准")
+        if case.expected_citations is not True or not case.min_citation_count:
+            raise ValueError(f"{case.case_id}: 缺少引用数量验收标准")
     return {
         "valid": True,
         "case_count": len(cases),
