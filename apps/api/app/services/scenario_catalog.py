@@ -5,7 +5,11 @@ from typing import Any
 
 import yaml
 
-from app.contracts.orchestration import AgentRequestV2, OrchestrationIntent
+from app.contracts.orchestration import (
+    AgentRequestV2,
+    InputType,
+    OrchestrationIntent,
+)
 from app.contracts.scenarios import ScenarioCatalogDocument, ScenarioDefinition
 
 
@@ -34,6 +38,14 @@ class ScenarioCatalog:
         ids = [item.id for item in document.scenarios]
         if len(ids) != len(set(ids)):
             raise ScenarioCatalogError("场景目录存在重复 id")
+        try:
+            for item in document.scenarios:
+                for intent in item.intents:
+                    OrchestrationIntent(intent)
+                for input_mode in item.input_modes:
+                    InputType(input_mode)
+        except ValueError as exc:
+            raise ScenarioCatalogError("场景目录包含未知意图或输入类型") from exc
         return document
 
     def list(
