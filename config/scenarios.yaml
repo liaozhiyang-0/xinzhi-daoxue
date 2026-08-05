@@ -6,6 +6,11 @@ scenarios:
     summary: 面向教师的课程目标拆解、备课提纲、例题和可追溯课件素材助手。
     customer_segment: 高校教师与课程团队
     roles: [teacher]
+    commercialization:
+      buyer: 学院课程负责人或教师发展中心
+      delivery_unit: 单门课程备课工作台
+      value_capture: 按课程包和教师席位提供院系级订阅或项目交付
+      expansion_path: 从单课程扩展到专业课程群与教学质量分析
     courses: [CT, AE, DE]
     agent_id: TEACH_01_LESSON_PREP_V1
     intents: [lesson_prep]
@@ -22,6 +27,11 @@ scenarios:
     summary: 对学生作答进行步骤级诊断，输出首个关键错误、依据和下一道验证题。
     customer_segment: 高校教师、助教与智慧教学平台
     roles: [teacher]
+    commercialization:
+      buyer: 学院教务与智慧教学平台
+      delivery_unit: 作业批次与教师审核席位
+      value_capture: 按批次处理量和审核席位计费
+      expansion_path: 从首错诊断扩展到题库、学情和课程质量服务
     courses: [CT, AE, DE]
     agent_id: TEACH_02_ASSIGNMENT_REVIEW_V1
     intents: [assignment_review]
@@ -38,6 +48,11 @@ scenarios:
     summary: 根据学生的作答证据和薄弱点生成分阶段学习建议，并通过验证题闭环。
     customer_segment: 高校学生、学校教务与在线教育平台
     roles: [student, teacher]
+    commercialization:
+      buyer: 学校教务处或在线教育平台
+      delivery_unit: 学生学习路径与课程知识点
+      value_capture: 按活跃学生数和课程包订阅
+      expansion_path: 从个性化建议扩展到学习成效与教师干预闭环
     courses: [CT, AE, DE, SS, DSP, COMM]
     agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
     intents: [learning_advice, explain_concept]
@@ -54,6 +69,11 @@ scenarios:
     summary: 面向科研人员整理研究问题、前沿文献、关键结论和证据边界。
     customer_segment: 高校科研团队、研究院与技术企业研发部门
     roles: [researcher, teacher]
+    commercialization:
+      buyer: 科研院所、企业研发部门或科研服务平台
+      delivery_unit: 研究问题证据简报
+      value_capture: 按科研团队席位或检索简报额度订阅
+      expansion_path: 从文献雷达扩展到项目申报、综述与技术情报
     courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
     agent_id: RESEARCH_01_ACADEMIC_SEARCH_V1
     intents: [general_qa]
@@ -70,6 +90,11 @@ scenarios:
     summary: 将科研数据问题转化为可执行分析步骤、代码或公式，并明确质量与限制。
     customer_segment: 高校科研团队、实验室与产业研发部门
     roles: [researcher, teacher]
+    commercialization:
+      buyer: 实验室负责人或产业研发部门
+      delivery_unit: 单个研究数据分析任务
+      value_capture: 按研究项目和可复现分析任务交付
+      expansion_path: 从分析方案扩展到实验管理、报告和知识沉淀
     courses: [CT, AE, DE]
     agent_id: RESEARCH_03_DATA_ANALYSIS_V1
     intents: [data_analysis]
@@ -86,6 +111,11 @@ scenarios:
     summary: 对课程资料进行版本、质量、来源和发布状态治理，支撑学院级知识服务。
     customer_segment: 高校学院、教务处与教育数字化服务商
     roles: [teacher]
+    commercialization:
+      buyer: 学院、教务处或教育数字化服务商
+      delivery_unit: 学院级课程资产与知识库治理空间
+      value_capture: 按学院空间、课程资产量和治理服务订阅
+      expansion_path: 从资料治理扩展到校级知识服务和权限审计
     courses: [CT, AE, DE, SS, DSP, COMM]
     agent_id: LEARN_01_KNOWLEDGE_QA_V1
     intents: [summarize_knowledge, general_qa]

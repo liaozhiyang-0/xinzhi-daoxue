@@ -3,6 +3,15 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class CommercializationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    buyer: str = Field(min_length=1, max_length=160)
+    delivery_unit: str = Field(min_length=1, max_length=120)
+    value_capture: str = Field(min_length=1, max_length=200)
+    expansion_path: str = Field(min_length=1, max_length=200)
+
+
 class ScenarioDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -11,6 +20,7 @@ class ScenarioDefinition(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     summary: str = Field(min_length=1, max_length=500)
     customer_segment: str = Field(min_length=1, max_length=160)
+    commercialization: CommercializationPlan
     roles: list[str] = Field(min_length=1, max_length=8)
     courses: list[str] = Field(min_length=1, max_length=32)
     agent_id: str = Field(min_length=1, max_length=100)
