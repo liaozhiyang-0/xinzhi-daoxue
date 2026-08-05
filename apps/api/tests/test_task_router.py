@@ -37,6 +37,30 @@ def test_ct_solve_routes_to_solver() -> None:
     assert decision.provider_required is False
 
 
+def test_bound_scenario_selects_declared_agent_before_keyword_routing() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-scenario",
+            "user_id": "user-scenario",
+            "scene": "teaching",
+            "course_id": "CT",
+            "intent": "lesson_prep",
+            "canonical_input": {"text": "璇峰府鎴戝噯澶囦竴鑺傝"},
+            "options": {
+                "scenario_id": "faculty_course_copilot_v1",
+                "scenario_agent_id": "TEACH_01_LESSON_PREP_V1",
+                "_scenario_catalog_bound": True,
+            },
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "TEACH_01_LESSON_PREP_V1"
+    assert decision.route_source == "scenario_catalog"
+    assert "scenario_catalog_bound" in decision.reason_codes
+
+
 def test_latest_paper_request_routes_to_dedicated_academic_search() -> None:
     task_request = AgentRequest.model_validate(
         {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from app.contracts.agent import AgentRequest, AttachmentRef
 from app.contracts.orchestration import AgentRequestV2, CourseCode, InputType
 from app.services.scenario_catalog import ScenarioCatalog, ScenarioCatalogError
 
@@ -74,3 +75,42 @@ def test_unbound_reserved_metadata_is_removed() -> None:
 
     assert "scenario_evidence_policy" not in cleaned.metadata
     assert "_scenario_catalog_bound" not in cleaned.metadata
+
+
+def test_legacy_task_request_is_bound_to_scenario_policy() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    request = AgentRequest(
+        session_id="session-test",
+        user_id="user-test",
+        course_id="CT",
+        scenario_id="faculty_course_copilot_v1",
+        options={"input_type": "text"},
+    )
+
+    enriched = catalog.enrich_legacy_request(request)
+
+    assert enriched.options["scenario_id"] == "faculty_course_copilot_v1"
+    assert enriched.options["_scenario_catalog_bound"] is True
+    assert enriched.options["scenario_evidence_policy"]["citation_required"] is True
+    assert enriched.intent.value == "lesson_prep"
+
+
+def test_legacy_task_request_rejects_unadvertised_attachment_mode() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    request = AgentRequest(
+        session_id="session-test",
+        user_id="user-test",
+        scenario_id="faculty_course_copilot_v1",
+        attachments=[
+            AttachmentRef(
+                file_id="file-test",
+                filename="diagram.png",
+                content_type="image/png",
+                size_bytes=10,
+                storage_key="local/file-test",
+            )
+        ],
+    )
+
+    with pytest.raises(ScenarioCatalogError, match="涓嶆敮鎸佽緭鍏ョ被鍨?"):
+        catalog.enrich_legacy_request(request)

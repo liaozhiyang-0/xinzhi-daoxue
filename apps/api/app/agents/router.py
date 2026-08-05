@@ -133,6 +133,36 @@ class TaskRouter:
         material = self.material_extractor.extract(request)
         course_id, course_reasons = self._detect_course(request, material.raw_text)
         input_type = self._input_type(request)
+        scenario_agent_id = (
+            str(request.options.get("scenario_agent_id", "")).strip()
+            if request.options.get("_scenario_catalog_bound") is True
+            else ""
+        )
+        if scenario_agent_id:
+            decision = self._decision_for_target(
+                scenario_agent_id,
+                request,
+                course_id=course_id,
+                intent=request.intent.value,
+                input_type=input_type,
+                confidence=1.0,
+            )
+            return decision.model_copy(
+                update={
+                    "route_source": "scenario_catalog",
+                    "reason": (
+                        f"scenario catalog selected {scenario_agent_id}"
+                        if not decision.fallback_used
+                        else decision.reason
+                    ),
+                    "reason_codes": course_reasons + ["scenario_catalog_bound"],
+                    "local_confidence": 1.0,
+                    "route_confidence": 1.0,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": [decision.agent_id],
+                }
+            )
         scored = self._score(request, material.materials, material.raw_text)
         previous_agent = str(request.options.get("previous_agent", ""))
         previous_answer_summary = str(

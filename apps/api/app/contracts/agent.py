@@ -231,6 +231,7 @@ class AgentRequest(BaseModel):
     scene: Scene = Scene.SOLVING
     course_id: str = "CT"
     intent: Intent = Intent.SOLVE_PROBLEM
+    scenario_id: str | None = Field(default=None, max_length=64)
     canonical_input: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)

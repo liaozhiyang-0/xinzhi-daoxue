@@ -5,6 +5,7 @@ from typing import Any
 
 import yaml
 
+from app.contracts.agent import AgentRequest, Intent
 from app.contracts.orchestration import (
     AgentRequestV2,
     InputType,
@@ -123,5 +124,66 @@ class ScenarioCatalog:
             update={
                 "metadata": metadata,
                 "intent_hint": payload.intent_hint or default_intent,
+            }
+        )
+
+    def enrich_legacy_request(self, payload: AgentRequest) -> AgentRequest:
+        """Bind the same scenario contract for the legacy task API."""
+
+        if payload.scenario_id is None:
+            options = {
+                key: value
+                for key, value in payload.options.items()
+                if key not in self._RESERVED_METADATA_KEYS
+            }
+            return payload if options == payload.options else payload.model_copy(
+                update={"options": options}
+            )
+
+        scenario = self.get(payload.scenario_id)
+        course = payload.course_id.upper()
+        if course not in {"", "AUTO", "UNKNOWN"} and course not in scenario.courses:
+            raise ScenarioCatalogError(
+                f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽绋?{course}"
+            )
+        input_type = str(payload.options.get("input_type", ""))
+        if not input_type:
+            has_text = bool(
+                payload.canonical_input.get("text")
+                or payload.canonical_input.get("question")
+            )
+            content_types = [item.content_type for item in payload.attachments]
+            has_pdf = "application/pdf" in content_types
+            has_images = any(item.startswith("image/") for item in content_types)
+            if not content_types:
+                input_type = "text"
+            elif has_pdf and not has_images and not has_text:
+                input_type = "pdf"
+            elif has_images and not has_pdf and not has_text:
+                input_type = "image"
+            else:
+                input_type = "mixed"
+        if input_type not in scenario.input_modes:
+            raise ScenarioCatalogError(
+                f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽緭鍏ョ被鍨?{input_type}"
+            )
+        options = dict(payload.options)
+        options.update(
+            {
+                "scenario_id": scenario.id,
+                "scenario_version": scenario.version,
+                "scenario_name": scenario.name,
+                "scenario_agent_id": scenario.agent_id,
+                "scenario_retrieval_profile": scenario.retrieval_profile,
+                "scenario_evidence_policy": scenario.evidence_policy.model_dump(
+                    mode="json"
+                ),
+                "_scenario_catalog_bound": True,
+            }
+        )
+        return payload.model_copy(
+            update={
+                "options": options,
+                "intent": Intent(scenario.intents[0]),
             }
         )

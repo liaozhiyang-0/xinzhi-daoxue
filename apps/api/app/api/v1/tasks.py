@@ -24,6 +24,7 @@ from app.repositories import FileRepository, TaskRepository
 from app.repositories.sessions import SessionRepository
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
+from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
 from app.services.task_creation_service import TaskCreationService
@@ -78,6 +79,10 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
+    try:
+        data = request.app.state.scenario_catalog.enrich_legacy_request(data)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     updates: dict[str, object] = {"user_id": effective_user_id(principal, data.user_id)}
     if principal.has_identity:
         try:

@@ -1,5 +1,6 @@
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
+const scenarioId = params.get("scenario_id") || "";
 const courseLabels = {
   CT: "电路理论",
   AE: "模拟电子技术",
@@ -1276,7 +1277,7 @@ async function submit(event) {
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
     if (uploadedText) canonical.uploaded_text = uploadedText;
     if (materials.length === 1 && materials[0].originalType === "text/csv") canonical.data_description = uploadedText;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
     state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
