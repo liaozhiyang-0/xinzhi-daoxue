@@ -38,7 +38,7 @@ def test_scenario_filters_and_request_enrichment() -> None:
 
     enriched = catalog.enrich_request(request)
 
-    assert len(teacher_cases) == 5
+    assert len(teacher_cases) == 6
     assert enriched.metadata["scenario_id"] == "faculty_course_copilot_v1"
     assert enriched.metadata["scenario_retrieval_profile"] == "teaching_authoritative"
 

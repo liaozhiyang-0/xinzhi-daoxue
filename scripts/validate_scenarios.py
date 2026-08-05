@@ -17,9 +17,29 @@ def validate() -> dict[str, object]:
     missing_agents: set[str] = set()
     for item in catalog.list(enabled_only=False):
         try:
-            registry.get(item.agent_id)
+            definition = registry.get(item.agent_id)
         except KeyError:
             missing_agents.add(item.agent_id)
+            continue
+        unsupported_courses = set(item.courses) - set(definition.capabilities.courses)
+        unsupported_roles = set(item.roles) - set(definition.capabilities.user_roles)
+        unsupported_intents = set(item.intents) - set(definition.capabilities.intents)
+        unsupported_inputs = set(item.input_modes) - set(
+            definition.capabilities.input_modes
+        )
+        if (
+            unsupported_courses
+            or unsupported_roles
+            or unsupported_intents
+            or unsupported_inputs
+        ):
+            raise ValueError(
+                f"{item.id}: 超出 Agent 能力契约 "
+                f"courses={sorted(unsupported_courses)} "
+                f"roles={sorted(unsupported_roles)} "
+                f"intents={sorted(unsupported_intents)} "
+                f"inputs={sorted(unsupported_inputs)}"
+            )
     missing_agent_list = sorted(missing_agents)
     if missing_agent_list:
         raise ValueError(f"场景引用了不存在的 Agent: {', '.join(missing_agent_list)}")

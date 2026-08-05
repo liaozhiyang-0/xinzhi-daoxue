@@ -8,7 +8,7 @@ def test_scenario_catalog_endpoint_lists_and_filters(client: TestClient) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 5
+    assert len(payload) == 6
     assert {item["id"] for item in payload} >= {
         "faculty_course_copilot_v1",
         "assessment_diagnosis_v1",
