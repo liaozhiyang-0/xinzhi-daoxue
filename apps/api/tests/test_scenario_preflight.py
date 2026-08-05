@@ -26,3 +26,20 @@ def test_scenario_preflight_separates_demo_and_production_readiness() -> None:
     assert "demo_uses_mock_or_local_fallback" in result.warnings or (
         result.runtime_available is True
     )
+
+
+def test_scenario_preflight_accepts_declared_local_fallback_for_demo() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    scenario = catalog.get("department_knowledge_governance_v1")
+
+    result = ScenarioPreflightService().check(
+        scenario,
+        registry=AgentRegistry(),
+        settings=Settings(app_env="test"),
+    )
+
+    assert result.fallback_agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert result.fallback_available is True
+    assert result.demo_ready is True
+    assert result.production_ready is False
+    assert result.agent_status == "fallback_only"

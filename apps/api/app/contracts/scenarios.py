@@ -61,8 +61,14 @@ class ScenarioPreflightResponse(BaseModel):
     scenario_version: str
     agent_id: str
     agent_status: Literal[
-        "runtime_available", "mock_only", "configured_unavailable", "unavailable"
+        "runtime_available",
+        "fallback_only",
+        "mock_only",
+        "configured_unavailable",
+        "unavailable",
     ]
+    fallback_agent_id: str | None = None
+    fallback_available: bool = False
     runtime_available: bool
     configured: bool
     mock_available: bool

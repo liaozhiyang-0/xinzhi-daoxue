@@ -29,6 +29,8 @@ provider_calls 0
 
 这些数字只用于发现本地绑定回归，不代表端到端任务延迟、模型质量或竞赛准确率；运行环境变化后应重新执行。
 
+演示前可调用 `GET /api/v1/scenarios/{scenario_id}/preflight`。返回值区分主 Agent 生产可用、声明的 fallback 可演示、Mock 可演示和完全不可用；`production_ready` 只在主 Agent 真实运行可用时为真。
+
 ## 验证入口
 
 ```powershell
