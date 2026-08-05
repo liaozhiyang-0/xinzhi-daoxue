@@ -11,8 +11,33 @@ function scenarioTheme(scenario, index) {
     duration: `${scenario.demo_steps?.length || 0} 个演示步骤`,
     capability: scenario.agent_id,
     value: scenario.commercialization.value_capture,
+    readiness: "预检中",
+    readinessDetail: "正在读取运行配置",
     href,
   };
+}
+
+async function scenarioWithPreflight(scenario, index) {
+  const theme = scenarioTheme(scenario, index);
+  try {
+    const preflight = await api(
+      `/api/v1/scenarios/${encodeURIComponent(scenario.id)}/preflight`,
+      {},
+      30_000,
+    );
+    theme.readiness = preflight.production_ready
+      ? "生产可用"
+      : preflight.demo_ready
+        ? "Mock/降级可演示"
+        : "待配置";
+    theme.readinessDetail = preflight.blockers?.length
+      ? `阻塞：${preflight.blockers.join("、")}`
+      : (preflight.warnings || []).join("、") || "无阻塞项";
+  } catch (error) {
+    theme.readiness = "预检失败";
+    theme.readinessDetail = error.message;
+  }
+  return theme;
 }
 
 function themeCard(theme) {
@@ -25,7 +50,9 @@ function themeCard(theme) {
       el("div", {}, [el("dt", { text: "执行步骤" }), el("dd", { text: theme.duration })]),
       el("div", {}, [el("dt", { text: "能力绑定" }), el("dd", { text: theme.capability })]),
       el("div", {}, [el("dt", { text: "价值闭环" }), el("dd", { text: theme.value })]),
+      el("div", {}, [el("dt", { text: "运行预检" }), el("dd", { text: theme.readiness })]),
     ]),
+    el("small", { class: "demo-readiness-detail", text: theme.readinessDetail }),
     el("a", { class: "button secondary", href: link, text: "开始场景演示" }),
   ]);
 }
@@ -33,7 +60,7 @@ function themeCard(theme) {
 async function loadScenarios() {
   try {
     const scenarios = await api("/api/v1/scenarios", {}, 30_000);
-    const themes = scenarios.map(scenarioTheme);
+    const themes = await Promise.all(scenarios.map(scenarioWithPreflight));
     $("#demo-themes").replaceChildren(...themes.map(themeCard));
   } catch (error) {
     $("#demo-themes").replaceChildren(

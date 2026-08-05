@@ -54,6 +54,27 @@ class ScenarioEvidenceReviewResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ScenarioPreflightResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scenario_id: str
+    scenario_version: str
+    agent_id: str
+    agent_status: Literal[
+        "runtime_available", "mock_only", "configured_unavailable", "unavailable"
+    ]
+    runtime_available: bool
+    configured: bool
+    mock_available: bool
+    demo_ready: bool
+    production_ready: bool
+    commercialization_complete: bool
+    evidence_review_required: bool
+    input_modes: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ScenarioDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

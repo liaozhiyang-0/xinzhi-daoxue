@@ -57,6 +57,22 @@ def test_chat_submission_returns_bound_scenario_id(client: TestClient) -> None:
     assert response.json()["scenario_id"] == "faculty_course_copilot_v1"
 
 
+def test_scenario_preflight_exposes_demo_and_production_readiness(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/scenarios/faculty_course_copilot_v1/preflight")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scenario_id"] == "faculty_course_copilot_v1"
+    assert payload["demo_ready"] == (
+        not payload["blockers"]
+        and (payload["runtime_available"] or payload["mock_available"])
+    )
+    assert payload["commercialization_complete"] is True
+    assert payload["evidence_review_required"] is True
+
+
 def test_chat_rejects_invalid_scenario_before_task_creation(client: TestClient) -> None:
     response = client.post(
         "/api/v1/chat",
