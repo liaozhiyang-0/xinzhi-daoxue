@@ -38,6 +38,7 @@ RAG 热路径继续复用现有的查询向量缓存和结果缓存；本阶段�
 ```powershell
 .venv\Scripts\python.exe scripts\validate_scenarios.py
 .venv\Scripts\python.exe -m pytest apps\api\tests\test_scenario_catalog.py apps\api\tests\test_scenarios_api.py -q --no-cov
+.venv\Scripts\python.exe scripts\benchmark_scenario_catalog.py --iterations 1000
 ```
 
 本阶段不宣称真实用户效果或准确率；后续需为至少三个典型问题建立标准答案、权威来源和人工复核记录，再接入自动评测。
