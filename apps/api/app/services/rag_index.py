@@ -77,6 +77,9 @@ class MultimodalRAGIndexer:
         self.chunk_path = (
             settings.knowledge_index_path / "cache" / "knowledge_base_chunks.jsonl"
         )
+        self.material_chunk_path = (
+            settings.knowledge_index_path / "cache" / "course_material_chunks.jsonl"
+        )
         self.image_path = (
             settings.knowledge_index_path / "knowledge_base_image_evidence.jsonl"
         )
@@ -139,7 +142,10 @@ class MultimodalRAGIndexer:
         prior_images = prior.get("image_checksums", {}) if same_version else {}
         chunks = [
             item
-            for item in load_jsonl(self.chunk_path)
+            for item in [
+                *load_jsonl(self.chunk_path),
+                *load_jsonl(self.material_chunk_path),
+            ]
             if item.get("is_active", True)
             and (course_id is None or item.get("course_id") == course_id)
             and (relative_file is None or item.get("relative_path") == relative_file)
@@ -188,9 +194,22 @@ class MultimodalRAGIndexer:
 
         text_checksums = dict(prior_text) if same_version else {}
         image_checksums = dict(prior_images) if same_version else {}
+        material_checksums = (
+            dict(prior.get("material_checksums", {})) if same_version else {}
+        )
         if include_text:
             text_checksums.update(
                 {str(item["chunk_id"]): item["document_checksum"] for item in chunks}
+            )
+            material_checksums.update(
+                {
+                    str(item["metadata"]["material_file_id"]): item[
+                        "document_checksum"
+                    ]
+                    for item in chunks
+                    if isinstance(item.get("metadata"), dict)
+                    and item["metadata"].get("material_file_id")
+                }
             )
         if include_images:
             failed_ids = {item["image_id"] for item in failed_images}
@@ -209,6 +228,7 @@ class MultimodalRAGIndexer:
                     "version": version.to_dict(),
                     "text_checksums": text_checksums,
                     "image_checksums": image_checksums,
+                    "material_checksums": material_checksums,
                     "failed_images": failed_images,
                     "failed_documents": sorted(
                         {

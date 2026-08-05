@@ -16,6 +16,12 @@ from app.courses import default_course_registry  # noqa: E402
 from app.evaluation.cache import EvaluationCache, evaluation_fingerprint  # noqa: E402
 from app.evaluation.contracts import EvaluationCase  # noqa: E402
 from app.evaluation.loader import EvaluationCaseLoader  # noqa: E402
+from app.evaluation.reporting import (  # noqa: E402
+    evaluation_case_attachment_manifest,
+    evaluation_case_catalog_content_sha256,
+    evaluation_case_ids_sha256,
+    evaluation_case_source_files_sha256,
+)
 from app.evaluation.runner import EvaluationRunner  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.services.model_registry import ModelRegistry  # noqa: E402
@@ -75,6 +81,7 @@ def validate_cases(
     args: argparse.Namespace,
 ) -> tuple[list[EvaluationCase], dict[str, object]]:
     loader = EvaluationCaseLoader(CASE_ROOT / args.suite if args.suite else CASE_ROOT)
+    case_source_root = CASE_ROOT / args.suite if args.suite else CASE_ROOT
     all_cases = loader.load_all()
     selected = loader.filter(
         all_cases,
@@ -98,10 +105,31 @@ def validate_cases(
         registry.get(case.expected_agent)
         if case.expected_course_pack:
             courses.get(case.expected_course_pack)
+    attachment_manifest_errors: list[str] = []
+    attachment_manifest_sha256 = ""
+    attachment_count = 0
+    try:
+        attachment_manifest_sha256, attachment_count = (
+            evaluation_case_attachment_manifest(all_cases, case_source_root)
+        )
+    except ValueError as exc:
+        attachment_manifest_errors.append(str(exc))
     summary: dict[str, object] = {
-        "valid": not errors,
+        "valid": not errors and not attachment_manifest_errors,
         "total_cases": len(all_cases),
         "selected_cases": len(selected),
+        "case_catalog_sha256": evaluation_case_ids_sha256(
+            item.case_id for item in all_cases
+        ),
+        "case_catalog_content_sha256": evaluation_case_catalog_content_sha256(
+            all_cases
+        ),
+        "case_source_files_sha256": evaluation_case_source_files_sha256(
+            case_source_root
+        ),
+        "case_attachment_manifest_sha256": attachment_manifest_sha256,
+        "case_attachment_count": attachment_count,
+        "attachment_manifest_errors": attachment_manifest_errors,
         "courses": sorted({case.course for case in selected}),
         "registry_errors": errors,
         "sends_api_requests": False,
@@ -153,7 +181,10 @@ async def run(args: argparse.Namespace) -> int:
     if args.validate_only:
         print(json.dumps(validation, ensure_ascii=False, indent=2))
         return 0 if validation["valid"] else 1
+    if not validation["valid"]:
+        raise ValueError("评测案例校验失败，请先使用 --validate-only 查看具体错误")
     cases = list(raw_cases)
+    case_source_root = CASE_ROOT / args.suite if args.suite else CASE_ROOT
     mode = args.mode or ("live" if args.live else "offline")
     live = mode in {"live", "real_model", "real_xingchen"}
     app = create_app(evaluation_settings(live=live))
@@ -177,7 +208,20 @@ async def run(args: argparse.Namespace) -> int:
         use_cache=not args.no_cache,
         rerun_failed=args.rerun_failed,
     ) as runner:
-        report = await runner.run_suite(cases, filters=filters)
+        report = await runner.run_suite(
+            cases,
+            filters=filters,
+            case_catalog_sha256=str(validation["case_catalog_sha256"]),
+            case_catalog_content_sha256=str(
+                validation["case_catalog_content_sha256"]
+            ),
+            case_source_files_sha256=str(validation["case_source_files_sha256"]),
+            case_attachment_manifest_sha256=str(
+                validation["case_attachment_manifest_sha256"]
+            ),
+            case_attachment_count=int(validation["case_attachment_count"]),
+            case_attachment_root=case_source_root,
+        )
     print(json.dumps(report.summary, ensure_ascii=False, indent=2))
     print(f"json_report={REPORT_ROOT / 'latest.json'}")
     print(f"markdown_report={REPORT_ROOT / 'latest.md'}")

@@ -1,0 +1,180 @@
+cases:
+  - case_id: COMMERCIAL_FACULTY_001
+    title: Faculty course copilot lesson plan
+    course: CT
+    task_family: LESSON_PREP
+    intent: lesson_prep
+    difficulty: medium
+    input_type: text
+    message: Create a traceable lesson plan for a circuit theory module with objectives, prerequisites, activities, and post-class verification.
+    task_options: {scenario_id: faculty_course_copilot_v1, user_role: teacher}
+    expected_agent: TEACH_01_LESSON_PREP_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 2
+    required_keywords: [objectives, prerequisites, activities, sources]
+    required_steps: [objective_alignment, activity_design, post_class_verification]
+    reference_solution:
+      required_sections: [learning_objectives, prerequisites, activity_design, source_refs]
+    evidence_requirements:
+      standard_answer: course objectives and reviewed teaching assets
+      authoritative_sources: course asset manifest and teacher-reviewed knowledge
+      user_validation: authorized teacher review
+    tags: [commercial, synthetic, teaching]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_ASSESS_001
+    title: Assignment diagnosis and next-check recommendation
+    course: CT
+    task_family: ASSIGNMENT_REVIEW
+    intent: assignment_review
+    difficulty: medium
+    input_type: text
+    message: Diagnose the first confirmed error in a student's circuit calculation, cite the rubric, give a hint, and propose a non-leaking verification question.
+    task_options: {scenario_id: assessment_diagnosis_v1, user_role: teacher}
+    expected_agent: TEACH_02_ASSIGNMENT_REVIEW_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [first_error, evidence, hint, verification]
+    required_steps: [locate_first_error, explain_evidence, generate_next_check]
+    reference_solution:
+      required_sections: [first_error, evidence, hint_level, next_check]
+    evidence_requirements:
+      standard_answer: scoring rubric and reviewed error pool
+      authoritative_sources: course pack and rubric
+      user_validation: authorized teacher review
+    tags: [commercial, synthetic, assessment]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_LEARNING_001
+    title: Student learning path with retest loop
+    course: CT
+    task_family: LEARNING_ADVICE
+    intent: learning_advice
+    difficulty: medium
+    input_type: text
+    message: Turn a student's recent attempts into a three-step learning path, explain the recommendation, and define a retest checkpoint without claiming mastery.
+    task_options: {scenario_id: student_learning_path_v1, user_role: student}
+    expected_agent: LEARN_01_LOCAL_RETRIEVAL_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [attempts, recommendation, retest, uncertainty]
+    required_steps: [evidence_summary, staged_path, retest_checkpoint]
+    reference_solution:
+      required_sections: [attempt_evidence, learning_path, retest_plan, limitations]
+    evidence_requirements:
+      standard_answer: attempt history and reviewed error pool
+      authoritative_sources: learning outcome records and local knowledge
+      user_validation: authorized student or teacher review
+    tags: [commercial, synthetic, learning]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_FRONTIER_001
+    title: Research frontier evidence brief
+    course: CT
+    task_family: GENERAL_QA
+    intent: general_qa
+    difficulty: hard
+    input_type: text
+    message: Build a research frontier brief from academic sources, separate established findings from open questions, and disclose retrieval time and evidence limits.
+    task_options: {scenario_id: research_frontier_radar_v1, user_role: researcher}
+    expected_agent: RESEARCH_01_ACADEMIC_SEARCH_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 2
+    required_keywords: [source_id, conclusion, open_question, limitation]
+    required_steps: [query_scope, evidence_table, limitation_disclosure]
+    reference_solution:
+      required_sections: [research_question, evidence_table, conclusions, limitations]
+    evidence_requirements:
+      standard_answer: academic paper metadata with source IDs
+      authoritative_sources: academic_paper sources reviewed by a researcher
+      user_validation: authorized researcher review
+    tags: [commercial, synthetic, research]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_DATA_001
+    title: Reproducible research data workbench
+    course: DE
+    task_family: DATA_ANALYSIS
+    intent: data_analysis
+    difficulty: hard
+    input_type: text
+    message: Turn a research data request into a reproducible analysis plan with data-quality checks, executable artifacts, interpretation boundaries, and limitations.
+    task_options: {scenario_id: research_data_workbench_v1, user_role: researcher}
+    expected_agent: RESEARCH_03_DATA_ANALYSIS_V1
+    expected_course_pack: DE
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [data_quality, method, executable, limitations]
+    required_steps: [data_check, method_selection, reproducible_artifact, limitation_disclosure]
+    reference_solution:
+      required_sections: [data_quality, method, executable_artifact, limitations]
+    evidence_requirements:
+      standard_answer: data dictionary, protocol, or authorized method reference
+      authoritative_sources: authorized dataset and experiment protocol
+      user_validation: authorized researcher review
+    tags: [commercial, synthetic, research]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_GOVERNANCE_001
+    title: Department knowledge asset governance
+    course: CT
+    task_family: SUMMARIZE_KNOWLEDGE
+    intent: summarize_knowledge
+    difficulty: medium
+    input_type: text
+    message: Review a course asset submission, summarize its publishability risks, identify missing provenance, and propose a release checklist without publishing it automatically.
+    task_options: {scenario_id: department_knowledge_governance_v1, user_role: teacher}
+    expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [version, provenance, review, release]
+    required_steps: [asset_inventory, provenance_check, release_checklist]
+    reference_solution:
+      required_sections: [asset_inventory, quality_findings, provenance, release_checklist]
+    evidence_requirements:
+      standard_answer: knowledge manifest and asset review queue
+      authoritative_sources: published course asset governance records
+      user_validation: authorized teacher or administrator review
+    tags: [commercial, synthetic, governance]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true

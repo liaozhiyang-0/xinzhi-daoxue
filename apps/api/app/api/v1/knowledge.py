@@ -2,22 +2,73 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import (
+    CourseAssetReadinessRead,
+    ErrorPoolReviewDecisionSaveRequest,
     KnowledgeDocumentPage,
+    KnowledgeMaterialManifestRead,
+    KnowledgeMaterialRead,
+    KnowledgeMaterialReviewRequest,
+    KnowledgeOCRDecisionSaveRequest,
+    KnowledgeOCRQualitySummaryRead,
+    KnowledgeOCRReviewQueueRead,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     KnowledgeSourceStatus,
     RAGSearchRequest,
     RetrievalResult,
+    TeacherReviewQueueRead,
 )
-from app.dependencies import get_knowledge_base, get_rag_retrieval
+from app.contracts.api import FileChunkRead
+from app.dependencies import (
+    get_current_principal,
+    get_db,
+    get_knowledge_base,
+    get_rag_retrieval,
+)
+from app.knowledge_catalog import KNOWLEDGE_COURSE_IDS
+from app.models import (
+    CourseMaterialReviewStatus,
+    DocumentChunkModel,
+    FileIngestionStatus,
+    FileModel,
+    KnowledgeMaterialStatus,
+)
+from app.services.audit_service import record_audit
+from app.services.auth_service import Principal
+from app.services.course_asset_review import (
+    attach_evaluation_provenance_readiness,
+    attach_ocr_decision_readiness,
+    build_course_asset_readiness,
+    build_error_pool_review_document,
+    build_teacher_review_queue,
+    validate_error_pool_review_document,
+    write_error_pool_review_document,
+)
+from app.services.course_material_manifest import build_course_material_manifest
+from app.services.evaluation_provenance import (
+    EVALUATION_REPORT_PATH,
+    build_evaluation_provenance,
+)
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_index import KnowledgeIndexBuilder
+from app.services.knowledge_ocr_quality import build_ocr_quality_summary
+from app.services.knowledge_ocr_review import (
+    build_ocr_decision_document,
+    build_ocr_review_queue,
+    validate_ocr_decisions,
+    write_ocr_decision_document,
+)
 from app.services.knowledge_resources import (
     resolve_course_resource,
     resolve_kb_image_uri,
@@ -28,6 +79,109 @@ from app.services.rag_retrieval import RAGRetrievalService
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 DOCUMENT_PAGE_CHARS = 24_000
 DOCUMENT_PAGE_MAX_CHARS = 60_000
+
+
+def _material_quality_report(item: FileModel) -> dict[str, Any]:
+    metadata = item.extraction_metadata
+    quality = metadata.get("quality_report") if isinstance(metadata, dict) else None
+    return quality if isinstance(quality, dict) else {}
+
+
+def _material_requires_review(item: FileModel) -> bool:
+    quality_report = _material_quality_report(item)
+    return bool(
+        quality_report.get("manual_review_required")
+        or item.material_review_status != CourseMaterialReviewStatus.NOT_REQUIRED
+    )
+
+
+def _require_material_manager(request: Request, principal: Principal) -> None:
+    if not request.app.state.settings.auth_required:
+        return
+    if not principal.authenticated or principal.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=403, detail="需要教师或管理员权限")
+
+
+def _effective_material_index_status(request: Request, item: FileModel) -> str:
+    persisted = item.knowledge_index_status
+    state_path = (
+        request.app.state.settings.knowledge_index_path / "rag_index_state.json"
+    )
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    material_checksums = payload.get("material_checksums", {})
+    indexed_checksum = (
+        material_checksums.get(item.id)
+        if isinstance(material_checksums, dict)
+        else None
+    )
+    if indexed_checksum == item.checksum_sha256:
+        return (
+            "indexed"
+            if item.knowledge_status == KnowledgeMaterialStatus.PUBLISHED
+            else "stale"
+        )
+    if (
+        item.knowledge_status != KnowledgeMaterialStatus.PUBLISHED
+        and persisted == "indexed"
+    ):
+        return "stale"
+    return (
+        persisted if persisted in {"not_indexed", "stale", "failed"} else "not_indexed"
+    )
+
+
+async def _material_read(
+    request: Request, db: AsyncSession, item: FileModel
+) -> KnowledgeMaterialRead:
+    chunk_count = int(
+        await db.scalar(
+            select(func.count(DocumentChunkModel.id)).where(
+                DocumentChunkModel.file_id == item.id
+            )
+        )
+        or 0
+    )
+    quality_report = _material_quality_report(item)
+    return KnowledgeMaterialRead(
+        file_id=item.id,
+        filename=item.filename,
+        owner_user_id=item.owner_user_id,
+        course_id=item.course_id or "",
+        material_key=item.material_key or "",
+        material_version=item.material_version or "",
+        checksum_sha256=item.checksum_sha256,
+        ingestion_status=item.ingestion_status.value,
+        knowledge_status=item.knowledge_status.value,
+        knowledge_index_status=_effective_material_index_status(request, item),
+        page_count=item.page_count,
+        chunk_count=chunk_count,
+        extraction_version=item.extraction_version,
+        quality_status=str(quality_report.get("quality_status", "unknown")),
+        ocr_required=bool(quality_report.get("ocr_required", False)),
+        manual_review_required=bool(
+            quality_report.get("manual_review_required", False)
+        ),
+        ocr_candidate_pages=[
+            int(page)
+            for page in quality_report.get("ocr_candidate_pages", [])
+            if isinstance(page, int) and page >= 1
+        ],
+        quality_warnings=[
+            str(warning)
+            for warning in quality_report.get("warnings", [])
+            if str(warning).strip()
+        ],
+        material_review_status=item.material_review_status,
+        material_reviewed_by=item.material_reviewed_by,
+        material_reviewed_at=item.material_reviewed_at,
+        material_review_note=item.material_review_note,
+        knowledge_published_by=item.knowledge_published_by,
+        knowledge_published_at=item.knowledge_published_at,
+        created_at=item.created_at,
+    )
 
 
 def _searchable_text(value: str) -> tuple[str, list[int]]:
@@ -85,9 +239,7 @@ def _document_window(
     else:
         start = max(0, min(offset or 0, max(0, len(document) - 1)))
         anchor_status = (
-            "not_found"
-            if anchor.strip() and offset is None
-            else "not_requested"
+            "not_found" if anchor.strip() and offset is None else "not_requested"
         )
     if start and offset is None:
         line_start = document.rfind("\n", max(0, start - 1000), start)
@@ -110,6 +262,565 @@ async def list_sources(
     knowledge_base: KnowledgeBaseService = Depends(get_knowledge_base),
 ) -> list[KnowledgeSourceStatus]:
     return await asyncio.to_thread(knowledge_base.source_statuses)
+
+
+def _ocr_review_queue_payload(
+    request: Request, course_id: str | None
+) -> dict[str, Any]:
+    settings = request.app.state.settings
+    selected = [course_id] if course_id else list(KNOWLEDGE_COURSE_IDS)
+    builder = KnowledgeIndexBuilder(
+        roots=settings.knowledge_paths,
+        output_root=settings.knowledge_index_path,
+        max_parse_bytes=settings.knowledge_max_file_size_mb * 1024 * 1024,
+        chunk_size=settings.knowledge_chunk_size_chars,
+        overlap_chars=settings.knowledge_chunk_overlap_chars,
+    )
+    queue = build_ocr_review_queue(builder.audit(selected))
+    decision_reports: dict[str, dict[str, Any]] = {}
+    rows_by_id = {str(item["queue_id"]): item for item in queue["rows"]}
+    for selected_course in selected:
+        decision_path = (
+            settings.knowledge_ocr_decisions_path / f"{selected_course}.yaml"
+        )
+        if not decision_path.is_file():
+            continue
+        try:
+            raw = yaml.safe_load(decision_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(raw, dict):
+                raise ValueError("decision document must be an object")
+            report = validate_ocr_decisions(queue, raw)
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
+            report = {
+                "schema_version": "ocr_review_decisions.v1",
+                "valid": False,
+                "course_id": selected_course,
+                "errors": [f"decision_file_unreadable:{type(exc).__name__}"],
+                "runtime_loaded": False,
+                "rows": [],
+            }
+        decision_reports[selected_course] = report
+        for row in report.get("rows", []):
+            if isinstance(row, dict) and row.get("queue_id") in rows_by_id:
+                rows_by_id[str(row["queue_id"])] = row
+    queue["rows"] = list(rows_by_id.values())
+    queue["decision_reports"] = decision_reports
+    queue["summary"] = {
+        **queue["summary"],
+        "decision_report_count": len(decision_reports),
+        "review_complete_course_count": sum(
+            bool(report.get("review_complete")) for report in decision_reports.values()
+        ),
+    }
+    return queue
+
+
+def _course_asset_readiness_payload(request: Request, course_id: str) -> dict[str, Any]:
+    root = Path(request.app.state.settings.knowledge_config_path).parent
+    readiness = build_course_asset_readiness(root, course_id)
+    queue = request.app.state.knowledge_ocr_review_cache.get_or_build(
+        course_id,
+        lambda: _ocr_review_queue_payload(request, course_id),
+    )
+    quality = build_ocr_quality_summary(queue, course_id)
+    with_ocr = attach_ocr_decision_readiness(
+        readiness, quality.get("decision_evidence", {})
+    )
+    return attach_evaluation_provenance_readiness(
+        with_ocr,
+        build_evaluation_provenance(EVALUATION_REPORT_PATH, course_id),
+    )
+
+
+@router.get("/ocr-review-queue", response_model=KnowledgeOCRReviewQueueRead)
+async def get_ocr_review_queue(
+    request: Request,
+    course_id: str | None = Query(default=None, max_length=16),
+    principal: Principal = Depends(get_current_principal),
+) -> KnowledgeOCRReviewQueueRead:
+    """Expose the read-only PDF/OCR review snapshot to teacher managers."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper() if course_id else None
+    if normalized_course and normalized_course not in KNOWLEDGE_COURSE_IDS:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+    payload = await asyncio.to_thread(
+        request.app.state.knowledge_ocr_review_cache.get_or_build,
+        normalized_course,
+        lambda: _ocr_review_queue_payload(request, normalized_course),
+    )
+    return KnowledgeOCRReviewQueueRead.model_validate(payload)
+
+
+@router.put(
+    "/ocr-review-decisions/{course_id}",
+    response_model=KnowledgeOCRReviewQueueRead,
+)
+async def save_ocr_review_decisions(
+    course_id: str,
+    payload: KnowledgeOCRDecisionSaveRequest,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeOCRReviewQueueRead:
+    """Atomically save a validated teacher OCR decision document."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper()
+    if normalized_course not in KNOWLEDGE_COURSE_IDS:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+
+    cache = request.app.state.knowledge_ocr_review_cache
+    current_queue = await asyncio.to_thread(
+        cache.get_or_build,
+        normalized_course,
+        lambda: _ocr_review_queue_payload(request, normalized_course),
+    )
+    if (
+        request.app.state.settings.knowledge_ocr_review_cache_enabled
+        and payload.source_fingerprint != current_queue.get("source_fingerprint")
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="ocr review queue changed; reload before saving decisions",
+        )
+
+    reviewer = payload.reviewer
+    if request.app.state.settings.auth_required:
+        reviewer = principal.account_id or principal.user_id
+        if not reviewer:
+            raise HTTPException(status_code=403, detail="reviewer identity required")
+    try:
+        document = build_ocr_decision_document(
+            current_queue,
+            normalized_course,
+            [item.model_dump(mode="json") for item in payload.decisions],
+            reviewer=reviewer,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    report = validate_ocr_decisions(current_queue, document)
+    if not report.get("valid"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "invalid OCR decision document",
+                "errors": report["errors"],
+            },
+        )
+    decision_path = (
+        request.app.state.settings.knowledge_ocr_decisions_path
+        / f"{normalized_course}.yaml"
+    )
+    try:
+        await asyncio.to_thread(write_ocr_decision_document, decision_path, document)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"unable to persist OCR decision document: {type(exc).__name__}",
+        ) from exc
+
+    record_audit(
+        db,
+        request,
+        action="knowledge_ocr.review_decisions.save",
+        actor_account_id=principal.account_id or None,
+        target_type="ocr_decision_document",
+        target_id=normalized_course,
+        details={
+            "course_id": normalized_course,
+            "source_fingerprint": payload.source_fingerprint,
+            "decision_count": report.get("decision_count", 0),
+            "decided_count": report.get("decided_count", 0),
+            "review_complete": bool(report.get("review_complete")),
+            "evidence_ref_count": sum(
+                len(item.get("evidence_refs", []))
+                for item in document.get("decisions", [])
+                if isinstance(item, dict)
+            ),
+        },
+    )
+    await db.commit()
+    cache.invalidate(normalized_course)
+    refreshed = await asyncio.to_thread(
+        cache.get_or_build,
+        normalized_course,
+        lambda: _ocr_review_queue_payload(request, normalized_course),
+    )
+    return KnowledgeOCRReviewQueueRead.model_validate(refreshed)
+
+
+@router.get("/ocr-quality-summary", response_model=KnowledgeOCRQualitySummaryRead)
+async def get_ocr_quality_summary(
+    request: Request,
+    course_id: str | None = Query(default=None, max_length=16),
+    principal: Principal = Depends(get_current_principal),
+) -> KnowledgeOCRQualitySummaryRead:
+    """Expose read-only page-level OCR evidence from the cached audit queue."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper() if course_id else None
+    if normalized_course and normalized_course not in KNOWLEDGE_COURSE_IDS:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+    queue = await asyncio.to_thread(
+        request.app.state.knowledge_ocr_review_cache.get_or_build,
+        normalized_course,
+        lambda: _ocr_review_queue_payload(request, normalized_course),
+    )
+    payload = build_ocr_quality_summary(queue, normalized_course)
+    return KnowledgeOCRQualitySummaryRead.model_validate(payload)
+
+
+@router.get("/course-asset-review-queue", response_model=TeacherReviewQueueRead)
+async def get_course_asset_review_queue(
+    request: Request,
+    course_id: str = Query(..., min_length=2, max_length=16),
+    principal: Principal = Depends(get_current_principal),
+) -> TeacherReviewQueueRead:
+    """Expose the evidence-gated CT/AE error-template queue read-only."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper()
+    if normalized_course not in {"CT", "AE"}:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+    root = Path(request.app.state.settings.knowledge_config_path).parent
+    payload = await asyncio.to_thread(
+        build_teacher_review_queue, root, normalized_course
+    )
+    return TeacherReviewQueueRead.model_validate(payload)
+
+
+@router.put(
+    "/course-asset-review-decisions/{course_id}",
+    response_model=TeacherReviewQueueRead,
+)
+async def save_course_asset_review_decisions(
+    course_id: str,
+    payload: ErrorPoolReviewDecisionSaveRequest,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TeacherReviewQueueRead:
+    """Atomically save evidence-backed CT/AE error-template decisions."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper()
+    if normalized_course not in {"CT", "AE"}:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+    root = Path(request.app.state.settings.knowledge_config_path).parent
+    current_queue = await asyncio.to_thread(
+        build_teacher_review_queue, root, normalized_course
+    )
+    if payload.source_fingerprint != current_queue.get("source_fingerprint"):
+        raise HTTPException(
+            status_code=409,
+            detail="course asset review queue changed; reload before saving decisions",
+        )
+
+    reviewer = payload.reviewer
+    if request.app.state.settings.auth_required:
+        reviewer = principal.account_id or principal.user_id
+        if not reviewer:
+            raise HTTPException(status_code=403, detail="reviewer identity required")
+    try:
+        document = build_error_pool_review_document(
+            current_queue,
+            normalized_course,
+            [item.model_dump(mode="json") for item in payload.decisions],
+            source_fingerprint=payload.source_fingerprint,
+            reviewer=reviewer,
+            reviewed_at=datetime.now(UTC).isoformat(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    report = validate_error_pool_review_document(current_queue, document)
+    if not report.get("valid"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "invalid course asset review document",
+                "errors": report["errors"],
+            },
+        )
+    decision_path = (
+        root / "config" / "error_pool" / "reviews" / f"{normalized_course}.yaml"
+    )
+    try:
+        await asyncio.to_thread(
+            write_error_pool_review_document, decision_path, document
+        )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "unable to persist course asset review document: "
+                f"{type(exc).__name__}"
+            ),
+        ) from exc
+
+    record_audit(
+        db,
+        request,
+        action="knowledge_course_asset.review_decisions.save",
+        actor_account_id=principal.account_id or None,
+        target_type="course_asset_review_document",
+        target_id=normalized_course,
+        details={
+            "course_id": normalized_course,
+            "source_fingerprint": payload.source_fingerprint,
+            "decision_count": report.get("decision_count", 0),
+            "decided_count": report.get("decided_count", 0),
+            "review_complete": bool(report.get("review_complete")),
+            "evidence_ref_count": sum(
+                len(item.get("evidence_refs", []))
+                for item in document.get("decisions", [])
+                if isinstance(item, dict)
+            ),
+            "runtime_loaded": False,
+        },
+    )
+    await db.commit()
+    refreshed = await asyncio.to_thread(
+        build_teacher_review_queue, root, normalized_course
+    )
+    return TeacherReviewQueueRead.model_validate(refreshed)
+
+
+@router.get("/course-asset-readiness", response_model=CourseAssetReadinessRead)
+async def get_course_asset_readiness(
+    request: Request,
+    course_id: str = Query(..., min_length=2, max_length=16),
+    principal: Principal = Depends(get_current_principal),
+) -> CourseAssetReadinessRead:
+    """Expose evidence readiness and blockers for one CT/AE asset manifest."""
+
+    _require_material_manager(request, principal)
+    normalized_course = course_id.strip().upper()
+    if normalized_course not in {"CT", "AE"}:
+        raise HTTPException(status_code=400, detail="unsupported course_id")
+    payload = await asyncio.to_thread(
+        _course_asset_readiness_payload, request, normalized_course
+    )
+    return CourseAssetReadinessRead.model_validate(payload)
+
+
+@router.get("/materials", response_model=list[KnowledgeMaterialRead])
+async def list_course_materials(
+    request: Request,
+    course_id: str | None = Query(default=None, max_length=32),
+    material_status: KnowledgeMaterialStatus | None = Query(default=None),
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[KnowledgeMaterialRead]:
+    _require_material_manager(request, principal)
+    statement = select(FileModel).where(FileModel.purpose == "course_material")
+    if course_id:
+        statement = statement.where(FileModel.course_id == course_id.strip())
+    if material_status is not None:
+        statement = statement.where(FileModel.knowledge_status == material_status)
+    statement = statement.order_by(FileModel.created_at.desc())
+    items = list((await db.scalars(statement)).all())
+    return [await _material_read(request, db, item) for item in items]
+
+
+@router.get(
+    "/materials/{file_id}/chunks",
+    response_model=list[FileChunkRead],
+)
+async def list_course_material_chunks(
+    file_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[FileChunkRead]:
+    """Expose bounded parsed material chunks to authorized reviewers only."""
+
+    _require_material_manager(request, principal)
+    item = await db.get(FileModel, file_id)
+    if item is None or item.purpose != "course_material":
+        raise HTTPException(status_code=404, detail="课程材料不存在")
+    chunks = list(
+        (
+            await db.scalars(
+                select(DocumentChunkModel)
+                .where(DocumentChunkModel.file_id == file_id)
+                .order_by(DocumentChunkModel.ordinal)
+            )
+        ).all()
+    )
+    return [FileChunkRead.model_validate(chunk) for chunk in chunks]
+
+
+@router.post("/materials/manifest", response_model=KnowledgeMaterialManifestRead)
+async def sync_course_material_manifest(
+    request: Request,
+    course_id: str | None = Query(default=None, max_length=32),
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeMaterialManifestRead:
+    _require_material_manager(request, principal)
+    result = await build_course_material_manifest(
+        db,
+        request.app.state.settings.knowledge_index_path,
+        course_id=course_id.strip() if course_id else None,
+    )
+    record_audit(
+        db,
+        request,
+        action="knowledge_material.manifest_sync",
+        actor_account_id=principal.account_id or None,
+        target_type="knowledge_index",
+        target_id=result.manifest_filename,
+        details=result.to_dict(),
+    )
+    await db.commit()
+    return KnowledgeMaterialManifestRead.model_validate(result.to_dict())
+
+
+@router.post("/materials/{file_id}/publish", response_model=KnowledgeMaterialRead)
+async def publish_course_material(
+    file_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeMaterialRead:
+    _require_material_manager(request, principal)
+    item = await db.get(FileModel, file_id)
+    if item is None or item.purpose != "course_material":
+        raise HTTPException(status_code=404, detail="课程资料不存在")
+    if item.ingestion_status != FileIngestionStatus.READY:
+        raise HTTPException(
+            status_code=409,
+            detail="资料解析未达到ready，不能发布；请先完成人工复核",
+        )
+    if (
+        _material_requires_review(item)
+        and item.material_review_status != CourseMaterialReviewStatus.APPROVED
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="material review approval is required before publishing",
+        )
+    previous = await db.scalars(
+        select(FileModel).where(
+            FileModel.course_id == item.course_id,
+            FileModel.material_key == item.material_key,
+            FileModel.knowledge_status == KnowledgeMaterialStatus.PUBLISHED,
+            FileModel.id != item.id,
+        )
+    )
+    for version in previous:
+        version.knowledge_status = KnowledgeMaterialStatus.SUPERSEDED
+        version.knowledge_index_status = "stale"
+    item.knowledge_status = KnowledgeMaterialStatus.PUBLISHED
+    item.knowledge_index_status = "not_indexed"
+    item.knowledge_published_by = principal.user_id or None
+    item.knowledge_published_at = datetime.now(UTC)
+    record_audit(
+        db,
+        request,
+        action="knowledge_material.publish",
+        actor_account_id=principal.account_id or None,
+        target_type="file",
+        target_id=item.id,
+        details={
+            "course_id": item.course_id,
+            "material_key": item.material_key,
+            "material_version": item.material_version,
+            "checksum_sha256": item.checksum_sha256,
+            "knowledge_index_status": item.knowledge_index_status,
+        },
+    )
+    await db.commit()
+    await db.refresh(item)
+    return await _material_read(request, db, item)
+
+
+@router.post("/materials/{file_id}/review", response_model=KnowledgeMaterialRead)
+async def review_course_material(
+    file_id: str,
+    payload: KnowledgeMaterialReviewRequest,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeMaterialRead:
+    _require_material_manager(request, principal)
+    item = await db.get(FileModel, file_id)
+    if item is None or item.purpose != "course_material":
+        raise HTTPException(status_code=404, detail="course material not found")
+    if (
+        payload.status == "approved"
+        and item.ingestion_status != FileIngestionStatus.READY
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="only ready material can be approved",
+        )
+    review_status = (
+        CourseMaterialReviewStatus.APPROVED
+        if payload.status == "approved"
+        else CourseMaterialReviewStatus.REJECTED
+    )
+    item.material_review_status = review_status
+    item.material_reviewed_by = principal.account_id or principal.user_id or None
+    item.material_reviewed_at = datetime.now(UTC)
+    item.material_review_note = payload.note or None
+    record_audit(
+        db,
+        request,
+        action="knowledge_material.review",
+        actor_account_id=principal.account_id or None,
+        target_type="file",
+        target_id=item.id,
+        details={
+            "course_id": item.course_id,
+            "material_key": item.material_key,
+            "material_version": item.material_version,
+            "review_status": review_status.value,
+            "note_present": bool(payload.note),
+        },
+    )
+    await db.commit()
+    await db.refresh(item)
+    return await _material_read(request, db, item)
+
+
+@router.post("/materials/{file_id}/withdraw", response_model=KnowledgeMaterialRead)
+async def withdraw_course_material(
+    file_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeMaterialRead:
+    _require_material_manager(request, principal)
+    item = await db.get(FileModel, file_id)
+    if item is None or item.purpose != "course_material":
+        raise HTTPException(status_code=404, detail="课程资料不存在")
+    was_published = item.knowledge_status == KnowledgeMaterialStatus.PUBLISHED
+    item.knowledge_status = KnowledgeMaterialStatus.WITHDRAWN
+    if was_published:
+        item.knowledge_index_status = "stale"
+    item.knowledge_published_by = principal.user_id or None
+    item.knowledge_published_at = datetime.now(UTC)
+    record_audit(
+        db,
+        request,
+        action="knowledge_material.withdraw",
+        actor_account_id=principal.account_id or None,
+        target_type="file",
+        target_id=item.id,
+        details={
+            "course_id": item.course_id,
+            "material_key": item.material_key,
+            "material_version": item.material_version,
+        },
+    )
+    await db.commit()
+    await db.refresh(item)
+    return await _material_read(request, db, item)
 
 
 @router.post("/search", response_model=KnowledgeSearchResponse)
@@ -208,14 +919,13 @@ async def knowledge_document(
 ) -> PlainTextResponse:
     try:
         if chunk:
-            if not chunk.startswith("chunk-") or not chunk.removeprefix(
-                "chunk-"
-            ).isdigit():
+            if (
+                not chunk.startswith("chunk-")
+                or not chunk.removeprefix("chunk-").isdigit()
+            ):
                 raise ValueError("知识库片段编号无效")
             source_ref = f"kb://{course_id}/{relative_path}#{chunk}"
-            content = await asyncio.to_thread(
-                knowledge_base.source_content, source_ref
-            )
+            content = await asyncio.to_thread(knowledge_base.source_content, source_ref)
             if content is None:
                 raise FileNotFoundError("知识库片段不存在")
         else:
@@ -258,8 +968,7 @@ async def knowledge_document_page(
 ) -> KnowledgeDocumentPage:
     try:
         if chunk and (
-            not chunk.startswith("chunk-")
-            or not chunk.removeprefix("chunk-").isdigit()
+            not chunk.startswith("chunk-") or not chunk.removeprefix("chunk-").isdigit()
         ):
             raise ValueError("知识库片段编号无效")
         target = resolve_course_resource(
@@ -282,12 +991,7 @@ async def knowledge_document_page(
             limit=limit,
             anchor=chunk_anchor or anchor,
         )
-        if (
-            offset is None
-            and chunk_anchor
-            and anchor_status == "not_found"
-            and anchor
-        ):
+        if offset is None and chunk_anchor and anchor_status == "not_found" and anchor:
             start, end, anchor_status = await asyncio.to_thread(
                 _document_window,
                 document,

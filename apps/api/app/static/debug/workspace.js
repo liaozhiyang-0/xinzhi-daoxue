@@ -1,5 +1,6 @@
-const { $, all, api, el, initShell, renderMarkdown, toast } = XinzhiUI;
+const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
+const scenarioId = params.get("scenario_id") || "";
 const courseLabels = {
   CT: "电路理论",
   AE: "模拟电子技术",
@@ -7,6 +8,14 @@ const courseLabels = {
   SS: "信号与系统",
   DSP: "数字信号处理",
   COMM: "通信原理",
+};
+const externalProviderLabels = {
+  arxiv: "arXiv",
+  crossref: "Crossref",
+  openalex: "OpenAlex",
+  semantic_scholar: "Semantic Scholar",
+  cnki: "中国知网",
+  web_json: "网页检索",
 };
 const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_writing: "学术写作", data_analysis: "数据分析" };
 const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_writing: "学术写作", data_analysis: "数据分析" };
@@ -36,6 +45,11 @@ const state = {
   lastAnswer: "",
   evidence: [],
   currentTask: null,
+  historyRequestSequence: 0,
+  runSequence: 0,
+  activeTaskWait: null,
+  cancelRequested: false,
+  feedbackEnabled: null,
   activeMemoryIds: new Set(),
   archivedTaskIds: new Set(),
   showArchived: false,
@@ -75,9 +89,16 @@ async function ensureSession(force = false) {
 }
 
 function resetConversation() {
+  state.historyRequestSequence += 1;
+  state.runSequence += 1;
+  state.activeTaskWait?.cancel();
+  state.activeTaskWait = null;
+  state.taskId = "";
+  state.cancelRequested = false;
   conversationMaterialUrls.forEach((url) => URL.revokeObjectURL(url));
   conversationMaterialUrls = [];
   state.currentTask = null; state.archivedTaskIds.clear();
+  state.lastQuestion = ""; state.lastAnswer = "";
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
   $("#teaching-loop-panel").hidden = true;
   $("#learning-progress-panel").hidden = true;
@@ -547,12 +568,63 @@ function relatedImageCard(images) {
   ]);
 }
 
-function renderEvidence(items, presentation, relatedImages = []) {
+function externalPaperCard(item) {
+  const rawUrl = String(item.url || "").trim();
+  let safeUrl = "";
+  try {
+    const url = new URL(rawUrl, location.origin);
+    if (["http:", "https:"].includes(url.protocol)) safeUrl = url.href;
+  } catch (_) {
+    safeUrl = "";
+  }
+  const metadata = [
+    item.date_label ? `发表/更新 ${item.date_label}` : "时间未知",
+    externalProviderLabels[item.provider] || item.provider || "学术来源",
+    item.venue,
+    item.citation_count != null ? `被引 ${item.citation_count} 次` : "引用数据未提供",
+  ].filter(Boolean).join(" · ");
+  const authors = Array.isArray(item.authors) ? item.authors.filter(Boolean).join(", ") : "";
+  const abstract = item.abstract || "暂无摘要，建议打开原文查看。";
+  const title = safeUrl
+    ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: item.title || "未命名论文" })
+    : el("span", { text: item.title || "未命名论文" });
+  const actions = safeUrl
+    ? el("a", { class: "external-paper-open", href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: "打开论文" })
+    : el("small", { text: "链接不可用" });
+  return el("article", { class: "external-paper-card" }, [
+    el("div", { class: "external-paper-header" }, [
+      el("span", { class: "evidence-id", text: item.evidence_id || "paper" }),
+      el("span", { class: "external-paper-date", text: item.source_type === "academic_paper" ? "学术论文" : "外部来源" }),
+    ]),
+    el("h3", {}, title),
+    el("small", { class: "external-paper-meta", text: metadata }),
+    authors ? el("p", { class: "external-paper-authors", text: authors }) : null,
+    el("p", { class: "external-paper-abstract", text: abstract }),
+    el("div", { class: "external-paper-footer" }, [
+      el("span", { text: item.doi ? `DOI: ${item.doi}` : item.arxiv_id ? `arXiv: ${item.arxiv_id}` : "" }),
+      actions,
+    ]),
+  ].filter(Boolean));
+}
+
+function renderExternalPapers(items) {
+  if (!items?.length) return null;
+  return el("section", { class: "external-results" }, [
+    el("div", { class: "external-results-heading" }, [
+      el("strong", { text: `外部论文 ${items.length} 篇 · 已通过模型审核` }),
+      el("span", { text: "摘要仅作快速概览，请以原文为准" }),
+    ]),
+    ...items.map(externalPaperCard),
+  ]);
+}
+
+function renderEvidence(items, presentation, relatedImages = [], externalItems = []) {
   state.evidence = items || [];
   const cards = state.evidence.map(evidenceCard);
   const imageCard = relatedImageCard(relatedImages);
   if (imageCard) cards.push(imageCard);
-  $("#context-evidence").replaceChildren(...(cards.length ? cards : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的课程依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
+  const external = renderExternalPapers(externalItems);
+  $("#context-evidence").replaceChildren(...(cards.length || external ? [...(external ? [external] : []), ...cards] : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的资料依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
 }
 
 function renderProcess(steps = []) {
@@ -622,6 +694,16 @@ function renderContextUsage(result = {}) {
 }
 
 function renderInfo(task, result, summary, presentation, renderMs = 0) {
+  const scenarioReview = result.structured_result?.scenario_evidence_review || {};
+  const scenarioReviewStatus = scenarioReview.status === "approved"
+    ? "证据审查通过"
+    : scenarioReview.status === "rejected"
+      ? "证据审查拒绝"
+      : scenarioReview.status === "needs_manual_review"
+        ? "需要人工复核"
+        : scenarioReview.status === "pending_manual_review"
+          ? "等待人工复核"
+          : "未执行场景审查";
   const collaboration = result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
   const rows = [
     ["完成能力", presentation.title || summary.agent_label || "智能任务"],
@@ -631,6 +713,7 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
     ["知识增强", ragLabels[summary.rag_mode] || "按需启用"],
     ["资料使用", `${summary.used_evidence_count || 0} / ${summary.evidence_count || 0} 条`],
     ["结果检查", summary.citation_status === "passed" ? "通过" : summary.citation_status === "failed" ? "需要复核" : "已完成结构检查"],
+    ["场景证据审查", scenarioReviewStatus],
     ["答案质量", presentation.answer_quality_status === "checked" ? "已检查" : presentation.requires_review ? "需要复核" : "未检查"],
     ["后备能力", summary.fallback ? "已启用" : "未启用"],
     ["检索耗时", `${(summary.timings?.retrieval_ms || 0)} ms`],
@@ -656,14 +739,78 @@ function legacyPresentation(task, result) {
   };
 }
 
+function prepareTaskFeedback(task) {
+  const panel = $("#task-feedback-panel");
+  if (!panel) return;
+  if (state.feedbackEnabled !== true) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  panel.dataset.taskId = task.id;
+  $("#task-feedback-message").textContent = "";
+  $("#submit-task-feedback").disabled = false;
+}
+
+async function loadFeedbackFeatureStatus() {
+  try {
+    const status = await api("/api/v1/feedback/status");
+    state.feedbackEnabled = status.enabled === true;
+  } catch (_error) {
+    state.feedbackEnabled = true;
+  }
+  if (state.currentTask) prepareTaskFeedback(state.currentTask);
+}
+
+async function submitTaskFeedback() {
+  if (!state.currentTask?.id) {
+    toast("请先完成一道题或一次知识问答", "degraded");
+    return;
+  }
+  const resolvedValue = $("#task-feedback-resolved").value;
+  const satisfaction = $("#task-feedback-satisfaction").value || null;
+  const problemType = $("#task-feedback-problem-type").value || null;
+  const manualReview = $("#task-feedback-review").checked;
+  const comment = $("#task-feedback-comment").value.trim();
+  if (!resolvedValue && !satisfaction && !problemType && !manualReview && !comment) {
+    toast("请至少选择一项反馈", "degraded");
+    return;
+  }
+  const button = $("#submit-task-feedback");
+  button.disabled = true;
+  try {
+    await api("/api/v1/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task_id: state.currentTask.id,
+        resolved: resolvedValue === "" ? null : resolvedValue === "true",
+        satisfaction,
+        problem_type: problemType,
+        manual_review_required: manualReview,
+        comment,
+      }),
+    });
+    $("#task-feedback-message").textContent = "反馈已记录，可继续修改后重新提交。";
+    toast("反馈已记录");
+  } catch (error) {
+    $("#task-feedback-message").textContent = error.message;
+    toast(error.message, "failed");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderResult(task) {
   const renderStarted = performance.now();
   const result = task.result_content || {}; const structured = result.structured_result || {};
   const presentation = presentationFor(task, result);
   const summary = structured.execution_summary || {};
   const evidence = structured.evidence_view || [];
+  const externalItems = structured.external_search_view || structured.external_retrieval?.items || [];
   state.lastAnswer = displayAnswer(task, result);
   state.currentTask = task;
+  prepareTaskFeedback(task);
   $("#answer-panel").hidden = false;
   $("#answer-status").textContent = presentation.status_label || "已完成";
   $("#answer-title").textContent = presentation.title;
@@ -672,7 +819,7 @@ function renderResult(task) {
   renderMarkdown($("#answer-text"), state.lastAnswer);
   renderTeachingLoop(structured);
   void loadLearningProgress(task);
-  renderBusinessView(structured.business_view || {});
+  renderBusinessView(structured.business_view || {}, state.lastAnswer);
   const notices = [];
   if (summary.mock || result.provider === "mock" || result.mock_used) notices.push({ status: "mock", text: "当前为开发态模拟结果，不代表正式智能能力输出。" });
   if (presentation.answer_quality_message) notices.push({
@@ -681,6 +828,18 @@ function renderResult(task) {
   });
   if (presentation.fallback_message) notices.push({ status: "warning", text: presentation.fallback_message });
   if (presentation.evidence_message) notices.push({ status: "", text: presentation.evidence_message });
+  const scenarioReview = structured.scenario_evidence_review || {};
+  if (["pending_manual_review", "needs_manual_review"].includes(scenarioReview.status)) {
+    notices.push({
+      status: "warning",
+      text: "当前场景要求人工复核外部证据；系统不会把合成资料或未核验来源当作正式结论。",
+    });
+  } else if (scenarioReview.status === "rejected") {
+    notices.push({
+      status: "warning",
+      text: "当前场景的外部证据未通过审查，请先替换或核验来源后再用于正式交付。",
+    });
+  }
   if (structured.teaching?.warning) notices.push({ status: "warning", text: structured.teaching.warning });
   if (structured.teaching?.teaching_mode === "check_my_work") notices.push({ status: "warning", text: structured.teaching.diagnostic_scope });
   if (structured.student_attempt_review?.feedback?.length) notices.push({ status: "", text: structured.student_attempt_review.feedback.join("；") });
@@ -690,7 +849,7 @@ function renderResult(task) {
     ...(result.related_images || []),
     ...(structured.knowledge?.images || []),
   ];
-  renderEvidence(evidence, presentation, relatedImages); renderProcess(presentation.execution_steps || []);
+  renderEvidence(evidence, presentation, relatedImages, externalItems); renderProcess(presentation.execution_steps || []);
   renderContextUsage(result);
   const renderMs = performance.now() - renderStarted; localStorage.setItem("xinzhi_last_render_ms", renderMs.toFixed(1));
   renderInfo(task, result, summary, presentation, renderMs);
@@ -868,24 +1027,47 @@ async function loadLearningProgress(task = state.currentTask) {
 
 async function loadSessionHistory() {
   if (!state.sessionId) return;
+  const sessionId = state.sessionId;
+  const requestSequence = ++state.historyRequestSequence;
+  const isCurrent = () => requestSequence === state.historyRequestSequence && state.sessionId === sessionId;
   try {
-    const messages = await api(`/api/v1/sessions/${state.sessionId}/messages?user_id=${encodeURIComponent(state.userId)}&limit=100`);
+    const messages = await api(`/api/v1/sessions/${sessionId}/messages?user_id=${encodeURIComponent(state.userId)}&limit=100`);
+    if (!isCurrent()) return;
     if (!messages.length) return;
+
+    const latestAssistantTask = [...messages].reverse().find((item) => item.role === "assistant" && item.source_task_id);
+    let restoredTask = null;
+    if (latestAssistantTask) {
+      try {
+        const candidate = await api(ownedTaskUrl(latestAssistantTask.source_task_id));
+        if (isCurrent() && candidate.status === "completed") restoredTask = candidate;
+      } catch (_error) {
+        restoredTask = null;
+      }
+    }
+    if (!isCurrent()) return;
+
     $("#welcome").hidden = true;
+    const renderedAssistantTaskIds = new Set();
     messages.forEach((message) => {
       if (message.role === "user") {
         const article = addMessage(message.content_text, "user", message.source_task_id || "");
         appendStoredAttachmentImages(article, message.attachment_ids || []);
       } else if (message.role === "assistant") {
+        const taskId = message.source_task_id || "";
+        if (taskId && (taskId === restoredTask?.id || renderedAssistantTaskIds.has(taskId))) return;
         const body = el("div", { class: "message-body" }, [
           el("span", { class: "message-meta", text: message.status === "completed" ? "已完成" : message.status }),
           el("div", { class: "markdown-view" }),
         ]);
         renderMarkdown(body.lastElementChild, message.content_text);
-        $("#messages").append(el("article", { class: "conversation-message assistant", "data-task-id": message.source_task_id || "" }, [
+        $("#messages").append(el("article", { class: "conversation-message assistant", "data-task-id": taskId }, [
           el("span", { class: "message-role", text: "芯智导学" }), body,
         ]));
-        if (message.source_task_id) state.archivedTaskIds.add(message.source_task_id);
+        if (taskId) {
+          renderedAssistantTaskIds.add(taskId);
+          state.archivedTaskIds.add(taskId);
+        }
       } else if (message.role === "system_event") {
         addMessage(message.content_text, "system", message.source_task_id || "");
       }
@@ -894,21 +1076,24 @@ async function loadSessionHistory() {
     state.lastQuestion = [...messages].reverse().find((item) => item.role === "user")?.content_text || "";
     if (latest.role === "user" && latest.source_task_id) {
       const latestTask = await api(ownedTaskUrl(latest.source_task_id));
+      if (!isCurrent()) return;
       if (["created", "queued", "running"].includes(latestTask.status)) {
         state.taskId = latestTask.id;
         setBusy(true);
-        try { renderResult(await waitForTask(latestTask.id)); }
-        finally { state.taskId = ""; setBusy(false); }
+        try {
+          const finishedTask = await waitForTask(latestTask.id, requestSequence);
+          if (finishedTask && isCurrent()) renderResult(finishedTask);
+        } finally {
+          if (isCurrent()) { state.taskId = ""; setBusy(false); }
+        }
       }
     }
-    const latestAssistantTask = [...messages].reverse().find((item) => item.role === "assistant" && item.source_task_id);
-    if (latestAssistantTask && latestAssistantTask.source_task_id !== state.taskId) {
-      const restoredTask = await api(ownedTaskUrl(latestAssistantTask.source_task_id));
-      if (restoredTask.status === "completed") renderResult(restoredTask);
-    }
+    if (restoredTask && isCurrent()) renderResult(restoredTask);
   } catch (error) {
+    if (!isCurrent()) return;
     try {
-      const tasks = await api(`/api/v1/sessions/${state.sessionId}/tasks?limit=50`);
+      const tasks = await api(`/api/v1/sessions/${sessionId}/tasks?limit=50`);
+      if (!isCurrent()) return;
       tasks.forEach((task) => {
         const article = addMessage(taskQuestion(task), "user", task.id);
         appendStoredAttachmentImages(
@@ -976,10 +1161,33 @@ async function updateMemorySettings() {
   toast(session.memory_enabled ? "记忆设置已更新" : "长期记忆已关闭");
 }
 
-function renderBusinessView(view) {
+function businessContentValues(value) {
+  if (Array.isArray(value)) return value.flatMap(businessContentValues);
+  if (value && typeof value === "object") return Object.values(value).flatMap(businessContentValues);
+  return value == null ? [] : [String(value)];
+}
+
+function businessSectionAlreadyInAnswer(answer, section) {
+  const normalizedAnswer = String(answer || "").replace(/\s+/g, " ").trim();
+  const values = businessContentValues(section.content)
+    .map((value) => value.replace(/\s+/g, " ").trim())
+    .filter((value) => value.length >= 4);
+  return values.length > 0 && values.every((value) => normalizedAnswer.includes(value));
+}
+
+function renderBusinessView(view, answer = "") {
   const root = $("#business-result"); root.replaceChildren();
   if (view.banner) root.append(el("div", { class: "notice warning", text: view.banner }));
-  (view.sections || []).forEach((section) => {
+  const sections = view.renderer_type === "lesson_prep"
+    ? (view.sections || []).filter((section, index, allSections) => {
+      if (section.key === "activities") {
+        const flow = allSections.find((candidate) => candidate.key === "lesson_flow");
+        if (flow && JSON.stringify(flow.content) === JSON.stringify(section.content)) return false;
+      }
+      return !businessSectionAlreadyInAnswer(answer, section);
+    })
+    : (view.sections || []);
+  sections.forEach((section) => {
     const card = el("section", { class: `business-section business-${section.key}` });
     card.append(el("h3", { text: section.label }));
     const content = typeof section.content === "string" ? section.content : JSON.stringify(section.content, null, 2);
@@ -993,11 +1201,10 @@ function selectedMaterialFiles() {
 }
 
 function validateMaterialFiles(files) {
-  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf"];
-  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 张图片`);
-  if (files.length > 1 && files.some((file) => !file.type.startsWith("image/"))) throw new Error("多文件输入目前仅支持图片；文档材料请单独上传");
+  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 个材料`);
   files.forEach((file) => {
-    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
+    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf|doc|docx)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
     if (file.size > 20 * 1024 * 1024) throw new Error(`材料不能超过 20MB：${file.name}`);
   });
 }
@@ -1021,22 +1228,39 @@ async function uploadMaterials() {
   for (const file of files) {
     const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
     const uploaded = await api("/api/v1/files", { method: "POST", body: form });
-    let extractedText = "";
-    if ((file.type.startsWith("text/") || file.type === "application/json" || /\.(md|txt|csv|json)$/i.test(file.name)) && file.size <= 2 * 1024 * 1024) extractedText = await file.text();
-    materials.push({ uploaded, extractedText, originalType: file.type });
+    if (["failed", "processing", "pending"].includes(uploaded.ingestion_status)) throw new Error(uploaded.extraction_error || `材料解析失败：${file.name}`);
+    materials.push({ uploaded, extractedText: "", originalType: file.type });
   }
   return materials;
 }
 function attachmentRef(file) { return { file_id: file.id, filename: file.filename, content_type: file.content_type, size_bytes: file.size_bytes, storage_key: file.storage_key, checksum_sha256: file.checksum_sha256 }; }
 
-async function waitForTask(id) {
+async function waitForTask(id, runSequence) {
   return new Promise((resolve, reject) => {
-    let settled = false; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
-    const finish = async () => { if (settled) return; try { const task = await api(ownedTaskUrl(id)); if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; events.close(); resolve(task); } } catch (error) { settled = true; events.close(); reject(error); } };
+    let settled = false; let pollTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
+    const cleanup = () => {
+      events.close();
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (state.activeTaskWait?.runSequence === runSequence) state.activeTaskWait = null;
+    };
+    const cancel = () => { if (settled) return; settled = true; cleanup(); resolve(null); };
+    state.activeTaskWait = { runSequence, cancel };
+    const finish = async () => { if (settled) return; try { const task = await api(ownedTaskUrl(id)); if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); } } catch (error) { settled = true; cleanup(); reject(error); } };
     ["task.completed", "task.failed", "task.cancelled"].forEach((name) => events.addEventListener(name, finish));
     events.addEventListener("agent.started", () => addMessage("已完成能力编排，内部 Agent 正在协作处理…", "system"));
     events.addEventListener("knowledge.retrieved", () => { addMessage("已完成课程资料检索，正在整理本次证据…", "system"); selectContextTab("process"); });
-    events.onerror = () => { events.close(); const timer = setInterval(async () => { try { const task = await api(ownedTaskUrl(id)); if (["completed", "failed", "cancelled"].includes(task.status)) { clearInterval(timer); if (!settled) { settled = true; resolve(task); } } } catch (error) { clearInterval(timer); if (!settled) { settled = true; reject(error); } } }, 900); };
+    events.onerror = () => {
+      if (settled) return;
+      events.close();
+      if (pollTimer) return;
+      pollTimer = setInterval(async () => {
+        if (settled) return;
+        try {
+          const task = await api(ownedTaskUrl(id));
+          if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); }
+        } catch (error) { settled = true; cleanup(); reject(error); }
+      }, 900);
+    };
   });
 }
 
@@ -1050,6 +1274,9 @@ function setBusy(busy) {
 
 async function submit(event) {
   event.preventDefault(); if (state.taskId) return;
+  const runSequence = state.runSequence + 1;
+  state.runSequence = runSequence;
+  state.cancelRequested = false;
   $("#form-error").textContent = "";
   const question = $("#question-input").value.trim(); const course = selectedCourse();
   const teachingMode = $("#teaching-mode").value;
@@ -1058,7 +1285,7 @@ async function submit(event) {
   const requestedCourse = learningFollowUp?.course_id || course;
   const requestedIntent = learningFollowUp?.intent || "unknown";
   const selectedFiles = selectedMaterialFiles();
-  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传图片"; return; }
+  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
   if (teachingMode === "check_my_work" && !studentAttempt) { $("#form-error").textContent = "请填写你的解题过程或答案"; return; }
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
   renderProcess([{ label: "正在理解你的需求", status: "running" }]);
@@ -1073,13 +1300,16 @@ async function submit(event) {
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
     if (uploadedText) canonical.uploaded_text = uploadedText;
     if (materials.length === 1 && materials[0].originalType === "text/csv") canonical.data_description = uploadedText;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
-    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage(`已识别：${taskLabels[task.intent] || "待进一步判断"}${task.course_id ? ` · ${courseLabels[task.course_id] || task.course_id}` : ""}`, "system"); renderResult(await waitForTask(task.id)); await loadSessionList();
+    state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
+    const finishedTask = await waitForTask(task.id, runSequence);
+    if (!finishedTask || runSequence !== state.runSequence || state.cancelRequested) return;
+    renderResult(finishedTask); await loadSessionList();
     $("#question-input").value = ""; $("#student-attempt-input").value = ""; autoGrow(); clearImage();
   } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
-  finally { state.taskId = ""; setBusy(false); }
+  finally { if (runSequence === state.runSequence) { state.taskId = ""; setBusy(false); } }
 }
 
 function revokeMaterialPreviews() {
@@ -1296,13 +1526,24 @@ async function loadCapabilities() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  const identity = await initIdentityGate({ next: `${location.pathname}${location.search}` });
+  if (identity?.user_id || identity?.id) {
+    const identityId = identity.user_id || identity.id;
+    if (state.userId !== identityId) {
+      state.sessionId = "";
+      localStorage.removeItem("xinzhi_student_session");
+    }
+    state.userId = identityId;
+    localStorage.setItem("xinzhi_student_user", state.userId);
+  }
   initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: "student" });
-  applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels(); loadCapabilities(); loadSessionHistory(); loadSessionList();
+  applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels(); loadCapabilities(); loadSessionHistory(); loadSessionList(); void loadFeedbackFeatureStatus();
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
   all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; updateShell(); autoGrow(); $("#question-input").focus(); }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));
   $("#student-form").addEventListener("submit", submit);
+  $("#submit-task-feedback").addEventListener("click", () => submitTaskFeedback());
   $("#question-input").addEventListener("input", autoGrow);
   $("#teaching-mode").addEventListener("change", updateTeachingMode);
   $("#question-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#student-form").requestSubmit(); } });
@@ -1315,7 +1556,21 @@ window.addEventListener("DOMContentLoaded", () => {
     event.target.value = "";
   });
   $("#remove-image").addEventListener("click", clearImage);
-  $("#stop-button").addEventListener("click", async () => { if (state.taskId) await api(`/api/v1/tasks/${state.taskId}/cancel`, { method: "POST" }); });
+  $("#stop-button").addEventListener("click", () => {
+    const taskId = state.taskId;
+    if (!taskId) return;
+    state.cancelRequested = true;
+    const stopSequence = state.runSequence + 1;
+    state.runSequence = stopSequence;
+    state.activeTaskWait?.cancel();
+    state.activeTaskWait = null;
+    state.taskId = "";
+    setBusy(false);
+    $("#form-error").textContent = "已立即停止当前等待，正在后台提交取消请求…";
+    void api(`/api/v1/tasks/${taskId}/cancel`, { method: "POST" })
+      .then(() => { if (state.runSequence === stopSequence) $("#form-error").textContent = "停止请求已提交，任务不会继续刷新结果。"; })
+      .catch((error) => { if (state.runSequence === stopSequence) $("#form-error").textContent = `停止请求未确认：${error.message}`; });
+  });
   $("#new-session").addEventListener("click", newSession);
   $("#sidebar-new-session").addEventListener("click", newSession);
   $("#session-search").addEventListener("input", (event) => loadSessionList(event.target.value.trim()));

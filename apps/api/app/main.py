@@ -30,23 +30,30 @@ from app.orchestrator import GraphFactory, XZDSupervisor
 from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
+from app.providers.retrieval import create_external_search_service
+from app.services.academic_paper_review import AcademicPaperReviewService
+from app.services.academic_search_planner import AcademicSearchPlannerService
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.answer_disclosure import AnswerDisclosureService
+from app.services.auth_service import LoginRateLimiter
 from app.services.context_assembly import ContextAssemblyService
 from app.services.context_budget import ContextBudgetManager
 from app.services.context_cache import ContextAssemblyCache
 from app.services.error_pool import ErrorPoolRegistry
 from app.services.evidence_packet_adapter import EvidencePacketAdapterService
+from app.services.external_retrieval import ExternalContentFetcher
 from app.services.general_question_service import GeneralQuestionService
 from app.services.hint_policy import HintPolicyService
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_ocr_review_cache import KnowledgeOCRReviewSnapshotCache
 from app.services.knowledge_qa_service import KnowledgeQAService
 from app.services.learning_loop import LearningLoopService
 from app.services.learning_outcome import LearningOutcomeService
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from app.services.next_check_question import NextCheckQuestionService
+from app.services.overall_routing import OverallRoutingService
 from app.services.rag_debug import RAGDebugService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.rag_runtime import (
@@ -59,6 +66,8 @@ from app.services.retrieval_context import (
     EvidenceQualityEvaluator,
     RetrievalContextService,
 )
+from app.services.scenario_catalog import ScenarioCatalog
+from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
 from app.services.skill_registry import SkillRegistry
 from app.services.solution_packet_adapter import SolutionPacketAdapterService
@@ -77,6 +86,21 @@ DEBUG_ROOT = Path(__file__).resolve().parent / "static" / "debug"
 
 def error_payload(code: str, message: str, details: Any = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details or {}}}
+
+
+def _create_graph_checkpointer(settings: Settings) -> Any:
+    if (
+        not settings.langgraph_checkpoint_enabled
+        or settings.langgraph_checkpoint_backend == "disabled"
+    ):
+        return None
+    try:
+        from langgraph.checkpoint.memory import InMemorySaver
+    except ImportError:
+        logger.warning("langgraph_checkpoint_unavailable")
+        return None
+    logger.info("langgraph_checkpoint_enabled backend=memory")
+    return InMemorySaver()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -134,18 +158,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         answer_disclosure,
     )
     tool_registry = default_tool_registry()
+    graph_checkpointer = _create_graph_checkpointer(app_settings)
     graph_factory = GraphFactory(
         courses=course_registry,
         capabilities=capability_registry,
         tools=tool_registry,
         model_service=model_service,
+        checkpointer=graph_checkpointer,
     )
     storage = StorageService(app_settings)
     academic_solver = AcademicProblemSolverService(
         graph_factory.create("academic_problem_solver"), model_service, storage
     )
     internal_agent_hub = InternalAgentHub(model_service)
+    academic_paper_review = AcademicPaperReviewService(
+        internal_agent_hub, app_settings
+    )
+    academic_search_planner = AcademicSearchPlannerService(
+        internal_agent_hub, app_settings
+    )
     general_question = GeneralQuestionService(model_service)
+    overall_router = OverallRoutingService(
+        internal_agent_hub,
+        task_router,
+        app_settings,
+    )
     internal_agent_execution = InternalAgentExecutionService(
         internal_agent_hub, academic_solver, general_question
     )
@@ -161,6 +198,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         image_embedding,
         reranker,
         vector_store,
+    )
+    external_search = create_external_search_service(app_settings)
+    external_fetcher = ExternalContentFetcher(
+        max_bytes=app_settings.external_retrieval_max_content_chars * 8,
     )
     context_service = RetrievalContextService(
         app_settings.knowledge_max_context_chars,
@@ -184,6 +225,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     context_budget = ContextBudgetManager(app_settings)
     context_cache = ContextAssemblyCache(app_settings)
+    scenario_catalog = ScenarioCatalog(app_settings.scenario_catalog_path)
+    scenario_evidence_review = ScenarioEvidenceReviewService()
+    knowledge_ocr_review_cache = KnowledgeOCRReviewSnapshotCache(app_settings)
     context_assembly = ContextAssemblyService(
         app_settings, context_cache, context_budget
     )
@@ -206,6 +250,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_compaction=session_compaction,
         teaching_foundation=teaching_foundation,
         learning_outcome=learning_outcome,
+        external_search=external_search,
+        external_fetcher=external_fetcher,
+        external_paper_reviewer=academic_paper_review,
+        external_search_planner=academic_search_planner,
+        overall_router=overall_router,
+        scenario_evidence_review=scenario_evidence_review,
     )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,
@@ -221,6 +271,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         context_service,
         knowledge_qa,
     )
+    auth_rate_limiter = LoginRateLimiter()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -253,6 +304,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.teaching_interactions = teaching_interactions
         app.state.tool_registry = tool_registry
         app.state.graph_factory = graph_factory
+        app.state.graph_checkpointer = graph_checkpointer
         app.state.academic_solver = academic_solver
         app.state.storage = storage
         app.state.internal_agent_hub = internal_agent_hub
@@ -261,14 +313,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.supervisor = supervisor
         app.state.knowledge_base = knowledge_base
         app.state.rag_retrieval = rag_retrieval
+        app.state.external_search = external_search
+        app.state.external_fetcher = external_fetcher
         app.state.context_service = context_service
         app.state.knowledge_qa = knowledge_qa
         app.state.rag_debug = rag_debug
+        app.state.auth_rate_limiter = auth_rate_limiter
         app.state.task_runner = task_runner
         app.state.task_executor = task_executor
         app.state.learning_loop = learning_loop
         app.state.context_budget = context_budget
         app.state.context_cache = context_cache
+        app.state.scenario_catalog = scenario_catalog
+        app.state.scenario_evidence_review = scenario_evidence_review
+        app.state.knowledge_ocr_review_cache = knowledge_ocr_review_cache
         app.state.context_assembly = context_assembly
         app.state.session_compaction = session_compaction
         if app_settings.app_env == "test":
@@ -293,9 +351,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "status": "skipped",
                 "reason": "test_environment_or_disabled",
             }
+        recovered_tasks = await task_executor.recover()
+        if recovered_tasks:
+            logger.info("task_recovery_requeued count=%s", recovered_tasks)
         yield
         await task_executor.shutdown()
         await context_cache.close()
+        await external_search.close()
+        await external_fetcher.close()
         close_provider = getattr(provider, "aclose", None)
         if close_provider is not None:
             await close_provider()
@@ -323,6 +386,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
 
+    @app.get("/login", include_in_schema=True, tags=["authentication"])
+    async def login_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "login.html")
+
+    @app.get("/admin", include_in_schema=True, tags=["management"])
+    async def admin_page() -> FileResponse:
+        return FileResponse(
+            DEBUG_ROOT / "admin.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @app.get("/teacher", include_in_schema=True, tags=["teaching"])
+    async def teacher_page() -> FileResponse:
+        return FileResponse(DEBUG_ROOT / "teacher.html")
+
     @app.get("/debug/rag", include_in_schema=True, tags=["development"])
     async def rag_debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "execution.html")
@@ -333,11 +411,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/student", include_in_schema=True, tags=["student"])
     async def student_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "workspace.html")
+        return FileResponse(
+            DEBUG_ROOT / "workspace.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.get("/workspace", include_in_schema=True, tags=["student"])
     async def workspace_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "workspace.html")
+        return FileResponse(
+            DEBUG_ROOT / "workspace.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     @app.get("/debug/execution", include_in_schema=True, tags=["development"])
     async def execution_debug_page() -> FileResponse:
@@ -365,9 +449,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(AppError)
     async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
         return JSONResponse(
             status_code=exc.status_code,
             content=jsonable_encoder(error_payload(exc.code, exc.message, exc.details)),
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)

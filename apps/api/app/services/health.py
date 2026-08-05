@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.contracts.api import HealthRead
 from app.core.config import Settings
 from app.providers.base import AgentProvider
+from app.providers.retrieval.academic import AcademicSearchService
 
 
 async def _database_status(
@@ -50,6 +51,7 @@ async def build_health(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
     provider: AgentProvider,
+    external_search: AcademicSearchService | None = None,
 ) -> HealthRead:
     database, redis, minio = await asyncio.gather(
         _database_status(session_factory),
@@ -71,4 +73,7 @@ async def build_health(
         xingchen_publication_status=settings.xingchen_publication_status,
         xingchen_runtime_available=settings.xingchen_runtime_available,
         version=settings.app_version,
+        external_retrieval=(
+            external_search.health() if external_search is not None else {}
+        ),
     )

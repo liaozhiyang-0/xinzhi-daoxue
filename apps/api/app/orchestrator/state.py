@@ -71,7 +71,9 @@ def new_graph_state(
         session_id=session_id,
         user_id=user_id,
         trace_id=f"trace_{uuid4().hex}",
-        thread_id=session_id or f"thread_{uuid4().hex}",
+        # A checkpoint thread belongs to one task. Reusing the session id here
+        # would merge state from independent tasks submitted in one session.
+        thread_id=f"thread_{request_id or uuid4().hex}",
         run_id=f"run_{uuid4().hex}",
         message=message,
         input_type="text",

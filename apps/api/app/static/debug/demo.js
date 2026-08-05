@@ -1,21 +1,128 @@
 const { $, api, el, initShell, toast } = XinzhiUI;
 const presentation = new URLSearchParams(location.search).get("presentation") === "1";
-const themes = [
-  { number: "01", title: "课程知识问答", goal: "自动识别 AE、运行课程 RAG、选择 LEARN 并校验引用", duration: "约 2 分钟", cloud: true, href: "/workspace?prompt=为什么负反馈能够稳定放大倍数？" },
-  { number: "02", title: "教案设计", goal: "自动选择 TEACH_01，提取90分钟和学生层次并准备 AE 资料", duration: "约 3 分钟", cloud: true, href: "/workspace?prompt=给大二学生设计一节90分钟的负反馈放大电路课程，要包含例题、课堂活动和课后作业。" },
-  { number: "03", title: "作业批改", goal: "从题目、学生答案与评分标准中自动选择 TEACH_02", duration: "约 3 分钟", cloud: true, href: "/workspace?prompt=请批改。题目：10V电源串联5欧电阻求电流。学生答案：2A。评分标准：列式4分，结果和单位6分。满分：10分。" },
-  { number: "04", title: "学术写作", goal: "自动选择 RESEARCH_02，不使用课程 RAG，不新增引用或实验事实", duration: "约 2 分钟", cloud: true, href: "/workspace?prompt=请把这段结果改成严谨的论文表达，不新增事实：在合成测试中，方案A的指标高于方案B。" },
-  { number: "05", title: "数据分析", goal: "自动选择 RESEARCH_03；无原始数据时明确为分析方案", duration: "约 2 分钟", cloud: true, href: "/workspace?prompt=这些二分类实验结果适合用什么统计方法分析？请只给分析计划，不虚构p值。" },
-  { number: "06", title: "边界与一次重路由", goal: "用完整 CT 求解请求展示唯一 Solver 选择、visited_agents 与重路由上限", duration: "约 3 分钟", cloud: true, href: "/workspace?prompt=请完整列方程并求解：10V理想电压源与5欧电阻串联，求回路电流。" },
-];
-function themeCard(theme) { return el("article", { class: "demo-theme" }, [el("span", { class: "demo-number", text: theme.number }), el("h2", { text: theme.title }), el("p", { text: theme.goal }), el("dl", {}, [el("div", {}, [el("dt", { text: "预计时间" }), el("dd", { text: theme.duration })]), el("div", {}, [el("dt", { text: "云端调用" }), el("dd", { text: theme.cloud ? "需要，开始前确认" : "不需要" })])]), el("a", { class: "button secondary", href: theme.href + (presentation ? `${theme.href.includes("?") ? "&" : "?"}presentation=1` : ""), text: "开始演示" })]); }
-async function loadLastTrace() {
-  const id = localStorage.getItem("xinzhi_last_task"); if (!id) return toast("暂无最近任务，请先在工作台完成一次真实任务", "degraded");
-  try {
-    const data = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`); const steps = data.overview?.execution_steps || [];
-    $("#trace-story-title").textContent = data.overview?.title || `任务 ${id}`; $("#open-trace").href = `/debug/execution?task_id=${encodeURIComponent(id)}`;
-    $("#trace-story-steps").replaceChildren(...steps.map((step, index) => el("div", { class: "story-step" }, [el("span", { text: String(index + 1).padStart(2, "0") }), el("strong", { text: step.label }), el("small", { text: step.status })])));
-    $("#trace-story").hidden = false; $("#trace-story").scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (error) { toast(error.message, "failed"); }
+const readinessLabels = {
+  evidence_requires_manual_review: "外部证据需要人工复核",
+  demo_uses_mock_or_local_fallback: "演示使用 Mock 或本地降级能力",
+  no_runtime_or_mock_available: "暂无可用的运行能力或演示 Mock",
+  commercialization_plan_incomplete: "商业化交付信息尚未完整配置",
+};
+
+function formatReadinessMessage(value) {
+  const message = String(value || "");
+  if (readinessLabels[message]) return readinessLabels[message];
+  if (message.startsWith("demo_uses_declared_fallback:")) {
+    return `演示将使用已声明的降级 Agent：${message.slice("demo_uses_declared_fallback:".length)}`;
+  }
+  if (message.startsWith("agent_publication_status:")) {
+    return `Agent 发布状态：${message.slice("agent_publication_status:".length)}`;
+  }
+  return message;
 }
-window.addEventListener("DOMContentLoaded", () => { initShell({ page: "demo", title: "演示中心", description: "真实任务故事线与会议演示" }); $("#demo-themes").replaceChildren(...themes.map(themeCard)); if (presentation) $("#presentation-link").hidden = true; $("#check-last-trace").addEventListener("click", loadLastTrace); });
+
+function scenarioTheme(scenario, index) {
+  const prompt = scenario.demo_steps?.[0] || scenario.summary;
+  const href = `/workspace?scenario_id=${encodeURIComponent(scenario.id)}&prompt=${encodeURIComponent(prompt)}`;
+  return {
+    number: String(index + 1).padStart(2, "0"),
+    title: scenario.name,
+    goal: `${scenario.summary} 客户：${scenario.commercialization.buyer}`,
+    duration: `${scenario.demo_steps?.length || 0} 个演示步骤`,
+    capability: scenario.agent_id,
+    value: scenario.commercialization.value_capture,
+    readiness: "预检中",
+    readinessDetail: "正在读取运行配置",
+    href,
+  };
+}
+
+async function scenarioWithPreflight(scenario, index, preflight = null) {
+  const theme = scenarioTheme(scenario, index);
+  try {
+    const readiness = preflight || await api(
+      `/api/v1/scenarios/${encodeURIComponent(scenario.id)}/preflight`,
+      {},
+      30_000,
+    );
+    theme.readiness = readiness.production_ready
+      ? "生产可用"
+      : readiness.demo_ready
+        ? "Mock/降级可演示"
+        : "待配置";
+    theme.readinessDetail = readiness.blockers?.length
+      ? `阻塞：${readiness.blockers.map(formatReadinessMessage).join("、")}`
+      : (readiness.warnings || []).map(formatReadinessMessage).join("、") || "无阻塞项";
+  } catch (error) {
+    theme.readiness = "预检失败";
+    theme.readinessDetail = error.message;
+  }
+  return theme;
+}
+
+function themeCard(theme) {
+  const link = theme.href + (presentation ? "&presentation=1" : "");
+  return el("article", { class: "demo-theme" }, [
+    el("span", { class: "demo-number", text: theme.number }),
+    el("h2", { text: theme.title }),
+    el("p", { text: theme.goal }),
+    el("dl", {}, [
+      el("div", {}, [el("dt", { text: "执行步骤" }), el("dd", { text: theme.duration })]),
+      el("div", {}, [el("dt", { text: "能力绑定" }), el("dd", { text: theme.capability })]),
+      el("div", {}, [el("dt", { text: "价值闭环" }), el("dd", { text: theme.value })]),
+      el("div", {}, [el("dt", { text: "运行预检" }), el("dd", { text: theme.readiness })]),
+    ]),
+    el("small", { class: "demo-readiness-detail", text: theme.readinessDetail }),
+    el("a", { class: "button secondary", href: link, text: "开始场景演示" }),
+  ]);
+}
+
+async function loadScenarios() {
+  try {
+    const [scenarios, readiness] = await Promise.all([
+      api("/api/v1/scenarios", {}, 30_000),
+      api("/api/v1/scenarios/readiness", {}, 30_000),
+    ]);
+    const readinessById = new Map(readiness.map((item) => [item.scenario_id, item]));
+    const themes = await Promise.all(
+      scenarios.map((scenario, index) => scenarioWithPreflight(
+        scenario,
+        index,
+        readinessById.get(scenario.id) || null,
+      )),
+    );
+    $("#demo-themes").replaceChildren(...themes.map(themeCard));
+  } catch (error) {
+    $("#demo-themes").replaceChildren(
+      el("p", { class: "context-empty", text: `场景目录暂不可用：${error.message}` }),
+    );
+    toast(error.message, "failed");
+  }
+}
+
+async function loadLastTrace() {
+  const id = localStorage.getItem("xinzhi_last_task");
+  if (!id) return toast("暂无最近任务，请先完成一次场景演示", "degraded");
+  try {
+    const data = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`);
+    const steps = data.overview?.execution_steps || [];
+    $("#trace-story-title").textContent = data.overview?.title || `任务 ${id}`;
+    $("#open-trace").href = `/debug/execution?task_id=${encodeURIComponent(id)}`;
+    $("#trace-story-steps").replaceChildren(
+      ...steps.map((step, index) => el("div", { class: "story-step" }, [
+        el("span", { text: String(index + 1).padStart(2, "0") }),
+        el("strong", { text: step.label }),
+        el("small", { text: step.status }),
+      ])),
+    );
+    $("#trace-story").hidden = false;
+    $("#trace-story").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (error) {
+    toast(error.message, "failed");
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  initShell({ page: "demo", title: "演示中心", description: "六个商业化场景与真实任务 Trace" });
+  if (presentation) $("#presentation-link").hidden = true;
+  $("#check-last-trace").addEventListener("click", loadLastTrace);
+  loadScenarios();
+});

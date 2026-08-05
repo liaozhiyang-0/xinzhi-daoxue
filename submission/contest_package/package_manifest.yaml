@@ -1,0 +1,48 @@
+schema_version: "contest_package_manifest.v1"
+package_status: "draft_evidence_only"
+official_rules_verified: false
+official_score_claims_allowed: false
+demo_cases_included: false
+real_user_outcomes_included: false
+real_provider_results_included: false
+artifacts:
+  - id: "participation_info"
+    path: "01_participation_info.md"
+    status: "pending_official_rules"
+  - id: "governance_and_safety"
+    path: "02_governance_and_safety.md"
+    status: "drafted"
+  - id: "demo_user_guide"
+    path: "03_demo_user_guide.md"
+    status: "pending_owner_designed_demos"
+  - id: "product_solution"
+    path: "04_product_solution.md"
+    status: "drafted"
+  - id: "source_and_model_notes"
+    path: "05_source_and_model_notes.md"
+    status: "pending_release_inventory"
+  - id: "validation_report"
+    path: "06_validation_report.md"
+    status: "local_evidence_only"
+  - id: "test_scripts_and_materials"
+    path: "07_test_scripts_and_materials.md"
+    status: "drafted_with_synthetic_cases_pending_manual_review"
+  - id: "user_pilot_log"
+    path: "08_user_pilot_log.md"
+    status: "pending_authorized_pilot"
+  - id: "evidence_matrix"
+    path: "09_evidence_matrix.md"
+    status: "drafted"
+  - id: "deployment_and_operations"
+    path: "10_deployment_and_operations.md"
+    status: "pending_docker_and_policy_records"
+evidence_boundaries:
+  local_repository:
+    - "scripts/audit_course_assets.py"
+    - "docs/audits/challenge_cup_phase1_audit.md"
+    - "docs/implementation/p7_user_feedback_loop.md"
+  pending_owner_input:
+    - "three demonstration cases"
+    - "authorized user pilot records"
+  pending_official_source:
+    - "official rules and submission format"

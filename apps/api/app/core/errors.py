@@ -98,6 +98,26 @@ class ValidationAppError(AppError):
     status_code = 422
 
 
+class AuthenticationRequiredError(AppError):
+    code = "authentication_required"
+    status_code = 401
+
+
+class InvalidCredentialsError(AppError):
+    code = "invalid_credentials"
+    status_code = 401
+
+
+class AccountDisabledError(AppError):
+    code = "account_disabled"
+    status_code = 403
+
+
+class AuthenticationRateLimitError(AppError):
+    code = "authentication_rate_limited"
+    status_code = 429
+
+
 class AgentConfigurationIncompleteError(ConfigurationError):
     code = "agent_configuration_incomplete"
     status_code = 503

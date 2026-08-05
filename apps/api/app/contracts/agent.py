@@ -65,11 +65,15 @@ class AgentEventType(StrEnum):
     AGENT_STARTED = "agent.started"
     AGENT_PROGRESS = "agent.progress"
     ROUTE_SELECTED = "route.selected"
+    ROUTE_REEVALUATED = "route.reevaluated"
     ROUTE_UNSUPPORTED = "route.unsupported"
     KNOWLEDGE_QUERY_NORMALIZED = "knowledge.query_normalized"
     KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
     KNOWLEDGE_CONTEXT_BUILT = "knowledge.context_built"
     KNOWLEDGE_INSUFFICIENT = "knowledge.insufficient"
+    EXTERNAL_RETRIEVAL_STARTED = "external_retrieval.started"
+    EXTERNAL_RETRIEVED = "external_retrieval.completed"
+    EXTERNAL_RETRIEVAL_FAILED = "external_retrieval.failed"
     ANSWER_RETRIEVAL_ONLY_CREATED = "answer.retrieval_only_created"
     AGENT_OUTPUT = "agent.output"
     ARTIFACT_CREATED = "artifact.created"
@@ -97,6 +101,10 @@ class AttachmentRef(BaseModel):
     storage_key: str
     provider_file_id: str | None = None
     checksum_sha256: str | None = None
+    ingestion_status: str = "pending"
+    page_count: int = Field(default=0, ge=0)
+    extracted_text: str = ""
+    extraction_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunMetrics(BaseModel):
@@ -223,6 +231,7 @@ class AgentRequest(BaseModel):
     scene: Scene = Scene.SOLVING
     course_id: str = "CT"
     intent: Intent = Intent.SOLVE_PROBLEM
+    scenario_id: str | None = Field(default=None, max_length=64)
     canonical_input: dict[str, Any] = Field(default_factory=dict)
     attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)

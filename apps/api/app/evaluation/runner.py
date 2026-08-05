@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import mimetypes
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +13,7 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI
 
+from app.contracts import AttachmentRef
 from app.evaluation.cache import EvaluationCache
 from app.evaluation.contracts import (
     EvaluationCase,
@@ -19,8 +22,16 @@ from app.evaluation.contracts import (
     FailureStage,
     SuiteReport,
 )
-from app.evaluation.reporting import build_statistics, write_report
+from app.evaluation.reporting import (
+    build_evaluation_run_metadata,
+    build_statistics,
+    resolve_evaluation_attachment,
+    write_report,
+)
 from app.evaluation.scorers import EvaluationScorer
+from app.services.evaluation_attachment_cleanup import (
+    cleanup_evaluation_attachments,
+)
 from app.services.solver_runtime_policy import SolverRuntimePolicy
 
 STANDARD_EVALUATION_TIMEOUT_SECONDS = 180
@@ -32,6 +43,7 @@ _COMPLEX_TAGS = {
     "multi_step",
     "quality_flagged",
 }
+logger = logging.getLogger(__name__)
 
 
 def evaluation_timeout_decision(case: EvaluationCase) -> tuple[int, list[str]]:
@@ -86,6 +98,7 @@ class EvaluationRunner:
         self.scorer: EvaluationScorer | None = None
         self.client: httpx.AsyncClient | None = None
         self._lifespan: AbstractAsyncContextManager[Any] | None = None
+        self._case_attachment_root: Path | None = None
 
     async def __aenter__(self) -> EvaluationRunner:
         self._lifespan = self.app.router.lifespan_context(self.app)
@@ -196,9 +209,20 @@ class EvaluationRunner:
         cases: list[EvaluationCase],
         *,
         filters: dict[str, Any] | None = None,
+        case_catalog_sha256: str = "",
+        case_catalog_content_sha256: str = "",
+        case_source_files_sha256: str = "",
+        case_attachment_manifest_sha256: str = "",
+        case_attachment_count: int = 0,
+        case_attachment_root: Path | None = None,
     ) -> SuiteReport:
         started = datetime.now(UTC)
-        results = [await self.run_case(case) for case in cases]
+        previous_attachment_root = self._case_attachment_root
+        self._case_attachment_root = case_attachment_root
+        try:
+            results = [await self.run_case(case) for case in cases]
+        finally:
+            self._case_attachment_root = previous_attachment_root
         completed = datetime.now(UTC)
         passed = sum(item.status == "passed" for item in results)
         summary = {
@@ -212,6 +236,7 @@ class EvaluationRunner:
             ),
             "pass_rate": passed / len(results) if results else 0.0,
         }
+        run_id = f"eval_run_{uuid4().hex}"
         report = SuiteReport(
             mode=self.mode,
             started_at=started.isoformat(),
@@ -221,6 +246,17 @@ class EvaluationRunner:
             statistics=build_statistics(cases, results),
             results=results,
             estimated_cost=None,
+            run_metadata=build_evaluation_run_metadata(
+                cases,
+                run_id=run_id,
+                implementation_fingerprint=self.cache.fingerprint,
+                filters=filters,
+                case_catalog_sha256=case_catalog_sha256,
+                case_catalog_content_sha256=case_catalog_content_sha256,
+                case_source_files_sha256=case_source_files_sha256,
+                case_attachment_manifest_sha256=case_attachment_manifest_sha256,
+                case_attachment_count=case_attachment_count,
+            ),
         )
         write_report(report, self.report_root)
         return report
@@ -237,82 +273,192 @@ class EvaluationRunner:
             for key, value in case.task_options.items()
             if not key.startswith("_evaluation_")
         }
-        session_response = await self.client.post(
-            "/api/v1/sessions",
-            json={
-                "user_id": "evaluation-user",
-                "course_id": case.course,
-                "title": f"Evaluation {case.case_id}",
-            },
-        )
-        session_response.raise_for_status()
-        canonical = {"text": case.message, **case.structured_input}
-        task_response = await self.client.post(
-            "/api/v1/tasks",
-            json={
-                "session_id": session_response.json()["id"],
-                "user_id": "evaluation-user",
-                "user_role": "student",
-                "scene": "solving",
-                "course_id": case.course,
-                "intent": case.intent,
-                "canonical_input": canonical,
-                "attachments": case.file_refs,
-                "context_refs": [],
-                "options": {
-                    "request_id": trace_id,
-                    "trace_id": trace_id,
-                    "input_type": case.input_type,
-                    "evaluation_case_id": case.case_id,
-                    "evaluation_mode": self.mode,
-                    "allow_cloud": self.mode in {"live", "real_model", "real_xingchen"},
-                    **task_options,
-                },
-            },
-        )
-        task_response.raise_for_status()
-        task = task_response.json()
-        while task["status"] not in {"completed", "failed", "cancelled"}:
-            await asyncio.sleep(0.02)
-            response = await self.client.get(
-                f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
-            )
-            response.raise_for_status()
-            task = response.json()
-        actions = evaluation_controls.get("_evaluation_follow_up_actions", [])
-        for index, item in enumerate(actions if isinstance(actions, list) else []):
-            action = item if isinstance(item, str) else str(item.get("action", ""))
-            student_answer = (
-                "" if isinstance(item, str) else str(item.get("student_answer", ""))
-            )
-            action_response = await self.client.post(
-                "/api/v1/learning/actions",
+        attachments = await self._build_evaluation_attachments(case)
+        task: dict[str, Any] | None = None
+        try:
+            session_response = await self.client.post(
+                "/api/v1/sessions",
                 json={
-                    "source_task_id": task["id"],
                     "user_id": "evaluation-user",
-                    "action": action,
-                    "idempotency_key": (
-                        f"{trace_id}_{case.case_id}_{index}_{action}"
-                    )[:128],
-                    "student_answer": student_answer,
-                    "payload": {},
+                    "course_id": case.course,
+                    "title": f"Evaluation {case.case_id}",
                 },
             )
-            action_response.raise_for_status()
-            response = await self.client.get(
-                f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+            session_response.raise_for_status()
+            canonical = {"text": case.message, **case.structured_input}
+            task_response = await self.client.post(
+                "/api/v1/tasks",
+                json={
+                    "session_id": session_response.json()["id"],
+                    "user_id": "evaluation-user",
+                    "user_role": "student",
+                    "scene": "solving",
+                    "course_id": case.course,
+                    "intent": case.intent,
+                    "canonical_input": canonical,
+                    "attachments": attachments,
+                    "context_refs": [],
+                    "options": {
+                        "request_id": trace_id,
+                        "trace_id": trace_id,
+                        "input_type": case.input_type,
+                        "evaluation_case_id": case.case_id,
+                        "evaluation_mode": self.mode,
+                        "allow_cloud": self.mode
+                        in {"live", "real_model", "real_xingchen"},
+                        **task_options,
+                    },
+                },
             )
-            response.raise_for_status()
-            task = response.json()
-        if evaluation_controls.get("_evaluation_cross_user_check"):
-            cross_user = await self.client.get(
-                f"/api/v1/tasks/{task['id']}?user_id=another-evaluation-user"
+            task_response.raise_for_status()
+            task = task_response.json()
+            while task["status"] not in {"completed", "failed", "cancelled"}:
+                await asyncio.sleep(0.02)
+                response = await self.client.get(
+                    f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+                )
+                response.raise_for_status()
+                task = response.json()
+            actions = evaluation_controls.get("_evaluation_follow_up_actions", [])
+            for index, item in enumerate(actions if isinstance(actions, list) else []):
+                action = item if isinstance(item, str) else str(item.get("action", ""))
+                student_answer = (
+                    "" if isinstance(item, str) else str(item.get("student_answer", ""))
+                )
+                action_response = await self.client.post(
+                    "/api/v1/learning/actions",
+                    json={
+                        "source_task_id": task["id"],
+                        "user_id": "evaluation-user",
+                        "action": action,
+                        "idempotency_key": (
+                            f"{trace_id}_{case.case_id}_{index}_{action}"
+                        )[:128],
+                        "student_answer": student_answer,
+                        "payload": {},
+                    },
+                )
+                action_response.raise_for_status()
+                response = await self.client.get(
+                    f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+                )
+                response.raise_for_status()
+                task = response.json()
+            if evaluation_controls.get("_evaluation_cross_user_check"):
+                cross_user = await self.client.get(
+                    f"/api/v1/tasks/{task['id']}?user_id=another-evaluation-user"
+                )
+                task["_evaluation_cross_user_isolated"] = cross_user.status_code in {
+                    403,
+                    404,
+                }
+            return task
+        finally:
+            if task is None:
+                await self._cleanup_evaluation_attachments(attachments)
+
+    async def _cleanup_evaluation_attachments(
+        self, attachments: list[dict[str, Any]]
+    ) -> None:
+        """Delete only files uploaded by this evaluation run after task use."""
+
+        if not attachments:
+            return
+        session_factory = getattr(self.app.state, "session_factory", None)
+        settings = getattr(self.app.state, "settings", None)
+        if session_factory is None or settings is None:
+            return
+        try:
+            async with session_factory() as db:
+                await cleanup_evaluation_attachments(
+                    db,
+                    settings,
+                    file_ids=(str(item.get("file_id", "")) for item in attachments),
+                )
+                await db.commit()
+        except Exception:
+            logger.warning(
+                "evaluation attachment cleanup failed",
+                extra={"file_ids": [item.get("file_id") for item in attachments]},
+                exc_info=True,
             )
-            task["_evaluation_cross_user_isolated"] = cross_user.status_code in {
-                403,
-                404,
-            }
-        return task
+
+    async def _build_evaluation_attachments(
+        self, case: EvaluationCase
+    ) -> list[dict[str, Any]]:
+        """Upload validated local case files and return safe AttachmentRefs."""
+
+        if not case.file_refs:
+            return []
+        if self._case_attachment_root is None:
+            raise ValueError(
+                f"{case.case_id}: file_refs require an explicit case attachment root"
+            )
+        assert self.client is not None
+        attachments: list[dict[str, Any]] = []
+        try:
+            for ordinal, reference in enumerate(case.file_refs):
+                _relative, path = resolve_evaluation_attachment(
+                    reference,
+                    root=self._case_attachment_root,
+                    case_id=case.case_id,
+                    ordinal=ordinal,
+                )
+                content_type = mimetypes.guess_type(path.name)[0]
+                if content_type is None:
+                    raise ValueError(
+                        f"{case.case_id}: attachment {ordinal} content type is unknown"
+                    )
+                response = await self.client.post(
+                    "/api/v1/files",
+                    files={
+                        "upload": (
+                            path.name,
+                            path.read_bytes(),
+                            content_type,
+                        )
+                    },
+                    data={"purpose": "evaluation_attachment"},
+                )
+                response.raise_for_status()
+                payload = response.json()
+                attachment_index = len(attachments)
+                uploaded_file_id = str(payload.get("id", ""))
+                if not uploaded_file_id:
+                    raise ValueError(
+                        f"{case.case_id}: attachment {ordinal} upload returned no id"
+                    )
+                # Keep a cleanup handle even when ingestion is pending/failed.
+                attachments.append({"file_id": uploaded_file_id})
+                ingestion_status = str(payload.get("ingestion_status", ""))
+                if ingestion_status in {"pending", "processing"}:
+                    raise ValueError(
+                        f"{case.case_id}: attachment {ordinal} ingestion is "
+                        "not complete"
+                    )
+                if ingestion_status == "failed":
+                    detail = str(payload.get("extraction_error") or "ingestion failed")
+                    raise ValueError(
+                        f"{case.case_id}: attachment {ordinal} ingestion failed: "
+                        f"{detail}"
+                    )
+                attachment = AttachmentRef(
+                    file_id=str(payload["id"]),
+                    filename=str(payload["filename"]),
+                    content_type=str(payload["content_type"]),
+                    size_bytes=int(payload["size_bytes"]),
+                    storage_key=str(payload["storage_key"]),
+                    checksum_sha256=str(payload["checksum_sha256"]),
+                    ingestion_status=ingestion_status,
+                    page_count=int(payload.get("page_count", 0)),
+                    extracted_text=str(payload.get("extracted_text", "")),
+                    extraction_metadata=dict(payload.get("extraction_metadata") or {}),
+                )
+                attachments[attachment_index] = attachment.model_dump(mode="json")
+        except Exception:
+            await self._cleanup_evaluation_attachments(attachments)
+            raise
+        return attachments
 
     def _observation(self, task: dict[str, Any]) -> dict[str, Any]:
         result = task.get("result_content") or {}
@@ -346,13 +492,9 @@ class EvaluationRunner:
         teaching = structured.get("teaching") or {}
         teaching = teaching if isinstance(teaching, dict) else {}
         solution_packet = structured.get("solution_packet") or {}
-        solution_packet = (
-            solution_packet if isinstance(solution_packet, dict) else {}
-        )
+        solution_packet = solution_packet if isinstance(solution_packet, dict) else {}
         evidence_packet = structured.get("evidence_packet") or {}
-        evidence_packet = (
-            evidence_packet if isinstance(evidence_packet, dict) else {}
-        )
+        evidence_packet = evidence_packet if isinstance(evidence_packet, dict) else {}
         error_pool = structured.get("error_pool") or {}
         error_pool = error_pool if isinstance(error_pool, dict) else {}
         teaching_loop = structured.get("teaching_loop") or {}
@@ -365,9 +507,7 @@ class EvaluationRunner:
             or {}
         )
         phase2_verification = (
-            phase2_verification
-            if isinstance(phase2_verification, dict)
-            else {}
+            phase2_verification if isinstance(phase2_verification, dict) else {}
         )
         phase2_steps = phase2_verification.get("step_results") or []
         phase2_steps = phase2_steps if isinstance(phase2_steps, list) else []
@@ -386,9 +526,7 @@ class EvaluationRunner:
         metrics = metrics if isinstance(metrics, dict) else {}
         expected_mode = str(input_options.get("teaching_mode", "direct_answer"))
         mapping_status = str(solution_packet.get("mapping_status", ""))
-        mapped_skill_ids = [
-            str(item) for item in solution_packet.get("skill_ids", [])
-        ]
+        mapped_skill_ids = [str(item) for item in solution_packet.get("skill_ids", [])]
         return {
             "task_status": str(task.get("status", "")),
             "route_status": str(task.get("route_status", "")),
@@ -446,9 +584,7 @@ class EvaluationRunner:
             "requires_manual_review": bool(
                 teaching.get("requires_manual_review", False)
             ),
-            "expected_teaching_execution_path": str(
-                teaching_plan.get("path", "")
-            ),
+            "expected_teaching_execution_path": str(teaching_plan.get("path", "")),
             "verification_report_valid": (
                 phase2_verification.get("version") == "v1"
                 and bool(phase2_verification.get("overall_status"))

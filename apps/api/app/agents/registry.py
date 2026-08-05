@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from app.contracts.external_retrieval import ExternalRetrievalPolicy
 from app.core.config import PROJECT_ROOT, Settings
 from app.core.internal_workflows import internal_workflow_models_configured
 
@@ -234,6 +235,7 @@ class AgentDefinition:
     input_rules: tuple[InputMappingRule, ...]
     output_rules: tuple[OutputMappingRule, ...]
     retrieval_policy: RetrievalPolicyDefinition
+    external_retrieval: ExternalRetrievalPolicy
     fallback: FallbackDefinition
     development: DevelopmentDefinition
     route_when_unconfigured: bool
@@ -362,6 +364,11 @@ class AgentRegistry:
             retrieval_raw = raw.get("retrieval_policy", {})
             if not isinstance(retrieval_raw, dict):
                 raise ValueError(f"Agent retrieval_policy 必须是映射: {agent_id}")
+            external_raw = retrieval_raw.get("external", {})
+            if not isinstance(external_raw, dict):
+                raise ValueError(
+                    f"Agent retrieval_policy.external 必须是映射: {agent_id}"
+                )
             legacy_top_k = max(0, int(raw.get("knowledge_top_k", 0)))
             legacy_mode = str(raw.get("knowledge_context_mode", "none"))
             retrieval_enabled = bool(retrieval_raw.get("enabled", legacy_top_k > 0))
@@ -500,6 +507,21 @@ class AgentRegistry:
                             "generation_injection", legacy_mode == "learning_qa"
                         )
                     ),
+                ),
+                external_retrieval=ExternalRetrievalPolicy(
+                    enabled=bool(external_raw.get("enabled", False)),
+                    source_scopes=list(external_raw.get("source_scopes", [])),
+                    providers=list(external_raw.get("providers", [])),
+                    max_results=int(external_raw.get("max_results", 8)),
+                    max_fetches=int(external_raw.get("max_fetches", 4)),
+                    max_iterations=int(external_raw.get("max_iterations", 2)),
+                    freshness_days=external_raw.get("freshness_days"),
+                    allow_full_text=bool(external_raw.get("allow_full_text", False)),
+                    require_citations=bool(external_raw.get("require_citations", True)),
+                    generation_injection=bool(
+                        external_raw.get("generation_injection", False)
+                    ),
+                    timeout_seconds=float(external_raw.get("timeout_seconds", 20)),
                 ),
                 fallback=FallbackDefinition(
                     type=str(

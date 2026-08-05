@@ -1,0 +1,69 @@
+schema_version: "course_asset_manifest.v1"
+course_id: "AE"
+runtime_loaded: false
+runtime_source: "apps/api/app/courses/registry.py"
+runtime_course_pack_status: "basic"
+runtime_solver_entrypoint: "ACADEMIC_PROBLEM_SOLVER"
+frozen_fallback_reference: null
+sources:
+  skills: "config/skills/AE.yaml"
+  reviewed_error_pool: "config/error_pool/AE.yaml"
+  error_pool_proposals: "config/error_pool/proposals/AE.yaml"
+  knowledge_manifest: "knowledge_indexes/knowledge_base_manifest.jsonl"
+  evaluation_cases: "evaluation/cases"
+  compatibility_yaml: null
+verification_rule_evidence:
+  schema_version: "verification_rule_evidence.v1"
+  validator_id: "ae_deterministic_v1"
+  validator_path: "apps/api/app/services/ae_validator.py"
+  rules:
+    operating_region:
+      conflict_types:
+        - "bjt_operating_region"
+        - "q_point_region_mismatch"
+        - "diode_operating_region"
+        - "mos_operating_region"
+      test_files:
+        - "apps/api/tests/test_ae_validator.py"
+        - "apps/api/tests/test_targeted_solver_optimization.py"
+    small_signal_prerequisite:
+      conflict_types: ["small_signal_prerequisite_missing"]
+      test_files: ["apps/api/tests/test_ae_validator.py"]
+    feedback_polarity:
+      conflict_types: ["feedback_polarity"]
+      test_files: ["apps/api/tests/test_ae_validator.py"]
+    unit_consistency:
+      conflict_types: ["unit_consistency", "unit_missing"]
+      test_files: ["apps/api/tests/test_ae_validator.py"]
+error_signature_evidence:
+  schema_version: "error_signature_evidence.v1"
+  evidence_scope: "finite_deterministic"
+  evidence_note: "Finite deterministic AE validator evidence; it does not claim universal first-error detection."
+  validator_id: "ae_deterministic_v1"
+  validator_path: "apps/api/app/services/ae_validator.py"
+  test_files: ["apps/api/tests/test_ae_validator.py", "apps/api/tests/test_targeted_solver_optimization.py"]
+  mappings:
+    bjt_region_error:
+      conflict_types: ["bjt_operating_region"]
+    diode_region_error:
+      conflict_types: ["diode_operating_region"]
+    feedback_polarity_error:
+      conflict_types: ["feedback_polarity"]
+    gain_sign_error:
+      conflict_types: ["gain_sign"]
+    mos_region_error:
+      conflict_types: ["mos_operating_region"]
+    q_point_region_mismatch:
+      conflict_types: ["q_point_region_mismatch"]
+readiness:
+  material_lifecycle: "implemented"
+  teacher_review_gate: "implemented"
+  user_feedback_metrics: "implemented"
+  runtime_error_template_coverage: "partial"
+  official_rules: "pending"
+  demonstration_cases: "owner_designed_pending"
+  real_user_outcomes: "pending"
+boundaries:
+  duplicates_solver_graph: false
+  performs_provider_calls: false
+  modifies_frozen_baseline: false

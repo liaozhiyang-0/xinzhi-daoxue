@@ -40,6 +40,36 @@ COURSE_KEYWORDS: tuple[tuple[CourseCode, tuple[str, ...]], ...] = (
     (CourseCode.IC, ("集成电路", "芯片设计", "版图")),
 )
 
+# Natural-language aliases used by the public chat entry point. Keep these
+# separate from the original baseline vocabulary so future course additions
+# can extend the map without changing the routing algorithm.
+COURSE_KEYWORD_EXTENSIONS: tuple[tuple[CourseCode, tuple[str, ...]], ...] = (
+    (
+        CourseCode.CT,
+        (
+            "电路理论", "戴维宁", "诺顿", "电感", "暂态", "稳态",
+            "基尔霍夫", "KCL", "KVL",
+        ),
+    ),
+    (
+        CourseCode.AE,
+        (
+            "模拟电路", "运算放大器", "二极管", "反馈", "振荡", "稳压", "开关稳压",
+            "线性稳压", "整流", "滤波", "晶体管", "MOS管",
+        ),
+    ),
+    (
+        CourseCode.DE,
+        ("数字电路", "逻辑", "锁存器", "计数器", "寄存器", "时序逻辑", "组合逻辑"),
+    ),
+)
+
+EXPLANATION_MARKERS = (
+    "为什么", "是什么", "什么是", "解释", "讲解", "说明", "介绍", "原理", "概念",
+    "特点", "区别", "作用", "如何理解", "怎么理解", "用途", "应用",
+)
+KNOWLEDGE_REQUEST_MARKERS = ("本地知识库", "本地资料", "课程资料", "知识库", "检索")
+
 FOLLOW_UP_MARKERS = ("上一问", "上一步", "这里", "刚才", "为什么这里", "继续")
 SOLVE_MARKERS = (
     "求",
@@ -49,10 +79,10 @@ SOLVE_MARKERS = (
     "化简",
     "判断工作状态",
     "分析电路",
-    "电压",
-    "电流",
-    "功率",
-    "响应",
+    "求电压",
+    "求电流",
+    "求功率",
+    "求响应",
 )
 
 
@@ -245,14 +275,20 @@ class XZDSupervisor:
     def _course(payload: AgentRequestV2, context: dict[str, Any]) -> CourseCode:
         if payload.course_hint is not None:
             return payload.course_hint
-        text = payload.message.lower()
-        for course, keywords in COURSE_KEYWORDS:
+        text = payload.message.casefold().replace(" ", "")
+        for course, keywords in (*COURSE_KEYWORD_EXTENSIONS, *COURSE_KEYWORDS):
             if any(keyword.lower() in text for keyword in keywords):
                 return course
-        if any(marker in payload.message for marker in ("Ω", "欧姆", "电阻", "电压源")):
+        if any(
+            marker in text
+            for marker in ("ω", "欧姆", "电阻", "电压源", "电流源", "基尔霍夫")
+        ):
             return CourseCode.CT
         previous = str(context.get("course_id", "")).upper()
-        if any(marker in payload.message for marker in FOLLOW_UP_MARKERS):
+        if any(
+            marker in text
+            for marker in (*FOLLOW_UP_MARKERS, *KNOWLEDGE_REQUEST_MARKERS)
+        ):
             try:
                 return CourseCode(previous)
             except ValueError:
@@ -265,7 +301,7 @@ class XZDSupervisor:
     ) -> OrchestrationIntent:
         if payload.intent_hint is not None:
             return payload.intent_hint
-        text = payload.message
+        text = payload.message.casefold().replace(" ", "")
         if any(marker in text for marker in FOLLOW_UP_MARKERS):
             return OrchestrationIntent.FOLLOW_UP_QUESTION
         if payload.files and any(
@@ -298,8 +334,10 @@ class XZDSupervisor:
             )
         ):
             return OrchestrationIntent.SOLVE_PROBLEM
-        if any(marker in text for marker in ("为什么", "是什么", "解释", "概念")):
+        if any(marker in text for marker in EXPLANATION_MARKERS):
             return OrchestrationIntent.EXPLAIN_CONCEPT
+        if any(marker in text for marker in KNOWLEDGE_REQUEST_MARKERS):
+            return OrchestrationIntent.GENERAL_QA
         previous_intent = str(context.get("intent", ""))
         if previous_intent and any(marker in text for marker in FOLLOW_UP_MARKERS):
             return OrchestrationIntent.FOLLOW_UP_QUESTION

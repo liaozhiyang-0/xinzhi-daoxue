@@ -1,0 +1,31 @@
+schema_version: "error_pool_review.v1"
+course_id: "AE"
+runtime_loaded: false
+review_status: "pending_teacher_review"
+reviewer: null
+reviewed_at: null
+decisions:
+  - proposal_id: "AE.bjt_region_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "AE.diode_region_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "AE.feedback_polarity_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "AE.gain_sign_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "AE.mos_region_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "AE.q_point_region_mismatch"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""

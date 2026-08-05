@@ -119,7 +119,10 @@ def _rag_build(
             dry_run=args.dry_run,
         )
         if args.delete_stale_points and not args.dry_run:
-            chunks = load_jsonl(indexer.chunk_path)
+            chunks = [
+                *load_jsonl(indexer.chunk_path),
+                *load_jsonl(indexer.material_chunk_path),
+            ]
             images = load_jsonl(indexer.image_path)
             deleted = indexer.vector_store.prune(
                 text_ids={str(item["chunk_id"]) for item in chunks},

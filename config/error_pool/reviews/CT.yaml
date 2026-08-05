@@ -1,0 +1,23 @@
+schema_version: "error_pool_review.v1"
+course_id: "CT"
+runtime_loaded: false
+review_status: "pending_teacher_review"
+reviewer: null
+reviewed_at: null
+decisions:
+  - proposal_id: "CT.equivalent_resistance_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "CT.kcl_sign_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "CT.phase_sign_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""
+  - proposal_id: "CT.power_factor_error"
+    decision: "pending"
+    evidence_refs: []
+    notes: ""

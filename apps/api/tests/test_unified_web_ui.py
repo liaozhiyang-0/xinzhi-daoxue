@@ -38,9 +38,10 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
     assert "开发模拟" in script
     assert "降级运行" in script
     assert 'href: "/workspace"' in script
-    assert 'href: "/debug/execution"' in script
-    assert 'href: "/debug/agents"' in script
-    assert 'href: "/system"' in script
+    assert 'href: "/debug/execution"' not in script
+    assert 'href: "/debug/agents"' not in script
+    assert 'href: "/system"' not in script
+    assert 'href: "/admin"' in script
     assert 'href: "/demo"' in script
     assert "--bg-primary" in tokens
     assert '[data-theme="dark"]' in tokens

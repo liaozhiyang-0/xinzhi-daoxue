@@ -21,3 +21,33 @@ def test_create_query_and_artifact(api, client) -> None:
     assert history.json()[0]["question"] == "求电阻两端电压"
     assert history.json()[0]["answer"]
     assert "result_content" not in history.json()[0]
+
+
+def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        intent="lesson_prep",
+    )
+    payload.update(
+        {
+            "scene": "teaching",
+            "scenario_id": "faculty_course_copilot_v1",
+            "canonical_input": {"text": "璇峰府鎴戝噯澶囦竴鑺傝"},
+        }
+    )
+
+    response = api.client.post("/api/v1/tasks", json=payload)
+
+    assert response.status_code == 202, response.text
+    created = response.json()
+    assert created["agent_id"] == "TEACH_01_LESSON_PREP_V1"
+    assert created["route_status"] == "selected"
+    assert created["input_content"]["scenario_id"] == "faculty_course_copilot_v1"
+    assert (
+        created["input_content"]["options"]["_scenario_catalog_bound"] is True
+    )
+    completed = api.wait_for_task(created["id"])
+    assert completed["result_content"]["structured_result"]["scenario_id"] == (
+        "faculty_course_copilot_v1"
+    )

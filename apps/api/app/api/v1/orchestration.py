@@ -25,10 +25,17 @@ from app.core.internal_workflows import (
     WORKFLOW_INTERNAL_AGENT_MAP,
     internal_workflow_models_configured,
 )
-from app.dependencies import get_db, get_provider
+from app.dependencies import (
+    effective_user_id,
+    get_current_principal,
+    get_db,
+    get_provider,
+)
 from app.models import TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import FileRepository, SessionRepository, TaskRepository
+from app.services.auth_service import Principal
+from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_service import SessionService
 from app.services.task_creation_service import TaskCreationService
 
@@ -61,7 +68,7 @@ def _local_handler_available(path: str) -> bool:
 
 
 async def _attachments(
-    db: AsyncSession, payload: AgentRequestV2
+    db: AsyncSession, payload: AgentRequestV2, principal: Principal
 ) -> list[AttachmentRef]:
     values: list[AttachmentRef] = []
     repository = FileRepository(db)
@@ -69,6 +76,17 @@ async def _attachments(
         model = await repository.get(item.file_id)
         if model is None:
             raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
+        if principal.has_identity and model.owner_user_id != principal.user_id:
+            raise HTTPException(status_code=404, detail=f"附件不存在: {item.file_id}")
+        if model.ingestion_status in {"pending", "processing"}:
+            raise HTTPException(
+                status_code=409, detail=f"附件仍在解析中: {model.filename}"
+            )
+        if model.ingestion_status == "failed":
+            raise HTTPException(
+                status_code=422,
+                detail=model.extraction_error or f"附件解析失败: {model.filename}",
+            )
         values.append(
             AttachmentRef(
                 file_id=model.id,
@@ -77,6 +95,10 @@ async def _attachments(
                 size_bytes=model.size_bytes,
                 storage_key=model.storage_key,
                 checksum_sha256=model.checksum_sha256,
+                ingestion_status=str(model.ingestion_status),
+                page_count=model.page_count,
+                extracted_text=model.extracted_text[:200_000],
+                extraction_metadata=model.extraction_metadata or {},
             )
         )
     return values
@@ -87,8 +109,13 @@ async def _submit(
     request: Request,
     db: AsyncSession,
     provider: AgentProvider,
+    principal: Principal,
 ) -> tuple[Any, ChatSubmission]:
-    user_id = payload.user_id or "local-user"
+    user_id = effective_user_id(principal, payload.user_id) or "local-user"
+    try:
+        prepared_payload = request.app.state.scenario_catalog.enrich_request(payload)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if payload.session_id:
         session = await SessionRepository(db).get(payload.session_id)
         if session is None:
@@ -103,10 +130,27 @@ async def _submit(
             )
         )
         session_id = session.id
-    attachment_refs = await _attachments(db, payload)
+    attachment_refs = await _attachments(db, prepared_payload, principal)
+    document_blocks = [
+        f"【附件：{item.filename}】\n{item.extracted_text.strip()}"
+        for item in attachment_refs
+        if item.extracted_text.strip()
+    ]
+    if document_blocks:
+        combined = "\n\n".join(document_blocks)
+        message = "\n\n".join(
+            part for part in (prepared_payload.message.strip(), combined) if part
+        )
+        prepared_payload = prepared_payload.model_copy(
+            update={
+                "message": message[
+                    : request.app.state.settings.document_max_extracted_chars
+                ]
+            }
+        )
     context = dict(getattr(session, "context_data", {}) or {})
     prepared = request.app.state.supervisor.prepare(
-        payload,
+        prepared_payload,
         session_id=session_id,
         user_id=user_id,
         attachments=attachment_refs,
@@ -122,6 +166,7 @@ async def _submit(
         session_id=session_id,
         task_id=task.id,
         trace_id=prepared.state["trace_id"],
+        scenario_id=prepared_payload.scenario_id,
         status=task.status.value,
         stream_url=f"/api/v1/tasks/{task.id}/stream",
         result_url=f"/api/v1/chat/{task.id}",
@@ -138,10 +183,11 @@ async def _submit(
 async def create_chat(
     payload: AgentRequestV2,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> ChatSubmission:
-    _, submission = await _submit(payload, request, db, provider)
+    _, submission = await _submit(payload, request, db, provider, principal)
     return submission
 
 
@@ -149,10 +195,11 @@ async def create_chat(
 async def stream_chat(
     payload: AgentRequestV2,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> StreamingResponse:
-    task, _ = await _submit(payload, request, db, provider)
+    task, _ = await _submit(payload, request, db, provider, principal)
     return StreamingResponse(
         event_stream(request, task.id, cursor=0),
         media_type="text/event-stream",
@@ -171,10 +218,16 @@ def _citation(source_ref: str, index: int) -> Citation:
 
 
 @router.get("/chat/{task_id}", response_model=AgentResponse)
-async def get_chat_result(task_id: str, request: Request) -> AgentResponse:
+async def get_chat_result(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+) -> AgentResponse:
     async with request.app.state.session_factory() as db:
         task = await TaskRepository(db).get(task_id)
     if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if principal.has_identity and task.user_id != principal.user_id:
         raise HTTPException(status_code=404, detail="任务不存在")
     result = dict(task.result_content or {})
     if task.status == TaskStatus.FAILED:

@@ -11,6 +11,10 @@ from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
 from app.core.config import Settings
 from app.core.errors import AgentInputNotSupportedError, RouteInvalidTargetError
 from app.core.internal_workflows import internal_workflow_models_configured
+from app.services.external_research_answer import (
+    is_academic_search_follow_up,
+    is_academic_search_request,
+)
 from app.services.request_materials import RequestMaterialExtractor
 
 GENERAL_QUESTION_AGENT_ID = "GENERAL_QUESTION_V1"
@@ -20,6 +24,7 @@ BUSINESS_AGENTS = (
     "ACADEMIC_PROBLEM_SOLVER",
     "TEACH_01_LESSON_PREP_V1",
     "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1",
     "RESEARCH_02_ACADEMIC_WRITING_V1",
     "RESEARCH_03_DATA_ANALYSIS_V1",
 )
@@ -41,15 +46,68 @@ AGENT_INTENT = {
     "ACADEMIC_PROBLEM_SOLVER": "solve_problem",
     "TEACH_01_LESSON_PREP_V1": "lesson_prep",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "assignment_review",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "general_qa",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "academic_writing",
     "RESEARCH_03_DATA_ANALYSIS_V1": "data_analysis",
 }
 AGENT_ROLE = {
     "TEACH_01_LESSON_PREP_V1": "teacher",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "teacher",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "researcher",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "researcher",
     "RESEARCH_03_DATA_ANALYSIS_V1": "researcher",
 }
+
+OVERALL_ROUTE_CATALOG = (
+    {
+        "agent_id": GENERAL_QUESTION_AGENT_ID,
+        "label": "通用问答",
+        "description": "无法可靠归类、跨领域或需要先澄清的问题。",
+        "selection_hint": "不确定时选择此路径。",
+    },
+    {
+        "agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+        "label": "课程知识问答",
+        "description": "解释电子信息课程概念、定理、方法和知识点。",
+        "selection_hint": "课程概念解释、知识总结和学习建议。",
+    },
+    {
+        "agent_id": "ACADEMIC_PROBLEM_SOLVER",
+        "label": "学术问题求解",
+        "description": "计算、推导和分析电路或其他课程题目。",
+        "selection_hint": "含数值、公式、图像或明确求解目标的问题。",
+    },
+    {
+        "agent_id": "TEACH_01_LESSON_PREP_V1",
+        "label": "教案设计",
+        "description": "设计课程教案、课堂流程和形成性评价。",
+        "selection_hint": "用户要求备课、授课方案或教学活动。",
+    },
+    {
+        "agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+        "label": "作业初审",
+        "description": "检查学生作业的正确部分、错误、风险和反馈。",
+        "selection_hint": "用户要求批改、初审或检查学生答案。",
+    },
+    {
+        "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+        "label": "学术论文检索",
+        "description": "从外部学术来源查找论文、文献或最新研究。",
+        "selection_hint": "查找、推荐、最新、相关论文或文献。",
+    },
+    {
+        "agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+        "label": "学术写作",
+        "description": "改写、润色、摘要化或规范化用户已有学术文本。",
+        "selection_hint": "修改表达，不负责替用户查找论文。",
+    },
+    {
+        "agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+        "label": "数据分析",
+        "description": "根据用户提供的数据或目标制定、解释分析方案。",
+        "selection_hint": "统计、实验数据、指标分析和可复现计划。",
+    },
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +133,67 @@ class TaskRouter:
         material = self.material_extractor.extract(request)
         course_id, course_reasons = self._detect_course(request, material.raw_text)
         input_type = self._input_type(request)
+        scenario_agent_id = (
+            str(request.options.get("scenario_agent_id", "")).strip()
+            if request.options.get("_scenario_catalog_bound") is True
+            else ""
+        )
+        if scenario_agent_id:
+            decision = self._decision_for_target(
+                scenario_agent_id,
+                request,
+                course_id=course_id,
+                intent=request.intent.value,
+                input_type=input_type,
+                confidence=1.0,
+            )
+            return decision.model_copy(
+                update={
+                    "route_source": "scenario_catalog",
+                    "reason": (
+                        f"scenario catalog selected {scenario_agent_id}"
+                        if not decision.fallback_used
+                        else decision.reason
+                    ),
+                    "reason_codes": course_reasons + ["scenario_catalog_bound"],
+                    "local_confidence": 1.0,
+                    "route_confidence": 1.0,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": [decision.agent_id],
+                }
+            )
         scored = self._score(request, material.materials, material.raw_text)
+        previous_agent = str(request.options.get("previous_agent", ""))
+        previous_answer_summary = str(
+            request.options.get("previous_answer_summary", "")
+        )
+        is_search_follow_up = is_academic_search_follow_up(
+            material.raw_text,
+            previous_agent=previous_agent,
+            previous_answer_summary=previous_answer_summary,
+        )
+        if is_academic_search_request(material.raw_text) or is_search_follow_up:
+            decision = self._decision_for_target(
+                "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                request,
+                course_id=course_id,
+                intent=AGENT_INTENT["RESEARCH_01_ACADEMIC_SEARCH_V1"],
+                input_type=input_type,
+                confidence=1.0,
+            )
+            return decision.model_copy(
+                update={
+                    "task_subtype": "academic_search",
+                    "reason": "识别为论文检索请求，进入外部学术检索能力",
+                    "reason_codes": course_reasons + ["academic_search_request"],
+                    "local_confidence": 1.0,
+                    "route_confidence": 1.0,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": ["RESEARCH_01_ACADEMIC_SEARCH_V1"],
+                }
+            )
         general_qa_problem_override = (
             request.intent == Intent.GENERAL_QA
             and "domain_contract:academic_problem_language"
@@ -336,6 +454,133 @@ class TaskRouter:
             )
         return sorted(result, key=lambda item: (-item.score, item.agent_id))
 
+    def overall_route_candidates(
+        self, request: AgentRequest, current: RouteDecision | None = None
+    ) -> list[dict[str, Any]]:
+        """Return a compact, model-readable summary of all executable paths."""
+
+        material = self.material_extractor.extract(request)
+        course_id, _ = self._detect_course(request, material.raw_text)
+        input_type = self._input_type(request)
+        current_scores = {
+            item.agent_id: item.score
+            for item in (current.candidate_agents if current else [])
+        }
+        result: list[dict[str, Any]] = []
+        for item in OVERALL_ROUTE_CATALOG:
+            agent_id = str(item["agent_id"])
+            intent = (
+                Intent.GENERAL_QA.value
+                if agent_id == GENERAL_QUESTION_AGENT_ID
+                else AGENT_INTENT[agent_id]
+            )
+            availability = self._availability(agent_id, course_id, input_type, intent)
+            result.append(
+                {
+                    **item,
+                    "available": all(availability.values()),
+                    "availability": availability,
+                    "local_score": current_scores.get(agent_id, 0.0),
+                }
+            )
+        return result
+
+    def apply_overall_route(
+        self,
+        request: AgentRequest,
+        current: RouteDecision,
+        *,
+        target_agent_id: str,
+        intent: str,
+        course_id: str,
+        confidence: float,
+        reason: str,
+        reason_codes: list[str] | None = None,
+        task_subtype: str = "",
+    ) -> RouteDecision | None:
+        """Validate and materialize a model-selected route."""
+
+        allowed = {str(item["agent_id"]) for item in OVERALL_ROUTE_CATALOG}
+        if target_agent_id not in allowed:
+            return None
+        input_type = self._input_type(request)
+        detected_course, course_reasons = self._detect_course(
+            request, self.material_extractor.extract(request).raw_text
+        )
+        explicit_course = request.course_id.upper().strip()
+        selected_course = (
+            explicit_course
+            if explicit_course not in {"", "AUTO", "UNKNOWN"}
+            else course_id.upper().strip()
+        )
+        if selected_course not in {
+            "CT",
+            "AE",
+            "DE",
+            "SS",
+            "DSP",
+            "COMM",
+            "RF",
+            "EM",
+            "INFO",
+            "EMBEDDED",
+            "IC",
+        }:
+            selected_course = current.course_id or detected_course
+        selected_intent = intent.strip() or (
+            Intent.GENERAL_QA.value
+            if target_agent_id == GENERAL_QUESTION_AGENT_ID
+            else AGENT_INTENT.get(target_agent_id, current.intent)
+        )
+        if selected_intent not in {item.value for item in Intent}:
+            selected_intent = (
+                Intent.GENERAL_QA.value
+                if target_agent_id == GENERAL_QUESTION_AGENT_ID
+                else AGENT_INTENT.get(target_agent_id, current.intent)
+            )
+        try:
+            decision = self._decision_for_target(
+                target_agent_id,
+                request,
+                course_id=selected_course,
+                intent=selected_intent,
+                input_type=input_type,
+                confidence=max(0.0, min(1.0, confidence)),
+            )
+        except (KeyError, AgentInputNotSupportedError):
+            return None
+        visited = list(dict.fromkeys([*current.visited_agents, target_agent_id]))
+        return decision.model_copy(
+            update={
+                "reason": reason.strip() or "overall router selected a validated path",
+                "route_source": "overall_router",
+                "route_confidence": max(0.0, min(1.0, confidence)),
+                "task_subtype": task_subtype.strip()
+                or current.task_subtype
+                or (
+                    "academic_search"
+                    if target_agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+                    else ""
+                ),
+                "secondary_intents": current.secondary_intents,
+                "requires_pipeline": current.requires_pipeline,
+                "candidate_agents": current.candidate_agents,
+                "reason_codes": [
+                    *course_reasons,
+                    *current.reason_codes,
+                    *(reason_codes or []),
+                    "overall_router_selected",
+                ][-12:],
+                "local_confidence": current.local_confidence,
+                "material_extraction": current.material_extraction,
+                "inferred_user_role": AGENT_ROLE.get(
+                    target_agent_id, request.user_role.value
+                ),
+                "visited_agents": visited,
+                "reroute_count": current.reroute_count + 1,
+            }
+        )
+
     def _availability(
         self, agent_id: str, course_id: str, input_type: str, intent: str
     ) -> dict[str, bool]:
@@ -446,6 +691,33 @@ class TaskRouter:
             ),
             "IC": sum(token in text for token in ("集成电路", "芯片设计", "版图")),
         }
+        # The router is also used directly by integrations that do not pass
+        # through XZDSupervisor. Keep a complete natural-language vocabulary
+        # here as a second line of defense for those callers.
+        for course, keywords in {
+            "CT": (
+                "电路理论", "戴维宁", "诺顿", "电感", "暂态", "稳态",
+                "基尔霍夫", "KCL", "KVL",
+            ),
+            "AE": (
+                "模拟电路", "运算放大器", "二极管", "反馈", "振荡", "稳压",
+                "开关稳压", "线性稳压", "整流", "滤波", "晶体管", "MOS管",
+            ),
+            "DE": (
+                "数字电路", "逻辑", "锁存器", "计数器", "寄存器", "时序逻辑", "组合逻辑"
+            ),
+            "SS": ("信号与系统", "卷积", "拉普拉斯变换"),
+            "DSP": ("数字信号处理", "离散傅里叶", "z变换", "滤波器"),
+            "COMM": ("通信原理", "调制", "解调", "信道编码"),
+            "RF": ("高频电子", "谐振放大", "混频"),
+            "EM": ("电磁场", "电磁波", "麦克斯韦"),
+            "INFO": ("信息论", "信源编码", "信道容量"),
+            "EMBEDDED": ("嵌入式", "单片机", "微控制器"),
+            "IC": ("集成电路", "芯片设计", "版图"),
+        }.items():
+            scores[course] += 2 * sum(
+                token.casefold() in text.casefold() for token in keywords
+            )
         best = max(scores, key=scores.get)  # type: ignore[arg-type]
         if scores[best] > 0 and list(scores.values()).count(scores[best]) == 1:
             return best, [f"detected_course:{best}"]
@@ -570,6 +842,34 @@ class TaskRouter:
                     min(ceiling, 0.60 + 0.12 * len(hits)),
                     f"keywords:{','.join(hits[:4])}",
                 )
+
+        knowledge_markers = (
+            "为什么", "是什么", "什么是", "解释", "讲解", "说明", "介绍",
+            "原理", "概念", "特点", "区别", "作用", "如何理解", "怎么理解",
+            "用途", "应用", "本地知识库", "本地资料", "课程资料", "知识库", "检索",
+        )
+        knowledge_hits = [
+            token for token in knowledge_markers if token.casefold() in text.casefold()
+        ]
+        non_knowledge_score = max(
+            (
+                score
+                for agent, score in scores.items()
+                if agent != "LEARN_01_KNOWLEDGE_QA_V1"
+            ),
+            default=0.0,
+        )
+        if (
+            knowledge_hits
+            and non_knowledge_score < 0.60
+            and scores.get("LEARN_01_KNOWLEDGE_QA_V1", 0.0) == 0.0
+            and not str(request.options.get("previous_agent", "")).strip()
+        ):
+            add(
+                "LEARN_01_KNOWLEDGE_QA_V1",
+                min(0.72, 0.60 + 0.06 * len(knowledge_hits)),
+                f"keywords:knowledge_language:{','.join(knowledge_hits[:4])}",
+            )
 
         problem_actions = (
             "求",

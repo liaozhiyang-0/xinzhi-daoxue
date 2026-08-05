@@ -4,6 +4,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.multimodal.quality import PDF_PAGE_TEXT_REVIEW_THRESHOLD
+
 
 class PDFPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -49,7 +51,9 @@ class PDFProcessor:
                 PDFPage(
                     page_number=index + 1,
                     text=text,
-                    needs_visual_processing=len(text) < 20,
+                    needs_visual_processing=(
+                        len(text) < PDF_PAGE_TEXT_REVIEW_THRESHOLD
+                    ),
                 )
             )
         warnings = []

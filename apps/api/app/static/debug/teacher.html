@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教师学习反馈工作台 · 芯智导学</title>
+  <link rel="stylesheet" href="/debug-assets/design-tokens.css">
+  <link rel="stylesheet" href="/debug-assets/app-shell.css">
+  <link rel="stylesheet" href="/debug-assets/components.css">
+  <link rel="stylesheet" href="/debug-assets/teacher.css">
+</head>
+<body>
+  <aside id="app-sidebar" class="app-sidebar"></aside>
+  <header id="app-topbar" class="app-topbar"></header>
+  <main class="app-main teacher-main">
+    <header class="teacher-hero">
+      <div>
+        <p class="eyebrow">教师反馈工作台</p>
+        <h1>学习反馈与复核</h1>
+        <p>查看选定课程和时间窗口内的学习闭环遥测，辅助教师安排复核与教学调整。</p>
+      </div>
+      <div class="teacher-hero-actions">
+        <span id="teacher-identity" class="identity-chip">读取身份中</span>
+        <button id="teacher-refresh" class="button secondary" type="button">刷新数据</button>
+      </div>
+    </header>
+
+    <form id="teacher-metrics-filter" class="card teacher-filter">
+      <label>课程
+        <select id="teacher-course" name="course_id">
+          <option value="">全部课程</option>
+          <option value="CT">电路理论 CT</option>
+          <option value="AE">模拟电子技术 AE</option>
+          <option value="DE">数字电子技术 DE</option>
+        </select>
+      </label>
+      <label>开始时间<input id="teacher-window-start" name="window_start" type="datetime-local" required></label>
+      <label>结束时间<input id="teacher-window-end" name="window_end" type="datetime-local" required></label>
+      <button class="button primary" type="submit">查询指标</button>
+    </form>
+
+    <section id="teacher-notice" aria-live="polite"></section>
+    <section id="teacher-metrics" class="teacher-metric-grid" aria-label="学习指标">
+      <div class="loading-state">正在读取学习指标…</div>
+    </section>
+
+    <section class="teacher-dashboard-grid">
+      <article id="teacher-feedback-panel" class="card teacher-panel">
+        <div class="section-heading"><div><h2>反馈采纳状态</h2><p>只统计反馈链路状态，不代表学生成绩或模型准确率。</p></div></div>
+        <div id="teacher-feedback-distribution" class="distribution-list"></div>
+      </article>
+      <article class="card teacher-panel">
+        <div class="section-heading"><div><h2>学习尝试与复核</h2><p>帮助教师发现需要人工关注的学习记录。</p></div></div>
+        <div id="teacher-verification-distribution" class="distribution-list"></div>
+      </article>
+    </section>
+
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>数据边界</h2><p>当前指标来自本地数据库的有限窗口聚合。</p></div></div>
+      <div id="teacher-warnings" class="teacher-warning-list"></div>
+    </section>
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>课程材料质量</h2><p>只显示材料版本和解析质量状态，不展示学生个人信息。</p></div></div>
+      <div id="teacher-material-quality" class="teacher-material-list" aria-live="polite"></div>
+    </section>
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>PDF/OCR 复核队列</h2><p>来自原始课程库的只读候选项；不会自动执行 OCR、审批或发布。</p></div></div>
+      <div class="teacher-ocr-controls" aria-label="OCR 队列筛选条件">
+        <label>复核动作
+          <select id="teacher-ocr-action-filter" name="ocr_action">
+            <option value="">全部复核动作</option>
+          </select>
+        </label>
+        <label>优先级
+          <select id="teacher-ocr-priority-filter" name="ocr_priority">
+            <option value="">全部优先级</option>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+          </select>
+        </label>
+        <label>处理决定
+          <select id="teacher-ocr-decision-filter" name="ocr_decision">
+            <option value="">全部决定</option>
+            <option value="pending">待处理</option>
+            <option value="decided">已处理</option>
+          </select>
+        </label>
+        <label>复核人
+          <input id="teacher-ocr-reviewer" name="ocr_reviewer" type="text" maxlength="120" placeholder="请输入复核人姓名">
+        </label>
+        <span id="teacher-ocr-filter-count" class="teacher-ocr-filter-count" aria-live="polite"></span>
+      </div>
+      <div id="teacher-ocr-summary" class="teacher-ocr-summary" aria-live="polite"></div>
+      <div id="teacher-ocr-review" class="teacher-ocr-list" aria-live="polite"></div>
+    </section>
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>OCR 质量证据</h2><p>只读文本层审计与候选页面信息；教师确认范围前不会执行 OCR。</p></div></div>
+      <div id="teacher-ocr-quality-summary" class="teacher-ocr-summary" aria-live="polite"></div>
+      <div id="teacher-ocr-quality" class="teacher-ocr-list" aria-live="polite"></div>
+    </section>
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>CT/AE 错误模板复核队列</h2><p>教师可以在此保存处理决定和证据；此页面不会发布运行时模板。</p></div></div>
+      <label>复核人
+        <input id="teacher-error-reviewer" name="error_reviewer" type="text" maxlength="120" placeholder="请输入复核人姓名">
+      </label>
+      <div id="teacher-error-review-summary" class="teacher-asset-review-summary" aria-live="polite"></div>
+      <div id="teacher-error-review-queue" class="teacher-asset-review-list" aria-live="polite"></div>
+    </section>
+    <section class="card teacher-panel">
+      <div class="section-heading"><div><h2>课程资产就绪度</h2><p>展示 CT/AE 课程资产和竞赛支撑的证据状态；待补充项不代表已完成。</p></div></div>
+      <div id="teacher-course-readiness" class="teacher-readiness-list" aria-live="polite"></div>
+    </section>
+  </main>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script src="/debug-assets/ui-core.js"></script>
+  <script src="/debug-assets/teacher.js"></script>
+</body>
+</html>

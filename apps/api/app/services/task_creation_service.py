@@ -16,6 +16,9 @@ from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
 from app.repositories import FileRepository, SessionRepository, TaskRepository
 from app.services.conversation_message_service import ConversationMessageService
+from app.services.evaluation_attachment_cleanup import (
+    cleanup_evaluation_attachments,
+)
 from app.services.event_service import append_task_event
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
@@ -110,9 +113,7 @@ class TaskCreationService:
             course_id=request.course_id,
             intent=request.intent.value,
             status=TaskStatus.CREATED,
-            provider=(
-                self.provider_name if route.provider_required else "local_agent"
-            ),
+            provider=(self.provider_name if route.provider_required else "local_agent"),
             agent_id=route.agent_id,
             route_status=route.route_status.value,
             route_reason=route.reason,
@@ -169,6 +170,12 @@ class TaskCreationService:
             task.assistant_message_id = (
                 failure_message.id if failure_message is not None else None
             )
+            async with self.db.begin_nested():
+                await cleanup_evaluation_attachments(
+                    self.db,
+                    self.settings,
+                    task_id=task.id,
+                )
             await self.db.commit()
             return task
         task.status = TaskStatus.QUEUED

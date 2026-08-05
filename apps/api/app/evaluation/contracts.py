@@ -200,6 +200,36 @@ class EvaluationResult(BaseModel):
     evaluation_mode: str = "offline"
 
 
+class EvaluationRunMetadata(BaseModel):
+    """Reproducibility metadata that contains no prompts or answers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    run_id: str = ""
+    case_count: int = Field(default=0, ge=0)
+    case_ids_sha256: str = ""
+    case_catalog_sha256: str = ""
+    case_catalog_content_sha256: str = ""
+    case_catalog_content_version: Literal[
+        "canonical_evaluation_case_payloads.v1"
+    ] | None = None
+    case_source_files_sha256: str = ""
+    case_source_files_version: Literal["evaluation_case_source_files.v1"] | None = None
+    case_attachment_manifest_sha256: str = ""
+    case_attachment_manifest_version: Literal[
+        "evaluation_case_attachments.v1"
+    ] | None = None
+    case_attachment_count: int = Field(default=0, ge=0)
+    filters_sha256: str = ""
+    implementation_fingerprint: str = ""
+    execution_channel: Literal["in_process_http"] = "in_process_http"
+    model_trace_retention: Literal["bounded_in_memory_metadata_only"] = (
+        "bounded_in_memory_metadata_only"
+    )
+    raw_prompts_stored: Literal[False] = False
+
+
 class SuiteReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -212,3 +242,30 @@ class SuiteReport(BaseModel):
     statistics: dict[str, Any]
     results: list[EvaluationResult]
     estimated_cost: float | None = None
+    run_metadata: EvaluationRunMetadata = Field(default_factory=EvaluationRunMetadata)
+
+
+class EvaluationReportSummary(BaseModel):
+    """Safe report view for teacher/admin clients; never includes case results."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    report_kind: Literal["summary"] = "summary"
+    schema_version: str
+    mode: EvaluationMode
+    started_at: str
+    completed_at: str
+    filters: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any]
+    statistics: dict[str, Any]
+    run_metadata: EvaluationRunMetadata
+    result_status_counts: dict[str, int] = Field(default_factory=dict)
+    raw_results_included: Literal[False] = False
+    data_boundary: list[str] = Field(
+        default_factory=lambda: [
+            "summary_only_no_case_answers",
+            "synthetic_or_local_evaluation_not_learning_effectiveness",
+            "model_trace_is_bounded_process_memory",
+        ]
+    )

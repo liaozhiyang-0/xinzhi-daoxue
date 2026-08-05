@@ -54,6 +54,15 @@ class SessionContextService:
                     if switched
                     else list(stored.get("previous_evidence_ids", []))[:10]
                 ),
+                "previous_external_query": (
+                    "" if switched else str(stored.get("previous_external_query", ""))
+                ),
+                "previous_external_retrieval": (
+                    dict(stored.get("previous_external_retrieval", {}))
+                    if not switched
+                    and isinstance(stored.get("previous_external_retrieval", {}), dict)
+                    else {}
+                ),
                 "course_context_reset": switched,
             }
         )
@@ -87,6 +96,24 @@ class SessionContextService:
             for value in result.business_data.values()
             if isinstance(value, (str, int, float))
         )[: self.settings.student_previous_answer_chars]
+        external_payload = result.structured_result.get("external_retrieval")
+        previous_external_query = ""
+        previous_external_retrieval: dict[str, object] = {}
+        if isinstance(external_payload, dict):
+            previous_external_query = str(external_payload.get("query", ""))
+            previous_external_retrieval = dict(external_payload)
+            raw_items = external_payload.get("items", [])
+            if isinstance(raw_items, list):
+                compact_items: list[dict[str, object]] = []
+                for item in raw_items[:8]:
+                    if not isinstance(item, dict):
+                        continue
+                    compact = dict(item)
+                    excerpt = compact.get("content_excerpt")
+                    if isinstance(excerpt, str):
+                        compact["content_excerpt"] = excerpt[:3000]
+                    compact_items.append(compact)
+                previous_external_retrieval["items"] = compact_items
         session.context_data = {
             "active_course": request.course_id.upper(),
             "previous_course": old_course,
@@ -97,6 +124,8 @@ class SessionContextService:
             "conversation_summary": conversation,
             "last_evidence_ids": evidence_ids,
             "previous_evidence_ids": evidence_ids,
+            "previous_external_query": previous_external_query,
+            "previous_external_retrieval": previous_external_retrieval,
         }
         session.course_id = request.course_id.upper()
 

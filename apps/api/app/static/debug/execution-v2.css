@@ -8,4 +8,13 @@
 .evidence-flow { display: grid; gap: 8px; }.flow-row { display: grid; grid-template-columns: 52px minmax(180px, 1fr) 108px 108px; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--bg-elevated); font-size: 12px; }.flow-row strong { color: var(--accent); }.flow-state { color: var(--text-muted); }.flow-state.yes { color: var(--success); font-weight: 700; }
 .waterfall { display: grid; gap: 12px; }.waterfall-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 80px; align-items: center; gap: 12px; font-size: 12px; }.waterfall-track { height: 12px; overflow: hidden; border-radius: 4px; background: var(--bg-secondary); }.waterfall-bar { min-width: 2px; height: 100%; border-radius: 4px; background: var(--accent); }.waterfall-row strong { text-align: right; font-variant-numeric: tabular-nums; }.answer-preview { max-height: 520px; overflow: auto; padding: 20px; border-left: 3px solid var(--accent); background: var(--bg-elevated); }
 @media (max-width: 900px) { .execution-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.summary-cell:first-child { grid-column: 1 / -1; }.debug-grid { grid-template-columns: 1fr; } }
+
+.execution-main .trace-loader label,
+.execution-main .summary-cell span,
+.execution-main .debug-section > p,
+.execution-main .debug-surface h3,
+.execution-main .kv-row,
+.execution-main .flow-row,
+.execution-main .waterfall-row { font-size: 14px; }
+.execution-main .summary-cell strong { font-size: 17px; }
 @media (max-width: 620px) { .execution-hero { align-items: flex-start; flex-direction: column; }.trace-loader { grid-template-columns: 1fr; }.flow-row { grid-template-columns: 42px minmax(0, 1fr); }.flow-row .flow-state { grid-column: 2; }.execution-summary { grid-template-columns: 1fr 1fr; } }

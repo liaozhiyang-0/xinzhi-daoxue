@@ -1,0 +1,35 @@
+version: "1.0"
+sources:
+  - id: arxiv
+    provider: arxiv
+    source_type: academic_paper
+    scope: academic
+    default_base_url: https://export.arxiv.org/api
+    base_url_env: EXTERNAL_ARXIV_BASE_URL
+    official_docs_url: https://info.arxiv.org/help/api/index.html
+    credential_mode: none
+    metadata_only_by_default: true
+    manual_review_required: true
+
+  - id: crossref
+    provider: crossref
+    source_type: academic_paper
+    scope: academic
+    default_base_url: https://api.crossref.org
+    base_url_env: EXTERNAL_CROSSREF_BASE_URL
+    official_docs_url: https://api.crossref.org/swagger-ui/index.html
+    credential_mode: none
+    metadata_only_by_default: true
+    manual_review_required: true
+
+  - id: openalex
+    provider: openalex
+    source_type: academic_paper
+    scope: academic
+    default_base_url: https://api.openalex.org
+    base_url_env: EXTERNAL_OPENALEX_BASE_URL
+    credential_mode: optional_api_key
+    credential_env: EXTERNAL_OPENALEX_API_KEY
+    official_docs_url: https://developers.openalex.org/
+    metadata_only_by_default: true
+    manual_review_required: true

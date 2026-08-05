@@ -16,6 +16,7 @@ ACTIVE_BUSINESS_WORKFLOWS = {
     "LEARN_01_KNOWLEDGE_QA_V1",
     "TEACH_01_LESSON_PREP_V1",
     "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1",
     "RESEARCH_02_ACADEMIC_WRITING_V1",
     "RESEARCH_03_DATA_ANALYSIS_V1",
 }
@@ -26,7 +27,7 @@ def test_active_registry_excludes_unpublished_legacy_agents() -> None:
 
     assert REMOVED_AGENT_IDS.isdisjoint(agent_ids)
     assert ACTIVE_BUSINESS_WORKFLOWS <= agent_ids
-    assert len(agent_ids) == 11
+    assert len(agent_ids) == 12
 
 
 def test_removed_flow_settings_are_not_part_of_active_configuration() -> None:

@@ -29,6 +29,26 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
 
+    # Authentication is opt-in for local development and mandatory in production.
+    auth_required: bool = False
+    auth_allow_registration: bool = True
+    auth_allow_guest: bool = True
+    auth_guest_ttl_seconds: int = Field(default=86_400, ge=300, le=31_536_000)
+    auth_guest_cookie_name: str = "xzd_guest_token"
+    auth_guest_signing_key: SecretStr = SecretStr("")
+    auth_access_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+    auth_refresh_ttl_seconds: int = Field(default=2_592_000, ge=3_600, le=31_536_000)
+    auth_access_cookie_name: str = "xzd_access_token"
+    auth_refresh_cookie_name: str = "xzd_refresh_token"
+    auth_cookie_secure: bool = False
+    auth_cookie_same_site: Literal["lax", "strict", "none"] = "lax"
+    auth_login_max_attempts: int = Field(default=5, ge=1, le=20)
+    auth_login_window_seconds: int = Field(default=300, ge=30, le=3_600)
+    auth_login_lockout_seconds: int = Field(default=900, ge=60, le=86_400)
+    auth_scrypt_n_log2: int = Field(default=15, ge=14, le=20)
+    auth_scrypt_r: int = Field(default=8, ge=1, le=32)
+    auth_scrypt_p: int = Field(default=1, ge=1, le=8)
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
@@ -38,6 +58,7 @@ class Settings(BaseSettings):
     vector_store_path: Path = PROJECT_ROOT / "knowledge_indexes"
     upload_dir: Path = PROJECT_ROOT / "local_storage" / "uploads"
     cache_dir: Path = PROJECT_ROOT / "local_storage" / "cache"
+    scenario_catalog_path: Path = PROJECT_ROOT / "config" / "scenarios.yaml"
 
     spark_enabled: bool = False
     spark_base_url: str = "https://spark-api-open.xf-yun.com/v1/chat/completions"
@@ -74,6 +95,11 @@ class Settings(BaseSettings):
     qwen_timeout_seconds: float = Field(default=90, gt=0, le=600)
     qwen_vision_high_resolution: bool = True
 
+    # A single fast model call may refine the deterministic route before execution.
+    overall_routing_enabled: bool = True
+    overall_routing_timeout_seconds: float = Field(default=10, gt=0, le=30)
+    overall_routing_max_tokens: int = Field(default=160, ge=64, le=512)
+
     model_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
     model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
     model_max_retries: int = Field(default=1, ge=0, le=1)
@@ -100,15 +126,9 @@ class Settings(BaseSettings):
     academic_solver_complex_hard_deadline_seconds: float = Field(
         default=235, gt=0, le=240
     )
-    academic_solver_retrieval_timeout_seconds: float = Field(
-        default=30, gt=0, le=120
-    )
-    academic_solver_vision_timeout_seconds: float = Field(
-        default=60, gt=0, le=180
-    )
-    academic_solver_min_generation_seconds: float = Field(
-        default=90, gt=0, le=180
-    )
+    academic_solver_retrieval_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    academic_solver_vision_timeout_seconds: float = Field(default=60, gt=0, le=180)
+    academic_solver_min_generation_seconds: float = Field(default=90, gt=0, le=180)
 
     upload_max_image_size_mb: int = Field(default=6, ge=1, le=50)
     upload_max_images: int = Field(default=8, ge=1, le=32)
@@ -178,6 +198,16 @@ class Settings(BaseSettings):
     workflow_max_retries: int = Field(default=1, ge=0, le=3)
 
     max_upload_size_mb: int = Field(default=20, gt=0)
+    document_max_files_per_task: int = Field(default=8, ge=1, le=32)
+    evaluation_attachment_cleanup_grace_seconds: int = Field(
+        default=86_400, ge=60, le=2_592_000
+    )
+    document_max_pages: int = Field(default=200, ge=1, le=2000)
+    document_max_extracted_chars: int = Field(default=80_000, ge=4_000, le=500_000)
+    document_chunk_size_chars: int = Field(default=1_200, ge=200, le=10_000)
+    document_chunk_overlap_chars: int = Field(default=160, ge=0, le=2_000)
+    document_extraction_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    document_converter_command: str = "soffice"
     local_storage_fallback: bool = True
     local_storage_path: Path = PROJECT_ROOT / "local_storage"
     sse_heartbeat_seconds: float = Field(default=10.0, gt=0)
@@ -196,6 +226,16 @@ class Settings(BaseSettings):
     knowledge_max_file_size_mb: int = Field(default=5, ge=1, le=100)
     knowledge_config_path: Path = PROJECT_ROOT / "knowledge_config"
     knowledge_index_path: Path = PROJECT_ROOT / "knowledge_indexes"
+    knowledge_ocr_decisions_path: Path = (
+        PROJECT_ROOT / ".local_outputs" / "ocr_decisions"
+    )
+    knowledge_ocr_review_cache_enabled: bool = True
+    knowledge_ocr_review_cache_path: Path = (
+        PROJECT_ROOT / ".local_outputs" / "ocr_review_snapshots"
+    )
+    knowledge_ocr_review_cache_ttl_seconds: int = Field(
+        default=300, ge=1, le=86_400
+    )
     knowledge_min_score_v2: float = Field(default=0.35, ge=0)
     knowledge_low_confidence_threshold: float = Field(default=0.45, ge=0, le=1)
     knowledge_max_hits_per_document: int = Field(default=2, ge=1, le=10)
@@ -249,6 +289,12 @@ class Settings(BaseSettings):
     qdrant_text_collection: str = "xinzhi_kb_text_v2"
     qdrant_image_collection: str = "xinzhi_kb_image_v2"
 
+    # LangGraph checkpoints are process-local until a durable saver is wired.
+    # Keep the backend explicit so production cannot mistake memory for a
+    # restart-safe persistence layer.
+    langgraph_checkpoint_enabled: bool = True
+    langgraph_checkpoint_backend: Literal["disabled", "memory"] = "memory"
+
     rag_dense_candidate_k: int = Field(default=20, ge=1, le=100)
     rag_sparse_candidate_k: int = Field(default=20, ge=1, le=100)
     rag_image_candidate_k: int = Field(default=12, ge=1, le=100)
@@ -270,6 +316,47 @@ class Settings(BaseSettings):
     rag_sufficient_min_sources: int = Field(default=2, ge=1, le=10)
     rag_sufficient_min_score: float = Field(default=0.45, ge=0, le=1)
     rag_partial_min_score: float = Field(default=0.01, ge=0, le=1)
+
+    # External retrieval is available by default, but intent recognition must
+    # still approve the request before any provider is contacted.
+    external_retrieval_enabled: bool = True
+    external_retrieval_intent_gate_enabled: bool = True
+    external_retrieval_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    external_retrieval_review_enabled: bool = True
+    external_retrieval_planning_timeout_seconds: float = Field(
+        default=6, gt=0, le=60
+    )
+    external_retrieval_planning_max_tokens: int = Field(
+        default=700, ge=256, le=4000
+    )
+    external_retrieval_review_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    external_retrieval_review_max_tokens: int = Field(default=2400, ge=512, le=8000)
+    external_retrieval_provider_retries: int = Field(default=1, ge=0, le=3)
+    external_retrieval_cache_size: int = Field(default=128, ge=0, le=10_000)
+    external_retrieval_cache_ttl_seconds: float = Field(
+        default=120, ge=0, le=86_400
+    )
+    external_retrieval_max_results: int = Field(default=8, ge=1, le=50)
+    external_retrieval_max_fetches: int = Field(default=4, ge=0, le=20)
+    external_retrieval_allow_full_text: bool = False
+    external_retrieval_max_content_chars: int = Field(
+        default=12_000, ge=500, le=100_000
+    )
+    external_arxiv_base_url: str = "https://export.arxiv.org/api"
+    external_crossref_base_url: str = "https://api.crossref.org"
+    external_openalex_base_url: str = "https://api.openalex.org"
+    external_openalex_api_key: SecretStr = SecretStr("")
+    external_openalex_mailto: str = ""
+    external_semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
+    external_semantic_scholar_api_key: SecretStr = SecretStr("")
+    external_cnki_base_url: str = ""
+    external_cnki_api_key: SecretStr = SecretStr("")
+    external_cnki_auth_header: str = "x-api-key"
+    external_cnki_timeout_seconds: float = Field(default=8, gt=0, le=60)
+    external_web_search_base_url: str = ""
+    external_web_search_api_key: SecretStr = SecretStr("")
+    external_web_search_auth_header: str = "x-api-key"
+    external_web_search_timeout_seconds: float = Field(default=15, gt=0, le=120)
 
     rag_debug_enabled: bool = True
     rag_debug_max_input_chars: int = Field(default=2000, ge=100, le=20000)
@@ -325,6 +412,8 @@ class Settings(BaseSettings):
     retrieval_p95_target_ms: int = Field(default=600, ge=1, le=30000)
     context_format_budget_ms: int = Field(default=50, ge=1, le=5000)
     local_total_p95_target_ms: int = Field(default=1000, ge=1, le=30000)
+    task_lease_seconds: int = Field(default=120, ge=30, le=3600)
+    task_recovery_enabled: bool = True
 
     @field_validator("log_level")
     @classmethod
@@ -356,6 +445,33 @@ class Settings(BaseSettings):
                     f"{label} solver deadlines must satisfy soft <= "
                     "finalization <= hard"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def validate_authentication(self) -> Settings:
+        if self.app_env == "production" and not self.auth_required:
+            raise ValueError("AUTH_REQUIRED must be true in production")
+        if self.app_env == "production" and self.qdrant_mode != "server":
+            raise ValueError("QDRANT_MODE must be server in production")
+        if (
+            self.app_env == "production"
+            and self.langgraph_checkpoint_enabled
+            and self.langgraph_checkpoint_backend == "memory"
+        ):
+            raise ValueError(
+                "LANGGRAPH_CHECKPOINT_BACKEND=memory is not restart-safe in production"
+            )
+        if (
+            self.app_env == "production"
+            and self.auth_allow_guest
+            and not self.auth_guest_signing_key.get_secret_value()
+        ):
+            raise ValueError(
+                "AUTH_GUEST_SIGNING_KEY must be set when guest mode is enabled "
+                "in production"
+            )
+        if self.auth_cookie_same_site == "none" and not self.auth_cookie_secure:
+            raise ValueError("AUTH_COOKIE_SECURE must be true when SameSite=None")
         return self
 
     @property

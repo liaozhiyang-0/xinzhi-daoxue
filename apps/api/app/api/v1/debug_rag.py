@@ -5,12 +5,15 @@ import json
 from statistics import mean
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import PROJECT_ROOT
+from app.dependencies import require_admin
 
-router = APIRouter(prefix="/debug/rag", tags=["rag-debug"])
+router = APIRouter(
+    prefix="/debug/rag", tags=["rag-debug"], dependencies=[Depends(require_admin)]
+)
 EVAL_CASES = (
     PROJECT_ROOT / "apps" / "api" / "tests" / "fixtures" / "rag_eval_cases.json"
 )

@@ -31,7 +31,10 @@ class GraphFactory:
     def create(self, graph_name: str) -> Any:
         if graph_name == AcademicProblemSolverGraph.graph_name:
             return AcademicProblemSolverGraph(
-                self.courses, self.capabilities, self.tools
+                self.courses,
+                self.capabilities,
+                self.tools,
+                checkpointer=self.checkpointer,
             )
         raise KeyError(f"未注册任务图: {graph_name}")
 

@@ -124,10 +124,41 @@ class FileRead(BaseModel):
     id: str
     task_id: str | None
     filename: str
+    course_id: str | None = None
+    material_key: str | None = None
+    material_version: str | None = None
+    knowledge_status: str = "draft"
+    knowledge_index_status: str = "not_indexed"
+    knowledge_published_by: str | None = None
+    knowledge_published_at: datetime | None = None
     content_type: str
     size_bytes: int
     storage_key: str
     checksum_sha256: str
+    detected_content_type: str
+    ingestion_status: str
+    page_count: int
+    extracted_text: str
+    extraction_metadata: dict[str, Any]
+    extraction_error: str | None
+    extraction_version: str
+    extraction_started_at: datetime | None
+    extraction_completed_at: datetime | None
+    created_at: datetime
+
+
+class FileChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    file_id: str
+    ordinal: int
+    page_number: int | None
+    section: str
+    content: str
+    char_start: int
+    char_end: int
+    source_ref: str
     created_at: datetime
 
 
@@ -143,3 +174,4 @@ class HealthRead(BaseModel):
     xingchen_publication_status: str
     xingchen_runtime_available: bool
     version: str
+    external_retrieval: dict[str, Any] = Field(default_factory=dict)

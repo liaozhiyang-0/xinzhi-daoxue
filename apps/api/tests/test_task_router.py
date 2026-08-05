@@ -37,6 +37,68 @@ def test_ct_solve_routes_to_solver() -> None:
     assert decision.provider_required is False
 
 
+def test_bound_scenario_selects_declared_agent_before_keyword_routing() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-scenario",
+            "user_id": "user-scenario",
+            "scene": "teaching",
+            "course_id": "CT",
+            "intent": "lesson_prep",
+            "canonical_input": {"text": "璇峰府鎴戝噯澶囦竴鑺傝"},
+            "options": {
+                "scenario_id": "faculty_course_copilot_v1",
+                "scenario_agent_id": "TEACH_01_LESSON_PREP_V1",
+                "_scenario_catalog_bound": True,
+            },
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "TEACH_01_LESSON_PREP_V1"
+    assert decision.route_source == "scenario_catalog"
+    assert "scenario_catalog_bound" in decision.reason_codes
+
+
+def test_latest_paper_request_routes_to_dedicated_academic_search() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-paper-search",
+            "user_id": "user-paper-search",
+            "scene": "research",
+            "course_id": "CT",
+            "intent": "unknown",
+            "canonical_input": {
+                "text": "帮我查找最新的电子信息领域相关论文，并提供链接和摘要"
+            },
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert decision.reason_codes[-1] == "academic_search_request"
+    assert decision.provider_required is False
+
+
+def test_writing_request_stays_on_academic_writing_agent() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-paper-writing",
+            "user_id": "user-paper-writing",
+            "scene": "research",
+            "course_id": "CT",
+            "intent": "unknown",
+            "canonical_input": {"text": "请把这段内容改写成论文摘要"},
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "RESEARCH_02_ACADEMIC_WRITING_V1"
+
+
 def test_dynamic_circuit_state_variables_do_not_route_to_data_analysis() -> None:
     task_request = AgentRequest.model_validate(
         {

@@ -11,7 +11,10 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from pypdf import PdfReader
+
 from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+from app.multimodal.quality import PDF_PAGE_TEXT_REVIEW_THRESHOLD
 
 COURSE_NAMES = KNOWLEDGE_COURSE_NAMES
 TEXT_EXTENSIONS = {".md", ".txt", ".json", ".csv"}
@@ -98,6 +101,14 @@ class ManifestEntry:
     source_updated_at: str = ""
     indexed_at: str | None = None
     is_active: bool = True
+    ocr_required: bool = False
+    ocr_status: str = "not_required"
+    ocr_confidence: float | None = None
+    ocr_confidence_source: str = "not_available"
+    ocr_candidate_pages: tuple[int, ...] = ()
+    manual_review_required: bool = False
+    low_text_page_count: int = 0
+    page_coverage_ratio: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -185,6 +196,103 @@ class AuditResult:
     issues: list[QualityIssue] = field(default_factory=list)
     courses: list[CourseAuditSummary] = field(default_factory=list)
     image_references: list[MarkdownImageReference] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class PDFTextExtraction:
+    """Deterministic PDF text-layer extraction shared by audit and indexing."""
+
+    text: str
+    pages: tuple[tuple[int, str], ...]
+    page_count: int
+    parse_status: str
+    warnings: tuple[str, ...]
+    ocr_required: bool
+    ocr_candidate_pages: tuple[int, ...]
+    low_text_page_count: int
+    page_coverage_ratio: float | None
+
+
+def _normalise_pdf_text(value: str) -> str:
+    value = value.replace("\x00", "")
+    value = re.sub(r"[ \t]+\n", "\n", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
+    return value.strip()
+
+
+def extract_pdf_text_pages(path: Path, max_bytes: int) -> PDFTextExtraction:
+    """Read only the PDF text layer; OCR is reported, never executed here."""
+
+    if path.stat().st_size > max_bytes:
+        page_count: int | None = None
+        try:
+            page_count = len(PdfReader(str(path)).pages)
+        except Exception:
+            pass
+        return PDFTextExtraction(
+            text="",
+            pages=(),
+            page_count=page_count or 0,
+            parse_status="too_large",
+            warnings=("pdf_file_exceeds_parse_limit",),
+            ocr_required=False,
+            ocr_candidate_pages=(),
+            low_text_page_count=0,
+            page_coverage_ratio=None,
+        )
+    try:
+        reader = PdfReader(str(path))
+    except Exception:
+        return PDFTextExtraction(
+            text="",
+            pages=(),
+            page_count=0,
+            parse_status="parse_error",
+            warnings=("pdf_parse_failed",),
+            ocr_required=False,
+            ocr_candidate_pages=(),
+            low_text_page_count=0,
+            page_coverage_ratio=None,
+        )
+
+    pages: list[tuple[int, str]] = []
+    low_text_pages: list[int] = []
+    empty_pages: list[int] = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        try:
+            text = _normalise_pdf_text(page.extract_text() or "")
+        except Exception:
+            text = ""
+        pages.append((page_number, text))
+        if not text:
+            empty_pages.append(page_number)
+        elif len(text) < PDF_PAGE_TEXT_REVIEW_THRESHOLD:
+            low_text_pages.append(page_number)
+
+    candidate_pages = tuple(sorted({*empty_pages, *low_text_pages}))
+    extracted_pages = tuple((number, text) for number, text in pages if text)
+    text = "\n\n".join(item[1] for item in extracted_pages)
+    warnings: list[str] = []
+    if empty_pages and extracted_pages:
+        warnings.append("empty_pages_require_ocr")
+    if low_text_pages:
+        warnings.append("low_text_pages_require_ocr_review")
+    if not text:
+        warnings.append("pdf_no_extractable_text")
+    page_count = len(pages)
+    return PDFTextExtraction(
+        text=text,
+        pages=tuple(pages),
+        page_count=page_count,
+        parse_status="parsed" if text else "ocr_required",
+        warnings=tuple(warnings),
+        ocr_required=bool(candidate_pages),
+        ocr_candidate_pages=candidate_pages,
+        low_text_page_count=len(low_text_pages),
+        page_coverage_ratio=(
+            round(len(extracted_pages) / page_count, 4) if page_count else None
+        ),
+    )
 
 
 def infer_content_type(path: Path, title: str, text: str = "") -> str:
@@ -479,6 +587,12 @@ class KnowledgeAuditScanner:
         title = path.stem or "UNKNOWN"
         language = "unknown"
         references: list[MarkdownImageReference] = []
+        page_count: int | None = None
+        ocr_required = False
+        ocr_status = "not_required"
+        ocr_candidate_pages: tuple[int, ...] = ()
+        low_text_page_count = 0
+        page_coverage_ratio: float | None = None
 
         if extension in TEXT_EXTENSIONS:
             text, parse_status, warnings = read_utf8(path, self.max_parse_bytes)
@@ -498,9 +612,30 @@ class KnowledgeAuditScanner:
             parse_status = "metadata_only"
             source_type = "image"
         elif extension in DOCUMENT_EXTENSIONS:
-            parse_status = "unsupported"
             source_type = "pdf" if extension == ".pdf" else "document"
-            warnings.append("binary_document_not_parsed")
+            if extension == ".pdf":
+                extraction = extract_pdf_text_pages(path, self.max_parse_bytes)
+                text = extraction.text
+                parse_status = extraction.parse_status
+                warnings.extend(extraction.warnings)
+                page_count = extraction.page_count
+                ocr_required = extraction.ocr_required
+                ocr_status = (
+                    "required"
+                    if ocr_required
+                    else "unavailable"
+                    if parse_status != "parsed"
+                    else "not_required"
+                )
+                ocr_candidate_pages = extraction.ocr_candidate_pages
+                low_text_page_count = extraction.low_text_page_count
+                page_coverage_ratio = extraction.page_coverage_ratio
+                if parse_status == "parsed":
+                    title = extract_title(path, text)
+                    language = detect_language(text)
+            else:
+                parse_status = "unsupported"
+                warnings.append("binary_document_not_parsed")
         elif extension in ARCHIVE_EXTENSIONS:
             parse_status = "unsupported"
             source_type = "archive"
@@ -560,6 +695,15 @@ class KnowledgeAuditScanner:
                 source_updated_at=datetime.fromtimestamp(
                     stat.st_mtime, tz=UTC
                 ).isoformat(),
+                page_count=page_count,
+                ocr_required=ocr_required,
+                ocr_status=ocr_status,
+                ocr_candidate_pages=ocr_candidate_pages,
+                manual_review_required=(
+                    ocr_required or (source_type == "pdf" and parse_status != "parsed")
+                ),
+                low_text_page_count=low_text_page_count,
+                page_coverage_ratio=page_coverage_ratio,
             ),
             references,
             issues,
@@ -612,6 +756,36 @@ class KnowledgeAuditScanner:
                 "PDF/DOCX 首版仅登记元数据",
                 True,
                 "优先使用已有提取文本，后续增加可替换解析器",
+            ),
+            "pdf_file_exceeds_parse_limit": (
+                "medium",
+                "PDF exceeds the knowledge index parse-size limit",
+                True,
+                "Adjust the parse limit or split the PDF before indexing",
+            ),
+            "pdf_parse_failed": (
+                "high",
+                "PDF text-layer parsing failed",
+                True,
+                "Keep the original file and route it to OCR or manual review",
+            ),
+            "pdf_no_extractable_text": (
+                "high",
+                "PDF has no extractable text layer",
+                True,
+                "Run OCR or manually confirm candidate pages before indexing",
+            ),
+            "empty_pages_require_ocr": (
+                "medium",
+                "PDF contains pages without text",
+                True,
+                "Run OCR or manually review the empty pages",
+            ),
+            "low_text_pages_require_ocr_review": (
+                "medium",
+                "PDF contains low-text pages",
+                True,
+                "Review page layout and decide whether OCR is needed",
             ),
             "archive_not_parsed": (
                 "low",

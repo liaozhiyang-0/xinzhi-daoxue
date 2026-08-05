@@ -1,4 +1,6 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import ArtifactModel
 
@@ -13,4 +15,9 @@ class ArtifactRepository:
         return model
 
     async def get(self, artifact_id: str) -> ArtifactModel | None:
-        return await self.session.get(ArtifactModel, artifact_id)
+        statement = (
+            select(ArtifactModel)
+            .options(selectinload(ArtifactModel.task))
+            .where(ArtifactModel.id == artifact_id)
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()

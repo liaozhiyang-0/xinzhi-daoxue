@@ -4,20 +4,27 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import AgentRequest
+from app.contracts import AgentRequest, UserRole
 from app.contracts.api import EventRead, TaskRead
 from app.contracts.conversation import ConversationContextBundle
 from app.core.errors import NotFoundError
-from app.dependencies import get_db, get_provider
+from app.dependencies import (
+    effective_user_id,
+    get_current_principal,
+    get_db,
+    get_provider,
+)
 from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
-from app.repositories import TaskRepository
+from app.repositories import FileRepository, TaskRepository
 from app.repositories.sessions import SessionRepository
 from app.services.answer_disclosure import public_teaching_result
+from app.services.auth_service import Principal
+from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
 from app.services.task_creation_service import TaskCreationService
@@ -68,9 +75,22 @@ def task_read(
 async def create_task(
     data: AgentRequest,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
+    try:
+        data = request.app.state.scenario_catalog.enrich_legacy_request(data)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    updates: dict[str, object] = {"user_id": effective_user_id(principal, data.user_id)}
+    if principal.has_identity:
+        try:
+            updates["user_role"] = UserRole(principal.role)
+        except ValueError:
+            updates["user_role"] = UserRole.STUDENT
+    data = data.model_copy(update=updates)
+    data = await _hydrate_document_attachments(data, principal, db, request)
     session = await SessionRepository(db).get(data.session_id)
     if session is not None:
         data = SessionContextService(request.app.state.settings).apply(session, data)
@@ -97,6 +117,73 @@ async def create_task(
     return task_read(task, requester_user_id=data.user_id)
 
 
+async def _hydrate_document_attachments(
+    data: AgentRequest,
+    principal: Principal,
+    db: AsyncSession,
+    request: Request,
+) -> AgentRequest:
+    if not data.attachments:
+        return data
+    if len(data.attachments) > request.app.state.settings.document_max_files_per_task:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "一次最多上传 "
+                f"{request.app.state.settings.document_max_files_per_task} 个文件"
+            ),
+        )
+    repository = FileRepository(db)
+    hydrated = []
+    extracted_blocks: list[str] = []
+    for attachment in data.attachments:
+        model = await repository.get(attachment.file_id)
+        if model is None or (
+            principal.has_identity and model.owner_user_id != principal.user_id
+        ):
+            raise HTTPException(status_code=404, detail="附件不存在")
+        if model.ingestion_status in {"pending", "processing"}:
+            raise HTTPException(
+                status_code=409, detail=f"附件仍在解析中: {model.filename}"
+            )
+        if model.ingestion_status == "failed":
+            raise HTTPException(
+                status_code=422,
+                detail=model.extraction_error or f"附件解析失败: {model.filename}",
+            )
+        updated = attachment.model_copy(
+            update={
+                "ingestion_status": str(model.ingestion_status),
+                "page_count": model.page_count,
+                "extracted_text": model.extracted_text[:200_000],
+                "extraction_metadata": model.extraction_metadata or {},
+            }
+        )
+        hydrated.append(updated)
+        if model.extracted_text.strip():
+            extracted_blocks.append(
+                f"【附件：{model.filename}】\n{model.extracted_text.strip()}"
+            )
+    if not extracted_blocks:
+        return data.model_copy(update={"attachments": hydrated})
+    canonical = dict(data.canonical_input)
+    original_text = str(
+        canonical.get("text") or canonical.get("question") or ""
+    ).strip()
+    combined = "\n\n".join(
+        part for part in (original_text, "\n\n".join(extracted_blocks)) if part
+    )
+    canonical["text"] = combined[
+        : request.app.state.settings.document_max_extracted_chars
+    ]
+    canonical["uploaded_text"] = "\n\n".join(extracted_blocks)[
+        : request.app.state.settings.document_max_extracted_chars
+    ]
+    return data.model_copy(
+        update={"attachments": hydrated, "canonical_input": canonical}
+    )
+
+
 def _with_conversation_context(
     data: AgentRequest, bundle: ConversationContextBundle
 ) -> AgentRequest:
@@ -119,21 +206,25 @@ def _with_conversation_context(
 @router.get("/{task_id}", response_model=TaskRead)
 async def get_task(
     task_id: str,
+    principal: Principal = Depends(get_current_principal),
     user_id: str | None = Query(default=None, min_length=1, max_length=128),
     db: AsyncSession = Depends(get_db),
 ) -> TaskRead:
     return task_read(
         await TaskQueryService(db).get(task_id),
-        requester_user_id=user_id,
+        requester_user_id=effective_user_id(principal, user_id) or None,
     )
 
 
 @router.get("/{task_id}/events", response_model=list[EventRead])
 async def get_task_events(
     task_id: str,
+    principal: Principal = Depends(get_current_principal),
     after: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> list[EventRead]:
+    if principal.has_identity:
+        await _get_owned_task(db, task_id, principal)
     events = await TaskQueryService(db).list_events(task_id, after=after)
     return [EventRead.model_validate(event) for event in events]
 
@@ -146,10 +237,14 @@ async def get_task_events(
 async def retry_task(
     task_id: str,
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    task = await TaskControlService(db, provider).retry(task_id)
+    await _get_owned_task(db, task_id, principal)
+    task = await TaskControlService(db, provider, request.app.state.settings).retry(
+        task_id
+    )
     request.app.state.task_runner.submit(task.id)
     return task_read(task)
 
@@ -157,10 +252,26 @@ async def retry_task(
 @router.post("/{task_id}/cancel", response_model=TaskRead)
 async def cancel_task(
     task_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    return task_read(await TaskControlService(db, provider).cancel(task_id))
+    await _get_owned_task(db, task_id, principal)
+    return task_read(
+        await TaskControlService(db, provider, request.app.state.settings).cancel(
+            task_id
+        )
+    )
+
+
+async def _get_owned_task(
+    db: AsyncSession, task_id: str, principal: Principal
+) -> TaskModel:
+    task = await TaskQueryService(db).get(task_id)
+    if principal.has_identity and task.user_id != principal.user_id:
+        raise NotFoundError("任务不存在")
+    return task
 
 
 async def event_stream(
@@ -199,6 +310,7 @@ async def event_stream(
 async def stream_task(
     request: Request,
     task_id: str,
+    principal: Principal = Depends(get_current_principal),
     after: int = Query(default=0, ge=0),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> StreamingResponse:
@@ -209,8 +321,7 @@ async def stream_task(
         except ValueError:
             cursor = after
     async with request.app.state.session_factory() as db:
-        if await TaskRepository(db).get(task_id) is None:
-            raise NotFoundError("任务不存在", details={"task_id": task_id})
+        await _get_owned_task(db, task_id, principal)
     return StreamingResponse(
         event_stream(request, task_id, cursor=cursor),
         media_type="text/event-stream",

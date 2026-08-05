@@ -3,6 +3,7 @@ from pathlib import Path
 from app.core.config import Settings
 from app.main import create_app
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 
 def make_client(tmp_path: Path) -> TestClient:
@@ -38,6 +39,8 @@ def make_client(tmp_path: Path) -> TestClient:
         knowledge_ss_path=ss,
         knowledge_dsp_path=dsp,
         knowledge_comm_path=comm,
+        knowledge_ocr_decisions_path=tmp_path / "ocr-decisions",
+        knowledge_ocr_review_cache_path=tmp_path / "ocr-review-snapshots",
         knowledge_chunk_size_chars=300,
         knowledge_chunk_overlap_chars=20,
         rag_enabled=False,
@@ -58,6 +61,113 @@ def test_knowledge_sources_and_search_api(tmp_path: Path) -> None:
         )
         assert response.status_code == 200
         assert response.json()["hits"][0]["title"] == "节点电压法"
+
+
+def test_ocr_review_queue_is_teacher_read_only_snapshot(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.get(
+            "/api/v1/knowledge/ocr-review-queue", params={"course_id": "ct"}
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["schema_version"] == "ocr_review_queue.v1"
+        assert payload["mode"] == "read_only_draft"
+        assert payload["ocr_execution_performed"] is False
+        assert payload["summary"]["candidate_count"] == 0
+        assert payload["decision_reports"] == {}
+        assert payload["cache_status"] == "miss"
+
+        cached = client.get(
+            "/api/v1/knowledge/ocr-review-queue", params={"course_id": "ct"}
+        )
+        assert cached.status_code == 200
+        assert cached.json()["cache_status"] == "hit"
+        assert cached.json()["cache_backend"] == "memory"
+
+        invalid = client.get(
+            "/api/v1/knowledge/ocr-review-queue",
+            params={"course_id": "unknown"},
+        )
+        assert invalid.status_code == 400
+
+
+def test_ocr_review_decision_save_requires_evidence_and_invalidates_cache(
+    tmp_path: Path,
+) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with make_client(tmp_path) as client:
+        with (tmp_path / "ct" / "scan.pdf").open("wb") as handle:
+            writer.write(handle)
+        queue_response = client.get(
+            "/api/v1/knowledge/ocr-review-queue", params={"course_id": "CT"}
+        )
+        assert queue_response.status_code == 200
+        queue = queue_response.json()
+        assert queue["summary"]["candidate_count"] == 1
+        row = queue["rows"][0]
+        base_request = {
+            "source_fingerprint": queue["source_fingerprint"],
+            "reviewer": "teacher-test",
+            "decisions": [
+                {
+                    "queue_id": row["queue_id"],
+                    "checksum": row["checksum"],
+                    "decision": "request_ocr",
+                    "evidence_refs": [],
+                    "note": "select the blank page for teacher-approved OCR",
+                }
+            ],
+        }
+
+        missing_evidence = client.put(
+            "/api/v1/knowledge/ocr-review-decisions/CT", json=base_request
+        )
+        assert missing_evidence.status_code == 422
+        assert "evidence_refs_required" in missing_evidence.text
+
+        stale = {**base_request, "source_fingerprint": "0" * 64}
+        stale_response = client.put(
+            "/api/v1/knowledge/ocr-review-decisions/CT", json=stale
+        )
+        assert stale_response.status_code == 409
+
+        base_request["decisions"][0]["evidence_refs"] = [
+            "kb://CT/scan.pdf#page=1"
+        ]
+        saved = client.put(
+            "/api/v1/knowledge/ocr-review-decisions/CT", json=base_request
+        )
+        assert saved.status_code == 200, saved.text
+        saved_payload = saved.json()
+        assert saved_payload["decision_reports"]["CT"]["valid"] is True
+        assert saved_payload["decision_reports"]["CT"]["review_complete"] is True
+        assert saved_payload["rows"][0]["review_decision"] == "request_ocr"
+        assert saved_payload["rows"][0]["evidence_refs"] == [
+            "kb://CT/scan.pdf#page=1"
+        ]
+        assert saved_payload["source_fingerprint"] != queue["source_fingerprint"]
+
+        unchanged_save = {
+            **base_request,
+            "source_fingerprint": saved_payload["source_fingerprint"],
+            "reviewer": "another-teacher",
+        }
+        unchanged = client.put(
+            "/api/v1/knowledge/ocr-review-decisions/CT", json=unchanged_save
+        )
+        assert unchanged.status_code == 200, unchanged.text
+        assert unchanged.json()["rows"][0]["reviewer"] == "teacher-test"
+
+        quality = client.get(
+            "/api/v1/knowledge/ocr-quality-summary", params={"course_id": "CT"}
+        )
+        assert quality.status_code == 200
+        assert quality.json()["decision_evidence"]["status"] == (
+            "complete_with_evidence"
+        )
+        assert (tmp_path / "ocr-decisions" / "CT.yaml").is_file()
 
 
 def test_mock_task_records_local_knowledge_hits(tmp_path: Path) -> None:

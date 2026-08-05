@@ -77,6 +77,19 @@ class FakeHub:
         )
 
 
+class FakeGeneralQuestion:
+    async def run(self, _: AgentRequest) -> AgentResult:
+        return AgentResult(
+            agent_id="GENERAL_QUESTION_V1",
+            provider="local_agent",
+            answer="本地回答",
+            structured_result={
+                "status": "completed",
+                "model_execution": {"status": "success"},
+            },
+        )
+
+
 def service() -> tuple[InternalAgentExecutionService, FakeHub]:
     hub = FakeHub()
     return InternalAgentExecutionService(cast(InternalAgentHub, hub)), hub
@@ -163,6 +176,23 @@ def test_internal_agent_availability_is_sanitized() -> None:
 
     assert executor.available("TEACH_01_LESSON_PREP_V1") is True
     assert executor.available("SOLVER_CT_V1") is False
+
+
+@pytest.mark.asyncio
+async def test_research_frontier_alias_uses_local_general_agent() -> None:
+    hub = FakeHub()
+    executor = InternalAgentExecutionService(
+        cast(InternalAgentHub, hub),
+        general_question=cast(Any, FakeGeneralQuestion()),
+    )
+
+    assert executor.available("RESEARCH_01_ACADEMIC_SEARCH_V1") is True
+    result = await executor.run(
+        "RESEARCH_01_ACADEMIC_SEARCH_V1", request(Intent.GENERAL_QA)
+    )
+
+    assert result.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert result.provider == "local_agent"
 
 
 class FakeTaskInternalExecution:

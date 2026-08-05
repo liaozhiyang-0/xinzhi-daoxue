@@ -43,12 +43,149 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class AccountStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    LOCKED = "locked"
+
+
+class FileIngestionStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class KnowledgeMaterialStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    SUPERSEDED = "superseded"
+    WITHDRAWN = "withdrawn"
+
+
+class CourseMaterialReviewStatus(StrEnum):
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 task_status_enum = Enum(
     TaskStatus,
     values_callable=lambda enum: [item.value for item in enum],
     native_enum=False,
     length=32,
 )
+
+
+class AccountModel(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("login_normalized", name="uq_accounts_login_normalized"),
+        Index("ix_accounts_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    login: Mapped[str] = mapped_column(String(255))
+    login_normalized: Mapped[str] = mapped_column(String(255), index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str] = mapped_column(String(512))
+    role: Mapped[str] = mapped_column(String(32), default="student", index=True)
+    status: Mapped[AccountStatus] = mapped_column(
+        Enum(
+            AccountStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=AccountStatus.ACTIVE,
+    )
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    password_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    auth_sessions: Mapped[list[AuthSessionModel]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+
+
+class AuthSessionModel(Base):
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        Index("ix_auth_sessions_account_active", "account_id", "revoked_at"),
+        Index("ix_auth_sessions_access_expires", "access_expires_at"),
+        Index("ix_auth_sessions_refresh_expires", "refresh_expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    access_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    account: Mapped[AccountModel] = relationship(back_populates="auth_sessions")
+
+
+class AuditLogModel(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_actor_created", "actor_account_id", "created_at"),
+        Index("ix_audit_logs_action_created", "action", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    actor_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(96), index=True)
+    target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
+class SystemSettingModel(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
 
 class SessionModel(Base):
@@ -275,6 +412,9 @@ class FileModel(Base):
     __tablename__ = "files"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    owner_user_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
     task_id: Mapped[str | None] = mapped_column(
         ForeignKey("tasks.id"), nullable=True, index=True
     )
@@ -284,10 +424,103 @@ class FileModel(Base):
     storage_key: Mapped[str] = mapped_column(String(512), unique=True)
     checksum_sha256: Mapped[str] = mapped_column(String(64), index=True)
     purpose: Mapped[str] = mapped_column(String(64), default="generic")
+    course_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    material_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    material_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    knowledge_status: Mapped[KnowledgeMaterialStatus] = mapped_column(
+        Enum(
+            KnowledgeMaterialStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=KnowledgeMaterialStatus.DRAFT,
+        index=True,
+    )
+    knowledge_index_status: Mapped[str] = mapped_column(
+        String(32), default="not_indexed"
+    )
+    knowledge_published_by: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    knowledge_published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    material_review_status: Mapped[CourseMaterialReviewStatus] = mapped_column(
+        String(32), default=CourseMaterialReviewStatus.NOT_REQUIRED, index=True
+    )
+    material_reviewed_by: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    material_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    material_review_note: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True
+    )
+    detected_content_type: Mapped[str] = mapped_column(
+        String(128), default="application/octet-stream"
+    )
+    ingestion_status: Mapped[FileIngestionStatus] = mapped_column(
+        Enum(
+            FileIngestionStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        default=FileIngestionStatus.PENDING,
+        index=True,
+    )
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    extracted_text: Mapped[str] = mapped_column(Text, default="")
+    extraction_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_version: Mapped[str] = mapped_column(String(32), default="1")
+    extraction_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    extraction_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
+
+    chunks: Mapped[list[DocumentChunkModel]] = relationship(
+        back_populates="file", cascade="all, delete-orphan"
+    )
+
+
+class DocumentChunkModel(Base):
+    __tablename__ = "file_chunks"
+    __table_args__ = (
+        UniqueConstraint("file_id", "ordinal", name="uq_file_chunks_file_ordinal"),
+        Index("ix_file_chunks_file_page", "file_id", "page_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    file_id: Mapped[str] = mapped_column(
+        ForeignKey("files.id", ondelete="CASCADE"), index=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    section: Mapped[str] = mapped_column(String(255), default="")
+    content: Mapped[str] = mapped_column(Text)
+    char_start: Mapped[int] = mapped_column(Integer, default=0)
+    char_end: Mapped[int] = mapped_column(Integer, default=0)
+    source_ref: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    file: Mapped[FileModel] = relationship(back_populates="chunks")
 
 
 class ArtifactModel(Base):
@@ -346,6 +579,45 @@ class TaskEventModel(Base):
     )
 
     task: Mapped[TaskModel] = relationship(back_populates="events")
+
+
+class TaskFeedbackModel(Base):
+    __tablename__ = "task_feedback"
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id", "user_id", name="uq_task_feedback_task_user"
+        ),
+        Index("ix_task_feedback_created_course", "created_at", "course_id"),
+        Index("ix_task_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_role: Mapped[str] = mapped_column(String(32), default="student")
+    course_id: Mapped[str] = mapped_column(String(32), index=True)
+    task_type: Mapped[str] = mapped_column(String(64))
+    agent_id: Mapped[str] = mapped_column(String(64))
+    agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), default="unknown")
+    model_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rag_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    retrieval_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    satisfaction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    problem_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    manual_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    citation_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
 
 class LearnerKnowledgeStateModel(Base):

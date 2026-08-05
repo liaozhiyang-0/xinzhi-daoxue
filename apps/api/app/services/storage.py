@@ -16,7 +16,19 @@ from urllib3.util.retry import Retry
 from app.core.config import Settings
 from app.core.errors import StorageError, ValidationAppError
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".md", ".txt"}
+ALLOWED_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".pdf",
+    ".md",
+    ".txt",
+    ".csv",
+    ".json",
+    ".doc",
+    ".docx",
+}
 ALLOWED_CONTENT_TYPES = {
     ".png": {"image/png"},
     ".jpg": {"image/jpeg"},
@@ -25,6 +37,13 @@ ALLOWED_CONTENT_TYPES = {
     ".pdf": {"application/pdf"},
     ".md": {"text/markdown", "text/plain"},
     ".txt": {"text/plain"},
+    ".csv": {"text/csv", "text/plain"},
+    ".json": {"application/json", "text/plain"},
+    ".doc": {"application/msword", "application/octet-stream"},
+    ".docx": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/octet-stream",
+    },
 }
 SAFE_NAME = re.compile(r"[^A-Za-z0-9._\-\u4e00-\u9fff]+")
 

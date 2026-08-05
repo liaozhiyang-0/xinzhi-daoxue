@@ -6,6 +6,1170 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Register",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/guest": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Guest",
+        "operationId": "guest_api_v1_auth_guest_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestSessionRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Refresh",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AuthMeRead"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GuestSessionRead"
+                    }
+                  ],
+                  "title": "Response Me Api V1 Auth Me Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Overview",
+        "operationId": "overview_api_v1_admin_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverviewRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/task-summary": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Task Summary",
+        "operationId": "task_summary_api_v1_admin_task_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTaskSummaryRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tasks": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Tasks",
+        "operationId": "list_tasks_api_v1_admin_tasks_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Tasks Api V1 Admin Tasks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/task-observability": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Task Observability",
+        "operationId": "task_observability_api_v1_admin_task_observability_get",
+        "parameters": [
+          {
+            "name": "window_start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Start"
+            }
+          },
+          {
+            "name": "window_end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window End"
+            }
+          },
+          {
+            "name": "row_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20000,
+              "minimum": 1,
+              "default": 2000,
+              "title": "Row Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTaskObservabilityRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/file-summary": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "File Summary",
+        "operationId": "file_summary_api_v1_admin_file_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFileSummaryRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/evaluation-attachment-residue": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Evaluation Attachment Residue",
+        "operationId": "evaluation_attachment_residue_api_v1_admin_evaluation_attachment_residue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEvaluationAttachmentResidueRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/files": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Files",
+        "operationId": "list_files_api_v1_admin_files_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "ingestion_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ingestion Status"
+            }
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Files Api V1 Admin Files Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Accounts",
+        "operationId": "list_accounts_api_v1_admin_accounts_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "student",
+                    "teacher",
+                    "operator",
+                    "admin"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "disabled",
+                    "locked"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Accounts Api V1 Admin Accounts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Create Account",
+        "operationId": "create_account_api_v1_admin_accounts_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{account_id}": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Get Account",
+        "operationId": "get_account_api_v1_admin_accounts__account_id__get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Update Account",
+        "operationId": "update_account_api_v1_admin_accounts__account_id__patch",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAccountUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{account_id}/reset-password": {
+      "post": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Reset Password",
+        "operationId": "reset_password_api_v1_admin_accounts__account_id__reset_password_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordReset"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAccountRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/accounts/{account_id}/revoke-sessions": {
+      "post": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Revoke Account Sessions",
+        "operationId": "revoke_account_sessions_api_v1_admin_accounts__account_id__revoke_sessions_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Revoke Account Sessions Api V1 Admin Accounts  Account Id  Revoke Sessions Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sessions": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Sessions",
+        "operationId": "list_sessions_api_v1_admin_sessions_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Active Only"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminSessionRead"
+                  },
+                  "title": "Response List Sessions Api V1 Admin Sessions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/sessions/{session_id}": {
+      "delete": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Revoke Session",
+        "operationId": "revoke_session_api_v1_admin_sessions__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Audit Logs",
+        "operationId": "list_audit_logs_api_v1_admin_audit_logs_get",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 96
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "actor_account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Account Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogRead"
+                  },
+                  "title": "Response List Audit Logs Api V1 Admin Audit Logs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -1204,6 +2368,52 @@
         }
       }
     },
+    "/api/v1/files/{file_id}/chunks": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Get File Chunks",
+        "operationId": "get_file_chunks_api_v1_files__file_id__chunks_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileChunkRead"
+                  },
+                  "title": "Response Get File Chunks Api V1 Files  File Id  Chunks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/files/{file_id}/content": {
       "get": {
         "tags": [
@@ -1316,6 +2526,607 @@
                   },
                   "type": "array",
                   "title": "Response List Sources Api V1 Knowledge Sources Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/ocr-review-queue": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Get Ocr Review Queue",
+        "description": "Expose the read-only PDF/OCR review snapshot to teacher managers.",
+        "operationId": "get_ocr_review_queue_api_v1_knowledge_ocr_review_queue_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 16
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeOCRReviewQueueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/ocr-review-decisions/{course_id}": {
+      "put": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Save Ocr Review Decisions",
+        "description": "Atomically save a validated teacher OCR decision document.",
+        "operationId": "save_ocr_review_decisions_api_v1_knowledge_ocr_review_decisions__course_id__put",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeOCRDecisionSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeOCRReviewQueueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/ocr-quality-summary": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Get Ocr Quality Summary",
+        "description": "Expose read-only page-level OCR evidence from the cached audit queue.",
+        "operationId": "get_ocr_quality_summary_api_v1_knowledge_ocr_quality_summary_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 16
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeOCRQualitySummaryRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/course-asset-review-queue": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Get Course Asset Review Queue",
+        "description": "Expose the evidence-gated CT/AE error-template queue read-only.",
+        "operationId": "get_course_asset_review_queue_api_v1_knowledge_course_asset_review_queue_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 16,
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherReviewQueueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/course-asset-review-decisions/{course_id}": {
+      "put": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Save Course Asset Review Decisions",
+        "description": "Atomically save evidence-backed CT/AE error-template decisions.",
+        "operationId": "save_course_asset_review_decisions_api_v1_knowledge_course_asset_review_decisions__course_id__put",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorPoolReviewDecisionSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeacherReviewQueueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/course-asset-readiness": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Get Course Asset Readiness",
+        "description": "Expose evidence readiness and blockers for one CT/AE asset manifest.",
+        "operationId": "get_course_asset_readiness_api_v1_knowledge_course_asset_readiness_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 16,
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseAssetReadinessRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "List Course Materials",
+        "operationId": "list_course_materials_api_v1_knowledge_materials_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "material_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/KnowledgeMaterialStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Material Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeMaterialRead"
+                  },
+                  "title": "Response List Course Materials Api V1 Knowledge Materials Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials/{file_id}/chunks": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "List Course Material Chunks",
+        "description": "Expose bounded parsed material chunks to authorized reviewers only.",
+        "operationId": "list_course_material_chunks_api_v1_knowledge_materials__file_id__chunks_get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileChunkRead"
+                  },
+                  "title": "Response List Course Material Chunks Api V1 Knowledge Materials  File Id  Chunks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials/manifest": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Sync Course Material Manifest",
+        "operationId": "sync_course_material_manifest_api_v1_knowledge_materials_manifest_post",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeMaterialManifestRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials/{file_id}/publish": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Publish Course Material",
+        "operationId": "publish_course_material_api_v1_knowledge_materials__file_id__publish_post",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeMaterialRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials/{file_id}/review": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Review Course Material",
+        "operationId": "review_course_material_api_v1_knowledge_materials__file_id__review_post",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeMaterialReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeMaterialRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/materials/{file_id}/withdraw": {
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Withdraw Course Material",
+        "operationId": "withdraw_course_material_api_v1_knowledge_materials__file_id__withdraw_post",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeMaterialRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -2065,6 +3876,102 @@
                     "$ref": "#/components/schemas/RetestPlanV1"
                   },
                   "title": "Response Learning Retests Api V1 Learning Retests Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/metrics": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Learning Metrics",
+        "operationId": "learning_metrics_api_v1_learning_metrics_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "window_start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Start"
+            }
+          },
+          {
+            "name": "window_end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window End"
+            }
+          },
+          {
+            "name": "row_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20000,
+              "minimum": 1,
+              "default": 5000,
+              "title": "Row Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningMetricsRead"
                 }
               }
             }
@@ -3333,6 +5240,187 @@
         }
       }
     },
+    "/api/v1/evaluation/reports/latest/summary": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Latest Report Summary",
+        "operationId": "latest_report_summary_api_v1_evaluation_reports_latest_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationReportSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluation/observability/model-calls": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Model Call Observability",
+        "operationId": "model_call_observability_api_v1_evaluation_observability_model_calls_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Model Call Observability Api V1 Evaluation Observability Model Calls Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Submit Feedback",
+        "operationId": "submit_feedback_api_v1_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/feedback/metrics": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Feedback Metrics",
+        "operationId": "feedback_metrics_api_v1_feedback_metrics_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "window_start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window Start"
+            }
+          },
+          {
+            "name": "window_end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Window End"
+            }
+          },
+          {
+            "name": "row_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20000,
+              "minimum": 1,
+              "default": 2000,
+              "title": "Row Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackMetricsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -3361,6 +5449,63 @@
         ],
         "summary": "Debug Page",
         "operationId": "debug_page_debug_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "get": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Login Page",
+        "operationId": "login_page_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Admin Page",
+        "operationId": "admin_page_admin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teacher": {
+      "get": {
+        "tags": [
+          "teaching"
+        ],
+        "summary": "Teacher Page",
+        "operationId": "teacher_page_teacher_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3509,6 +5654,723 @@
   },
   "components": {
     "schemas": {
+      "AccountRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "login",
+          "display_name",
+          "role",
+          "status",
+          "last_login_at",
+          "created_at"
+        ],
+        "title": "AccountRead"
+      },
+      "AdminAccountCreate": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Login"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Display Name",
+            "default": ""
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "teacher",
+              "operator",
+              "admin"
+            ],
+            "title": "Role",
+            "default": "student"
+          }
+        },
+        "type": "object",
+        "required": [
+          "login",
+          "password"
+        ],
+        "title": "AdminAccountCreate"
+      },
+      "AdminAccountRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "failed_login_attempts": {
+            "type": "integer",
+            "title": "Failed Login Attempts"
+          },
+          "locked_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Until"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "password_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Password Changed At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "login",
+          "display_name",
+          "role",
+          "status",
+          "failed_login_attempts",
+          "locked_until",
+          "last_login_at",
+          "password_changed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AdminAccountRead"
+      },
+      "AdminAccountUpdate": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "student",
+                  "teacher",
+                  "operator",
+                  "admin"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "disabled",
+                  "locked"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "AdminAccountUpdate"
+      },
+      "AdminEvaluationAttachmentResidueRead": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "grace_seconds": {
+            "type": "integer",
+            "title": "Grace Seconds"
+          },
+          "cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Cutoff"
+          },
+          "total_file_count": {
+            "type": "integer",
+            "title": "Total File Count"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          },
+          "unbound_file_count": {
+            "type": "integer",
+            "title": "Unbound File Count"
+          },
+          "active_task_file_count": {
+            "type": "integer",
+            "title": "Active Task File Count"
+          },
+          "terminal_task_file_count": {
+            "type": "integer",
+            "title": "Terminal Task File Count"
+          },
+          "missing_task_file_count": {
+            "type": "integer",
+            "title": "Missing Task File Count"
+          },
+          "cleanup_candidate_count": {
+            "type": "integer",
+            "title": "Cleanup Candidate Count"
+          },
+          "cleanup_candidate_bytes": {
+            "type": "integer",
+            "title": "Cleanup Candidate Bytes"
+          },
+          "oldest_created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "as_of",
+          "grace_seconds",
+          "cutoff",
+          "total_file_count",
+          "total_bytes",
+          "unbound_file_count",
+          "active_task_file_count",
+          "terminal_task_file_count",
+          "missing_task_file_count",
+          "cleanup_candidate_count",
+          "cleanup_candidate_bytes",
+          "oldest_created_at"
+        ],
+        "title": "AdminEvaluationAttachmentResidueRead"
+      },
+      "AdminFileSummaryRead": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "processing": {
+            "type": "integer",
+            "title": "Processing"
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "partial": {
+            "type": "integer",
+            "title": "Partial"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "title": "Total Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "pending",
+          "processing",
+          "ready",
+          "partial",
+          "failed",
+          "total_bytes"
+        ],
+        "title": "AdminFileSummaryRead"
+      },
+      "AdminOverviewRead": {
+        "properties": {
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count"
+          },
+          "active_account_count": {
+            "type": "integer",
+            "title": "Active Account Count"
+          },
+          "disabled_account_count": {
+            "type": "integer",
+            "title": "Disabled Account Count"
+          },
+          "locked_account_count": {
+            "type": "integer",
+            "title": "Locked Account Count"
+          },
+          "active_session_count": {
+            "type": "integer",
+            "title": "Active Session Count"
+          },
+          "audit_event_count": {
+            "type": "integer",
+            "title": "Audit Event Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_count",
+          "active_account_count",
+          "disabled_account_count",
+          "locked_account_count",
+          "active_session_count",
+          "audit_event_count"
+        ],
+        "title": "AdminOverviewRead"
+      },
+      "AdminPasswordReset": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "AdminPasswordReset"
+      },
+      "AdminSessionRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "access_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Access Expires At"
+          },
+          "refresh_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Refresh Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "account_id",
+          "login",
+          "access_expires_at",
+          "refresh_expires_at",
+          "revoked_at",
+          "last_seen_at",
+          "ip_address",
+          "user_agent",
+          "created_at"
+        ],
+        "title": "AdminSessionRead"
+      },
+      "AdminTaskObservabilityRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "v1"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source",
+            "default": "local_database"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window End"
+          },
+          "row_limit": {
+            "type": "integer",
+            "title": "Row Limit"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "task_count": {
+            "type": "integer",
+            "title": "Task Count"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Status Counts"
+          },
+          "failure_category_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Failure Category Counts"
+          },
+          "provider_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Provider Counts"
+          },
+          "route_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Route Status Counts"
+          },
+          "cancellation_requested_count": {
+            "type": "integer",
+            "title": "Cancellation Requested Count",
+            "default": 0
+          },
+          "measured_total_latency_count": {
+            "type": "integer",
+            "title": "Measured Total Latency Count",
+            "default": 0
+          },
+          "average_total_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Total Latency Ms"
+          },
+          "p50_total_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Total Latency Ms"
+          },
+          "p95_total_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Total Latency Ms"
+          },
+          "measured_queue_latency_count": {
+            "type": "integer",
+            "title": "Measured Queue Latency Count",
+            "default": 0
+          },
+          "average_queue_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Queue Latency Ms"
+          },
+          "p50_queue_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Queue Latency Ms"
+          },
+          "p95_queue_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Queue Latency Ms"
+          },
+          "data_quality_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Quality Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_start",
+          "window_end",
+          "row_limit",
+          "task_count"
+        ],
+        "title": "AdminTaskObservabilityRead"
+      },
+      "AdminTaskSummaryRead": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active"
+          },
+          "completed": {
+            "type": "integer",
+            "title": "Completed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Status Counts"
+          },
+          "failure_category_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Failure Category Counts"
+          },
+          "provider_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Provider Counts"
+          },
+          "route_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Route Status Counts"
+          },
+          "cancellation_requested_count": {
+            "type": "integer",
+            "title": "Cancellation Requested Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "active",
+          "completed",
+          "failed",
+          "status_counts"
+        ],
+        "title": "AdminTaskSummaryRead"
+      },
       "AgentCompareRequest": {
         "properties": {
           "question": {
@@ -4042,6 +6904,27 @@
               }
             ],
             "title": "Checksum Sha256"
+          },
+          "ingestion_status": {
+            "type": "string",
+            "title": "Ingestion Status",
+            "default": "pending"
+          },
+          "page_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Page Count",
+            "default": 0
+          },
+          "extracted_text": {
+            "type": "string",
+            "title": "Extracted Text",
+            "default": ""
+          },
+          "extraction_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extraction Metadata"
           }
         },
         "additionalProperties": false,
@@ -4054,6 +6937,188 @@
           "storage_key"
         ],
         "title": "AttachmentRef"
+      },
+      "AuditLogRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "actor_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Account Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Type"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actor_account_id",
+          "action",
+          "target_type",
+          "target_id",
+          "details",
+          "ip_address",
+          "user_agent",
+          "created_at"
+        ],
+        "title": "AuditLogRead"
+      },
+      "AuthMeRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "access_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Access Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "login",
+          "display_name",
+          "role",
+          "status",
+          "last_login_at",
+          "created_at",
+          "session_id",
+          "access_expires_at"
+        ],
+        "title": "AuthMeRead"
+      },
+      "AuthSessionRead": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountRead"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "Bearer"
+          },
+          "access_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Access Expires At"
+          },
+          "refresh_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Refresh Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account",
+          "access_expires_at",
+          "refresh_expires_at"
+        ],
+        "title": "AuthSessionRead"
       },
       "Body_upload_file_api_v1_files_post": {
         "properties": {
@@ -4077,6 +7142,39 @@
             "type": "string",
             "title": "Purpose",
             "default": "generic"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "material_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Version"
           }
         },
         "type": "object",
@@ -4409,6 +7507,217 @@
         ],
         "title": "ConversationMessage"
       },
+      "CourseAssetEvidenceCheckRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "declared_status": {
+            "type": "string",
+            "title": "Declared Status"
+          },
+          "observed_status": {
+            "type": "string",
+            "title": "Observed Status"
+          },
+          "evidence_status": {
+            "type": "string",
+            "title": "Evidence Status"
+          },
+          "evidence_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Paths"
+          },
+          "evidence_present": {
+            "type": "boolean",
+            "title": "Evidence Present"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "declared_status",
+          "observed_status",
+          "evidence_status",
+          "evidence_present"
+        ],
+        "title": "CourseAssetEvidenceCheckRead"
+      },
+      "CourseAssetReadinessItemRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "status",
+          "source_ref"
+        ],
+        "title": "CourseAssetReadinessItemRead"
+      },
+      "CourseAssetReadinessRead": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "course_asset_readiness.v1",
+            "title": "Schema Version"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "evidence_pending",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "runtime_course_pack_status": {
+            "type": "string",
+            "title": "Runtime Course Pack Status"
+          },
+          "runtime_loaded": {
+            "type": "boolean",
+            "title": "Runtime Loaded"
+          },
+          "runtime_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Source"
+          },
+          "frozen_fallback_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frozen Fallback Reference"
+          },
+          "boundaries": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Boundaries"
+          },
+          "readiness_items": {
+            "items": {
+              "$ref": "#/components/schemas/CourseAssetReadinessItemRead"
+            },
+            "type": "array",
+            "title": "Readiness Items"
+          },
+          "evidence_checks": {
+            "items": {
+              "$ref": "#/components/schemas/CourseAssetEvidenceCheckRead"
+            },
+            "type": "array",
+            "title": "Evidence Checks"
+          },
+          "knowledge_inventory": {
+            "$ref": "#/components/schemas/CourseKnowledgeInventoryRead"
+          },
+          "ocr_decision_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeOCRDecisionEvidenceRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evaluation_provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseEvaluationProvenanceRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Source Statuses"
+          },
+          "blockers": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "next_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Actions"
+          },
+          "teacher_review_queue": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Teacher Review Queue"
+          },
+          "teacher_review_evidence": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Teacher Review Evidence"
+          },
+          "contest_boundary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Contest Boundary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "course_id",
+          "status",
+          "runtime_course_pack_status",
+          "runtime_loaded",
+          "runtime_source",
+          "frozen_fallback_reference",
+          "knowledge_inventory"
+        ],
+        "title": "CourseAssetReadinessRead"
+      },
       "CourseCode": {
         "type": "string",
         "enum": [
@@ -4426,6 +7735,646 @@
           "UNKNOWN"
         ],
         "title": "CourseCode"
+      },
+      "CourseEvaluationConsistencyRead": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "consistent",
+              "partial",
+              "inconsistent",
+              "not_checkable"
+            ],
+            "title": "Status"
+          },
+          "schema_version_supported": {
+            "type": "boolean",
+            "title": "Schema Version Supported"
+          },
+          "summary_result_count_match": {
+            "type": "boolean",
+            "title": "Summary Result Count Match"
+          },
+          "summary_status_counts_match": {
+            "type": "boolean",
+            "title": "Summary Status Counts Match"
+          },
+          "course_statistics_match": {
+            "type": "boolean",
+            "title": "Course Statistics Match"
+          },
+          "metadata_case_count_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Case Count Match"
+          },
+          "metadata_case_ids_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Case Ids Match"
+          },
+          "metadata_filters_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Filters Match"
+          },
+          "case_catalog_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Present"
+          },
+          "case_catalog_content_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Content Present"
+          },
+          "case_source_files_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Source Files Present"
+          },
+          "case_attachment_manifest_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Attachment Manifest Present"
+          },
+          "report_completed_at_parseable": {
+            "type": "boolean",
+            "title": "Report Completed At Parseable"
+          },
+          "report_completed_at_not_future": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Completed At Not Future"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "schema_version_supported",
+          "summary_result_count_match",
+          "summary_status_counts_match",
+          "course_statistics_match",
+          "metadata_case_count_match",
+          "metadata_case_ids_match",
+          "metadata_filters_match",
+          "case_catalog_present",
+          "case_catalog_content_present",
+          "case_source_files_present",
+          "case_attachment_manifest_present",
+          "report_completed_at_parseable",
+          "report_completed_at_not_future"
+        ],
+        "title": "CourseEvaluationConsistencyRead"
+      },
+      "CourseEvaluationProvenanceRead": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "course_evaluation_provenance.v1",
+            "title": "Schema Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "report_missing",
+              "report_invalid",
+              "course_not_covered"
+            ],
+            "title": "Status"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "report_path": {
+            "type": "string",
+            "title": "Report Path"
+          },
+          "report_present": {
+            "type": "boolean",
+            "title": "Report Present"
+          },
+          "report_valid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Valid"
+          },
+          "report_schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Schema Version"
+          },
+          "report_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Mode"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "report_filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report Filters"
+          },
+          "snapshot_at": {
+            "type": "string",
+            "title": "Snapshot At"
+          },
+          "report_age_seconds": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Age Seconds"
+          },
+          "temporal_consistency": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "invalid",
+              "future",
+              "not_checkable"
+            ],
+            "title": "Temporal Consistency"
+          },
+          "report_case_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Case Count"
+          },
+          "course_case_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Course Case Count"
+          },
+          "course_passed_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Course Passed Count"
+          },
+          "course_pass_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Pass Rate"
+          },
+          "run_metadata_present": {
+            "type": "boolean",
+            "title": "Run Metadata Present"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "case_ids_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ids Sha256"
+          },
+          "case_catalog_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Sha256"
+          },
+          "case_catalog_content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Content Sha256"
+          },
+          "case_catalog_content_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Content Version"
+          },
+          "case_source_files_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Source Files Sha256"
+          },
+          "case_source_files_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Source Files Version"
+          },
+          "case_attachment_manifest_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Attachment Manifest Sha256"
+          },
+          "case_attachment_manifest_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Attachment Manifest Version"
+          },
+          "case_attachment_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Attachment Count"
+          },
+          "filters_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filters Sha256"
+          },
+          "implementation_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementation Fingerprint"
+          },
+          "execution_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Channel"
+          },
+          "model_trace_retention": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Trace Retention"
+          },
+          "raw_prompts_stored": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Prompts Stored"
+          },
+          "raw_results_included": {
+            "type": "boolean",
+            "const": false,
+            "title": "Raw Results Included",
+            "default": false
+          },
+          "data_boundary": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Boundary"
+          },
+          "consistency": {
+            "$ref": "#/components/schemas/CourseEvaluationConsistencyRead"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "status",
+          "course_id",
+          "report_path",
+          "report_present",
+          "report_valid",
+          "report_schema_version",
+          "report_mode",
+          "started_at",
+          "completed_at",
+          "snapshot_at",
+          "temporal_consistency",
+          "course_case_count",
+          "course_passed_count",
+          "run_metadata_present",
+          "run_id",
+          "case_ids_sha256",
+          "case_catalog_sha256",
+          "case_catalog_content_sha256",
+          "case_catalog_content_version",
+          "case_source_files_sha256",
+          "case_source_files_version",
+          "case_attachment_manifest_sha256",
+          "case_attachment_manifest_version",
+          "filters_sha256",
+          "implementation_fingerprint",
+          "execution_channel",
+          "model_trace_retention",
+          "raw_prompts_stored",
+          "consistency"
+        ],
+        "title": "CourseEvaluationProvenanceRead"
+      },
+      "CourseKnowledgeInventoryRead": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "manifest_present": {
+            "type": "boolean",
+            "title": "Manifest Present"
+          },
+          "manifest_path": {
+            "type": "string",
+            "title": "Manifest Path"
+          },
+          "document_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Document Count"
+          },
+          "malformed_manifest_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Malformed Manifest Rows"
+          },
+          "quality_issues_file_present": {
+            "type": "boolean",
+            "title": "Quality Issues File Present"
+          },
+          "quality_issues_file_parseable": {
+            "type": "boolean",
+            "title": "Quality Issues File Parseable"
+          },
+          "quality_issue_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Quality Issue Count"
+          },
+          "quality_issue_type_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Quality Issue Type Counts"
+          },
+          "quality_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Quality Status Counts"
+          },
+          "parse_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Parse Status Counts"
+          },
+          "rows_with_ocr_metadata": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows With Ocr Metadata"
+          },
+          "rows_with_ocr_confidence": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows With Ocr Confidence"
+          },
+          "rows_with_manual_review_flag": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows With Manual Review Flag"
+          },
+          "ocr_metadata_coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Metadata Coverage Ratio"
+          },
+          "ocr_status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Ocr Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "manifest_present",
+          "manifest_path",
+          "document_count",
+          "malformed_manifest_rows",
+          "quality_issues_file_present",
+          "quality_issues_file_parseable",
+          "quality_issue_count",
+          "rows_with_ocr_metadata",
+          "rows_with_ocr_confidence",
+          "rows_with_manual_review_flag",
+          "ocr_status"
+        ],
+        "title": "CourseKnowledgeInventoryRead"
       },
       "DebugRunRequest": {
         "properties": {
@@ -4516,6 +8465,78 @@
         ],
         "title": "DebugRunRequest"
       },
+      "ErrorPoolReviewDecisionSaveRequest": {
+        "properties": {
+          "source_fingerprint": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Source Fingerprint"
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorPoolReviewDecisionWrite"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Decisions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_fingerprint",
+          "reviewer",
+          "decisions"
+        ],
+        "title": "ErrorPoolReviewDecisionSaveRequest"
+      },
+      "ErrorPoolReviewDecisionWrite": {
+        "properties": {
+          "proposal_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Proposal Id"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Evidence Refs"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Notes",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "proposal_id",
+          "decision"
+        ],
+        "title": "ErrorPoolReviewDecisionWrite"
+      },
       "EvalRequest": {
         "properties": {
           "group": {
@@ -4549,6 +8570,217 @@
         },
         "type": "object",
         "title": "EvalRequest"
+      },
+      "EvaluationReportSummary": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "report_kind": {
+            "type": "string",
+            "const": "summary",
+            "title": "Report Kind",
+            "default": "summary"
+          },
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "offline",
+              "live",
+              "local_deterministic",
+              "local_mock",
+              "real_model",
+              "real_xingchen"
+            ],
+            "title": "Mode"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At"
+          },
+          "completed_at": {
+            "type": "string",
+            "title": "Completed At"
+          },
+          "filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Filters"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "statistics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Statistics"
+          },
+          "run_metadata": {
+            "$ref": "#/components/schemas/EvaluationRunMetadata"
+          },
+          "result_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Result Status Counts"
+          },
+          "raw_results_included": {
+            "type": "boolean",
+            "const": false,
+            "title": "Raw Results Included",
+            "default": false
+          },
+          "data_boundary": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Boundary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "mode",
+          "started_at",
+          "completed_at",
+          "summary",
+          "statistics",
+          "run_metadata"
+        ],
+        "title": "EvaluationReportSummary",
+        "description": "Safe report view for teacher/admin clients; never includes case results."
+      },
+      "EvaluationRunMetadata": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "case_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Case Count",
+            "default": 0
+          },
+          "case_ids_sha256": {
+            "type": "string",
+            "title": "Case Ids Sha256",
+            "default": ""
+          },
+          "case_catalog_sha256": {
+            "type": "string",
+            "title": "Case Catalog Sha256",
+            "default": ""
+          },
+          "case_catalog_content_sha256": {
+            "type": "string",
+            "title": "Case Catalog Content Sha256",
+            "default": ""
+          },
+          "case_catalog_content_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "canonical_evaluation_case_payloads.v1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Catalog Content Version"
+          },
+          "case_source_files_sha256": {
+            "type": "string",
+            "title": "Case Source Files Sha256",
+            "default": ""
+          },
+          "case_source_files_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "evaluation_case_source_files.v1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Source Files Version"
+          },
+          "case_attachment_manifest_sha256": {
+            "type": "string",
+            "title": "Case Attachment Manifest Sha256",
+            "default": ""
+          },
+          "case_attachment_manifest_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "evaluation_case_attachments.v1"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Attachment Manifest Version"
+          },
+          "case_attachment_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Case Attachment Count",
+            "default": 0
+          },
+          "filters_sha256": {
+            "type": "string",
+            "title": "Filters Sha256",
+            "default": ""
+          },
+          "implementation_fingerprint": {
+            "type": "string",
+            "title": "Implementation Fingerprint",
+            "default": ""
+          },
+          "execution_channel": {
+            "type": "string",
+            "const": "in_process_http",
+            "title": "Execution Channel",
+            "default": "in_process_http"
+          },
+          "model_trace_retention": {
+            "type": "string",
+            "const": "bounded_in_memory_metadata_only",
+            "title": "Model Trace Retention",
+            "default": "bounded_in_memory_metadata_only"
+          },
+          "raw_prompts_stored": {
+            "type": "boolean",
+            "const": false,
+            "title": "Raw Prompts Stored",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EvaluationRunMetadata",
+        "description": "Reproducibility metadata that contains no prompts or answers."
       },
       "EventRead": {
         "properties": {
@@ -4611,6 +8843,469 @@
           "fallback"
         ],
         "title": "ExecutionStatus"
+      },
+      "FeedbackCreate": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Task Id"
+          },
+          "resolved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved"
+          },
+          "satisfaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackSatisfaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "problem_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Type"
+          },
+          "manual_review_required": {
+            "type": "boolean",
+            "title": "Manual Review Required",
+            "default": false
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Comment",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "title": "FeedbackCreate"
+      },
+      "FeedbackMetricsRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "v1"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window End"
+          },
+          "data_source": {
+            "type": "string",
+            "title": "Data Source",
+            "default": "local_database"
+          },
+          "task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Task Count"
+          },
+          "task_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Task Status Counts"
+          },
+          "completed_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed Task Count"
+          },
+          "failed_task_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed Task Count"
+          },
+          "task_completion_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Completion Rate"
+          },
+          "average_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Latency Ms"
+          },
+          "unique_user_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique User Count"
+          },
+          "repeat_user_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeat User Rate"
+          },
+          "feedback_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Feedback Count"
+          },
+          "feedback_response_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Response Rate"
+          },
+          "satisfaction_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Satisfaction Counts"
+          },
+          "resolved_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Resolved Count"
+          },
+          "resolved_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Rate"
+          },
+          "manual_review_request_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Manual Review Request Count"
+          },
+          "problem_type_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Problem Type Counts"
+          },
+          "user_role_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "User Role Counts"
+          },
+          "task_type_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Task Type Counts"
+          },
+          "average_citation_coverage": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Citation Coverage"
+          },
+          "row_limit": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row Limit"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "data_quality_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Quality Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "window_start",
+          "window_end",
+          "task_count",
+          "completed_task_count",
+          "failed_task_count",
+          "unique_user_count",
+          "feedback_count",
+          "resolved_count",
+          "manual_review_request_count",
+          "row_limit"
+        ],
+        "title": "FeedbackMetricsRead"
+      },
+      "FeedbackRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "user_role": {
+            "type": "string",
+            "title": "User Role"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "rag_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rag Version"
+          },
+          "retrieval_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Mode"
+          },
+          "resolved": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved"
+          },
+          "satisfaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackSatisfaction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "problem_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Type"
+          },
+          "manual_review_required": {
+            "type": "boolean",
+            "title": "Manual Review Required"
+          },
+          "citation_coverage": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Coverage"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_id",
+          "user_role",
+          "course_id",
+          "task_type",
+          "agent_id",
+          "agent_version",
+          "provider",
+          "model_version",
+          "rag_version",
+          "retrieval_mode",
+          "resolved",
+          "satisfaction",
+          "problem_type",
+          "manual_review_required",
+          "comment",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "FeedbackRead"
+      },
+      "FeedbackSatisfaction": {
+        "type": "string",
+        "enum": [
+          "satisfied",
+          "unsatisfied",
+          "neutral"
+        ],
+        "title": "FeedbackSatisfaction"
       },
       "FeedbackUptakeStatus": {
         "type": "string",
@@ -4801,6 +9496,72 @@
         ],
         "title": "FeedbackUptakeV1"
       },
+      "FileChunkRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "file_id": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "section": {
+            "type": "string",
+            "title": "Section"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "char_start": {
+            "type": "integer",
+            "title": "Char Start"
+          },
+          "char_end": {
+            "type": "integer",
+            "title": "Char End"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "ordinal",
+          "page_number",
+          "section",
+          "content",
+          "char_start",
+          "char_end",
+          "source_ref",
+          "created_at"
+        ],
+        "title": "FileChunkRead"
+      },
       "FileRead": {
         "properties": {
           "id": {
@@ -4822,6 +9583,72 @@
             "type": "string",
             "title": "Filename"
           },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "material_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Key"
+          },
+          "material_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Version"
+          },
+          "knowledge_status": {
+            "type": "string",
+            "title": "Knowledge Status",
+            "default": "draft"
+          },
+          "knowledge_index_status": {
+            "type": "string",
+            "title": "Knowledge Index Status",
+            "default": "not_indexed"
+          },
+          "knowledge_published_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Published By"
+          },
+          "knowledge_published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Published At"
+          },
           "content_type": {
             "type": "string",
             "title": "Content Type"
@@ -4838,6 +9665,66 @@
             "type": "string",
             "title": "Checksum Sha256"
           },
+          "detected_content_type": {
+            "type": "string",
+            "title": "Detected Content Type"
+          },
+          "ingestion_status": {
+            "type": "string",
+            "title": "Ingestion Status"
+          },
+          "page_count": {
+            "type": "integer",
+            "title": "Page Count"
+          },
+          "extracted_text": {
+            "type": "string",
+            "title": "Extracted Text"
+          },
+          "extraction_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extraction Metadata"
+          },
+          "extraction_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Error"
+          },
+          "extraction_version": {
+            "type": "string",
+            "title": "Extraction Version"
+          },
+          "extraction_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Started At"
+          },
+          "extraction_completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Completed At"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4853,6 +9740,15 @@
           "size_bytes",
           "storage_key",
           "checksum_sha256",
+          "detected_content_type",
+          "ingestion_status",
+          "page_count",
+          "extracted_text",
+          "extraction_metadata",
+          "extraction_error",
+          "extraction_version",
+          "extraction_started_at",
+          "extraction_completed_at",
           "created_at"
         ],
         "title": "FileRead"
@@ -4934,6 +9830,41 @@
         ],
         "title": "ForgetRequest"
       },
+      "GuestSessionRead": {
+        "properties": {
+          "guest": {
+            "type": "boolean",
+            "const": true,
+            "title": "Guest",
+            "default": true
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name",
+            "default": "游客"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": "guest"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "expires_at"
+        ],
+        "title": "GuestSessionRead"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4992,6 +9923,11 @@
           "version": {
             "type": "string",
             "title": "Version"
+          },
+          "external_retrieval": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "External Retrieval"
           }
         },
         "type": "object",
@@ -5231,6 +10167,717 @@
           "source_ref"
         ],
         "title": "KnowledgeHit"
+      },
+      "KnowledgeMaterialManifestRead": {
+        "properties": {
+          "manifest_filename": {
+            "type": "string",
+            "title": "Manifest Filename"
+          },
+          "chunk_filename": {
+            "type": "string",
+            "title": "Chunk Filename"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "material_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Material Count"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Count"
+          },
+          "course_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Course Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "manifest_filename",
+          "chunk_filename",
+          "generated_at",
+          "material_count",
+          "chunk_count"
+        ],
+        "title": "KnowledgeMaterialManifestRead"
+      },
+      "KnowledgeMaterialRead": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "material_key": {
+            "type": "string",
+            "title": "Material Key"
+          },
+          "material_version": {
+            "type": "string",
+            "title": "Material Version"
+          },
+          "checksum_sha256": {
+            "type": "string",
+            "title": "Checksum Sha256"
+          },
+          "ingestion_status": {
+            "type": "string",
+            "title": "Ingestion Status"
+          },
+          "knowledge_status": {
+            "type": "string",
+            "title": "Knowledge Status"
+          },
+          "knowledge_index_status": {
+            "type": "string",
+            "title": "Knowledge Index Status"
+          },
+          "page_count": {
+            "type": "integer",
+            "title": "Page Count"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count"
+          },
+          "extraction_version": {
+            "type": "string",
+            "title": "Extraction Version"
+          },
+          "quality_status": {
+            "type": "string",
+            "title": "Quality Status",
+            "default": "unknown"
+          },
+          "ocr_required": {
+            "type": "boolean",
+            "title": "Ocr Required",
+            "default": false
+          },
+          "manual_review_required": {
+            "type": "boolean",
+            "title": "Manual Review Required",
+            "default": false
+          },
+          "ocr_candidate_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Ocr Candidate Pages"
+          },
+          "quality_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Quality Warnings"
+          },
+          "material_review_status": {
+            "type": "string",
+            "title": "Material Review Status",
+            "default": "not_required"
+          },
+          "material_reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Reviewed By"
+          },
+          "material_reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Reviewed At"
+          },
+          "material_review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Review Note"
+          },
+          "knowledge_published_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Published By"
+          },
+          "knowledge_published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Published At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_id",
+          "filename",
+          "owner_user_id",
+          "course_id",
+          "material_key",
+          "material_version",
+          "checksum_sha256",
+          "ingestion_status",
+          "knowledge_status",
+          "knowledge_index_status",
+          "page_count",
+          "chunk_count",
+          "extraction_version",
+          "knowledge_published_by",
+          "knowledge_published_at",
+          "created_at"
+        ],
+        "title": "KnowledgeMaterialRead"
+      },
+      "KnowledgeMaterialReviewRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "KnowledgeMaterialReviewRequest"
+      },
+      "KnowledgeMaterialStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "published",
+          "superseded",
+          "withdrawn"
+        ],
+        "title": "KnowledgeMaterialStatus"
+      },
+      "KnowledgeOCRDecisionEvidenceRead": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "decision_file_missing",
+              "pending",
+              "complete_with_evidence",
+              "complete_without_evidence",
+              "invalid_or_stale"
+            ],
+            "title": "Status"
+          },
+          "decision_file_present": {
+            "type": "boolean",
+            "title": "Decision File Present"
+          },
+          "report_valid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Valid"
+          },
+          "review_complete": {
+            "type": "boolean",
+            "title": "Review Complete"
+          },
+          "candidate_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Candidate Count"
+          },
+          "decided_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Decided Count"
+          },
+          "pending_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pending Count"
+          },
+          "rows_missing_evidence_refs": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Missing Evidence Refs"
+          },
+          "stale_checksum_error_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Stale Checksum Error Count"
+          },
+          "validation_error_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Validation Error Count"
+          },
+          "next_action": {
+            "type": "string",
+            "title": "Next Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "decision_file_present",
+          "report_valid",
+          "review_complete",
+          "candidate_count",
+          "decided_count",
+          "pending_count",
+          "rows_missing_evidence_refs",
+          "stale_checksum_error_count",
+          "validation_error_count",
+          "next_action"
+        ],
+        "title": "KnowledgeOCRDecisionEvidenceRead"
+      },
+      "KnowledgeOCRDecisionSaveRequest": {
+        "properties": {
+          "source_fingerprint": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Source Fingerprint",
+            "default": ""
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeOCRDecisionWrite"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Decisions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reviewer",
+          "decisions"
+        ],
+        "title": "KnowledgeOCRDecisionSaveRequest"
+      },
+      "KnowledgeOCRDecisionWrite": {
+        "properties": {
+          "queue_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Queue Id"
+          },
+          "checksum": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Checksum"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approve_existing_text",
+              "request_ocr",
+              "split_pdf",
+              "reject_source",
+              "needs_manual_inspection"
+            ],
+            "title": "Decision"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Evidence Refs"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queue_id",
+          "checksum",
+          "decision"
+        ],
+        "title": "KnowledgeOCRDecisionWrite"
+      },
+      "KnowledgeOCRQualityDocumentRead": {
+        "properties": {
+          "queue_id": {
+            "type": "string",
+            "title": "Queue Id"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "relative_path": {
+            "type": "string",
+            "title": "Relative Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "page_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Count"
+          },
+          "parse_status": {
+            "type": "string",
+            "title": "Parse Status"
+          },
+          "quality_status": {
+            "type": "string",
+            "title": "Quality Status"
+          },
+          "index_status": {
+            "type": "string",
+            "title": "Index Status"
+          },
+          "ocr_required": {
+            "type": "boolean",
+            "title": "Ocr Required"
+          },
+          "ocr_status": {
+            "type": "string",
+            "title": "Ocr Status"
+          },
+          "ocr_candidate_pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Ocr Candidate Pages"
+          },
+          "candidate_page_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Candidate Page Count"
+          },
+          "low_text_page_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Low Text Page Count"
+          },
+          "page_coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Coverage Ratio"
+          },
+          "manual_review_required": {
+            "type": "boolean",
+            "title": "Manual Review Required"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority"
+          },
+          "review_action": {
+            "type": "string",
+            "title": "Review Action"
+          },
+          "review_decision": {
+            "type": "string",
+            "title": "Review Decision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "queue_id",
+          "course_id",
+          "document_id",
+          "relative_path",
+          "file_name",
+          "parse_status",
+          "quality_status",
+          "index_status",
+          "ocr_required",
+          "ocr_status",
+          "candidate_page_count",
+          "low_text_page_count",
+          "manual_review_required",
+          "priority",
+          "review_action",
+          "review_decision"
+        ],
+        "title": "KnowledgeOCRQualityDocumentRead"
+      },
+      "KnowledgeOCRQualitySummaryRead": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "ocr_quality_summary.v1",
+            "title": "Schema Version"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "mode": {
+            "type": "string",
+            "const": "read_only_text_layer_audit",
+            "title": "Mode"
+          },
+          "runtime_loaded": {
+            "type": "boolean",
+            "title": "Runtime Loaded"
+          },
+          "ocr_execution_performed": {
+            "type": "boolean",
+            "title": "Ocr Execution Performed"
+          },
+          "audit_status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Audit Status"
+          },
+          "decision_evidence": {
+            "$ref": "#/components/schemas/KnowledgeOCRDecisionEvidenceRead"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeOCRQualityDocumentRead"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "cache_status": {
+            "type": "string",
+            "title": "Cache Status",
+            "default": "unknown"
+          },
+          "cache_backend": {
+            "type": "string",
+            "title": "Cache Backend",
+            "default": "none"
+          },
+          "source_fingerprint": {
+            "type": "string",
+            "title": "Source Fingerprint",
+            "default": ""
+          },
+          "snapshot_age_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Snapshot Age Seconds",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "course_id",
+          "mode",
+          "runtime_loaded",
+          "ocr_execution_performed",
+          "audit_status",
+          "decision_evidence"
+        ],
+        "title": "KnowledgeOCRQualitySummaryRead"
+      },
+      "KnowledgeOCRReviewQueueRead": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "runtime_loaded": {
+            "type": "boolean",
+            "title": "Runtime Loaded"
+          },
+          "ocr_execution_performed": {
+            "type": "boolean",
+            "title": "Ocr Execution Performed"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "decision_reports": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Decision Reports"
+          },
+          "cache_status": {
+            "type": "string",
+            "title": "Cache Status",
+            "default": "miss"
+          },
+          "cache_backend": {
+            "type": "string",
+            "title": "Cache Backend",
+            "default": "none"
+          },
+          "source_fingerprint": {
+            "type": "string",
+            "title": "Source Fingerprint",
+            "default": ""
+          },
+          "snapshot_age_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Snapshot Age Seconds",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "mode",
+          "runtime_loaded",
+          "ocr_execution_performed"
+        ],
+        "title": "KnowledgeOCRReviewQueueRead"
       },
       "KnowledgeSearchRequest": {
         "properties": {
@@ -5629,6 +11276,180 @@
           "action"
         ],
         "title": "LearningFollowUpContext"
+      },
+      "LearningMetricsRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Window End"
+          },
+          "data_source": {
+            "type": "string",
+            "const": "local_database",
+            "title": "Data Source",
+            "default": "local_database"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt Count"
+          },
+          "attempt_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Attempt Status Counts"
+          },
+          "verification_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Verification Status Counts"
+          },
+          "manual_review_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Manual Review Count"
+          },
+          "feedback_uptake_event_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Feedback Uptake Event Count"
+          },
+          "feedback_uptake_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Feedback Uptake Status Counts"
+          },
+          "feedback_uptake_determinate_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Feedback Uptake Determinate Count"
+          },
+          "feedback_uptake_determinate_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Uptake Determinate Rate"
+          },
+          "feedback_uptake_applied_correctly_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Feedback Uptake Applied Correctly Count"
+          },
+          "feedback_uptake_correct_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Uptake Correct Rate"
+          },
+          "retest_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Retest Count"
+          },
+          "retest_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Retest Status Counts"
+          },
+          "row_limit": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row Limit"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "data_quality_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Quality Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_start",
+          "window_end",
+          "attempt_count",
+          "manual_review_count",
+          "feedback_uptake_event_count",
+          "feedback_uptake_determinate_count",
+          "feedback_uptake_applied_correctly_count",
+          "retest_count",
+          "row_limit"
+        ],
+        "title": "LearningMetricsRead",
+        "description": "Aggregated learning telemetry for teacher/admin review.\n\nCounts are operational telemetry, not learner accuracy or causal impact\nmeasurements. Student identifiers are intentionally excluded."
+      },
+      "LoginRequest": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Login"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "login",
+          "password"
+        ],
+        "title": "LoginRequest"
       },
       "MasteryEvidenceType": {
         "type": "string",
@@ -6368,6 +12189,53 @@
           "course_id"
         ],
         "title": "RAGSearchRequest"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Token"
+          }
+        },
+        "type": "object",
+        "title": "RefreshRequest"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Login"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "Password"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Display Name",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "login",
+          "password"
+        ],
+        "title": "RegisterRequest"
       },
       "RelatedImage": {
         "properties": {
@@ -7628,6 +13496,250 @@
           "cancelled"
         ],
         "title": "TaskStatus"
+      },
+      "TeacherReviewQueueItemRead": {
+        "properties": {
+          "proposal_id": {
+            "type": "string",
+            "title": "Proposal Id"
+          },
+          "error_signature": {
+            "type": "string",
+            "title": "Error Signature"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "P1",
+              "P2"
+            ],
+            "title": "Priority"
+          },
+          "priority_reason": {
+            "type": "string",
+            "title": "Priority Reason"
+          },
+          "skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skill Ids"
+          },
+          "problem_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problem Types"
+          },
+          "covered_by_runtime": {
+            "type": "boolean",
+            "title": "Covered By Runtime"
+          },
+          "review_decision": {
+            "type": "string",
+            "title": "Review Decision"
+          },
+          "review_evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Evidence Refs"
+          },
+          "review_notes": {
+            "type": "string",
+            "title": "Review Notes",
+            "default": ""
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "review_evidence_quality": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "traceable",
+              "untraceable"
+            ],
+            "title": "Review Evidence Quality",
+            "default": "missing"
+          },
+          "review_evidence_reference_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Evidence Reference Kinds"
+          },
+          "evidence_required": {
+            "type": "boolean",
+            "title": "Evidence Required"
+          },
+          "runtime_eligible": {
+            "type": "boolean",
+            "title": "Runtime Eligible"
+          },
+          "deterministic_evidence_status": {
+            "type": "string",
+            "enum": [
+              "evidence_ready",
+              "review",
+              "not_declared"
+            ],
+            "title": "Deterministic Evidence Status",
+            "default": "not_declared"
+          },
+          "deterministic_conflict_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deterministic Conflict Types"
+          },
+          "deterministic_evidence_scope": {
+            "type": "string",
+            "enum": [
+              "structured_fields_only",
+              "finite_deterministic",
+              "not_declared"
+            ],
+            "title": "Deterministic Evidence Scope",
+            "default": "not_declared"
+          },
+          "deterministic_validator_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deterministic Validator Id"
+          },
+          "deterministic_validator_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deterministic Validator Path"
+          },
+          "deterministic_evidence_note": {
+            "type": "string",
+            "title": "Deterministic Evidence Note",
+            "default": ""
+          },
+          "next_action": {
+            "type": "string",
+            "title": "Next Action"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "proposal_id",
+          "error_signature",
+          "priority",
+          "priority_reason",
+          "covered_by_runtime",
+          "review_decision",
+          "evidence_required",
+          "runtime_eligible",
+          "next_action"
+        ],
+        "title": "TeacherReviewQueueItemRead"
+      },
+      "TeacherReviewQueueRead": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "teacher_review_queue.v1",
+            "title": "Schema Version"
+          },
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source_fingerprint": {
+            "type": "string",
+            "title": "Source Fingerprint",
+            "default": ""
+          },
+          "runtime_loaded": {
+            "type": "boolean",
+            "title": "Runtime Loaded"
+          },
+          "item_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Item Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TeacherReviewQueueItemRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "unresolved_signatures_without_proposal": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unresolved Signatures Without Proposal"
+          },
+          "all_items_require_teacher_evidence": {
+            "type": "boolean",
+            "title": "All Items Require Teacher Evidence"
+          },
+          "proposal_schema_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Proposal Schema Errors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schema_version",
+          "course_id",
+          "status",
+          "runtime_loaded",
+          "item_count",
+          "all_items_require_teacher_evidence"
+        ],
+        "title": "TeacherReviewQueueRead"
       },
       "TeachingMode": {
         "type": "string",

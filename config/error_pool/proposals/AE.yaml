@@ -1,0 +1,95 @@
+schema_version: "error_pool_proposal.v1"
+course_id: "AE"
+runtime_loaded: false
+review_status: "pending_teacher_review"
+proposals:
+  - proposal_id: "AE.bjt_region_error"
+    error_signature: "bjt_region_error"
+    problem_types: ["bjt_bias"]
+    skill_ids: ["AE.BJT_REGION"]
+    error_type: "operating_region_error"
+    description: "Candidate: the BJT operating region is selected without checking the relevant junction-bias inequalities."
+    hint_templates:
+      H1: "Check the base-emitter and base-collector junction conditions before selecting cutoff, active, or saturation."
+      H2: "After solving the bias point, substitute the voltages and currents back into the region inequalities."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "AE.diode_region_error"
+    error_signature: "diode_region_error"
+    problem_types: ["diode_circuit"]
+    skill_ids: ["AE.DIODE_REGION"]
+    error_type: "operating_region_error"
+    description: "Candidate: the diode model or conducting state is chosen without checking its voltage/current consistency."
+    hint_templates:
+      H1: "State the assumed diode state, solve with that model, and verify the resulting voltage and current signs."
+      H2: "Compare the candidate operating point with the threshold or reverse-bias condition before accepting the model."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "AE.feedback_polarity_error"
+    error_signature: "feedback_polarity_error"
+    problem_types: ["feedback"]
+    skill_ids: ["AE.FEEDBACK"]
+    error_type: "feedback_sign_error"
+    description: "Candidate: the feedback polarity is classified incorrectly, changing the sign of the loop gain or closed-loop relation."
+    hint_templates:
+      H1: "Trace the returned signal at the summing node and decide whether it subtracts from or adds to the input error."
+      H2: "Write the loop sign explicitly before applying the closed-loop gain formula, then check the limiting gain behavior."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "AE.gain_sign_error"
+    error_signature: "gain_sign_error"
+    problem_types: ["small_signal_amplifier"]
+    skill_ids: ["AE.VOLTAGE_GAIN"]
+    error_type: "gain_sign_error"
+    description: "Candidate: the voltage-gain sign is inconsistent with the amplifier topology or reference polarities."
+    hint_templates:
+      H1: "Keep input and output voltage references visible while deriving the small-signal gain."
+      H2: "Check the number of inverting stages and compare the final sign with the chosen port voltage directions."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "AE.mos_region_error"
+    error_signature: "mos_region_error"
+    problem_types: ["mos_bias"]
+    skill_ids: ["AE.MOS_REGION"]
+    error_type: "operating_region_error"
+    description: "Candidate: the MOS device region is selected without checking the cutoff, triode, or saturation inequalities."
+    hint_templates:
+      H1: "Calculate the relevant terminal differences first, then compare them with the threshold-based region conditions."
+      H2: "Substitute the solved bias point back into the assumed region inequality before using the region equation."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
+  - proposal_id: "AE.q_point_region_mismatch"
+    error_signature: "q_point_region_mismatch"
+    problem_types: ["bjt_bias"]
+    skill_ids: ["AE.Q_POINT"]
+    error_type: "operating_point_consistency_error"
+    description: "Candidate: the reported Q point does not belong to the operating region assumed during the bias calculation."
+    hint_templates:
+      H1: "Separate the assumed region from the solved Q point and verify the region inequalities after solving."
+      H2: "If the Q point violates the assumption, select the consistent region and resolve the bias equations."
+    teacher_review:
+      status: "pending"
+      reviewer: null
+      reviewed_at: null
+      evidence_refs: []
+    enabled: false
