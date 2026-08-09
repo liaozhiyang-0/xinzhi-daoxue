@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
@@ -34,6 +34,13 @@ class KnowledgeQARuntimeService:
     runtime_plan_version = "knowledge-qa-v1"
     execute_node_id = "knowledge.execute"
     verify_node_id = "knowledge.verify"
+    max_user_input_chars = 2_000
+    replan_failure_reasons = frozenset(
+        {
+            "knowledge_evidence_insufficient",
+            "knowledge_citations_missing",
+        }
+    )
 
     def __init__(self, knowledge_qa: KnowledgeQAService, *, enabled: bool) -> None:
         self.knowledge_qa = knowledge_qa
@@ -123,6 +130,48 @@ class KnowledgeQARuntimeService:
             return structured_count
         return len(result.citations)
 
+    @classmethod
+    def _runtime_options(cls, request: AgentRequest) -> dict[str, Any]:
+        options = request.options.get(cls.runtime_option_key)
+        return dict(options) if isinstance(options, dict) else {}
+
+    @classmethod
+    def _replan_enabled(cls, request: AgentRequest) -> bool:
+        return cls._runtime_options(request).get(
+            "replan_on_verification_failure"
+        ) is True
+
+    @classmethod
+    def _validated_user_input(
+        cls, raw_input: Any
+    ) -> tuple[str, str] | None:
+        """Return one bounded query/text value, rejecting all other shapes."""
+
+        if not isinstance(raw_input, Mapping):
+            return None
+        if set(raw_input) - {"query", "text"}:
+            return None
+        values: list[tuple[str, str]] = []
+        for field in ("query", "text"):
+            if field not in raw_input:
+                continue
+            value = raw_input[field]
+            if not isinstance(value, str):
+                return None
+            normalized = value.strip()
+            if not normalized or len(normalized) > cls.max_user_input_chars:
+                return None
+            values.append((field, normalized))
+        if len(values) != 1:
+            return None
+        return values[0]
+
+    @staticmethod
+    def _sync_request(run: AgentRun, request: AgentRequest) -> None:
+        control_data = dict(run.control_data)
+        control_data["request"] = request.model_dump(mode="json")
+        run.control_data = control_data
+
     async def run(
         self,
         request: AgentRequest,
@@ -137,6 +186,15 @@ class KnowledgeQARuntimeService:
     ) -> AgentResult:
         del context
         result_holder: dict[str, AgentResult] = {}
+        request_for_attempt = request
+        was_waiting_for_input = run.status == RuntimeRunStatus.WAITING_INPUT
+        stored_request = run.control_data.get("request")
+        if isinstance(stored_request, Mapping):
+            try:
+                request_for_attempt = AgentRequest.model_validate(stored_request)
+            except ValueError:
+                request_for_attempt = request
+        self._sync_request(run, request_for_attempt)
         restored = self._restore_result(run)
         if restored is not None:
             result_holder["result"] = restored
@@ -146,7 +204,7 @@ class KnowledgeQARuntimeService:
             _run: AgentRun, _node: RuntimeNode
         ) -> RuntimeObservation:
             execution = await self.knowledge_qa.run_with_generation(
-                self.agent_id, request
+                self.agent_id, request_for_attempt
             )
             result_holder["result"] = execution.result
             return RuntimeObservation(
@@ -270,6 +328,52 @@ class KnowledgeQARuntimeService:
                 RuntimeNodeStatus.SKIPPED,
             }:
                 if verify_state.status == RuntimeNodeStatus.PARTIAL:
+                    observation = verify_state.observation
+                    reason_code = (
+                        str(observation.facts.get("reason_code", ""))
+                        if observation is not None
+                        else ""
+                    )
+                    if (
+                        self._replan_enabled(request_for_attempt)
+                        and reason_code in self.replan_failure_reasons
+                    ):
+                        if not was_waiting_for_input:
+                            return RuntimeDecision(
+                                action=DecisionAction.ASK_USER,
+                                user_prompt=(
+                                    "请补充一个更具体的问题或检索关键词，"
+                                    "以便重新检索本地课程证据。"
+                                ),
+                                reason_codes=[
+                                    "knowledge_verification_input_required"
+                                ],
+                            )
+                        user_input = self._validated_user_input(
+                            current.control_data.get("user_input")
+                        )
+                        if user_input is None:
+                            return RuntimeDecision(
+                                action=DecisionAction.FAIL,
+                                reason_codes=["knowledge_user_input_invalid"],
+                            )
+                        if (
+                            current.iteration > 0
+                            or current.iteration
+                            >= current.budget.max_iterations - 1
+                        ):
+                            return RuntimeDecision(
+                                action=DecisionAction.FAIL,
+                                reason_codes=[
+                                    "knowledge_replan_budget_exhausted"
+                                ],
+                            )
+                        return RuntimeDecision(
+                            action=DecisionAction.REPLAN,
+                            reason_codes=[
+                                "knowledge_verification_requires_replan"
+                            ],
+                        )
                     return RuntimeDecision(
                         action=DecisionAction.FAIL,
                         reason_codes=["knowledge_verification_failed"],
@@ -284,6 +388,36 @@ class KnowledgeQARuntimeService:
                 reason_codes=["knowledge_runtime_verified"],
             )
 
+        async def replan(
+            current: AgentRun, _decision: RuntimeDecision
+        ) -> AgentRunPlan:
+            nonlocal request_for_attempt
+            user_input = self._validated_user_input(
+                current.control_data.get("user_input")
+            )
+            if user_input is None:
+                # The decision provider already rejects this path. Keep the
+                # replan boundary defensive in case a future controller calls
+                # the provider directly or a checkpoint is malformed.
+                raise RuntimeNodeError("knowledge_user_input_invalid")
+            field, value = user_input
+            canonical_input = dict(request_for_attempt.canonical_input)
+            canonical_input["text"] = value
+            canonical_input[field] = value
+            options = dict(request_for_attempt.options)
+            runtime_options = self._runtime_options(request_for_attempt)
+            runtime_options["runtime_replan_iteration"] = current.iteration
+            options[self.runtime_option_key] = runtime_options
+            options["runtime_user_input"] = {field: value}
+            request_for_attempt = request_for_attempt.model_copy(
+                update={
+                    "canonical_input": canonical_input,
+                    "options": options,
+                }
+            )
+            self._sync_request(current, request_for_attempt)
+            return self.build_plan(request_for_attempt, iteration=current.iteration)
+
         controller = RuntimeController(
             PlanExecutor(
                 registry,
@@ -295,6 +429,7 @@ class KnowledgeQARuntimeService:
             control_provider=control_provider,
             decision_event_hook=decision_event_hook,
             plan_proposal_provider=plan_proposal_provider,
+            replan_provider=replan,
         )
         await controller.run(run)
         if run.status in {
