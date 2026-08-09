@@ -1166,3 +1166,13 @@ include the matching `runtime_capabilities`. The projection describes Task
 Agent and LearningLoop domains, runtime/version, supported actions, control
 scope, and domain result contract; it does not execute a service or merge the
 two request protocols. The debug Agent page consumes the field defensively.
+
+## 2026-08-09 LearningLoop Runtime status projection checkpoint
+
+`GET /api/v1/learning/runtime/{run_id}` now exposes a redacted, ownership-
+checked checkpoint for `teaching_interaction` and `learning_progress` Runs.
+It includes goal criteria, required capabilities, node status/effect status,
+state version, approval wait, and resumability, while excluding the original
+`request_snapshot` and student input payload. The endpoint is read-only and
+does not advance a Run or call a Provider; the existing domain-specific
+approval endpoint remains responsible for LearningLoop result persistence.

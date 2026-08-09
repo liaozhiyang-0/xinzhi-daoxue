@@ -17,6 +17,8 @@ from app.contracts.learning import (
     LearningActionRequest,
     LearningActionResponse,
     LearningFollowUpContext,
+    LearningRuntimeNodeStatusRead,
+    LearningRuntimeStatusRead,
     StudentAttempt,
     TeachingMode,
     VerificationReportV1,
@@ -529,6 +531,58 @@ class LearningLoopService:
         )
         await session.commit()
         return response
+
+    async def runtime_status(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        *,
+        user_id: str,
+    ) -> LearningRuntimeStatusRead:
+        """Return a redacted, ownership-checked LearningLoop checkpoint."""
+
+        repository = AgentRunRepository(session)
+        model = await repository.get(run_id)
+        if model is None or model.run_kind not in {
+            "teaching_interaction",
+            "learning_progress",
+        }:
+            raise NotFoundError("learning Runtime run not found")
+        task = await session.get(TaskModel, model.task_id)
+        if task is None or (user_id and task.user_id != user_id):
+            raise NotFoundError("learning Runtime run not found")
+        run = await repository.restore(run_id)
+        if run is None:
+            raise NotFoundError("learning Runtime checkpoint not found")
+        goal = run.goal_contract or run.plan.goal_contract
+        if goal is None:
+            raise NotFoundError("learning Runtime goal contract not found")
+        node_statuses = [
+            LearningRuntimeNodeStatusRead(
+                node_id=node.node_id,
+                status=run.nodes[node.node_id].status.value,
+                effect_status=run.nodes[node.node_id].effect_status.value,
+                attempt=run.nodes[node.node_id].attempt,
+                error_code=run.nodes[node.node_id].error_code,
+            )
+            for node in run.plan.nodes
+        ]
+        status = run.status.value
+        return LearningRuntimeStatusRead(
+            run_id=run.run_id,
+            task_id=run.task_id,
+            runtime_id=model.agent_id,
+            run_kind=model.run_kind,
+            status=status,
+            state_version=run.state_version,
+            goal=run.goal,
+            success_criteria=list(goal.success_criteria),
+            required_capabilities=list(goal.required_capabilities),
+            goal_source=goal.source,
+            node_statuses=node_statuses,
+            approval_required=status == "waiting_approval",
+            resumable=status in {"paused", "waiting_input", "waiting_approval"},
+        )
 
     async def execute_phase3_action(
         self,

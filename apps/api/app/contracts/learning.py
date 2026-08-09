@@ -389,6 +389,41 @@ class LearningRuntimeApprovalRequest(BaseModel):
     expected_state_version: int | None = Field(default=None, ge=1)
 
 
+class LearningRuntimeNodeStatusRead(BaseModel):
+    """Redacted node state for the LearningLoop Runtime status projection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    node_id: str = Field(min_length=1, max_length=100)
+    status: str = Field(min_length=1, max_length=32)
+    effect_status: str = Field(min_length=1, max_length=32)
+    attempt: int = Field(ge=0)
+    error_code: str = Field(default="", max_length=160)
+
+
+class LearningRuntimeStatusRead(BaseModel):
+    """Provider-free, ownership-checked LearningLoop Runtime snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(min_length=1, max_length=120)
+    task_id: str = Field(min_length=1, max_length=120)
+    runtime_id: str = Field(min_length=1, max_length=120)
+    run_kind: Literal["teaching_interaction", "learning_progress"]
+    status: str = Field(min_length=1, max_length=32)
+    state_version: int = Field(ge=1)
+    goal: str = Field(min_length=1, max_length=8_000)
+    success_criteria: list[str] = Field(default_factory=list, max_length=32)
+    required_capabilities: list[str] = Field(default_factory=list, max_length=32)
+    goal_source: str = Field(default="request", max_length=64)
+    node_statuses: list[LearningRuntimeNodeStatusRead] = Field(
+        default_factory=list, max_length=100
+    )
+    control_scope: Literal["learning_loop"] = "learning_loop"
+    approval_required: bool = False
+    resumable: bool = False
+
+
 class LearningFollowUpContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

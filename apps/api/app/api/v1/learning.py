@@ -12,6 +12,7 @@ from app.contracts.learning import (
     LearningActionResponse,
     LearningMetricsRead,
     LearningRuntimeApprovalRequest,
+    LearningRuntimeStatusRead,
     RetestPlanV1,
     StudentAttemptV2,
 )
@@ -64,6 +65,22 @@ async def approve_learning_runtime(
         user_id=user_id,
         expected_state_version=data.expected_state_version,
     )
+
+
+@router.get(
+    "/runtime/{run_id}",
+    response_model=LearningRuntimeStatusRead,
+    summary="Read a redacted LearningLoop Runtime checkpoint",
+)
+async def learning_runtime_status(
+    run_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> LearningRuntimeStatusRead:
+    user_id = effective_user_id(principal, None)
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    return await service.runtime_status(db, run_id, user_id=user_id)
 
 
 @router.get("/states", response_model=list[LearnerKnowledgeState])
