@@ -11,7 +11,19 @@ from app.contracts import AgentRequest
 from app.runtime import RuntimeHandlerRegistry
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
-from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
+from app.services.runtime_launch_policy import (
+    RuntimeLaunchMode,
+    RuntimeLaunchPolicy,
+)
+
+_RELEASE_EVIDENCE_BLOCKERS = frozenset(
+    {
+        "canary_release_evidence_missing",
+        "canary_authorized_evidence_missing",
+        "canary_structural_gate_failed",
+        "canary_provenance_incomplete",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +43,7 @@ class RuntimeAgentReadiness:
     canary_reason: str
     status: str
     blockers: tuple[str, ...]
+    recommended_actions: tuple[str, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +60,7 @@ class RuntimeAgentReadiness:
             "canary_reason": self.canary_reason,
             "status": self.status,
             "blockers": list(self.blockers),
+            "recommended_actions": list(self.recommended_actions),
         }
 
 
@@ -199,6 +213,10 @@ class RuntimeAgentReadinessService:
             status = "explicit_goal_only"
         else:
             status = "legacy_only"
+        recommended_actions = self._recommended_actions(
+            status=status,
+            blockers=tuple(dict.fromkeys(blockers)),
+        )
         return RuntimeAgentReadiness(
             agent_id=agent_id,
             runtime_services=service_names,
@@ -213,7 +231,63 @@ class RuntimeAgentReadinessService:
             canary_reason=canary_reason,
             status=status,
             blockers=tuple(dict.fromkeys(blockers)),
+            recommended_actions=recommended_actions,
         )
+
+    @staticmethod
+    def _recommended_actions(
+        *, status: str, blockers: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        """Return stable, provider-free action identifiers for operators.
+
+        Only known blocker categories are translated.  In particular, the
+        returned values never include a blocker suffix such as a publication
+        status, version, path, or any other runtime-derived detail.
+        """
+
+        actions: list[str] = []
+        for blocker in blockers:
+            if blocker == "agent_disabled":
+                actions.extend(("enable_agent", "review_agent_eligibility"))
+            elif blocker == "agent_execution_disabled":
+                actions.append("enable_agent_execution")
+            elif blocker.startswith("agent_unpublished:"):
+                actions.append("review_agent_eligibility")
+            elif blocker == "runtime_service_missing":
+                actions.append("register_runtime_business_service")
+            elif blocker == "runtime_service_disabled":
+                actions.append("enable_runtime_service")
+            elif blocker == "runtime_lifecycle_disabled":
+                actions.append("enable_runtime_lifecycle")
+            elif blocker == "canary_artifact_version_expectation_missing":
+                actions.append("declare_agent_and_runtime_plan_versions")
+            elif blocker.startswith("canary_artifact_"):
+                actions.append("refresh_canary_artifact_for_current_versions")
+                actions.append("run_provider_free_release_preflight")
+                actions.append("collect_authorized_paired_trace")
+            elif blocker.startswith("semantic_"):
+                actions.append("run_provider_free_release_preflight")
+                actions.append("collect_semantic_evidence_for_authorized_trace")
+            elif blocker in _RELEASE_EVIDENCE_BLOCKERS:
+                actions.append("run_provider_free_release_preflight")
+                actions.append("collect_authorized_paired_trace")
+
+        if actions:
+            return tuple(dict.fromkeys(actions))
+        if blockers:
+            return ("review_runtime_readiness",)
+        if status == "default_ready":
+            return (
+                "observe_canary_before_default_approval",
+                "approve_default_promotion",
+            )
+        if status == "canary_ready":
+            return ("observe_canary", "review_canary_results")
+        if status == "runtime_implemented":
+            return ("configure_canary_launch",)
+        if status in {"explicit_goal_only", "legacy_only"}:
+            return ("register_runtime_business_service",)
+        return ()
 
     def as_dicts(
         self, agent_ids: Iterable[str] | None = None

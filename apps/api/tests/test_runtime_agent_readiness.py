@@ -116,6 +116,8 @@ def test_direct_runtime_service_is_reported_as_implemented() -> None:
     assert item.runtime_plan_available is True
     assert item.runtime_services == ("_RuntimeService",)
     assert item.blockers == ()
+    assert item.recommended_actions == ("configure_canary_launch",)
+    assert item.to_dict()["recommended_actions"] == ["configure_canary_launch"]
 
 
 def test_disabled_agent_with_runtime_service_is_not_reported_ready() -> None:
@@ -132,6 +134,10 @@ def test_disabled_agent_with_runtime_service_is_not_reported_ready() -> None:
     assert item.runtime_plan_available is True
     assert "agent_disabled" in item.blockers
     assert item.canary_release_eligible is False
+    assert item.recommended_actions == (
+        "enable_agent",
+        "review_agent_eligibility",
+    )
 
 
 def test_unpublished_agent_with_runtime_service_is_not_reported_ready() -> None:
@@ -164,6 +170,10 @@ def test_configured_default_without_canary_is_blocked() -> None:
     assert item.status == "blocked"
     assert item.effective_launch_mode == "legacy"
     assert "canary_release_evidence_missing" in item.blockers
+    assert item.recommended_actions == (
+        "run_provider_free_release_preflight",
+        "collect_authorized_paired_trace",
+    )
 
 
 def test_business_registry_reads_legacy_plan_version_declaration() -> None:
@@ -201,6 +211,11 @@ def test_readiness_blocks_stale_release_artifact(
     assert item.status == "blocked"
     assert item.effective_launch_mode == "legacy"
     assert reason in item.blockers
+    assert item.recommended_actions == (
+        "refresh_canary_artifact_for_current_versions",
+        "run_provider_free_release_preflight",
+        "collect_authorized_paired_trace",
+    )
 
 
 @pytest.mark.parametrize(
@@ -226,6 +241,24 @@ def test_readiness_accepts_matching_release_artifact(
     assert item.effective_launch_mode == launch_mode
     assert item.canary_release_eligible is True
     assert item.canary_reason == "canary_release_evidence_approved"
+
+
+def test_default_ready_recommends_canary_observation_and_approval() -> None:
+    readiness = _readiness(
+        [_RuntimeService()],
+        launch_modes="GENERAL_QUESTION_V1=default",
+        release_gate_required=True,
+        release_registry=_release_registry(),
+    )
+
+    item = readiness.inspect("GENERAL_QUESTION_V1")
+
+    assert item.status == "default_ready"
+    assert item.blockers == ()
+    assert item.recommended_actions == (
+        "observe_canary_before_default_approval",
+        "approve_default_promotion",
+    )
 
 
 def test_readiness_blocks_release_gate_without_plan_version_expectation() -> None:
@@ -263,6 +296,7 @@ def test_wildcard_goal_runtime_is_explicit_only() -> None:
     assert item.explicit_goal_runtime_available is True
     assert item.runtime_plan_available is False
     assert "runtime_service_missing" in item.blockers
+    assert item.recommended_actions == ("register_runtime_business_service",)
 
 
 def test_runtime_readiness_endpoint_is_provider_free(client) -> None:
@@ -272,4 +306,9 @@ def test_runtime_readiness_endpoint_is_provider_free(client) -> None:
     payload = response.json()
     assert payload["provider_called"] is False
     assert payload["agents"]
-    assert all("status" in item and "blockers" in item for item in payload["agents"])
+    assert all(
+        "status" in item
+        and "blockers" in item
+        and "recommended_actions" in item
+        for item in payload["agents"]
+    )
