@@ -100,6 +100,8 @@ class RuntimeCanaryReleaseRegistry:
         if self._semantic_evidence is None:
             return True
         evidence = self._semantic_evidence_for(agent_id)
+        if evidence is None:
+            return False
         return bool(evidence) and all(
             self._semantic_reason(agent_id, report, item) is None
             and semantic_release_eligible(report.release_eligible, item)

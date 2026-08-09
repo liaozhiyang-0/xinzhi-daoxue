@@ -763,13 +763,13 @@ answer contract, result status, and evidence/citation facts. Existing
 `KnowledgeQAService` behavior remains the default because the capability is
 disabled unless explicitly enabled.
 
-The real default-mode TaskRunner test proves that the local retrieval Agent
-executes through those two Runtime nodes and does not emit the legacy
-`local_retrieval` stage. The original local knowledge QA tests still pass with
-the feature disabled. This is a business-path migration, not an accuracy
-claim; the next queue item is external retrieval, where source-provider
-authorization and durable fetch/review semantics must be modeled before a
-Runtime canary is enabled.
+The default-mode TaskRunner test now proves that an evidence-insufficient local
+retrieval result fails closed after the two Runtime nodes and does not emit the
+legacy `local_retrieval` stage. The original local knowledge QA tests still
+pass with the feature disabled. This is a business-path migration, not an
+accuracy claim; the next queue item is external retrieval, where source-
+provider authorization and durable fetch/review semantics must be modeled
+before a Runtime canary is enabled.
 
 ## 2026-08-09 external research Runtime checkpoint
 
@@ -993,7 +993,7 @@ The compatibility boundary now has four additional protections:
    the adapter mapping are checked without reading credentials or the original
    workflow YAML inputs.
 
-The latest provider-free Runtime gate covers 142 tests in one isolated
+The latest provider-free Runtime gate covers 145 tests in one isolated
 process. It includes Runtime execution paths, restart recovery, approval,
 availability, SSE, task non-blocking behavior, and SOLVER freeze checks. The
 remaining long-term exit condition is not another compatibility patch: one
@@ -1072,3 +1072,23 @@ count, and citation count. Missing citations produce a `PARTIAL` node with
 result is marked `passed=false` and `needs_review=true` rather than being
 reported as verified. This improves evidence safety without changing the
 legacy fallback or enabling the Agent by default.
+
+## 2026-08-09 Runtime handoff integrity checkpoint
+
+The Runtime/Task boundary now treats the Runtime Run state as authoritative
+for result ownership. A partial or failed verification cannot be converted
+into a completed Task by the legacy result-commit path. In `default` mode,
+incomplete Runtime execution raises a fail-closed error and never invokes the
+legacy execution branch. In `canary` mode, an explicitly observable
+`legacy_fallback` result may be returned, but it is marked failed and cannot
+claim Runtime ownership. Successful Runtime results continue to bypass legacy
+execution.
+
+This closes a critical migration defect: the verifier could correctly produce
+`PARTIAL`, while TaskRunner later committed the outer Task as `completed`.
+The isolated Runtime regression now passes 145 tests, including the
+evidence-insufficient local retrieval path and direct Runtime handoff tests.
+The next release gate remains external and intentional: collect an authorized
+paired trace for `GENERAL_QUESTION_V1`, generate its semantic sidecar, and
+promote only after the release registry accepts both structural and semantic
+evidence.
