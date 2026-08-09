@@ -309,7 +309,8 @@ class TaskRouter:
                 ):
                     normalized = request.model_copy(update={"course_id": course_id})
                     decision = self._decision_for_rule(rule, normalized)
-                    self._ensure_supported(decision.agent_id, input_type)
+                    if decision.route_status != RouteStatus.UNRESOLVED:
+                        self._ensure_supported(decision.agent_id, input_type)
                     return decision.model_copy(
                         update={
                             "reason_codes": course_reasons
