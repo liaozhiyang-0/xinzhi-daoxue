@@ -8,6 +8,22 @@
 
 `apps/api/tests/test_runtime_true_agent_contract_matrix.py`
 
+## 当前状态校准（2026-08-09）
+
+本矩阵覆盖的 Runtime 核心已经实现，而不是待开发设计：
+
+| 能力层 | 当前状态 | 证据边界 |
+| --- | --- | --- |
+| L1 Runtime Kernel | 已实现 | `AgentRun`/Plan/Node/Observation/Decision/Budget、状态机、DAG 执行与预算/失败传播有 contract tests |
+| L2 Durable Run Service | 已实现 | `AgentRunRepository`、durable checkpoint、状态版本、事件关联、恢复、暂停/恢复、审批和 reconcile 有 Runtime/集成测试 |
+| L3 Tool/Agent Runtime | 已实现 | `RuntimeHandlerRegistry`、typed tool/Provider/internal-Agent adapter、`RuntimeSubagentRegistry` 有 synthetic/provider-free tests |
+| L4 Controller Loop | 已实现 | `observe -> decide -> act -> verify -> replan`、fail-closed、预算和控制动作有 synthetic/provider-free tests |
+| 生产发布 | 未授权/未完成 | 尚无业务真实 paired trace、semantic sidecar、授权 Canary/default 决策；LangGraph 是否存在独立生产路径仍需审计 |
+
+这里的“已实现”指代码合同和可重复的 provider-free/synthetic 验证已经存在；它不表示
+真实 Provider、Docker、生产 worker 崩溃恢复或生产默认切换已经完成。剩余发布门槛主要
+是业务证据、授权决策和路径审计，而不是重新实现上述 Runtime 核心。
+
 ## 覆盖矩阵
 
 | 能力域 | 合同证据 | 评测结论 |
@@ -26,6 +42,11 @@
 | Fail-closed | 失败结果、重规划预算耗尽或预算不足不会被包装成 completed 结果 | 覆盖 |
 | Checkpoint identity | checkpoint sequence、state version、run id、launch agent id 和 plan version 可由 `audit_checkpoint_trace` 校验 | 覆盖 |
 | Evidence identity | canary payload、checkpoint launch identity 与 evidence identity 不一致时 release gate fail-closed | 覆盖 |
+
+以上“覆盖”均为 synthetic/provider-free contract coverage。尤其是 durable
+`AgentRun`/checkpoint/recovery、handler registry、typed subagent 和完整
+observe-decide-act-verify-replan 闭环，已经分别在 Runtime contract、recovery、subagent、
+observability 和本矩阵测试中落地；“覆盖”不等于真实业务结果已获发布授权。
 
 ## 运行方式
 
@@ -58,6 +79,11 @@ typed subagent double 和序列化 checkpoint record。测试不创建真实 Pro
 - 真实学生数据、真实课程数据或生产权限下的工具副作用；
 - SSE 顺序/重连、跨进程 durable repository 恢复或生产 worker 崩溃恢复的完整质量；
 - 任何 Agent 已经满足 canary 或 production default 发布条件。
+
+此外，当前代码中 LangGraph 仍可能作为 academic solver 的独立路径存在。该矩阵不把
+LangGraph 的 checkpoint backend、实际生产启用范围或其与 Runtime 的恢复边界视为已审计；
+必须单独完成路径盘点后，才能决定迁移、并行保留或下线。此项是生产架构审计，不应被
+误写成 Runtime 核心合同尚未实现。
 
 尤其是测试中的 `RuntimeCanaryEvidence(kind="synthetic")` 即使结构比较通过，
 也必须保持 `release_eligible=False`。它不能替代授权的 Legacy/Runtime 同输入成对

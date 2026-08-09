@@ -35,15 +35,29 @@ flowchart LR
 
 ## 2. 当前判断
 
-当前系统已经有 Agent Registry、Task/SSE、Provider、RAG、内部 Agent、LangGraph 和若干业务工作流，但核心控制权仍集中在大型 `TaskRunner` 及各业务 Service 中：
+当前 Runtime 核心已经具备真正 Agent 所需的执行语义：结构化目标与计划、节点级
+handler/子 Agent 调用、`observe -> decide -> act -> verify -> replan` 闭环、持久化
+`AgentRun`/checkpoint、恢复与人工控制。上述能力由实现代码和 provider-free synthetic
+contract tests 覆盖；它们说明 Runtime 合同已经落地，不等于所有业务路径都已迁移或所有
+结果质量已经被真实 Provider 证明。
 
-- `IntentPlanCompiler` 主要生成计划元数据，计划节点尚未成为通用执行单元。
-- 研究链中，检索、审阅、修正和生成存在组合式调用；直接执行旧计划会造成 Provider 重复调用。
-- 工具 Registry 具备声明信息，但缺少统一的输入校验、权限、预算、超时、重试和结果契约。
-- LangGraph 生产路径仍需从进程内 checkpoint 迁移到数据库持久化运行状态。
-- 现有 Task/SSE/Provider 边界是稳定资产，不能为了“Agent 化”一次性推倒重来。
+当前边界应准确表述为：
 
-因此迁移策略是“运行时先行、业务路径逐条接入、旧路径可回退”，而不是重写 `TaskRunner`。
+- `RuntimeExecutionBoundary`、`RuntimeBusinessRegistry` 和 `TaskRunner` 已支持受控的
+  Runtime 业务路径；Legacy Task/SSE/Provider 兼容边界仍然保留，未宣称全量默认切换。
+- `AgentRunRepository` 已持久化 run、node、checkpoint、状态版本及事件关联，并支持
+  checkpoint 恢复、暂停/恢复、审批和不可安全重放副作用的 reconcile；跨进程/生产 worker
+  崩溃质量仍需通过受授权的运行证据验证。
+- handler registry、typed subagent、预算/权限/幂等与 replay policy 已实现；synthetic
+  handler 测试不代表真实 Provider、网络、检索质量或生产副作用已验证。
+- LangGraph 仍可能是 academic solver 的独立生产路径，当前必须审计其实际启用范围、
+  checkpoint backend、恢复语义和与 Runtime 的边界；这是一项路径审计/迁移决策，不应被
+  混写成 Runtime 核心代码“尚未完成”。
+- 剩余发布门槛是业务真实 Legacy/Runtime paired trace、独立 semantic sidecar、授权
+  canary/default 决策及可回滚配置，而不是再补一套 synthetic Runtime 核心。
+
+因此迁移策略仍是“运行时先行、业务路径逐条接入、旧路径可回退”。本阶段没有执行或
+宣称真实 Provider、Docker、生产默认切换已完成。
 
 ## 3. 目标分层
 
@@ -53,6 +67,8 @@ flowchart LR
 
 ### L1：Runtime Kernel
 
+**状态：已实现；已有 synthetic/provider-free contract tests。**
+
 统一提供：
 
 - `AgentRun`、`AgentRunPlan`、`RuntimeNode`、`RuntimeObservation`、`RuntimeDecision`。
@@ -60,10 +76,16 @@ flowchart LR
 - 节点超时、重试、失败传播和并发上限。
 - checkpoint hook、事件 hook 和结构化错误码。
 
-当前已建立 L1 的基础实现，包括按决策选择节点的执行器、预算消耗、失败传播和
-`RuntimeController` 闭环，但尚未接入生产 TaskRunner。
+当前实现包括结构化 `AgentRun`/Plan/Node/Observation/Decision/Budget、确定性状态机、
+DAG 依赖推进、并发批次、预算与失败传播、`RuntimeController` 的执行/重规划/等待输入/
+审批/完成/失败闭环，以及 checkpoint/event hooks。`test_runtime_contracts.py`、
+`test_runtime_true_agent_contract_matrix.py` 和相关 Runtime 测试覆盖这些合同；业务路径
+是否达到发布标准由后续 evidence gate 单独判断。
 
 ### L2：Durable Run Service
+
+**状态：核心能力已实现并接入受支持 Runtime 路径；生产级跨进程与独立 LangGraph
+路径仍需审计/取证。**
 
 新增 Run Repository 和恢复入口：
 
@@ -73,9 +95,19 @@ flowchart LR
 - `resume(run_id)`：从最近 checkpoint 继续，而不是重新创建任务。
 - 乐观锁：`state_version` 防止重复 worker 同时推进同一个 run。
 
-数据库变更只允许新增增量 migration，不修改已提交 migration。
+当前 `AgentRunRepository` 已实现 run/node/checkpoint 的持久化读写、单调 checkpoint、
+状态版本/乐观并发控制、request/launch identity、事件关联和恢复入口；Task Runtime 与
+LearningLoop 的受控路径均有恢复/控制测试。安全重放与不可安全重放副作用的 reconcile
+也已成为显式恢复语义。
+
+数据库变更只允许新增增量 migration，不修改已提交 migration。现有测试证明的是
+repository/恢复合同和 synthetic fault scenarios；不能单独证明真实生产 worker 崩溃、SSE
+跨进程重连或 LangGraph 的生产恢复已经完成。LangGraph 是否仍有独立生产路径，以及该
+路径是否必须迁移到同一 durable backend，列为审计结论，而不是在本节虚构为已迁移。
 
 ### L3：Tool/Agent Runtime
+
+**状态：已实现；handler registry、typed subagent 与 provider-free 合同已覆盖。**
 
 所有可执行能力统一为受控 handler：
 
@@ -89,9 +121,17 @@ handler_id
   -> RuntimeObservation
 ```
 
-Provider 只负责外部调用；Runtime 负责何时调用、调用几次、失败怎么办、结果是否足够继续。
+`RuntimeHandlerRegistry`、descriptor、通用 tool/Provider/internal-Agent adapter 和
+`RuntimeSubagentRegistry` 已实现；descriptor 携带 schema、权限/风险、预算、超时/重试、
+副作用与 replay policy，subagent 受 target、版本、深度和预算约束。Provider 只负责外部
+调用；Runtime 负责何时调用、调用几次、失败怎么办、结果是否足够继续。现有测试证明
+注册、拒绝未注册能力、审批、预算、稳定 execution key 和 subagent 边界，不证明真实
+Provider 结果质量或生产工具副作用安全。
 
 ### L4：Controller Loop
+
+**状态：已实现；observe-decide-act-verify-replan 已有 synthetic/provider-free contract
+tests。**
 
 将模型或规则控制器限制为结构化决策输出：
 
@@ -102,7 +142,11 @@ Provider 只负责外部调用；Runtime 负责何时调用、调用几次、失
 - `finish`
 - `fail`
 
-控制器只能引用已注册的 node/handler，不能直接执行任意 Python、任意 URL 或未发布 Agent。
+控制器只能引用已注册的 node/handler，不能直接执行任意 Python、任意 URL 或未发布
+Agent。通用 Goal planner 能编译结构化目标、能力和 fallback plan；运行时能在验证失败
+时进行有界重规划，并保留同一 Run、预算和 checkpoint identity。该闭环已在 General
+Question 和 Generic Goal synthetic fixtures 中验证；真实业务目标完成率仍须 paired trace
+与 semantic evaluation 证明。
 
 ### L5：质量、治理和评测
 
@@ -124,42 +168,41 @@ Provider 只负责外部调用；Runtime 负责何时调用、调用几次、失
 
 退出条件：已有业务链可回归，未发生 Provider/凭据边界变化。
 
-### Phase 1：Runtime Contracts（已完成）
+### Phase 1：Runtime Contracts（实现完成；provider-free 合同已覆盖）
 
 - 建立结构化 Run/Plan/Node/Observation/Decision/Budget 契约。
 - 计划构造时校验重复节点、未知依赖和环。
 - 建立纯状态机，不在状态机内执行 IO 或 Provider。
 - 建立存储无关的 `PlanExecutor`。
 
-退出条件：状态转移、依赖推进、暂停/审批、重试、超时和失败传播有单元测试。
+退出条件已满足：状态转移、依赖推进、暂停/审批、重试、超时、失败传播、预算、handler
+注册和 observe-decide-act-verify-replan 均有单元或 synthetic contract tests。该结论只针对
+Runtime 合同，不代表真实 Provider 或生产流量验证完成。
 
-### Phase 2：Durable Checkpoint（当前阶段）
+### Phase 2：Durable Checkpoint（核心实现完成；生产路径审计与授权证据待完成）
 
-执行顺序：
+已完成的 Phase 2 实现包括：
 
-1. 完成 `AgentRunRepository`，实现 run/node/checkpoint 的读写和 `state_version` 乐观锁。
-2. 将 Runtime 状态转换为数据库模型，并限制持久化内容为结构化状态、指标和引用，不保存隐藏思维链。
-3. 建立 `RuntimeEventBridge`，把 node 事件映射到现有 Task/SSE，保证旧客户端仍能工作。
-4. 增加断点恢复、重复投递、并发 worker 和 SSE 重连测试。
-5. 将生产 LangGraph checkpoint 从进程内实现切换到受支持的持久化 backend；在迁移完成前不得宣称生产可恢复。
+1. `AgentRunRepository` 的 run/node/checkpoint 读写、`state_version` 乐观锁和结构化
+   checkpoint 快照。
+2. `RuntimeEventBridge` 到既有 Task/SSE 事件协议的映射、事件顺序审计和重连相关契约。
+3. 恢复同一 Run、复用 request/launch identity、safe replay、unsafe side-effect
+   reconcile、暂停/审批/输入控制及恢复测试。
 
-Runtime Controller 已支持 `execute/replan/ask_user/request_approval/finish/fail`，
-并在每次执行前消耗模型、工具或子 Agent 预算；这组能力目前有单元测试，但仍需
-通过 Task/SSE 生命周期和真实业务 Handler 进行集成验证。
+因此“代码尚未完成”不再是当前主要描述。仍未关闭的是证据与路径审计：真实生产 worker
+崩溃/跨进程恢复和 SSE 行为需要授权运行验证；还必须审计 LangGraph 是否存在独立生产
+路径、该路径是否仍使用进程内 checkpoint，以及是否应迁移/并行保留。未完成审计前，不
+宣称 LangGraph 已完成 durable 迁移或生产可恢复。
 
-退出条件：杀掉 worker 后可以从最近 checkpoint 继续；同一个节点不会因重复投递产生不可接受的副作用。
+### Phase 3：Tool/Agent Handler Registry（实现完成；synthetic/provider-free 合同已覆盖）
 
-### Phase 3：Tool/Agent Handler Registry
+Phase 3 的 handler descriptor/registry、tool/Provider/internal-Agent adapter、typed
+subagent registry、预算/权限/风险/幂等/replay policy 和人工审批门已经实现；新增能力
+可以沿 descriptor + handler 注册边界接入，不需要为每个能力新增 TaskRunner 分支。相关
+注册、subagent、预算、审批、重放和 fail-closed 行为有 synthetic/provider-free tests。
 
-执行顺序：
-
-1. 从现有工具 Registry 生成 Runtime handler descriptor。
-2. 为工具补充 input/output schema、权限、风险等级、预算计数和幂等键。
-3. 先接入纯本地、无副作用工具，再接入检索和 Provider。
-4. 将内部 Agent 封装为 `subagent` handler，限制最大深度、预算和递归次数。
-5. 对外部副作用操作默认要求人工审批。
-
-退出条件：新增工具只需注册 descriptor 和 handler，不需要修改 TaskRunner 分支。
+Phase 3 的剩余工作是业务接入与发布证据：真实 Provider/检索调用仍需受控 paired trace，
+外部副作用仍需授权审批与回滚验证，不能把 synthetic handler 通过当作生产能力通过。
 
 ### Phase 4：研究 Agent 试点
 
@@ -241,18 +284,23 @@ Runtime Controller 已支持 `execute/replan/ask_user/request_approval/finish/fa
 
 ## 7. 当前下一步
 
-下一步只实现 Phase 2 的 Repository 与事件桥接，不接入真实 Provider：
+L1–L4 及 Phase 1–3 的核心代码和 provider-free 合同已经完成，下一步不再是重复建设
+Repository、handler registry 或 synthetic loop，而是关闭发布与路径审计门槛：
 
-1. 设计 `AgentRunRepository` 接口和 SQLAlchemy 实现。
-2. 给 `PlanExecutor` 增加 checkpoint 序列与状态版本写入。
-3. 将 `node_started/completed/retrying/failed` 映射为现有 `AgentEventType`。
-4. 增加恢复测试，证明恢复后不会重新执行已成功节点。
-5. 选择一个“无重复调用”的研究兼容 handler 作为首个试点。
+1. 在明确授权和脱敏边界下，为一个选定业务能力采集同输入的 Legacy/Runtime paired
+   trace，并绑定 Agent、plan、handler 和 run identity。
+2. 完成结构 parity、checkpoint/event audit 和独立 semantic judgement sidecar；缺失或
+   不一致时保持 release preflight fail-closed。
+3. 由有权限的发布决策者记录带回滚配置的 Canary/default 决策；在此之前不切换生产默认
+   路径。
+4. 审计 LangGraph 是否仍有独立生产路径，核对实际 checkpoint backend、恢复语义以及
+   与 Runtime 的责任边界，再决定迁移、并行保留或下线。
 
 当前已增加 `AGENT_RUNTIME_SHADOW_ENABLED` 配置。开启后，旧 TaskRunner 会为每个任务
 创建一个明确标记为 `legacy.task_runner.*` 的兼容 Runtime Run，并在任务完成、失败或
 取消时写入终态 checkpoint；该模式只记录生命周期，不重新调用 Provider，也不改变旧
-Task/SSE 结果。下一步是把这个单一兼容节点替换为真实的研究 Handler DAG。
+Task/SSE 结果。Research Analysis V2 已作为受控 opt-in Runtime DAG 存在，但仍是
+canary 候选，不构成真实 Provider 质量、生产默认切换或发布授权证据。
 
 ## Current implementation checkpoint (2026-08-08)
 
