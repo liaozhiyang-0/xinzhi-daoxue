@@ -176,7 +176,9 @@ async def test_opt_in_replan_survives_persisted_waiting_input_and_resume(
             assert checkpoints[-1].status == RuntimeRunStatus.WAITING_INPUT.value
             assert checkpoints[-1].state_version == suspended_version
 
-        settings = Settings(app_env="test", _env_file=None)
+        settings = Settings(  # type: ignore[call-arg]
+            app_env="test", _env_file=None
+        )
         async with session_factory() as db:
             controls = TaskControlService(db, MockAgentProvider(), settings)
             submitted = await controls.submit_input(
