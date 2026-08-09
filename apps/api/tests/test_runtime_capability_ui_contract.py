@@ -18,7 +18,7 @@ def test_agents_ui_consumes_optional_runtime_capability_contract() -> None:
         "capability_id", "domain", "runtime_id", "version", "enabled",
         "supported_actions", "supports_pause", "supports_resume",
         "supports_approval", "supports_input", "status", "result_contract",
-        "control_scope",
+        "control_scope", "canary_release_eligible", "canary_reason", "blockers",
     ):
         assert field in script
     assert "runtimeCapabilitiesDetails" in script
@@ -36,6 +36,22 @@ def test_agents_ui_groups_top_level_capabilities_by_runtime_domain() -> None:
     assert "control_scope：" in script
     assert "supported_actions：" in script
     assert "runtimeCapabilitiesFromAgentPayload" in script
+
+
+def test_agents_ui_projects_capability_execution_and_publication_evidence_fail_closed() -> None:
+    script = _read()
+
+    assert "function runtimeCapabilityEvidence(capability)" in script
+    assert 'safeRuntimeCapabilityText(capability.status, "未报告")' in script
+    assert 'typeof capability.canary_release_eligible === "boolean"' in script
+    assert "capability.canary_release_eligible === true" in script
+    assert 'safeRuntimeCapabilityText(capability.canary_reason, "未报告")' in script
+    assert 'blockersLabel: blockers === null ? "未报告"' in script
+    assert "runtimeCapabilityEvidenceBadges" in script
+    assert "runtimeCapabilityEvidenceDetails" in script
+    assert "执行状态：" in script
+    assert "Canary 发布资格：" in script
+    assert "发布阻塞项：" in script
 
 
 def test_agents_ui_does_not_add_readiness_api_or_control_calls() -> None:

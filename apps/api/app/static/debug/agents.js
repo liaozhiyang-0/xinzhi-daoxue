@@ -123,6 +123,37 @@ function runtimeCapabilityControl(capability) {
   const controls = [["暂停", capability.supports_pause], ["恢复", capability.supports_resume], ["审批", capability.supports_approval], ["输入", capability.supports_input]];
   return controls.filter(([, enabled]) => enabled === true).map(([label]) => label);
 }
+function runtimeCapabilityEvidence(capability) {
+  const blockers = Array.isArray(capability.blockers)
+    ? safeRuntimeReadinessItems(capability.blockers)
+    : null;
+  const canaryReported = typeof capability.canary_release_eligible === "boolean";
+  return {
+    status: safeRuntimeCapabilityText(capability.status, "未报告"),
+    canaryReported,
+    canaryReleaseEligible: capability.canary_release_eligible === true,
+    canaryLabel: canaryReported
+      ? capability.canary_release_eligible ? "通过" : "未通过"
+      : "未报告",
+    reason: safeRuntimeCapabilityText(capability.canary_reason, "未报告"),
+    blockersLabel: blockers === null ? "未报告" : blockers.join("、") || "无",
+  };
+}
+function runtimeCapabilityEvidenceDetails(capability) {
+  const evidence = runtimeCapabilityEvidence(capability);
+  return [
+    el("small", { text: `执行状态：${evidence.status}` }),
+    el("small", { text: `Canary 发布资格：${evidence.canaryLabel}；原因：${evidence.reason}` }),
+    el("small", { text: `发布阻塞项：${evidence.blockersLabel}` }),
+  ];
+}
+function runtimeCapabilityEvidenceBadges(capability) {
+  const evidence = runtimeCapabilityEvidence(capability);
+  return [
+    badge(evidence.status === "未报告" ? "unknown" : evidence.status, `执行状态：${evidence.status}`),
+    badge(evidence.canaryReleaseEligible ? "ready" : evidence.canaryReported ? "failed" : "planned", `Canary：${evidence.canaryLabel}`),
+  ];
+}
 function runtimeCapabilitiesDetails(value) {
   const capabilities = safeRuntimeCapabilityList(value);
   if (!capabilities.length) return el("p", { class: "runtime-readiness-note", text: "未提供 Runtime capability 描述。" });
@@ -131,12 +162,15 @@ function runtimeCapabilitiesDetails(value) {
     el("div", { class: "definition-cards" }, capabilities.map((capability) => {
       const actions = runtimeCapabilityActions(capability);
       const controls = runtimeCapabilityControl(capability);
+      const evidence = runtimeCapabilityEvidence(capability);
       const contract = safeRuntimeCapabilityText(capability.result_contract, "已提供");
       const scope = safeRuntimeCapabilityText(capability.control_scope, "未提供");
       return el("article", { class: "metric-card runtime-capability-card" }, [
         el("strong", { text: safeRuntimeCapabilityText(capability.capability_id) }),
+        el("div", { class: "runtime-capability-evidence" }, runtimeCapabilityEvidenceBadges(capability)),
         el("small", { text: `domain / runtime / version：${runtimeCapabilityFields.slice(1, 4).map((field) => safeRuntimeCapabilityText(capability[field])).join(" / ")}` }),
-        el("small", { text: `启用：${capability.enabled === true ? "是" : "否/未提供"}；状态：${safeRuntimeCapabilityText(capability.status)}；动作：${actions.join(", ") || "未提供"}` }),
+        el("small", { text: `启用：${capability.enabled === true ? "是" : "否/未提供"}；状态：${evidence.status}；动作：${actions.join(", ") || "未提供"}` }),
+        ...runtimeCapabilityEvidenceDetails(capability),
         el("small", { text: `控制：${controls.join("、") || "无"}；结果契约：${contract}；控制范围：${scope}` }),
       ]);
     })),
@@ -155,7 +189,9 @@ function runtimeCapabilityDomainDetails(value) {
             const actions = runtimeCapabilityActions(capability);
             return el("article", { class: "metric-card runtime-capability-card" }, [
               el("strong", { text: safeRuntimeCapabilityText(capability.capability_id) }),
+              el("div", { class: "runtime-capability-evidence" }, runtimeCapabilityEvidenceBadges(capability)),
               el("small", { text: `runtime / version：${safeRuntimeCapabilityText(capability.runtime_id)} / ${safeRuntimeCapabilityText(capability.version)}` }),
+              ...runtimeCapabilityEvidenceDetails(capability),
               el("small", { text: `control_scope：${safeRuntimeCapabilityText(capability.control_scope)}；supported_actions：${actions.join(", ") || "未提供"}` }),
             ]);
           }))
