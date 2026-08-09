@@ -15,6 +15,7 @@ from app.runtime import (
     RuntimeLaunchSnapshot,
     RuntimeNode,
 )
+from app.runtime.semantic_evidence import payload_sha256
 
 from scripts.collect_runtime_canary import build_suite
 
@@ -75,6 +76,7 @@ def _authorized_suite() -> RuntimeCanarySuite:
         case_id="cli-case",
         authorization_ref="change-cli-1",
         captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+        input_payload={"question": "private cli input"},
         legacy_payload=legacy,
         runtime_payload=runtime,
         runtime_checkpoints=_checkpoints(),
@@ -170,9 +172,13 @@ def test_collector_cli_writes_release_suite_and_report_without_provider(
     legacy_path = tmp_path / "legacy.json"
     runtime_path = tmp_path / "runtime.json"
     checkpoints_path = tmp_path / "checkpoints.json"
+    input_path = tmp_path / "input.json"
     output_path = tmp_path / "suite.json"
     legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
     runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
+    input_path.write_text(
+        json.dumps({"question": "private cli input"}), encoding="utf-8"
+    )
     checkpoints_path.write_text(
         json.dumps({"checkpoints": _checkpoints()}),
         encoding="utf-8",
@@ -194,6 +200,8 @@ def test_collector_cli_writes_release_suite_and_report_without_provider(
         "change-cli-collector-1",
         "--captured-at",
         "2026-08-09T00:00:00+08:00",
+        "--input",
+        str(input_path),
         "--legacy",
         str(legacy_path),
         "--runtime",
@@ -210,6 +218,11 @@ def test_collector_cli_writes_release_suite_and_report_without_provider(
     assert json.loads(output_path.read_text(encoding="utf-8"))["suite_id"] == (
         "cli-collector"
     )
+    output = json.loads(output_path.read_text(encoding="utf-8"))
+    assert output["pairs"][0]["input_sha256"] == payload_sha256(
+        {"question": "private cli input"}
+    )
+    assert "private cli input" not in json.dumps(output, ensure_ascii=False)
 
 
 def test_collector_cli_fails_without_writing_an_invalid_artifact(
@@ -219,9 +232,13 @@ def test_collector_cli_fails_without_writing_an_invalid_artifact(
     legacy_path = tmp_path / "legacy.json"
     runtime_path = tmp_path / "runtime.json"
     checkpoints_path = tmp_path / "invalid-checkpoints.json"
+    input_path = tmp_path / "input.json"
     output_path = tmp_path / "should-not-exist.json"
     legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
     runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
+    input_path.write_text(
+        json.dumps({"question": "private invalid input"}), encoding="utf-8"
+    )
     checkpoints_path.write_text(json.dumps({"checkpoints": []}), encoding="utf-8")
 
     result = _run(
@@ -240,6 +257,8 @@ def test_collector_cli_fails_without_writing_an_invalid_artifact(
         "change-cli-invalid-1",
         "--captured-at",
         "2026-08-09T00:00:00+08:00",
+        "--input",
+        str(input_path),
         "--legacy",
         str(legacy_path),
         "--runtime",

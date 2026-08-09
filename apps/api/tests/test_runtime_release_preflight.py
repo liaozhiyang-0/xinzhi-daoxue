@@ -95,6 +95,7 @@ def _suite(*, authorized: bool = True) -> RuntimeCanarySuite:
             case_id=CASE_ID,
             authorization_ref="synthetic-test-only-not-release-evidence",
             captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+            input_payload={"question": "synthetic"},
             legacy_payload=legacy,
             runtime_payload=runtime,
             runtime_checkpoints=_checkpoints(),
@@ -253,6 +254,36 @@ def test_preflight_rejects_semantic_sidecar_output_hash_mismatch(
     assert payload["blocking_reasons"] == [
         "semantic_output_hash_mismatch"
     ]
+
+
+def test_preflight_rejects_semantic_sidecar_input_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "synthetic-suite.json"
+    sidecar_path = tmp_path / "tampered-input-semantic.json"
+    suite = _suite()
+    _write(suite_path, suite.model_dump(mode="json"))
+    semantic = _semantic().model_copy(update={"input_sha256": "f" * 64})
+    _write(sidecar_path, semantic.model_dump(mode="json"))
+
+    result = _run(
+        "--agent-id",
+        AGENT_ID,
+        "--suite",
+        str(suite_path),
+        "--semantic-sidecar",
+        str(sidecar_path),
+        "--expected-agent-version",
+        AGENT_VERSION,
+        "--expected-runtime-plan-version",
+        PLAN_VERSION,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode != 0
+    assert payload["semantic_eligible"] is False
+    assert payload["release_eligible"] is False
+    assert payload["blocking_reasons"] == ["semantic_input_hash_mismatch"]
 
 
 def test_preflight_version_mismatch_is_nonzero(tmp_path: Path) -> None:

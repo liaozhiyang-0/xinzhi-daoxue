@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.runtime.contracts import AgentRun, RuntimeNodeStatus, RuntimeRunStatus
+from app.runtime.semantic_evidence import SHA256_PATTERN
 
 
 class RuntimeCheckpointRecord(BaseModel):
@@ -156,6 +157,10 @@ class RuntimeCanaryPair(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     case_id: str = Field(min_length=1, max_length=160)
+    # Synthetic suites created before input binding may omit this field.  An
+    # authorized paired suite is release-eligible only when every pair has a
+    # valid digest, enforced by ``_release_provenance_failures`` below.
+    input_sha256: str | None = Field(default=None, pattern=SHA256_PATTERN)
     legacy_payload: dict[str, Any]
     runtime_payload: dict[str, Any]
     runtime_checkpoints: list[dict[str, Any]] = Field(default_factory=list)
@@ -315,6 +320,8 @@ def _release_provenance_failures(
         failures.append("evidence_agent_version_missing")
     if not evidence.runtime_plan_version.strip():
         failures.append("evidence_runtime_plan_version_missing")
+    if evidence.kind == "authorized_paired" and pair.input_sha256 is None:
+        failures.append(f"{pair.case_id}:input_sha256_missing")
     if not trace.agent_ids:
         failures.append(f"{pair.case_id}:runtime_launch_identity_missing")
     elif any(agent_id != evidence.agent_id for agent_id in trace.agent_ids):

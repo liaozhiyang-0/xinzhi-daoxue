@@ -219,6 +219,17 @@ class RuntimeCanaryReleaseRegistry:
                     for pair in suite.pairs
                     if pair.case_id == evidence.case_id
                 )
+                if pair.input_sha256 is None:
+                    raise ValueError(
+                        "Runtime semantic evidence input hash binding missing "
+                        f"for {normalized_agent_id}/{evidence.case_id}"
+                    )
+                if evidence.input_sha256 != pair.input_sha256:
+                    raise ValueError(
+                        "Runtime semantic evidence input hash binding "
+                        "mismatch for "
+                        f"{normalized_agent_id}/{evidence.case_id}"
+                    )
                 expected_output_hashes = {
                     "legacy_output_sha256": payload_sha256(
                         pair.legacy_payload

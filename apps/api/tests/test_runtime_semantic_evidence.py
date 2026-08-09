@@ -11,6 +11,7 @@ from app.runtime import (
     RuntimeCanaryReport,
     RuntimeCanarySuite,
     RuntimeCanaryThresholds,
+    evaluate_runtime_canary_suite,
 )
 from app.runtime.semantic_evidence import (
     SEMANTIC_EVIDENCE_SCHEMA_VERSION,
@@ -100,6 +101,7 @@ def _suite_for_sidecar_hash_binding() -> RuntimeCanarySuite:
         pairs=[
             RuntimeCanaryPair(
                 case_id="semantic-case",
+                input_sha256=payload_sha256(INPUT),
                 legacy_payload=LEGACY,
                 runtime_payload=RUNTIME,
             )
@@ -288,4 +290,55 @@ def test_from_paths_rejects_manually_tampered_sidecar_output_hash(
         RuntimeCanaryReleaseRegistry.from_paths(
             f"{AGENT_ID}={suite_path}",
             semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
+def test_from_paths_rejects_missing_structural_input_hash(
+    tmp_path: Path,
+) -> None:
+    suite = _suite_for_sidecar_hash_binding().model_copy(
+        update={
+            "pairs": [
+                _suite_for_sidecar_hash_binding().pairs[0].model_copy(
+                    update={"input_sha256": None}
+                )
+            ]
+        }
+    )
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "sidecar.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    _write_json(sidecar_path, _evidence().model_dump(mode="json"))
+
+    with pytest.raises(ValueError, match="input hash binding missing"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
+def test_authorized_suite_without_input_hash_is_not_release_eligible() -> None:
+    suite = _suite_for_sidecar_hash_binding().model_copy(
+        update={
+            "pairs": [
+                _suite_for_sidecar_hash_binding().pairs[0].model_copy(
+                    update={"input_sha256": None}
+                )
+            ]
+        }
+    )
+
+    report = evaluate_runtime_canary_suite(suite)
+
+    assert report.release_eligible is False
+    assert "semantic-case:input_sha256_missing" in report.release_failed_checks
+
+
+def test_runtime_canary_pair_rejects_an_invalid_input_hash() -> None:
+    with pytest.raises(ValidationError):
+        RuntimeCanaryPair(
+            case_id="semantic-case",
+            input_sha256="not-a-sha256",
+            legacy_payload=LEGACY,
+            runtime_payload=RUNTIME,
         )

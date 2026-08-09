@@ -14,6 +14,7 @@ from app.runtime import (
     RuntimeLaunchSnapshot,
     RuntimeNode,
 )
+from app.runtime.semantic_evidence import payload_sha256
 
 from scripts.collect_runtime_canary import build_suite, build_suite_from_manifest
 
@@ -59,6 +60,7 @@ def test_build_suite_requires_a_structurally_valid_paired_trace() -> None:
         case_id="collection-case",
         authorization_ref="change-collection-1",
         captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+        input_payload={"question": "private collection input"},
         agent_version="1.0",
         runtime_plan_version="general-qa-v1",
         legacy_payload={
@@ -77,6 +79,10 @@ def test_build_suite_requires_a_structurally_valid_paired_trace() -> None:
     assert suite.evidence.kind == "authorized_paired"
     assert suite.evidence.release_ready is True
     assert suite.pairs[0].runtime_checkpoints == checkpoints
+    assert suite.pairs[0].input_sha256 == payload_sha256(
+        {"question": "private collection input"}
+    )
+    assert "private collection input" not in suite.model_dump_json()
 
 
 def test_build_suite_rejects_an_invalid_trace() -> None:
@@ -89,6 +95,7 @@ def test_build_suite_rejects_an_invalid_trace() -> None:
             case_id="invalid-case",
             authorization_ref="change-invalid-1",
             captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+            input_payload={"question": "private invalid input"},
             legacy_payload={"status": "completed", "answer": "same"},
             runtime_payload={"status": "completed", "answer": "same"},
             runtime_checkpoints=[],
@@ -96,6 +103,9 @@ def test_build_suite_rejects_an_invalid_trace() -> None:
 
 
 def _write_case_files(root: Path, case_id: str) -> None:
+    (root / f"{case_id}-input.json").write_text(
+        json.dumps({"question": f"private-{case_id}"}), encoding="utf-8"
+    )
     payload = {
         "agent_id": "GENERAL_QUESTION_V1",
         "status": "completed",
@@ -144,7 +154,7 @@ def _checkpoints_for_manifest() -> list[dict[str, object]]:
 
 def _manifest(case_ids: list[str]) -> dict[str, object]:
     return {
-        "schema_version": "runtime_canary_manifest.v1",
+        "schema_version": "runtime_canary_manifest.v2",
         "agent_id": "GENERAL_QUESTION_V1",
         "agent_version": "1.0",
         "runtime_plan_version": "general-qa-v1",
@@ -154,6 +164,7 @@ def _manifest(case_ids: list[str]) -> dict[str, object]:
         "cases": [
             {
                 "case_id": case_id,
+                "input": f"{case_id}-input.json",
                 "legacy": f"{case_id}-legacy.json",
                 "runtime": f"{case_id}-runtime.json",
                 "checkpoints": f"{case_id}-checkpoints.json",
@@ -175,10 +186,27 @@ def test_manifest_builds_one_authorized_suite_for_multiple_cases(
 
     suite = build_suite_from_manifest(manifest_path)
 
+    assert suite.suite_version == "2"
     assert suite.evidence.kind == "authorized_paired"
     assert suite.evidence.release_ready is True
     assert [pair.case_id for pair in suite.pairs] == ["case-a", "case-b"]
+    assert all(pair.input_sha256 for pair in suite.pairs)
+    assert "private-case-a" not in suite.model_dump_json()
+    assert "private-case-b" not in suite.model_dump_json()
     assert "schema_version" not in suite.model_dump(mode="json")
+
+
+def test_manifest_v1_is_rejected_after_input_binding_protocol_upgrade(
+    tmp_path: Path,
+) -> None:
+    _write_case_files(tmp_path, "legacy-v1")
+    manifest = _manifest(["legacy-v1"])
+    manifest["schema_version"] = "runtime_canary_manifest.v1"
+    manifest_path = tmp_path / "manifest-v1.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="runtime_canary_manifest.v2"):
+        build_suite_from_manifest(manifest_path)
 
 
 def test_manifest_cli_supports_multi_case_input_without_provider(

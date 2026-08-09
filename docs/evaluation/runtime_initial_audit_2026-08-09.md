@@ -16,7 +16,7 @@ is an engineering checkpoint, not a production release approval.
 | Durable checkpoint | `AgentRunRepository` and serialized checkpoint trace; checkpoint recovery tests | Implemented; generic control-data preservation was fixed in `b3b6c63` |
 | Pause/resume/input/approval/reconciliation | Task control API/service, CAS state versions, one-shot approval, explicit external reconciliation | Implemented and directly regression-tested |
 | Observable events | Runtime event bridge, decision/verification events, checkpoint event sequence | Implemented and covered by event/Task boundary tests |
-| Reproducible evaluation | Offline trace audit, runtime evaluation cases, canary evaluator, semantic sidecar tooling | Implemented; semantic sidecar output hashes are rebound to structural suite payloads and all release gates remain fail-closed |
+| Reproducible evaluation | Offline trace audit, runtime evaluation cases, canary evaluator, semantic sidecar tooling | Implemented; v2 structural suites bind the private input hash and semantic sidecars are rebound to the same input plus both suite outputs; all release gates remain fail-closed |
 | Existing business migration | RESEARCH_01/02/03, TEACH_01/02, Learning controls, General Q&A and Knowledge QA Runtime paths | Provider-free implementation evidence exists; per-Agent release evidence is still incomplete |
 | Production authorization | Authorized redacted paired Legacy/Runtime trace, semantic review sidecar, human promotion approval | Not available in the current workspace; must not be synthesized |
 
@@ -30,6 +30,10 @@ is an engineering checkpoint, not a production release approval.
   events, and checkpoint/event correlation: `10 passed`.
 - Semantic output-hash binding, canary registry, and release-preflight tests:
   `39 passed`.
+- Input-hash v2 collector, structural/semantic binding, canary registry, and
+  release-preflight tests: `73 passed` on 2026-08-10.
+- Durable child runs, parallel recovery, checkpoint controls, plan proposals,
+  subagents, and parallel planning: `29 passed` on 2026-08-10.
 - Ruff, targeted Mypy, `scripts/validate_config.py`,
   `scripts/check_sensitive_files.py`, and `git diff --check` passed.
 - A broad Windows application-suite run was allowed to run for 364 seconds

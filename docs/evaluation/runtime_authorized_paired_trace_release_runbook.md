@@ -136,11 +136,11 @@ python scripts/check_sensitive_files.py
 
 ### 5.1 推荐的多 case manifest
 
-`collect_runtime_canary.py` 支持的 manifest schema 是 `runtime_canary_manifest.v1`。manifest 中实际支持的顶层字段是：
+`collect_runtime_canary.py` 支持的 manifest schema 是 `runtime_canary_manifest.v2`。v2 要求每个 case 提供受控输入文件；collector 只把输入的 SHA-256 写入 suite，不复制原始输入。manifest 中实际支持的顶层字段是：
 
 ~~~json
 {
-  "schema_version": "runtime_canary_manifest.v1",
+  "schema_version": "runtime_canary_manifest.v2",
   "agent_id": "<AGENT_ID>",
   "agent_version": "<AGENT_VERSION>",
   "runtime_plan_version": "<RUNTIME_PLAN_VERSION>",
@@ -150,6 +150,7 @@ python scripts/check_sensitive_files.py
   "cases": [
     {
       "case_id": "<CASE_ID>",
+      "input": "redacted/<CASE_ID>.input.json",
       "legacy": "redacted/<CASE_ID>.legacy.json",
       "runtime": "redacted/<CASE_ID>.runtime.json",
       "checkpoints": "redacted/<CASE_ID>.checkpoints.json"
@@ -174,7 +175,7 @@ collector 成功时会输出结构评测报告，并写出 `RuntimeCanarySuite`�
 只有一个 case 时，也可以使用脚本保留的单 case 参数：
 
 ~~~powershell
-& $py scripts/collect_runtime_canary.py --agent-id "<AGENT_ID>" --agent-version "<AGENT_VERSION>" --runtime-plan-version "<RUNTIME_PLAN_VERSION>" --suite-id "<SUITE_ID>" --case-id "<CASE_ID>" --authorization-ref "<AUTHORIZATION_REF>" --captured-at "<ISO-8601 WITH TIMEZONE>" --legacy "$EvidenceRoot\\redacted\\LEGACY_RESULT.json" --runtime "$EvidenceRoot\\redacted\\RUNTIME_RESULT.json" --checkpoints "$EvidenceRoot\\redacted\\RUNTIME_CHECKPOINTS.json" --output "$EvidenceRoot\\redacted\\RUNTIME_CANARY_SUITE.json"
+& $py scripts/collect_runtime_canary.py --agent-id "<AGENT_ID>" --agent-version "<AGENT_VERSION>" --runtime-plan-version "<RUNTIME_PLAN_VERSION>" --suite-id "<SUITE_ID>" --case-id "<CASE_ID>" --authorization-ref "<AUTHORIZATION_REF>" --captured-at "<ISO-8601 WITH TIMEZONE>" --input "$EvidenceRoot\\redacted\\CASE_INPUT.json" --legacy "$EvidenceRoot\\redacted\\LEGACY_RESULT.json" --runtime "$EvidenceRoot\\redacted\\RUNTIME_RESULT.json" --checkpoints "$EvidenceRoot\\redacted\\RUNTIME_CHECKPOINTS.json" --output "$EvidenceRoot\\redacted\\RUNTIME_CANARY_SUITE.json"
 ~~~
 
 需要只查看一个已生成 suite 的离线报告时：

@@ -25,8 +25,9 @@ from app.runtime import (  # type: ignore[import-untyped]  # noqa: E402
     audit_checkpoint_trace,
     evaluate_runtime_canary_suite,
 )
+from app.runtime.semantic_evidence import payload_sha256  # noqa: E402
 
-_MANIFEST_SCHEMA_VERSION = "runtime_canary_manifest.v1"
+_MANIFEST_SCHEMA_VERSION = "runtime_canary_manifest.v2"
 _MANIFEST_KEYS = {
     "schema_version",
     "agent_id",
@@ -37,11 +38,18 @@ _MANIFEST_KEYS = {
     "captured_at",
     "cases",
 }
-_CASE_KEYS = {"case_id", "legacy", "runtime", "checkpoints"}
+_CASE_KEYS = {"case_id", "input", "legacy", "runtime", "checkpoints"}
+
+
+def _read_json(path: Path, label: str) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} must be valid JSON") from exc
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = _read_json(path, label)
     if not isinstance(payload, dict):
         raise ValueError(f"{label} must be a JSON object")
     return payload
@@ -105,6 +113,7 @@ def _build_validated_suite(
     if captured_at.tzinfo is None:
         raise ValueError("captured_at must include a timezone")
     suite = RuntimeCanarySuite(
+        suite_version="2",
         suite_id=suite_id,
         evidence=RuntimeCanaryEvidence(
             kind="authorized_paired",
@@ -138,6 +147,7 @@ def build_suite(
     case_id: str,
     authorization_ref: str,
     captured_at: datetime,
+    input_payload: Any,
     legacy_payload: dict[str, Any],
     runtime_payload: dict[str, Any],
     runtime_checkpoints: list[dict[str, Any]],
@@ -154,6 +164,7 @@ def build_suite(
         pairs=[
             RuntimeCanaryPair(
                 case_id=case_id,
+                input_sha256=payload_sha256(input_payload),
                 legacy_payload=legacy_payload,
                 runtime_payload=runtime_payload,
                 runtime_checkpoints=runtime_checkpoints,
@@ -231,6 +242,10 @@ def build_suite_from_manifest(manifest_path: Path) -> RuntimeCanarySuite:
             raw_case.get("checkpoints"),
             f"{label}.checkpoints",
         )
+        input_path = _resolve_manifest_input(
+            resolved_manifest.parent, raw_case.get("input"), f"{label}.input"
+        )
+        input_payload = _read_json(input_path, f"{label}.input payload")
         legacy_payload = _read_object(legacy_path, f"{label}.legacy payload")
         runtime_payload = _read_object(runtime_path, f"{label}.runtime payload")
         checkpoints = _read_checkpoints(checkpoints_path)
@@ -243,6 +258,7 @@ def build_suite_from_manifest(manifest_path: Path) -> RuntimeCanarySuite:
         pairs.append(
             RuntimeCanaryPair(
                 case_id=case_id,
+                input_sha256=payload_sha256(input_payload),
                 legacy_payload=legacy_payload,
                 runtime_payload=runtime_payload,
                 runtime_checkpoints=checkpoints,
@@ -272,6 +288,7 @@ def main(args: argparse.Namespace) -> int:
                 "case_id",
                 "authorization_ref",
                 "captured_at",
+                "input",
                 "legacy",
                 "runtime",
                 "checkpoints",
@@ -288,6 +305,7 @@ def main(args: argparse.Namespace) -> int:
             "case_id",
             "authorization_ref",
             "captured_at",
+            "input",
             "legacy",
             "runtime",
             "checkpoints",
@@ -295,6 +313,7 @@ def main(args: argparse.Namespace) -> int:
         missing = [name for name in required if not getattr(args, name, None)]
         if missing:
             raise ValueError("single-case options missing: " + ",".join(missing))
+        input_payload = _read_json(Path(args.input), "input payload")
         legacy = _read_object(Path(args.legacy), "legacy payload")
         runtime = _read_object(Path(args.runtime), "runtime payload")
         checkpoints = _read_checkpoints(Path(args.checkpoints))
@@ -311,6 +330,7 @@ def main(args: argparse.Namespace) -> int:
             case_id=args.case_id,
             authorization_ref=args.authorization_ref,
             captured_at=datetime.fromisoformat(args.captured_at),
+            input_payload=input_payload,
             legacy_payload=legacy,
             runtime_payload=runtime,
             runtime_checkpoints=checkpoints,
@@ -337,6 +357,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--case-id")
     parser.add_argument("--authorization-ref")
     parser.add_argument("--captured-at", help="ISO-8601 timestamp")
+    parser.add_argument(
+        "--input",
+        required=False,
+        help="private JSON input used only to derive input_sha256",
+    )
     parser.add_argument("--legacy", help="Legacy result JSON")
     parser.add_argument("--runtime", help="Runtime result JSON")
     parser.add_argument("--checkpoints", help="Runtime trace JSON")

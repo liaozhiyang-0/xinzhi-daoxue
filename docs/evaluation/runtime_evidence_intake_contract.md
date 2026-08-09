@@ -14,13 +14,16 @@
 - 每个 case 必须同时拥有 Legacy payload、Runtime payload 和 checkpoint trace；
   `sequence` 必须连续，`state_version` 必须递增，checkpoint 中的 `AgentRun`、
   `run_id`、`plan.version` 和状态版本必须彼此一致。
+- `runtime_canary_manifest.v2` 的每个 case 必须引用同一份受控输入；collector 只把
+  `input_sha256` 写入结构套件，不复制原始输入。缺少或非法输入 hash 的
+  `authorized_paired` 套件不得 release eligible。
 - 语义 sidecar 必须逐 case 覆盖结构套件，不能缺 case、重复 case 或增加未知 case；
   sidecar 不保存原始输入，只保存输入、Legacy 输出和 Runtime 输出的确定性 SHA-256。
 - 每条语义 judgement 必须具备完整且无额外字段的 dimensions、decision、judge_type、
   rubric_version、reviewer_ref、reviewed_at、redaction_status 和 authorization_ref；
   `reviewed_at` 必须带时区，`redaction_status` 必须为 `redacted`。
-- sidecar 的 Agent、Agent 版本、Runtime plan 版本、suite 和 case 必须绑定到结构套件；
-  preflight 的 expected version 也必须匹配。
+- sidecar 的 Agent、Agent 版本、Runtime plan 版本、suite、case、输入 hash 和两份输出
+  hash 必须绑定到结构套件；preflight 的 expected version 也必须匹配。
 - `synthetic`、缺 suite、缺 sidecar、非法 JSON、证据不完整或任何绑定失败都必须
   fail-closed，`release_eligible` 不得为真。测试中的 fixture 只能证明合同，不是发布证据。
 

@@ -114,6 +114,7 @@ def _suite(
         pairs=[
             RuntimeCanaryPair(
                 case_id=CASE_ID,
+                input_sha256=payload_sha256(_inputs()[CASE_ID]),
                 legacy_payload=_payload("legacy fixture"),
                 runtime_payload=_payload("runtime fixture"),
                 runtime_checkpoints=_checkpoints(),
@@ -193,6 +194,7 @@ def test_structural_intake_requires_authorization_and_binds_versions() -> None:
         case_id=CASE_ID,
         authorization_ref=AUTHORIZATION_REF,
         captured_at=CAPTURED_AT,
+        input_payload=_inputs()[CASE_ID],
         legacy_payload=_payload("legacy fixture"),
         runtime_payload=_payload("runtime fixture"),
         runtime_checkpoints=_checkpoints(),
@@ -213,6 +215,7 @@ def test_structural_intake_requires_authorization_and_binds_versions() -> None:
             case_id=CASE_ID,
             authorization_ref=" ",
             captured_at=CAPTURED_AT,
+            input_payload=_inputs()[CASE_ID],
             legacy_payload=_payload("legacy fixture"),
             runtime_payload=_payload("runtime fixture"),
             runtime_checkpoints=_checkpoints(),
@@ -237,6 +240,7 @@ def test_checkpoint_trace_audit_rejects_sequence_gaps_before_suite_creation() ->
             case_id=CASE_ID,
             authorization_ref=AUTHORIZATION_REF,
             captured_at=CAPTURED_AT,
+            input_payload=_inputs()[CASE_ID],
             legacy_payload=_payload("legacy fixture"),
             runtime_payload=_payload("runtime fixture"),
             runtime_checkpoints=_checkpoints(valid=False),
@@ -249,11 +253,13 @@ def test_manifest_intake_rejects_naive_capture_time_and_path_escape(
     legacy_path = tmp_path / "legacy.json"
     runtime_path = tmp_path / "runtime.json"
     checkpoints_path = tmp_path / "checkpoints.json"
+    input_path = tmp_path / "input.json"
+    _write_json(input_path, _inputs()[CASE_ID])
     _write_json(legacy_path, _payload("legacy fixture"))
     _write_json(runtime_path, _payload("runtime fixture"))
     _write_json(checkpoints_path, _checkpoints())
     manifest: dict[str, Any] = {
-        "schema_version": "runtime_canary_manifest.v1",
+        "schema_version": "runtime_canary_manifest.v2",
         "agent_id": AGENT_ID,
         "agent_version": AGENT_VERSION,
         "runtime_plan_version": PLAN_VERSION,
@@ -263,6 +269,7 @@ def test_manifest_intake_rejects_naive_capture_time_and_path_escape(
         "cases": [
             {
                 "case_id": CASE_ID,
+                "input": input_path.name,
                 "legacy": legacy_path.name,
                 "runtime": runtime_path.name,
                 "checkpoints": checkpoints_path.name,

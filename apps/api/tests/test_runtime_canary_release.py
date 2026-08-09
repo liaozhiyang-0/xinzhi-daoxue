@@ -29,6 +29,7 @@ AGENT_VERSION = "1.0"
 PLAN_VERSION = "general-qa-v1"
 SUITE_ID = "runtime-canary-release-test"
 CASE_ID = "case-1"
+INPUT = {"question": "private release input"}
 
 
 def _structural_evidence(**updates: object) -> RuntimeCanaryEvidence:
@@ -63,7 +64,7 @@ def _semantic_evidence(**updates: object) -> RuntimeSemanticEvidence:
         "agent_id": AGENT_ID,
         "agent_version": AGENT_VERSION,
         "runtime_plan_version": PLAN_VERSION,
-        "input_sha256": "0" * 64,
+        "input_sha256": payload_sha256(INPUT),
         "legacy_output_sha256": payload_sha256(
             {
                 "agent_id": AGENT_ID,
@@ -125,6 +126,7 @@ def _suite() -> RuntimeCanarySuite:
         pairs=[
             RuntimeCanaryPair(
                 case_id=CASE_ID,
+                input_sha256=payload_sha256(INPUT),
                 legacy_payload={
                     "agent_id": AGENT_ID,
                     "status": "completed",
@@ -301,6 +303,23 @@ def test_from_paths_rejects_sidecar_not_bound_to_structural_suite(
     _write_json(sidecar_path, sidecar.model_dump(mode="json"))
 
     with pytest.raises(ValueError, match=message):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
+def test_from_paths_rejects_manually_tampered_sidecar_input_hash(
+    tmp_path: Path,
+) -> None:
+    suite = _suite()
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "sidecar.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    tampered = _semantic_evidence(input_sha256="f" * 64)
+    _write_json(sidecar_path, tampered.model_dump(mode="json"))
+
+    with pytest.raises(ValueError, match="input hash binding mismatch"):
         RuntimeCanaryReleaseRegistry.from_paths(
             f"{AGENT_ID}={suite_path}",
             semantic_paths=f"{AGENT_ID}={sidecar_path}",
