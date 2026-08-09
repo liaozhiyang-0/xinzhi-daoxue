@@ -970,3 +970,33 @@ calling a Provider or executing a business service. The next release step is
 to collect an authorized paired trace for one selected Agent, then use this
 view as the operational checklist before moving that Agent from `canary` to
 `default`.
+
+## 2026-08-09 Runtime safety and evidence checkpoint
+
+The compatibility boundary now has four additional protections:
+
+1. Agent execution eligibility is checked before routing, Runtime readiness,
+   and launch decisions. Disabled or unpublished Agents fail closed, while
+   `route_when_unconfigured` remains available only for an eligible local or
+   hybrid Agent with an explicit local handler contract. SOLVER_CT keeps its
+   existing hybrid fallback path.
+2. Required release gates apply to explicit Runtime opt-in as well as
+   configured `canary`/`default` modes. Provider-free integration fixtures
+   explicitly disable the production release gate; launch-policy tests cover
+   the fail-closed production behavior.
+3. High-risk Runtime approval requires teacher/admin identity when
+   authentication is enabled. Approval and rejection record actor, role,
+   scope, and state version, and repeated decisions are rejected.
+4. Task event sequence allocation retries unique-key conflicts inside a
+   savepoint. The concurrent SSE test verifies contiguous IDs and
+   `Last-Event-ID` reconnect behavior. Frozen SOLVER configuration hashes and
+   the adapter mapping are checked without reading credentials or the original
+   workflow YAML inputs.
+
+The latest provider-free Runtime gate covers 113 tests in one isolated
+process. It includes Runtime execution paths, restart recovery, approval,
+availability, SSE, task non-blocking behavior, and SOLVER freeze checks. The
+remaining long-term exit condition is not another compatibility patch: one
+selected business Agent must produce an authorized paired legacy/Runtime
+trace, pass semantic evaluation, and then be promoted from `canary` to
+`default`. No Agent is promoted by synthetic evidence alone.
