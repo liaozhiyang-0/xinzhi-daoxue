@@ -48,6 +48,41 @@
 observe-decide-act-verify-replan 闭环，已经分别在 Runtime contract、recovery、subagent、
 observability 和本矩阵测试中落地；“覆盖”不等于真实业务结果已获发布授权。
 
+## RESEARCH_03 迁移证据快照
+
+当前 `RESEARCH_03_DATA_ANALYSIS_V1` 的 `research_analysis_v2` Runtime 候选已经
+从两节点扩展为可审计的三节点计划：
+
+```text
+analysis.prepare (control)
+  -> analysis.execute (workflow)
+  -> analysis.verify (verification)
+  -> finish / bounded replan / approval / fail
+```
+
+已有 `37b3a88 test(runtime): cover research03 prepare checkpoint contract` 覆盖：
+
+- prepare、execute、verify 节点和依赖关系；
+- prepare 对请求做 typed validation/normalization，并在 checkpoint control data 中保存
+  `research_analysis_prepared` 记录（规范化 payload、execution mode/options 和
+  authorization manifest reference）；prepare 完成前不调用 fake internal-agent；
+- execute 从 checkpoint payload 恢复，实时修改的请求 payload 不会覆盖已经准备好的输入；
+- verify 的失败 bounded replan、`needs_review` 人工审批和旧结果 checkpoint 恢复合同。
+
+对应定向测试在该提交中报告 `23 passed, 2 warnings`，并通过 Ruff、Python 编译检查
+和 `git diff --check`。这些是本地 fake/mock/fixture 下的 provider-free 合同证据。
+即使 fixture 的 data manifest 含有 `authorized=True`，它也只是被测请求字段，不能
+替代真实授权。当前仍缺少：
+
+1. 同一输入、可追溯且经授权脱敏的 Legacy/Runtime paired trace；
+2. 绑定相同 Agent version、plan version、suite/case 的独立 semantic judgement
+   sidecar/semantic approval；
+3. checkpoint/event 审计与真实环境中的发布审批、Canary 决策和回滚记录。
+
+因此 RESEARCH_03 只能标为“implemented + provider-free evaluable”，不能标为
+authorized、canary-ready 或 production-default。任何 synthetic、mock、fixture、
+readiness 或 provider-free preflight 通过结果，都不得冒充上述真实证据。
+
 ## 运行方式
 
 在仓库根目录执行：
@@ -56,6 +91,18 @@ observability 和本矩阵测试中落地；“覆盖”不等于真实业务结
 .venv\Scripts\python.exe -m pytest -q --no-cov apps/api/tests/test_runtime_true_agent_contract_matrix.py
 .venv\Scripts\ruff.exe check apps/api/tests/test_runtime_true_agent_contract_matrix.py
 ```
+
+RESEARCH_03 合同测试（对应 `37b3a88` 的验证范围）为：
+
+```powershell
+.venv\Scripts\python.exe -m pytest -q --no-cov `
+  apps/api/tests/test_research03_runtime_boundary.py `
+  apps/api/tests/test_research_analysis_runtime.py `
+  apps/api/tests/test_runtime_agent_contract_matrix.py
+```
+
+上面的 `23 passed, 2 warnings` 是 `37b3a88` 提交记录中的既有验证结果；本文件
+不将其表述为真实 Provider、真实数据或生产环境验证。
 
 该矩阵只使用内存中的 `AgentRun`、`RuntimeHandlerRegistry`、synthetic tool、
 typed subagent double 和序列化 checkpoint record。测试不创建真实 Provider，

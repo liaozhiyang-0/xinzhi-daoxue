@@ -9,7 +9,7 @@
 | 层 | 现有入口 | 当前责任 | 评测结论 |
 |---|---|---|---|
 | Legacy TaskRunner | `apps/api/app/services/task_runner.py` 的普通 `RESEARCH_03_DATA_ANALYSIS_V1` 分支 | 路由后的检索/上下文、进度事件、Provider 调用、internal-agent 调用、失败降级，以及分析后写作流水线 | 必须保留，直到有授权配对证据证明 Runtime 可以接管对应责任 |
-| Runtime 候选 | `RuntimeExecutionBoundary` → `ResearchAnalysisRuntimeService`，仅由 `research_analysis_v2` 选项触发 | 创建/恢复 `AgentRun`，执行 `analysis.execute`，执行 `analysis.verify`，检查结果合同，失败后有限重规划 | 可作为迁移候选，不代表 `V1` 默认已迁移 |
+| Runtime 候选 | `RuntimeExecutionBoundary` → `ResearchAnalysisRuntimeService`，仅由 `research_analysis_v2` 选项触发 | 创建/恢复 `AgentRun`，按 `analysis.prepare → analysis.execute → analysis.verify` 执行，保存准备 checkpoint，检查结果合同，失败后有限重规划或进入人工审批 | 可作为迁移候选，不代表 `V1` 默认已迁移 |
 | internal-agent / Provider | `InternalAgentExecutionService` → `DATA_ANALYSIS_LOCAL_V1` 或本地确定性执行器；普通 legacy 路径也可直接 `provider.run` | 实际分析能力、模型解释、表格解析和 V2 分析结果构造 | 仍是 Runtime 执行节点的能力边界；不能把 Runtime 节点误报为独立 Provider-free 科研分析器 |
 
 `apps/api/tests/test_research03_runtime_boundary.py` 用静态结构检查和本地 fake internal-agent 检查以上结论。测试不构造真实 Provider，不读取外部数据，不发起 HTTP/API 调用。
@@ -33,10 +33,29 @@
 
 ```text
 goal
+  -> analysis.prepare (control)
   -> analysis.execute (workflow)
   -> analysis.verify (verification)
-  -> finish / bounded replan / fail
+  -> finish / bounded replan / approval / fail
 ```
+
+当前三节点边界的事实如下：
+
+- `analysis.prepare` 对 `ResearchAnalysisRequest` 做 typed validation 和规范化，
+  将 `schema_version`、payload、execution mode/options 与有限的
+  `authorization_manifest_ref` 写入 `run.control_data["research_analysis_prepared"]`；
+  它本身不调用 internal-agent。
+- `analysis.execute` 依赖 prepare，只从该准备 checkpoint 恢复规范化 payload，再通过
+  `InternalAgentExecutionService` 执行；因此重启或实时请求变化不能悄悄替换已准备输入。
+- `analysis.verify` 解析 typed `ResearchAnalysisResult`。只有分析状态为 `executed`
+  才能通过；失败可在预算内 bounded replan，`needs_review` 请求人工审批，其他非执行
+  状态 fail-closed。
+- 对没有 prepare 节点的旧 checkpoint，当前实现保留兼容读取/恢复边界；这不等于旧路径
+  已获得新的发布授权。
+
+上述事实由源码 `apps/api/app/services/research_analysis_runtime.py` 和提交
+`37b3a88` 中的三组 provider-free 合同测试共同支持。测试中的 fake internal-agent
+和 data-manifest fixture 只验证结构、状态和 checkpoint 语义，不证明真实分析质量。
 
 Runtime 可以接管的责任限定为：
 
@@ -80,6 +99,8 @@ Runtime 可以接管的责任限定为：
 - Legacy TaskRunner 中仍能观察到 Provider、internal-agent 和 Runtime boundary 的不同接缝；
 - Runtime 候选计划包含执行节点和验证节点，并且 Runtime 服务本身不直接调用 `provider.run`；
 - Runtime 可在本地 fake internal-agent 上完成节点状态流转；
+- `37b3a88` 的定向测试报告 `23 passed, 2 warnings`，覆盖 prepare→execute→verify、
+  准备 checkpoint 恢复、bounded replan、needs_review approval 和旧结果恢复；
 - 无 `research_analysis_v2` 的普通请求仍不满足 Runtime 候选的 `supports` 条件；
 - synthetic/mock/fixture 的 `RuntimeCanaryEvidence` 不满足 `release_ready`。
 
@@ -92,13 +113,15 @@ Runtime 可以接管的责任限定为：
 5. 发布审批和可回滚策略在真实环境完成。
 
 本文件和新增测试使用的 fake/mock/fixture 只能验证代码边界，不能填充上述任何一项授权发布证据。
+特别是 fixture 中 `data_manifest.authorized=True` 只是请求合同字段，不是
+authorized paired trace、semantic approval 或 release authorization。
 
 ## 7. 后续迁移候选的最小切分
 
 后续若要继续推进，应按以下顺序建立新变更，而不是直接重写 TaskRunner：
 
 1. 固定 Legacy V1 输入/输出/事件/Artifact 合同，补齐真实配对 trace 的脱敏与授权流程。
-2. 将 `analysis.execute` 的能力实现进一步拆成显式、可审计的本地确定性执行节点和可选模型解释节点；两者分别标记来源，禁止隐式 Provider fallback。
+2. 在已有 prepare→execute→verify 边界之上，将 `analysis.execute` 的能力实现进一步拆成显式、可审计的本地确定性执行节点和可选模型解释节点；两者分别标记来源，禁止隐式 Provider fallback。
 3. 为数据授权、质量门禁和结果验证分别定义节点级输入/输出合同，并验证重试、恢复、幂等和取消语义。
 4. 先以 canary 运行并收集真实证据，再考虑 default；没有证据时维持本文第 5 节的 fail-closed 行为。
 

@@ -33,6 +33,7 @@
 | LearningLoop readiness 投影及版本/canary 字段 | `apps/api/app/contracts/learning.py:479-513`；`apps/api/app/api/v1/learning.py:223-275,408-504` |
 | LearningLoop readiness 的显式版本与 fail-closed 测试 | `apps/api/tests/test_learning_runtime_readiness_api.py`；`apps/api/tests/test_learning_runtime_release_readiness.py` |
 | canary artifact/semantic evidence 的版本绑定与发布门禁 | `apps/api/app/services/runtime_canary_release.py:20-149`；`docs/evaluation/runtime_evidence_intake_contract.md`；`docs/evaluation/runtime_authorized_paired_trace_release_runbook.md` |
+| RESEARCH_03 Runtime 的 prepare→execute→verify 计划、准备 checkpoint 和恢复边界 | `apps/api/app/services/research_analysis_runtime.py:72-114,148-357,464-805`；`apps/api/tests/test_research03_runtime_boundary.py`；`apps/api/tests/test_research_analysis_runtime.py`；`37b3a88` |
 | LearningLoop 的 Legacy/Teaching/LearningProgress 分流 | `apps/api/app/services/learning_loop.py:91-190` |
 | TeachingInteractionRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/teaching_interaction_runtime.py:42-146` |
 | LearningProgressRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/learning_progress_runtime.py:51-153` |
@@ -94,7 +95,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 | `TEACH_02_ASSIGNMENT_REVIEW_V1` | 作业评阅 | 是：`AssignmentReviewRuntimeService` | 是 | 已进入 Task Runtime |
 | `RESEARCH_01_ACADEMIC_SEARCH_V1` | `ResearchFrontierService` 外部研究 | 是：`ExternalResearchRuntimeService` | 是 | 已进入 Task Runtime，外部检索仍受自身策略和配置约束 |
 | `RESEARCH_02_ACADEMIC_WRITING_V1` | 学术写作 | 是：`AcademicWritingRuntimeService` | 是 | 已进入 Task Runtime |
-| `RESEARCH_03_DATA_ANALYSIS_V1` | 研究数据分析 | 是：`ResearchAnalysisRuntimeService`，由 `RuntimeExecutionBoundary` 单独注入 | 是 | 已进入 Task Runtime，但仍存在 TaskRunner 中的兼容分支 |
+| `RESEARCH_03_DATA_ANALYSIS_V1` | 研究数据分析 | 是：`ResearchAnalysisRuntimeService`，由 `RuntimeExecutionBoundary` 单独注入 | 是 | 已有 `prepare → execute → verify` Runtime 候选和 provider-free 合同证据；仍存在 TaskRunner 兼容分支，且没有 authorized paired trace/semantic approval，因此不能写成已完成迁移 |
 
 ### 4.2 LearningLoop 专用 Runtime ID 与 readiness 投影
 
@@ -121,6 +122,23 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 - Task readiness 的主键仍来自 Agent Registry；LearningLoop 的 descriptor 只读投影不改变 `LearningActionRequest` 或领域 `supports()` 语义。
 - TaskRunner 仍保留若干业务兼容分支，即使对应 Runtime service 已存在；是否迁移完成不能只看是否创建了 Runtime 类，必须看默认/Canary 入口、结果交接和 Legacy 分支是否有证据。
 - LearningLoop 的 Runtime 结果仍需要以 `LearningActionResponse` 和 `LearningInteractionModel` 完成领域交接，不能直接复用 Task 的通用结果展示合同。
+
+### RESEARCH_03 当前 Runtime 证据快照
+
+`ResearchAnalysisRuntimeService` 当前的 `research_analysis_v2` 候选计划为
+`analysis.prepare (control) → analysis.execute (workflow) → analysis.verify
+(verification)`，计划版本仍为 `research-v2`。这是真实源码中的执行边界和已有
+合同测试覆盖，不是生产默认切换：
+
+| 节点/边界 | 当前实现事实 | 已有证据 | 当前限制 |
+| --- | --- | --- | --- |
+| `analysis.prepare` | 校验并规范化 `ResearchAnalysisRequest`；把 `schema_version`、规范化 `payload`、`execution_mode`、受限 `execution_options` 和 `authorization_manifest_ref` 写入 `run.control_data["research_analysis_prepared"]`；prepare 完成时不调用 internal-agent | `test_research03_runtime_boundary.py`、`test_research_analysis_runtime.py`；提交 `37b3a88` | 测试使用本地 fake/fixture；manifest 中的 `authorized=True` 只是输入字段，不是发布授权 |
+| `analysis.execute` | 依赖 prepare；只从准备 checkpoint 恢复规范化 payload，再调用 `InternalAgentExecutionService`；测试验证修改实时请求不会覆盖已保存 payload | `test_research_analysis_runtime.py::test_research_analysis_runtime_execute_reads_normalized_checkpoint_payload`；`37b3a88` | 真实分析能力仍由 internal-agent/Provider 边界提供，未证明真实数据或生产副作用 |
+| `analysis.verify` 与控制闭环 | 解析带 `analysis_v2` 标记的 typed `ResearchAnalysisResult`；`executed` 才能通过，失败可 bounded replan，`needs_review` 进入 approval，其余非执行状态 fail-closed | `test_research_analysis_runtime.py` 的执行、失败、replan、approval 和恢复合同测试；`test_runtime_agent_contract_matrix.py` | 只有结构/状态合同证据；没有同输入 Legacy/Runtime 真实 paired trace、独立 semantic judgement sidecar 或发布审批 |
+
+因此，RESEARCH_03 当前应标为“Runtime 已实现、可 provider-free 评测、未授权迁移”。
+不得把 `37b3a88` 的 `23 passed, 2 warnings`，或任何 synthetic/mock/fixture
+结果描述成真实业务正确性、语义等价性、canary 资格或 production default 证据。
 
 ## 6. 目标架构：统一内核，分离领域协议
 
