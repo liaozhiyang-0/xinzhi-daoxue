@@ -4,7 +4,10 @@ from collections.abc import Callable
 from typing import Any
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
-from app.contracts.research_analysis import ResearchAnalysisRequest
+from app.contracts.research_analysis import (
+    ResearchAnalysisRequest,
+    ResearchAnalysisResult,
+)
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -117,6 +120,51 @@ class ResearchAnalysisRuntimeService:
                 continue
         return None
 
+    @staticmethod
+    def _parse_analysis_result(result: AgentResult) -> ResearchAnalysisResult:
+        """Extract the typed analysis payload from an AgentResult envelope.
+
+        The internal-agent boundary currently emits the typed payload in
+        ``business_data`` and mirrors it under
+        ``structured_result["business_data"]``.  A direct structured payload
+        is also accepted for compatible callers, but the analysis marker is
+        mandatory and the Pydantic contract remains authoritative.  In
+        particular, a generic ``AgentResult`` status of ``completed`` is not
+        evidence that the analysis itself executed.
+        """
+
+        structured = result.structured_result
+        if structured.get("analysis_v2") is not True:
+            raise RuntimeNodeError(
+                "analysis_result_contract_invalid",
+                "research analysis result is missing analysis_v2 marker",
+            )
+
+        candidates: list[dict[str, Any]] = []
+
+        def add_candidate(value: Any) -> None:
+            if isinstance(value, dict) and value not in candidates:
+                candidates.append(value)
+
+        add_candidate(result.business_data)
+        add_candidate(structured.get("business_data"))
+        add_candidate(structured.get("research_analysis_v2"))
+
+        direct_structured = dict(structured)
+        direct_structured.pop("analysis_v2", None)
+        add_candidate(direct_structured)
+
+        for payload in candidates:
+            try:
+                return ResearchAnalysisResult.model_validate(payload)
+            except ValueError:
+                continue
+
+        raise RuntimeNodeError(
+            "analysis_result_contract_invalid",
+            "research analysis result is not a valid ResearchAnalysisResult",
+        )
+
     async def run(
         self,
         request: AgentRequest,
@@ -188,11 +236,39 @@ class ResearchAnalysisRuntimeService:
                     },
                     warnings=list(result.warnings[:8]),
                 )
-            structured = result.structured_result
-            if not bool(structured.get("analysis_v2")):
+            if result.status != AgentResultStatus.COMPLETED:
                 raise RuntimeNodeError(
-                    "analysis_result_contract_invalid",
-                    "research analysis result is missing analysis_v2 marker",
+                    "analysis_result_status_invalid",
+                    "research analysis AgentResult must be completed",
+                )
+            analysis_result = self._parse_analysis_result(result)
+            if analysis_result.status == "needs_review":
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.PARTIAL,
+                    artifact_ids=[item.artifact_id for item in result.artifacts],
+                    facts={
+                        "passed": False,
+                        "requires_review": True,
+                        "replan_required": False,
+                        "analysis_status": analysis_result.status,
+                        "result_status": result.status.value,
+                    },
+                    warnings=list(result.warnings[:8]),
+                )
+            if analysis_result.status != "executed":
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.PARTIAL,
+                    artifact_ids=[item.artifact_id for item in result.artifacts],
+                    facts={
+                        "passed": False,
+                        "requires_review": False,
+                        "replan_required": False,
+                        "analysis_status": analysis_result.status,
+                        "result_status": result.status.value,
+                    },
+                    warnings=list(result.warnings[:8]),
                 )
             return RuntimeObservation(
                 node_id=_node.node_id,
@@ -200,6 +276,8 @@ class ResearchAnalysisRuntimeService:
                 facts={
                     "passed": True,
                     "result_status": result.status.value,
+                    "analysis_status": analysis_result.status,
+                    "analysis_result_valid": True,
                     "business_data_present": bool(result.business_data),
                 },
             )
@@ -234,7 +312,32 @@ class ResearchAnalysisRuntimeService:
                     node_ids=[execute_node_id],
                     reason_codes=["analysis_execution_required"],
                 )
+            if verify_state.status in {
+                RuntimeNodeStatus.FAILED,
+                RuntimeNodeStatus.BLOCKED,
+            }:
+                return RuntimeDecision(
+                    action=DecisionAction.FAIL,
+                    reason_codes=["analysis_verification_contract_failed"],
+                )
             if verify_state.status == RuntimeNodeStatus.PARTIAL:
+                verification = verify_state.observation
+                if verification is not None:
+                    facts = verification.facts
+                    if facts.get("requires_review") is True:
+                        return RuntimeDecision(
+                            action=DecisionAction.REQUEST_APPROVAL,
+                            approval_scope="research_analysis_result_review",
+                            reason_codes=["analysis_result_needs_review"],
+                        )
+                    if facts.get("replan_required") is False:
+                        return RuntimeDecision(
+                            action=DecisionAction.FAIL,
+                            reason_codes=[
+                                "analysis_result_not_executed",
+                                str(facts.get("analysis_status", "unknown")),
+                            ],
+                        )
                 if current.iteration >= current.budget.max_iterations - 1:
                     return RuntimeDecision(
                         action=DecisionAction.FAIL,
