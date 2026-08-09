@@ -94,7 +94,76 @@ class RuntimeAgentReadinessService:
     def capability_dicts(self) -> list[dict[str, Any]]:
         """Return the provider-free cross-entry capability projection."""
 
-        return [descriptor.to_dict() for descriptor in self.capability_descriptors]
+        task_readiness: dict[str, RuntimeAgentReadiness] = {}
+        capabilities: list[dict[str, Any]] = []
+        for descriptor in self.capability_descriptors:
+            payload = descriptor.to_dict()
+            if descriptor.domain == "task_agent":
+                readiness = task_readiness.get(descriptor.capability_id)
+                if readiness is None:
+                    readiness = self.inspect(descriptor.capability_id)
+                    task_readiness[descriptor.capability_id] = readiness
+                payload.update(
+                    {
+                        "status": readiness.status,
+                        "canary_release_eligible": readiness.canary_release_eligible,
+                        "canary_reason": readiness.canary_reason,
+                        "blockers": list(readiness.blockers),
+                    }
+                )
+            else:
+                payload.update(self._learning_capability_status(descriptor))
+            capabilities.append(payload)
+        return capabilities
+
+    def _learning_capability_status(
+        self, descriptor: RuntimeCapabilityDescriptor
+    ) -> dict[str, Any]:
+        """Project LearningLoop readiness without entering its execution path.
+
+        LearningLoop capabilities are not registered ``AgentRequest`` agents,
+        so their status cannot be obtained through :meth:`inspect`.  Release
+        eligibility is therefore evaluated only when both explicit identity
+        and plan version are present.  Missing evidence or identity always
+        remains visible as a blocker and never becomes authorization.
+        """
+
+        if not descriptor.enabled:
+            return {
+                "status": "blocked",
+                "canary_release_eligible": False,
+                "canary_reason": "runtime_capability_disabled",
+                "blockers": ["runtime_capability_disabled"],
+            }
+
+        if not descriptor.agent_version or not descriptor.version:
+            reason = "canary_artifact_version_expectation_missing"
+            return {
+                "status": "blocked",
+                "canary_release_eligible": False,
+                "canary_reason": reason,
+                "blockers": [reason],
+            }
+
+        canary_release_eligible = self.release_registry.release_eligible(
+            descriptor.capability_id,
+            expected_agent_version=descriptor.agent_version,
+            expected_runtime_plan_version=descriptor.version,
+        )
+        canary_reason = self.release_registry.reason(
+            descriptor.capability_id,
+            expected_agent_version=descriptor.agent_version,
+            expected_runtime_plan_version=descriptor.version,
+        )
+        blockers = [] if canary_release_eligible else [canary_reason]
+        return {
+            "status": (
+                "canary_ready" if canary_release_eligible else "runtime_implemented"
+            ),
+            "canary_release_eligible": canary_release_eligible,
+            "canary_reason": canary_reason,
+            "blockers": blockers,
+        }
 
     def _capabilities_for_agent(
         self, agent_id: str

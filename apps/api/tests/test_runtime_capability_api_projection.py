@@ -18,6 +18,10 @@ def test_runtime_readiness_exposes_cross_entry_capabilities_provider_free(
         "domain",
         "runtime_id",
         "version",
+        "status",
+        "canary_release_eligible",
+        "canary_reason",
+        "blockers",
         "enabled",
         "supported_actions",
         "supports_pause",
@@ -37,9 +41,36 @@ def test_runtime_readiness_exposes_cross_entry_capabilities_provider_free(
     )
 
     agents = payload["agents"]
-    general = next(item for item in agents if item["agent_id"] == "GENERAL_QUESTION_V1")
+    general = next(
+        item for item in agents if item["agent_id"] == "GENERAL_QUESTION_V1"
+    )
     assert general["runtime_capabilities"]
     assert all(
         item["domain"] == "task_agent"
         for item in general["runtime_capabilities"]
     )
+
+    agents_by_id = {item["agent_id"]: item for item in agents}
+    for capability in capabilities:
+        if capability["domain"] == "task_agent":
+            agent = agents_by_id[capability["capability_id"]]
+            assert capability["status"] == agent["status"]
+            assert (
+                capability["canary_release_eligible"]
+                == agent["canary_release_eligible"]
+            )
+            assert capability["canary_reason"] == agent["canary_reason"]
+            assert capability["blockers"] == agent["blockers"]
+
+    learning = next(
+        item for item in capabilities if item["domain"] == "learning_loop"
+    )
+    assert learning["canary_release_eligible"] is False
+    if learning["enabled"]:
+        assert learning["status"] == "runtime_implemented"
+        assert learning["canary_reason"] == "canary_release_evidence_missing"
+        assert learning["blockers"] == ["canary_release_evidence_missing"]
+    else:
+        assert learning["status"] == "blocked"
+        assert learning["canary_reason"] == "runtime_capability_disabled"
+        assert learning["blockers"] == ["runtime_capability_disabled"]

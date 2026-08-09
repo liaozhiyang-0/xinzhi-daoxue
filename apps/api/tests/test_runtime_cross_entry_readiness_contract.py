@@ -14,6 +14,7 @@ from app.runtime import (
 from app.services.runtime_agent_readiness import RuntimeAgentReadinessService
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
+from app.services.runtime_capability_descriptor import RuntimeCapabilityDescriptor
 from app.services.runtime_launch_policy import RuntimeLaunchPolicy
 
 
@@ -38,6 +39,7 @@ def _readiness(
     *,
     launch_modes: str = "",
     release_registry: RuntimeCanaryReleaseRegistry | None = None,
+    capability_descriptors: tuple[RuntimeCapabilityDescriptor, ...] = (),
 ) -> RuntimeAgentReadinessService:
     release = release_registry or RuntimeCanaryReleaseRegistry()
     return RuntimeAgentReadinessService(
@@ -51,6 +53,27 @@ def _readiness(
         lifecycle_enabled=True,
         release_registry=release,
         handler_registry=RuntimeHandlerRegistry(),
+        capability_descriptors=capability_descriptors,
+    )
+
+
+def _learning_descriptor(
+    *, enabled: bool = True, agent_version: str = "learning-agent-v1"
+) -> RuntimeCapabilityDescriptor:
+    return RuntimeCapabilityDescriptor(
+        capability_id="LEARNING_PROGRESS_V1",
+        domain="learning_loop",
+        runtime_id="learning_progress",
+        version="learning-progress-v1",
+        agent_version=agent_version,
+        enabled=enabled,
+        supported_actions=("start_retest",),
+        supports_pause=False,
+        supports_resume=False,
+        supports_approval=True,
+        supports_input=False,
+        result_contract="learning_action_response.v1",
+        control_scope="learning_loop",
     )
 
 
@@ -144,6 +167,42 @@ def test_missing_semantic_evidence_fails_closed_and_outputs_safe_identifiers() -
     _assert_safe(item.recommended_actions)
     assert "contract-test" not in " ".join(item.blockers + item.recommended_actions)
     assert not any("/" in value or "\\" in value for value in item.blockers)
+
+
+def test_learning_capability_projection_is_fail_closed_and_actionable() -> None:
+    readiness = _readiness(
+        [], capability_descriptors=(_learning_descriptor(),)
+    )
+
+    capability = readiness.capability_dicts()[0]
+
+    assert capability["status"] == "runtime_implemented"
+    assert capability["canary_release_eligible"] is False
+    assert capability["canary_reason"] == "canary_release_evidence_missing"
+    assert capability["blockers"] == ["canary_release_evidence_missing"]
+
+
+def test_learning_capability_projection_blocks_disabled_or_missing_identity() -> None:
+    disabled = _readiness(
+        [], capability_descriptors=(_learning_descriptor(enabled=False),)
+    ).capability_dicts()[0]
+    unversioned = _readiness(
+        [], capability_descriptors=(_learning_descriptor(agent_version=""),)
+    ).capability_dicts()[0]
+
+    assert disabled["status"] == "blocked"
+    assert disabled["canary_release_eligible"] is False
+    assert disabled["canary_reason"] == "runtime_capability_disabled"
+    assert disabled["blockers"] == ["runtime_capability_disabled"]
+    assert unversioned["status"] == "blocked"
+    assert unversioned["canary_release_eligible"] is False
+    assert (
+        unversioned["canary_reason"]
+        == "canary_artifact_version_expectation_missing"
+    )
+    assert unversioned["blockers"] == [
+        "canary_artifact_version_expectation_missing"
+    ]
 
 
 @pytest.mark.parametrize("field", ["blockers", "recommended_actions"])
