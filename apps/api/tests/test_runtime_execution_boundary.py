@@ -87,6 +87,7 @@ def test_runtime_boundary_selects_business_runtime_and_resume_states() -> None:
     )
     assert plan is not None
     assert [node.node_id for node in plan.nodes] == [
+        "analysis.prepare",
         "analysis.execute",
         "analysis.verify",
     ]

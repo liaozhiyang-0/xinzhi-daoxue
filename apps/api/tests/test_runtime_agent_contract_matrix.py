@@ -439,9 +439,14 @@ def test_research03_is_lifecycle_candidate_and_learning_loop_is_approve_only() -
         request.model_copy(update={"options": {}}),
     ) is False
     learning_policy = control_policy_for_runtime_kind("learning_loop")
-    assert learning_policy.declared_controls == ("approve",)
+    assert learning_policy.declared_controls == (
+        "pause",
+        "resume",
+        "approve",
+        "input",
+    )
     assert learning_policy.available_controls("waiting_approval") == ("approve",)
-    assert learning_policy.available_controls("running") == ()
+    assert learning_policy.available_controls("running") == ("pause",)
 
 
 def test_synthetic_fixture_cannot_be_release_evidence() -> None:

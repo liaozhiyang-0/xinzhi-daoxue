@@ -123,9 +123,11 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
     assert runtime["status"] == "failed"
     assert [node["node_id"] for node in runtime["nodes"]] == [
         "analysis.execute",
+        "analysis.prepare",
         "analysis.verify",
     ]
     assert [node["status"] for node in runtime["nodes"]] == [
+        "succeeded",
         "succeeded",
         "partial",
     ]
