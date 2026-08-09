@@ -1210,3 +1210,19 @@ domain Runtime descriptors and fail-closed blockers without merging
 `LearningActionRequest` into `AgentRequest`, invoking a Provider, or implying
 that LearningLoop has entered the Task Agent Registry. LearningLoop remains a
 separate canary/release track until authorized paired evidence exists.
+
+## 2026-08-09 bounded Knowledge QA replan checkpoint
+
+`LEARN_01_LOCAL_RETRIEVAL_V1` now has an explicit opt-in recovery path for
+verification failures caused by insufficient evidence or missing citations.
+The first attempt remains the existing `knowledge.execute -> knowledge.verify`
+plan. When the opt-in flag is present, the same durable Run asks for one
+bounded `query` or `text` input, persists that input in the checkpointed request
+envelope, and replaces the plan with versioned `.replan.1` nodes. Invalid input,
+an exhausted iteration budget, malformed checkpoint data, or any other
+verification failure remains fail-closed. The default path does not replan.
+
+This is a bounded recovery contract, not evidence of production answer
+quality or unrestricted autonomy. The next gate is an authorized paired
+Legacy/Runtime trace that includes the waiting-input and replan lifecycle,
+followed by semantic review and the existing release preflight.
