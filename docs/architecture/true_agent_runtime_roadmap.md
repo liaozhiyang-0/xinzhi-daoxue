@@ -1000,3 +1000,35 @@ remaining long-term exit condition is not another compatibility patch: one
 selected business Agent must produce an authorized paired legacy/Runtime
 trace, pass semantic evaluation, and then be promoted from `canary` to
 `default`. No Agent is promoted by synthetic evidence alone.
+
+## 2026-08-09 First business Agent migration decision
+
+The first technical Runtime canary is `GENERAL_QUESTION_V1`. It is the
+strongest current example of an Agent rather than a fixed workflow: its plan
+can observe the request, optionally retrieve evidence or call a typed tool,
+invoke a typed sub-agent, verify the result, and re-plan after a failed
+verification. Its plan version is `general-qa-v1`.
+
+`LEARN_01_LOCAL_RETRIEVAL_V1` is the second canary and the first evidence
+quality canary. It is lower risk but still has a fixed `execute -> verify`
+plan; it must first gain stronger citation/evidence verification before being
+treated as a general Agent. `RESEARCH_03_DATA_ANALYSIS_V1` remains deferred
+until deterministic computation, manifest/checksum binding, and independent
+numeric review are Runtime-owned.
+
+The structural canary gate is not a semantic promotion gate. A standalone
+sidecar contract now binds an authorized review to the exact input, Legacy
+output, and Runtime output by SHA-256, records bounded review dimensions and
+provenance, and exposes the pure decision
+`structural_release_eligible AND semantic_decision == pass`. The sidecar is
+deliberately separate from `RuntimeCanarySuite` so existing trace artifacts
+remain backwards compatible. The next implementation slice is to load this
+sidecar in the release registry and require it for `canary`/`default` launch
+modes.
+
+The first authorized suite should contain 10--20 redacted text cases covering
+ordinary questions, clarification, format/audience constraints, deterministic
+calculation, and an explicit no-evidence/safety case. It must be captured from
+the same input through Legacy and Runtime, retain only controlled external
+payloads plus hashes in the repository, and include human or approved model
+review. Synthetic fixtures remain test-only and cannot satisfy this gate.
