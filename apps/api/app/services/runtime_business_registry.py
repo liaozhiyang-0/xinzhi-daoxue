@@ -70,8 +70,55 @@ class RuntimeBusinessRegistry:
             typed_builder = cast(
                 Callable[[str, AgentRequest], AgentRunPlan], agent_builder
             )
-            return typed_builder(agent_id, request)
-        return service.build_plan(request)
+            plan = typed_builder(agent_id, request)
+        else:
+            plan = service.build_plan(request)
+        return self._bind_request_goal(agent_id, request, plan)
+
+    @staticmethod
+    def _bind_request_goal(
+        agent_id: str, request: AgentRequest, plan: AgentRunPlan
+    ) -> AgentRunPlan:
+        """Bind safe route evidence to the durable Runtime goal contract.
+
+        Business services remain responsible for their objective and success
+        criteria. The registry adds only bounded, non-sensitive routing facts
+        and the declared node capabilities, so every Runtime plan has the
+        same inspectable goal shape without copying this logic into each
+        business adapter.
+        """
+
+        goal = plan.goal_contract
+        if goal is None:
+            return plan
+        routing = request.options.get("_routing")
+        context = dict(goal.context)
+        context.setdefault("agent_id", agent_id)
+        if isinstance(routing, dict):
+            for key in (
+                "intent",
+                "route_mode",
+                "route_source",
+                "task_subtype",
+                "complexity",
+            ):
+                value = routing.get(key)
+                if isinstance(value, str) and value:
+                    context.setdefault(key, value)
+            confidence = routing.get("route_confidence", routing.get("confidence"))
+            if isinstance(confidence, (int, float)) and 0 <= confidence <= 1:
+                context.setdefault("route_confidence", float(confidence))
+        required_capabilities = list(goal.required_capabilities)
+        if not required_capabilities:
+            required_capabilities = [node.handler_id for node in plan.nodes]
+        bound_goal = goal.model_copy(
+            update={
+                "context": context,
+                "required_capabilities": required_capabilities,
+                "source": goal.source or "runtime_business",
+            }
+        )
+        return plan.model_copy(update={"goal_contract": bound_goal})
 
     def runtime_option_key(self, agent_id: str) -> str | None:
         # Wildcard services may resolve an explicitly opted-in request, but

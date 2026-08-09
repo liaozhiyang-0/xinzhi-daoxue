@@ -1140,3 +1140,21 @@ API. Actions trigger a bounded debug refresh and coexist with the finite
 active-Run polling loop. This gives operators a visible control path for the
 already-persisted pause/resume/approval protocol without adding a second
 control implementation in the browser.
+
+## 2026-08-09 structured goal binding and capability inventory checkpoint
+
+`RuntimeBusinessRegistry.build_plan()` now binds bounded route evidence to the
+plan's durable `RuntimeGoal`: the routed Agent ID, intent, route mode/source,
+task subtype, complexity, and confidence are retained when present, while
+unknown request options are excluded. Plans that do not already declare
+required capabilities derive them from their registered Runtime node handler
+IDs. This gives every Task Runtime plan a common inspectable goal shape for
+debugging, restart recovery, evaluation, and future verification-driven
+replanning without changing the Task/AgentRequest or Provider boundary.
+
+The cross-entry capability inventory is recorded in
+`docs/architecture/runtime_capability_inventory.md`. It explicitly keeps
+`LearningActionRequest` and `AgentRequest` separate: Teaching Interaction and
+Learning Progress already reuse the durable Runtime kernel, but remain
+LearningLoop-specific until a typed capability descriptor, unified read-only
+readiness projection, and domain-safe control adapter are implemented.
