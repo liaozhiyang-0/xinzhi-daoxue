@@ -4,6 +4,9 @@ This command is intentionally provider-free.  It reads an already captured
 authorized structural suite, the corresponding inputs, and redacted semantic
 judgements, then derives payload hashes through ``RuntimeSemanticEvidence``.
 It never stores the original input payloads in the sidecar.
+
+Explicit synthetic suites remain usable for provider-free contract fixtures,
+but their sidecars cannot authorize a release.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from app.runtime import RuntimeCanarySuite  # noqa: E402
 from app.runtime.semantic_evidence import (  # noqa: E402
     RuntimeSemanticDimensions,
     RuntimeSemanticEvidence,
+    payload_sha256,
 )
 
 JUDGEMENT_FIELDS = frozenset(
@@ -49,9 +53,7 @@ def _read_suite(path: Path) -> RuntimeCanarySuite:
     payload = json.loads(path.read_text(encoding="utf-8"))
     suite = RuntimeCanarySuite.model_validate(payload)
     evidence = suite.evidence
-    if evidence.kind != "authorized_paired":
-        raise ValueError("structural suite must be authorized_paired")
-    if not evidence.release_ready:
+    if evidence.kind == "authorized_paired" and not evidence.release_ready:
         raise ValueError(
             "structural suite is not authorized or lacks agent/version/plan"
         )
@@ -151,6 +153,25 @@ def collect_sidecar(
         set(judgements),
         label="judgements",
     )
+
+    # Validate the structural binding before constructing any sidecar record.
+    # Legacy synthetic suites may predate input hashes; authorized paired
+    # suites must bind every case to the supplied, private input payload.
+    for pair in suite.pairs:
+        input_hash = pair.input_sha256
+        if input_hash is None:
+            if suite.evidence.kind == "authorized_paired":
+                raise ValueError(
+                    f"structural suite pair {pair.case_id} is missing "
+                    "input_sha256"
+                )
+            continue
+        expected_input_hash = payload_sha256(inputs[pair.case_id])
+        if input_hash != expected_input_hash:
+            raise ValueError(
+                f"structural suite pair {pair.case_id} input_sha256 mismatch: "
+                f"expected={expected_input_hash}:actual={input_hash}"
+            )
 
     evidence: list[RuntimeSemanticEvidence] = []
     for pair in suite.pairs:

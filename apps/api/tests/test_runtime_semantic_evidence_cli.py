@@ -27,6 +27,9 @@ def _suite(*, kind: str = "authorized_paired") -> dict[str, Any]:
         "pairs": [
             {
                 "case_id": "case-1",
+                "input_sha256": payload_sha256(_inputs()["case-1"])
+                if kind == "authorized_paired"
+                else None,
                 "legacy_payload": {"status": "completed", "answer": "legacy"},
                 "runtime_payload": {
                     "status": "completed",
@@ -36,6 +39,9 @@ def _suite(*, kind: str = "authorized_paired") -> dict[str, Any]:
             },
             {
                 "case_id": "case-2",
+                "input_sha256": payload_sha256(_inputs()["case-2"])
+                if kind == "authorized_paired"
+                else None,
                 "legacy_payload": {"status": "completed", "answer": "old-2"},
                 "runtime_payload": {
                     "status": "completed",
@@ -185,10 +191,45 @@ def test_cli_rejects_case_mismatch_without_writing_output(tmp_path: Path) -> Non
 
 
 def test_cli_rejects_unauthorized_suite_without_writing_output(tmp_path: Path) -> None:
-    result, output_path = _run_cli(tmp_path, suite=_suite(kind="synthetic"))
+    suite = _suite()
+    suite["evidence"]["authorization_ref"] = ""
+    result, output_path = _run_cli(tmp_path, suite=suite)
 
     assert result.returncode != 0
-    assert "authorized_paired" in result.stderr
+    assert "not authorized" in result.stderr
+    assert not output_path.exists()
+
+
+def test_cli_accepts_legacy_synthetic_suite_without_input_hash(
+    tmp_path: Path,
+) -> None:
+    result, output_path = _run_cli(tmp_path, suite=_suite(kind="synthetic"))
+
+    assert result.returncode == 0, result.stderr
+    assert output_path.exists()
+
+
+def test_cli_rejects_authorized_pair_missing_input_hash_without_writing_output(
+    tmp_path: Path,
+) -> None:
+    suite = _suite()
+    del suite["pairs"][0]["input_sha256"]
+    result, output_path = _run_cli(tmp_path, suite=suite)
+
+    assert result.returncode != 0
+    assert "missing input_sha256" in result.stderr
+    assert not output_path.exists()
+
+
+def test_cli_rejects_authorized_pair_input_hash_mismatch_without_writing_output(
+    tmp_path: Path,
+) -> None:
+    suite = _suite()
+    suite["pairs"][0]["input_sha256"] = "0" * 64
+    result, output_path = _run_cli(tmp_path, suite=suite)
+
+    assert result.returncode != 0
+    assert "input_sha256 mismatch" in result.stderr
     assert not output_path.exists()
 
 

@@ -34,6 +34,8 @@ is an engineering checkpoint, not a production release approval.
   release-preflight tests: `73 passed` on 2026-08-10.
 - Durable child runs, parallel recovery, checkpoint controls, plan proposals,
   subagents, and parallel planning: `29 passed` on 2026-08-10.
+- Semantic sidecar collector input-hash validation and intake regressions:
+  `44 passed` on 2026-08-10.
 - Ruff, targeted Mypy, `scripts/validate_config.py`,
   `scripts/check_sensitive_files.py`, and `git diff --check` passed.
 - A broad Windows application-suite run was allowed to run for 364 seconds
