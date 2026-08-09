@@ -16,7 +16,7 @@ is an engineering checkpoint, not a production release approval.
 | Durable checkpoint | `AgentRunRepository` and serialized checkpoint trace; checkpoint recovery tests | Implemented; generic control-data preservation was fixed in `b3b6c63` |
 | Pause/resume/input/approval/reconciliation | Task control API/service, CAS state versions, one-shot approval, explicit external reconciliation | Implemented and directly regression-tested |
 | Observable events | Runtime event bridge, decision/verification events, checkpoint event sequence | Implemented and covered by event/Task boundary tests |
-| Reproducible evaluation | Offline trace audit, runtime evaluation cases, canary evaluator, semantic sidecar tooling | Implemented; semantic and structural release gates remain fail-closed |
+| Reproducible evaluation | Offline trace audit, runtime evaluation cases, canary evaluator, semantic sidecar tooling | Implemented; semantic sidecar output hashes are rebound to structural suite payloads and all release gates remain fail-closed |
 | Existing business migration | RESEARCH_01/02/03, TEACH_01/02, Learning controls, General Q&A and Knowledge QA Runtime paths | Provider-free implementation evidence exists; per-Agent release evidence is still incomplete |
 | Production authorization | Authorized redacted paired Legacy/Runtime trace, semantic review sidecar, human promotion approval | Not available in the current workspace; must not be synthesized |
 
@@ -26,6 +26,10 @@ is an engineering checkpoint, not a production release approval.
 - Business and Runtime contract subset: `43 passed`.
 - Runtime core contract, planner, replay, observability, canary, semantic,
   readiness, and release-preflight tests: `122 passed`.
+- Task/SSE event ordering, reconnect, Runtime node ordering, plan-proposal
+  events, and checkpoint/event correlation: `10 passed`.
+- Semantic output-hash binding, canary registry, and release-preflight tests:
+  `39 passed`.
 - Ruff, targeted Mypy, `scripts/validate_config.py`,
   `scripts/check_sensitive_files.py`, and `git diff --check` passed.
 - A broad Windows application-suite run was allowed to run for 364 seconds
@@ -43,4 +47,3 @@ The next release action is to collect a redacted, authorized Legacy/Runtime
 pair for each intended Agent/version/plan combination, validate it with the
 offline canary packager, collect a separately reviewed semantic sidecar, and
 obtain explicit promotion approval before changing launch mode.
-

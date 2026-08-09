@@ -13,6 +13,7 @@ from app.runtime import (
 )
 from app.runtime.semantic_evidence import (
     RuntimeSemanticEvidence,
+    payload_sha256,
     semantic_release_eligible,
 )
 
@@ -213,6 +214,31 @@ class RuntimeCanaryReleaseRegistry:
                     report=report,
                     suite=suite,
                 )
+                pair = next(
+                    pair
+                    for pair in suite.pairs
+                    if pair.case_id == evidence.case_id
+                )
+                expected_output_hashes = {
+                    "legacy_output_sha256": payload_sha256(
+                        pair.legacy_payload
+                    ),
+                    "runtime_output_sha256": payload_sha256(
+                        pair.runtime_payload
+                    ),
+                }
+                mismatched_hashes = [
+                    field
+                    for field, expected in expected_output_hashes.items()
+                    if getattr(evidence, field) != expected
+                ]
+                if mismatched_hashes:
+                    raise ValueError(
+                        "Runtime semantic evidence output hash binding "
+                        "mismatch for "
+                        f"{normalized_agent_id}/{evidence.case_id}: "
+                        + ", ".join(mismatched_hashes)
+                    )
             expected_case_ids = {pair.case_id for pair in suite.pairs}
             actual_case_ids = [item.case_id for item in evidence_items]
             if set(actual_case_ids) != expected_case_ids or len(

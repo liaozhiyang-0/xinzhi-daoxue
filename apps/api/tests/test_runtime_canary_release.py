@@ -20,6 +20,7 @@ from app.runtime import (
 from app.runtime.semantic_evidence import (
     RuntimeSemanticDimensions,
     RuntimeSemanticEvidence,
+    payload_sha256,
 )
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 
@@ -63,8 +64,20 @@ def _semantic_evidence(**updates: object) -> RuntimeSemanticEvidence:
         "agent_version": AGENT_VERSION,
         "runtime_plan_version": PLAN_VERSION,
         "input_sha256": "0" * 64,
-        "legacy_output_sha256": "1" * 64,
-        "runtime_output_sha256": "2" * 64,
+        "legacy_output_sha256": payload_sha256(
+            {
+                "agent_id": AGENT_ID,
+                "status": "completed",
+                "answer": "same",
+            }
+        ),
+        "runtime_output_sha256": payload_sha256(
+            {
+                "agent_id": AGENT_ID,
+                "status": "completed",
+                "answer": "same",
+            }
+        ),
         "dimensions": RuntimeSemanticDimensions(
             task_fulfillment=1.0,
             factual_correctness=1.0,

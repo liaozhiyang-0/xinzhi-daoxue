@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from app.runtime import (
     RuntimeCanaryEvidence,
+    RuntimeCanaryPair,
     RuntimeCanaryReport,
+    RuntimeCanarySuite,
     RuntimeCanaryThresholds,
 )
 from app.runtime.semantic_evidence import (
@@ -78,6 +82,35 @@ def _release_report(**updates: object) -> RuntimeCanaryReport:
         release_eligible=True,
         evidence=RuntimeCanaryEvidence.model_validate(structural_payload),
         thresholds=RuntimeCanaryThresholds(),
+    )
+
+
+def _suite_for_sidecar_hash_binding() -> RuntimeCanarySuite:
+    return RuntimeCanarySuite(
+        suite_id=SUITE_ID,
+        evidence=RuntimeCanaryEvidence(
+            kind="authorized_paired",
+            agent_id=AGENT_ID,
+            agent_version=AGENT_VERSION,
+            runtime_plan_version=PLAN_VERSION,
+            authorization_ref="structural-auth-123",
+            captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+            redaction_status="redacted",
+        ),
+        pairs=[
+            RuntimeCanaryPair(
+                case_id="semantic-case",
+                legacy_payload=LEGACY,
+                runtime_payload=RUNTIME,
+            )
+        ],
+    )
+
+
+def _write_json(path: Path, payload: object) -> None:
+    Path(path).write_text(
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
     )
 
 
@@ -219,3 +252,40 @@ def test_manual_sidecar_keeps_legacy_separate_review_authorization_compatible() 
     )
 
     assert registry.release_eligible(AGENT_ID) is True
+
+
+def test_from_paths_recomputes_sidecar_output_hashes_from_structural_case(
+    tmp_path: Path,
+) -> None:
+    suite = _suite_for_sidecar_hash_binding()
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "sidecar.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    _write_json(sidecar_path, _evidence().model_dump(mode="json"))
+
+    RuntimeCanaryReleaseRegistry.from_paths(
+        f"{AGENT_ID}={suite_path}",
+        semantic_paths=f"{AGENT_ID}={sidecar_path}",
+    )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["legacy_output_sha256", "runtime_output_sha256"],
+)
+def test_from_paths_rejects_manually_tampered_sidecar_output_hash(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    suite = _suite_for_sidecar_hash_binding()
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "sidecar.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    tampered = _evidence(**{field: "f" * 64})
+    _write_json(sidecar_path, tampered.model_dump(mode="json"))
+
+    with pytest.raises(ValueError, match=f"{field}"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )

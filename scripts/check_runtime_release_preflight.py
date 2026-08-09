@@ -70,6 +70,8 @@ def _error_code(exc: BaseException, *, semantic: bool) -> str:
         )
     if isinstance(exc, ValueError):
         detail = str(exc).lower()
+        if "output hash binding mismatch" in detail:
+            return "semantic_output_hash_mismatch"
         if "agent mismatch" in detail:
             return "artifact_agent_id_mismatch"
         if "version mismatch" in detail:
