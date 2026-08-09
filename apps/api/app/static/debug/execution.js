@@ -242,7 +242,7 @@ function learningRuntimeReference(data) {
   const snapshot = asRecord(data?.learning_runtime_status || inline || (controlScope === "learning_loop" ? runtime : {}));
   return { runId: String(runId), runKind, status, snapshot };
 }
-function learningRuntimeStatusSurface(reference) {
+function learningRuntimeStatusSurfaceLegacy(reference) {
   const snapshot = learningRuntimeStatusRunId === reference.runId && learningRuntimeStatus
     ? learningRuntimeStatus
     : reference.snapshot;
@@ -254,6 +254,69 @@ function learningRuntimeStatusSurface(reference) {
     ["available_controls", controls],
   ]));
 }
+function learningRuntimeNodeStatusSurface(nodes) {
+  const statuses = Array.isArray(nodes)
+    ? nodes.filter((node) => node && typeof node === "object" && !Array.isArray(node))
+    : [];
+  if (!statuses.length) {
+    return el("div", { class: "empty-state", text: "No LearningLoop node status reported." });
+  }
+  const list = el("div", { class: "runtime-node-list" });
+  statuses.forEach((node) => {
+    const nodeId = typeof node.node_id === "string" && node.node_id.trim()
+      ? node.node_id
+      : "Unnamed node";
+    const status = node.status == null ? "unknown" : node.status;
+    const effectStatus = node.effect_status == null ? "unknown" : node.effect_status;
+    const attempt = Number.isFinite(Number(node.attempt)) ? Number(node.attempt) : 0;
+    const errorCode = typeof node.error_code === "string" && node.error_code.trim()
+      ? node.error_code
+      : "";
+    list.append(el("article", { class: "runtime-node-row" }, [
+      el("div", { class: "runtime-node-heading" }, [
+        el("strong", { text: nodeId }),
+        runtimeStatusBadge(status),
+      ]),
+      el("div", { class: "runtime-node-meta" }, [
+        el("span", { text: `Effect ${runtimeEffectLabels[runtimeStatusKey(effectStatus)] || effectStatus}` }),
+        el("span", { text: `Attempt ${attempt}` }),
+      ]),
+      errorCode ? el("p", { class: "runtime-node-error", text: `Error code: ${errorCode}` }) : null,
+    ]));
+  });
+  return list;
+}
+
+function learningRuntimeStatusSurface(reference) {
+  const snapshot = learningRuntimeStatusRunId === reference.runId && learningRuntimeStatus
+    ? learningRuntimeStatus
+    : asRecord(reference.snapshot);
+  const controls = Array.isArray(snapshot.available_controls) ? snapshot.available_controls : undefined;
+  const status = snapshot.status || snapshot.runtime_status || reference.status;
+  return section(
+    "LearningLoop Runtime (read-only)",
+    "Read-only LearningLoop Runtime status. Controls are displayed from the backend contract only; this page never executes a LearningLoop control action.",
+    el("div", { class: "debug-grid" }, [
+      kvSurface("Runtime status contract", [
+        ["runtime_id", snapshot.runtime_id || snapshot.runtime_run_id || snapshot.run_id || reference.runId],
+        ["run_kind", snapshot.run_kind || reference.runKind],
+        ["status", status],
+        ["goal", snapshot.goal],
+        ["success_criteria", snapshot.success_criteria],
+        ["state_version", snapshot.state_version],
+        ["resumable", snapshot.resumable],
+        ["approval_required", snapshot.approval_required],
+        ["control_scope", snapshot.control_scope],
+        ["available_controls", controls],
+      ]),
+      el("article", { class: "debug-surface" }, [
+        el("h3", { text: "Node statuses" }),
+        learningRuntimeNodeStatusSurface(snapshot.node_statuses),
+      ]),
+    ]),
+  );
+}
+
 function loadLearningRuntimeStatus(data) {
   const reference = learningRuntimeReference(data);
   if (!reference) {
