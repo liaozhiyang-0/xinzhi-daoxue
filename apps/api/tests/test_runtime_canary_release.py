@@ -238,6 +238,24 @@ def test_from_paths_empty_semantic_config_keeps_legacy_compatibility(
     assert registry.release_eligible(AGENT_ID) is True
 
 
+def test_from_paths_requires_semantic_coverage_for_every_case(
+    tmp_path: Path,
+) -> None:
+    suite = _suite()
+    second_pair = suite.pairs[0].model_copy(update={"case_id": "case-2"})
+    suite = suite.model_copy(update={"pairs": [suite.pairs[0], second_pair]})
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "semantic.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    _write_json(sidecar_path, [_semantic_evidence().model_dump(mode="json")])
+
+    with pytest.raises(ValueError, match="case coverage incomplete"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "message"),
     [

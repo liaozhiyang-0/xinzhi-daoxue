@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from app.runtime import (
@@ -23,13 +23,27 @@ class RuntimeCanaryReleaseRegistry:
     def __init__(
         self,
         reports: Mapping[str, RuntimeCanaryReport] | None = None,
-        semantic_evidence: Mapping[str, RuntimeSemanticEvidence] | None = None,
+        semantic_evidence: (
+            Mapping[
+                str,
+                RuntimeSemanticEvidence
+                | Sequence[RuntimeSemanticEvidence],
+            ]
+            | None
+        ) = None,
     ) -> None:
         self._reports = dict(reports or {})
         self._semantic_evidence = (
             None
             if semantic_evidence is None
-            else dict(semantic_evidence)
+            else {
+                agent_id: (
+                    (item,)
+                    if isinstance(item, RuntimeSemanticEvidence)
+                    else tuple(item)
+                )
+                for agent_id, item in semantic_evidence.items()
+            }
         )
 
     @classmethod
@@ -86,11 +100,11 @@ class RuntimeCanaryReleaseRegistry:
         if self._semantic_evidence is None:
             return True
         evidence = self._semantic_evidence_for(agent_id)
-        return evidence is not None and self._semantic_reason(
-            agent_id,
-            report,
-            evidence,
-        ) is None and semantic_release_eligible(report.release_eligible, evidence)
+        return evidence is not None and all(
+            self._semantic_reason(agent_id, report, item) is None
+            and semantic_release_eligible(report.release_eligible, item)
+            for item in evidence
+        )
 
     def report(self, agent_id: str) -> RuntimeCanaryReport | None:
         """Return the evaluated report without exposing mutable registry state."""
@@ -126,13 +140,10 @@ class RuntimeCanaryReleaseRegistry:
             evidence = self._semantic_evidence_for(agent_id)
             if evidence is None:
                 return "semantic_evidence_missing"
-            semantic_reason = self._semantic_reason(
-                agent_id,
-                report,
-                evidence,
-            )
-            if semantic_reason is not None:
-                return semantic_reason
+            for item in evidence:
+                semantic_reason = self._semantic_reason(agent_id, report, item)
+                if semantic_reason is not None:
+                    return semantic_reason
         return "canary_release_evidence_approved"
 
     @classmethod
@@ -142,13 +153,13 @@ class RuntimeCanaryReleaseRegistry:
         *,
         reports: Mapping[str, RuntimeCanaryReport],
         suites: Mapping[str, RuntimeCanarySuite],
-    ) -> dict[str, RuntimeSemanticEvidence] | None:
+    ) -> dict[str, tuple[RuntimeSemanticEvidence, ...]] | None:
         """Load and bind optional semantic sidecars to structural suites."""
 
         if value is None or not value.strip():
             return None
 
-        evidence_by_agent: dict[str, RuntimeSemanticEvidence] = {}
+        evidence_by_agent: dict[str, tuple[RuntimeSemanticEvidence, ...]] = {}
         for raw_item in value.split(","):
             item = raw_item.strip()
             if not item:
@@ -175,14 +186,35 @@ class RuntimeCanaryReleaseRegistry:
 
             path = Path(raw_path.strip())
             payload = json.loads(path.read_text(encoding="utf-8"))
-            evidence = RuntimeSemanticEvidence.model_validate(payload)
-            cls._validate_semantic_binding(
-                normalized_agent_id,
-                evidence,
-                report=report,
-                suite=suite,
+            raw_evidence = payload if isinstance(payload, list) else [payload]
+            if not raw_evidence or not all(
+                isinstance(item, dict) for item in raw_evidence
+            ):
+                raise ValueError(
+                    "Runtime semantic evidence sidecar must be an object "
+                    "or an array of objects"
+                )
+            evidence_items = tuple(
+                RuntimeSemanticEvidence.model_validate(item)
+                for item in raw_evidence
             )
-            evidence_by_agent[normalized_agent_id] = evidence
+            for evidence in evidence_items:
+                cls._validate_semantic_binding(
+                    normalized_agent_id,
+                    evidence,
+                    report=report,
+                    suite=suite,
+                )
+            expected_case_ids = {pair.case_id for pair in suite.pairs}
+            actual_case_ids = [item.case_id for item in evidence_items]
+            if set(actual_case_ids) != expected_case_ids or len(
+                actual_case_ids
+            ) != len(expected_case_ids):
+                raise ValueError(
+                    "Runtime semantic evidence case coverage incomplete for "
+                    f"{normalized_agent_id}"
+                )
+            evidence_by_agent[normalized_agent_id] = evidence_items
         return evidence_by_agent
 
     @staticmethod
@@ -233,7 +265,7 @@ class RuntimeCanaryReleaseRegistry:
     def _semantic_evidence_for(
         self,
         agent_id: str,
-    ) -> RuntimeSemanticEvidence | None:
+    ) -> tuple[RuntimeSemanticEvidence, ...] | None:
         if self._semantic_evidence is None:
             return None
         return self._semantic_evidence.get(agent_id)

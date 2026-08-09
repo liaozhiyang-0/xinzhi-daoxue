@@ -223,7 +223,10 @@ class TaskRunner:
             else None
         )
         self.runtime_canary_release = RuntimeCanaryReleaseRegistry.from_paths(
-            knowledge_base.settings.agent_runtime_canary_artifacts
+            knowledge_base.settings.agent_runtime_canary_artifacts,
+            semantic_paths=(
+                knowledge_base.settings.agent_runtime_semantic_evidence
+            ),
         )
         self.runtime_launch_policy = RuntimeLaunchPolicy(
             knowledge_base.settings.agent_runtime_launch_modes,
