@@ -993,7 +993,7 @@ The compatibility boundary now has four additional protections:
    the adapter mapping are checked without reading credentials or the original
    workflow YAML inputs.
 
-The latest provider-free Runtime gate covers 113 tests in one isolated
+The latest provider-free Runtime gate covers 142 tests in one isolated
 process. It includes Runtime execution paths, restart recovery, approval,
 availability, SSE, task non-blocking behavior, and SOLVER freeze checks. The
 remaining long-term exit condition is not another compatibility patch: one
