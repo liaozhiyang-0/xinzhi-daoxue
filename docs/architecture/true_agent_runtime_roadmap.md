@@ -1259,3 +1259,30 @@ posts the unified control request and refreshes both status projections.
 Unsupported pause/resume/input actions remain visibly disabled and generate no
 request from the page. Legacy Task payloads continue to use the existing Task
 control path.
+
+## 2026-08-09 parallel recovery and capability release checkpoint
+
+Parallel Runtime batches now have a durable recovery contract. Independent
+nodes execute concurrently, retain their original execution keys across a
+checkpoint restore, and replay only when the handler is explicitly marked
+replay-safe. The original budget reservation is persisted as a dedicated
+`replay_pending` marker rather than an error code, so mixed batches can pause
+for unsafe-side-effect reconciliation without hiding or corrupting the real
+failure reason. Reconciliation can then resume the safe node without charging
+the same attempt twice; a normal retry clears the replay marker before starting
+a new attempt.
+
+LearningLoop capability readiness now projects explicit `agent_version` and
+`runtime_plan_version` values plus `canary_release_eligible` and
+`canary_reason`. It reuses the provider-free `RuntimeCanaryReleaseRegistry`
+and refuses to infer a missing Agent version from an artifact. Missing,
+stale, or unbound evidence therefore remains fail-closed, while the existing
+LearningLoop request/result contracts and domain-owned side effects remain
+unchanged.
+
+The next release gate is still external and authorized: collect a real paired
+Legacy/Runtime trace for one selected capability, generate the semantic
+sidecar, pass structural and semantic evaluation, and record an explicit
+canary/default decision with rollback configuration. Provider-free fixtures,
+the local `experiment_demo.csv`, and readiness projections do not satisfy
+that gate.
