@@ -1310,3 +1310,24 @@ contract task.
 This wave improves the engineering path toward a true Agent Runtime; it does
 not change the release conclusion. Real Provider execution, authorized paired
 traces, semantic evidence, and canary/default approval remain separate gates.
+
+## 2026-08-09 observable trace and release identity hardening
+
+Runtime Runs now retain bounded, checkpointed histories for decisions and
+verification results, while Debug execution exposes a redaction-ready
+observe/decide/act/verify projection and the checkpoint-to-Task event cursor.
+The existing latest-decision field remains compatible with older checkpoints.
+The Debug console renders these facts as phases, node dependencies,
+observations, recovery/control state, checkpoint history, and a reconnecting
+SSE timeline; missing fields are displayed as not reported rather than
+inferred by the browser.
+
+Offline replay auditing now rejects a checkpoint trace whose Task event cursor
+regresses. Release preflight also requires the operator to bind explicit Agent
+and Runtime plan versions; self-consistent artifacts cannot self-authorize a
+release. These checks strengthen reproducibility and incident diagnosis while
+remaining provider-free and preserving the Legacy/Runtime boundary.
+
+The integrated evidence still stops before production promotion: no real
+Provider call, authorized paired trace, semantic approval, canary traffic, or
+default switch was performed in this wave.
