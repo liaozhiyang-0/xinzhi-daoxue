@@ -47,3 +47,68 @@ def to_task_event(
         "attempt": state.attempt,
         "error_code": state.error_code,
     }
+
+
+def build_runtime_observability(run: AgentRun) -> dict[str, Any]:
+    """Build a bounded, redaction-ready observe/decide/verify projection.
+
+    Node observations are attached to their node state, while controller
+    decisions and verifier results are durable Run-level histories.  Keeping
+    this projection pure makes it usable by Debug/API adapters without
+    coupling Runtime execution to HTTP or persistence.
+    """
+
+    decisions = [
+        decision.model_dump(mode="json") for decision in run.decision_history
+    ]
+    if not decisions and run.last_decision is not None:
+        # Older checkpoints only carried the latest decision.
+        decisions = [run.last_decision.model_dump(mode="json")]
+    verifications = [
+        observation.model_dump(mode="json")
+        for observation in run.verification_history
+    ]
+    observations: list[dict[str, Any]] = []
+    node_projections: list[dict[str, Any]] = []
+    for node in run.plan.nodes:
+        state = run.nodes[node.node_id]
+        node_observation = (
+            state.observation.model_dump(mode="json")
+            if state.observation is not None
+            else None
+        )
+        if node_observation is not None:
+            observations.append(node_observation)
+            if (
+                node.node_type.casefold() == "verification"
+                or node_observation.get("facts", {}).get("phase") == "verify"
+            ) and node_observation not in verifications:
+                verifications.append(node_observation)
+        node_decisions = [
+            {
+                "index": index,
+                **decision,
+            }
+            for index, decision in enumerate(decisions)
+            if node.node_id in decision.get("node_ids", [])
+        ]
+        node_verifications = [
+            observation
+            for observation in verifications
+            if observation.get("node_id") == node.node_id
+        ]
+        node_projections.append(
+            {
+                "node_id": node.node_id,
+                "observation": node_observation,
+                "decisions": node_decisions,
+                "verifications": node_verifications,
+            }
+        )
+    return {
+        "schema_version": "1",
+        "observations": observations,
+        "decisions": decisions,
+        "verifications": verifications,
+        "nodes": node_projections,
+    }

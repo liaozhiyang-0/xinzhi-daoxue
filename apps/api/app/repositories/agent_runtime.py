@@ -9,6 +9,7 @@ from app.models import (
     AgentCheckpointModel,
     AgentRunModel,
     AgentRunNodeModel,
+    TaskEventModel,
 )
 from app.runtime import AgentRun, RuntimeNodeStatus
 
@@ -66,7 +67,11 @@ class AgentRunRepository:
         for node in run.plan.nodes:
             self.session.add(self._node_model(run, node.node_id))
         await self.session.flush()
-        await self._add_checkpoint(run, sequence=1, event_sequence=0)
+        await self._add_checkpoint(
+            run,
+            sequence=1,
+            event_sequence=await self._current_event_sequence(run.task_id),
+        )
         return model
 
     async def get(
@@ -137,7 +142,7 @@ class AgentRunRepository:
         self,
         run: AgentRun,
         *,
-        event_sequence: int = 0,
+        event_sequence: int | None = None,
         expected_state_version: int | None = None,
         provider: str | None = None,
         metrics_data: dict[str, object] | None = None,
@@ -207,6 +212,8 @@ class AgentRunRepository:
                 self.session.add(self._node_model(run, node.node_id))
                 continue
             self._update_node(existing_node, run, node.node_id)
+        if event_sequence is None:
+            event_sequence = await self._current_event_sequence(run.task_id)
         checkpoint = await self._add_checkpoint(
             run,
             sequence=await self._next_checkpoint_sequence(run.run_id),
@@ -280,6 +287,23 @@ class AgentRunRepository:
             )
         )
         return int(value or 0) + 1
+
+    async def _current_event_sequence(self, task_id: str) -> int:
+        """Return the latest committed Task event visible to this session.
+
+        Runtime checkpoints and Task events are stored separately, so keeping
+        this correlation value on every checkpoint is what makes a restored
+        Runtime trace auditable.  The query is intentionally read-only and
+        uses the current transaction, which also sees events flushed by the
+        caller before a checkpoint is saved.
+        """
+
+        value = await self.session.scalar(
+            select(func.max(TaskEventModel.sequence)).where(
+                TaskEventModel.task_id == task_id
+            )
+        )
+        return int(value or 0)
 
     async def _get_node(
         self, run_id: str, node_id: str

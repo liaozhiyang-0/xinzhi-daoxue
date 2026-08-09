@@ -78,6 +78,7 @@ class RuntimeController:
             control = await self._control(agent_run)
             if control is not None:
                 RuntimeStateMachine.apply_decision(agent_run, control)
+                await self._emit_decision(agent_run, control)
                 await self._checkpoint(agent_run)
                 if control.action in {
                     DecisionAction.PAUSE,
@@ -87,7 +88,7 @@ class RuntimeController:
                     return agent_run
             verification = await self._verify(agent_run)
             if verification is not None:
-                agent_run.observations.append(verification)
+                RuntimeStateMachine.record_verification(agent_run, verification)
                 await self._checkpoint(agent_run)
             decision = await _resolve(self.decision_provider(agent_run))
             decisions += 1

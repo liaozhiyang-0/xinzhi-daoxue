@@ -401,6 +401,15 @@ class AgentRun(BaseModel):
     state_version: int = Field(default=1, ge=1)
     budget: RuntimeBudget = Field(default_factory=RuntimeBudget)
     observations: list[RuntimeObservation] = Field(default_factory=list, max_length=500)
+    # Durable controller trace.  The latest decision remains available for
+    # compatibility, while these bounded histories make a resumed Run
+    # inspectable without storing hidden chain-of-thought.
+    decision_history: list[RuntimeDecision] = Field(
+        default_factory=list, max_length=500
+    )
+    verification_history: list[RuntimeObservation] = Field(
+        default_factory=list, max_length=500
+    )
     last_decision: RuntimeDecision | None = None
     control_request: str = Field(default="", max_length=32)
     control_data: dict[str, Any] = Field(default_factory=dict)

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_admin
 from app.models import AgentRunModel, AgentRunNodeModel, TaskModel
 from app.repositories import AgentRunRepository
-from app.runtime import AgentRun
+from app.runtime import AgentRun, build_runtime_observability
 from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(
@@ -263,12 +263,22 @@ async def get_execution(
     runtime_handoff = _read_runtime_handoff(run)
     runtime_nodes = []
     runtime_children = []
+    runtime_checkpoints = []
     restored_runtime: AgentRun | None = None
     runtime_launch_decision: dict[str, Any] = {}
     runtime_compatibility_snapshot: dict[str, Any] = {}
     runtime_goal_contract: dict[str, Any] = {}
+    runtime_observability: dict[str, Any] = {
+        "schema_version": "1",
+        "observations": [],
+        "decisions": [],
+        "verifications": [],
+        "nodes": [],
+    }
     if run is not None and run.run_kind == "runtime":
         restored_runtime = await AgentRunRepository(db).restore(run.id)
+        if restored_runtime is not None:
+            runtime_observability = build_runtime_observability(restored_runtime)
         if (
             restored_runtime is not None
             and restored_runtime.launch_decision is not None
@@ -305,6 +315,7 @@ async def get_execution(
                 )
             ).all()
         )
+        runtime_checkpoints = await AgentRunRepository(db).list_checkpoints(run.id)
     runtime_metrics = (
         run.metrics_data
         if run is not None and isinstance(run.metrics_data, dict)
@@ -455,6 +466,7 @@ async def get_execution(
                 "state_version": run.state_version if run is not None else 0,
                 "launch_decision": runtime_launch_decision,
                 "compatibility_snapshot": runtime_compatibility_snapshot,
+                "observability": runtime_observability,
                 "handoff": runtime_handoff,
                 "budget": (
                     run.budget_data
@@ -475,6 +487,16 @@ async def get_execution(
                         "plan_id": child.plan_id,
                     }
                     for child in runtime_children
+                ],
+                "checkpoints": [
+                    {
+                        "sequence": checkpoint.sequence,
+                        "state_version": checkpoint.state_version,
+                        "status": checkpoint.status,
+                        "event_sequence": checkpoint.event_sequence,
+                        "created_at": checkpoint.created_at.isoformat(),
+                    }
+                    for checkpoint in runtime_checkpoints
                 ],
                 "nodes": [
                     {

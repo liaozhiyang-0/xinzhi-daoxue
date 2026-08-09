@@ -38,7 +38,11 @@ from app.runtime.controller import (
     RuntimeController,
     RuntimeRunSuspended,
 )
-from app.runtime.event_bridge import RUNTIME_EVENT_TYPES, to_task_event
+from app.runtime.event_bridge import (
+    RUNTIME_EVENT_TYPES,
+    build_runtime_observability,
+    to_task_event,
+)
 from app.runtime.executor import (
     PlanExecutor,
     RuntimeBatchHook,
@@ -127,6 +131,7 @@ __all__ = [
     "RuntimeNodeError",
     "RuntimeNodeSuspended",
     "RUNTIME_EVENT_TYPES",
+    "build_runtime_observability",
     "to_task_event",
     "RuntimeController",
     "ControlProvider",

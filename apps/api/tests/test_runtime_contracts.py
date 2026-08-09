@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from app.contracts import AgentEventType
 from app.database.base import Base
 from app.models import SessionModel, TaskModel
 from app.repositories import AgentRunRepository
@@ -26,6 +27,7 @@ from app.runtime import (
     RuntimeStateMachine,
     to_task_event,
 )
+from app.services.event_service import append_task_event
 from app.services.intent_plan import IntentPlanCompiler
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -713,6 +715,90 @@ def test_agent_run_repository_restores_latest_checkpoint(tmp_path) -> None:
             assert restored.state_version == 2
             assert restored.nodes["retrieve"].status == RuntimeNodeStatus.SUCCEEDED
             assert restored.nodes["retrieve"].observation is not None
+
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_agent_run_repository_correlates_checkpoints_to_task_events(tmp_path) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{tmp_path / 'runtime-event-correlation.db'}"
+        )
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with session_factory() as session:
+            session.add(
+                SessionModel(
+                    id="session-event-correlation",
+                    user_id="user-event-correlation",
+                    course_id="CT",
+                )
+            )
+            session.add(
+                TaskModel(
+                    id="task-event-correlation",
+                    session_id="session-event-correlation",
+                    user_id="user-event-correlation",
+                    course_id="CT",
+                    intent="general_qa",
+                    agent_id="RUNTIME_TEST",
+                    input_content={"text": "event correlation"},
+                )
+            )
+            await session.commit()
+
+            await append_task_event(
+                session,
+                "task-event-correlation",
+                AgentEventType.TASK_CREATED,
+                agent_id="RUNTIME_TEST",
+            )
+            run = AgentRun(
+                run_id="run-event-correlation",
+                task_id="task-event-correlation",
+                goal="correlate runtime checkpoints",
+                plan=AgentRunPlan(
+                    plan_id="event-correlation-plan",
+                    goal="correlate runtime checkpoints",
+                    nodes=[
+                        RuntimeNode(
+                            node_id="observe",
+                            node_type="tool",
+                            handler_id="observe.handler",
+                        )
+                    ],
+                ),
+            )
+            repository = AgentRunRepository(session)
+            await repository.create(
+                run,
+                agent_id="RUNTIME_TEST",
+                provider="mock",
+            )
+            checkpoints = await repository.list_checkpoints(run.run_id)
+            assert checkpoints[0].event_sequence == 1
+
+            await append_task_event(
+                session,
+                "task-event-correlation",
+                AgentEventType.AGENT_PROGRESS,
+                agent_id="RUNTIME_TEST",
+                data={"runtime_event": "checkpoint_test"},
+            )
+            await repository.save_checkpoint(run)
+            await session.commit()
+
+            checkpoints = await repository.list_checkpoints(run.run_id)
+            assert [item.event_sequence for item in checkpoints] == [1, 2]
+            restored = await repository.restore(run.run_id)
+            assert restored is not None
+            assert restored.run_id == run.run_id
+            restored_checkpoints = await repository.list_checkpoints(run.run_id)
+            assert restored_checkpoints[-1].event_sequence == 2
 
         await engine.dispose()
 

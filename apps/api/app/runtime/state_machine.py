@@ -225,7 +225,6 @@ class RuntimeStateMachine:
         unknown = set(decision.node_ids) - set(run.nodes)
         if unknown:
             raise ValueError(f"decision references unknown nodes: {sorted(unknown)}")
-        run.last_decision = decision
         if decision.action == DecisionAction.EXECUTE:
             if not decision.node_ids:
                 raise ValueError("execute decision requires node_ids")
@@ -255,6 +254,25 @@ class RuntimeStateMachine:
         elif decision.action == DecisionAction.FAIL:
             run.status = RuntimeRunStatus.FAILED
             run.completed_at = datetime.now(UTC)
+        run.last_decision = decision
+        run.decision_history.append(decision)
+        if len(run.decision_history) > 500:
+            del run.decision_history[:-500]
+        run.updated_at = datetime.now(UTC)
+        return run
+
+    @staticmethod
+    def record_verification(
+        run: AgentRun, observation: RuntimeObservation
+    ) -> AgentRun:
+        """Record a verifier result separately from node observations."""
+
+        run.observations.append(observation)
+        run.verification_history.append(observation)
+        if len(run.observations) > 500:
+            del run.observations[:-500]
+        if len(run.verification_history) > 500:
+            del run.verification_history[:-500]
         run.updated_at = datetime.now(UTC)
         return run
 
