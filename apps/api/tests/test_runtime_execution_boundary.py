@@ -78,7 +78,8 @@ def test_runtime_boundary_selects_business_runtime_and_resume_states() -> None:
 
     assert boundary.is_resumable(RuntimeRunStatus.PAUSED.value)
     assert boundary.is_resumable(RuntimeRunStatus.WAITING_INPUT.value)
-    assert not boundary.is_resumable(RuntimeRunStatus.RUNNING.value)
+    assert boundary.is_resumable(RuntimeRunStatus.RUNNING.value)
+    assert not boundary.is_resumable(RuntimeRunStatus.CREATED.value)
 
     plan = boundary.build_plan(
         ResearchAnalysisRuntimeService.agent_id,
@@ -90,6 +91,65 @@ def test_runtime_boundary_selects_business_runtime_and_resume_states() -> None:
         "analysis.verify",
     ]
     assert boundary.build_plan("OTHER_AGENT", make_request()) is None
+
+
+def test_resume_keeps_checkpoint_request_without_default_launch_preparation() -> None:
+    boundary = RuntimeExecutionBoundary(
+        RuntimeRunLifecycleService(enabled=True),
+        None,
+        business_services=[],
+    )
+    request = make_request()
+
+    resumed = boundary.prepare_request_for_launch(
+        "GENERAL_QUESTION_V1",
+        request,
+        RuntimeLaunchMode.DEFAULT,
+        runtime_resume=True,
+    )
+
+    assert resumed == request
+
+
+def test_new_default_launch_still_prepares_runtime_request() -> None:
+    class FakeRuntimeService:
+        agent_id = "GENERAL_QUESTION_V1"
+        runtime_option_key = "general_question_runtime"
+
+        def supports(self, agent_id: str, _request: AgentRequest) -> bool:
+            return agent_id == self.agent_id
+
+        def build_plan(self, _request: AgentRequest) -> AgentRunPlan:
+            return AgentRunPlan(
+                plan_id="fake-plan",
+                version="1",
+                goal="fake",
+                nodes=[
+                    RuntimeNode(
+                        node_id="execute",
+                        node_type="workflow",
+                        handler_id="fake.execute",
+                    )
+                ],
+            )
+
+        async def run(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    boundary = RuntimeExecutionBoundary(
+        RuntimeRunLifecycleService(enabled=True),
+        None,
+        business_services=[FakeRuntimeService()],  # type: ignore[arg-type]
+    )
+    request = make_request()
+
+    prepared = boundary.prepare_request_for_launch(
+        "GENERAL_QUESTION_V1",
+        request,
+        RuntimeLaunchMode.DEFAULT,
+    )
+
+    assert prepared.options["general_question_runtime"] == {"execute": True}
 
 
 def test_runtime_boundary_rejects_checkpoint_route_drift() -> None:

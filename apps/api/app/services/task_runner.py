@@ -689,11 +689,12 @@ class TaskRunner:
                             )
                         ),
                     )
-                request = self.runtime_boundary.prepare_request_for_launch(
-                    task.agent_id,
-                    request,
-                    runtime_launch_decision.mode,
-                )
+                if not runtime_resume:
+                    request = self.runtime_boundary.prepare_request_for_launch(
+                        task.agent_id,
+                        request,
+                        runtime_launch_decision.mode,
+                    )
                 runtime_plan = (
                     runtime_snapshot.plan
                     if runtime_resume and runtime_snapshot is not None

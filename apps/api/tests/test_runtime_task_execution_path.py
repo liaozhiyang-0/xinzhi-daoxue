@@ -14,7 +14,7 @@ from app.contracts import (
     ExternalSourceType,
 )
 from app.contracts.external_retrieval import ExternalEvidenceSupport
-from app.services.runtime_launch_policy import RuntimeLaunchPolicy
+from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
 from app.services.task_runner import TaskRunner
 from pydantic import AnyHttpUrl, TypeAdapter
 
@@ -313,6 +313,33 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
     settings.agent_runtime_plan_proposals_enabled = True
     assert app.state.task_runner.general_question_runtime is not None
     app.state.task_runner.general_question_runtime.enabled = True
+    runner = app.state.task_runner
+    launch_preparation_calls = 0
+    original_prepare_request_for_launch = (
+        runner.runtime_boundary.prepare_request_for_launch
+    )
+
+    def record_launch_preparation(
+        agent_id: str,
+        request: AgentRequest,
+        mode: RuntimeLaunchMode,
+        *,
+        runtime_resume: bool = False,
+    ) -> AgentRequest:
+        nonlocal launch_preparation_calls
+        launch_preparation_calls += 1
+        return original_prepare_request_for_launch(
+            agent_id,
+            request,
+            mode,
+            runtime_resume=runtime_resume,
+        )
+
+    monkeypatch.setattr(
+        runner.runtime_boundary,
+        "prepare_request_for_launch",
+        record_launch_preparation,
+    )
     calls = 0
 
     async def fake_internal_run(
@@ -360,6 +387,9 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
     else:
         raise AssertionError("task did not reach proposal review")
 
+    initial_launch_preparation_calls = launch_preparation_calls
+    assert initial_launch_preparation_calls == 1
+
     proposals = api.client.get(
         f"/api/v1/tasks/{task_id}/runtime-plan-proposals"
     )
@@ -392,6 +422,7 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
     completed = api.wait_for_task(task_id, timeout=15)
     assert completed["status"] == "completed"
     assert calls == 2
+    assert launch_preparation_calls == initial_launch_preparation_calls
 
     debug = api.client.get(f"/api/v1/debug/execution/{task_id}")
     assert debug.status_code == 200

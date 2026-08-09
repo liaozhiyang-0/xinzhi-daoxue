@@ -67,6 +67,9 @@ class RuntimeExecutionBoundary:
 
     RESUMABLE_STATUSES = frozenset(
         {
+            # A process restart or an approved replan can leave the durable
+            # Run in RUNNING while its Task is queued for the next worker.
+            RuntimeRunStatus.RUNNING.value,
             RuntimeRunStatus.PAUSED.value,
             RuntimeRunStatus.WAITING_INPUT.value,
             RuntimeRunStatus.WAITING_APPROVAL.value,
@@ -290,8 +293,13 @@ class RuntimeExecutionBoundary:
         agent_id: str,
         request: AgentRequest,
         mode: RuntimeLaunchMode,
+        *,
+        runtime_resume: bool = False,
     ) -> AgentRequest:
-        if mode != RuntimeLaunchMode.DEFAULT:
+        if runtime_resume or mode != RuntimeLaunchMode.DEFAULT:
+            # A resumed Run already persisted the request after all launch
+            # compatibility preparation.  Re-applying the default-mode
+            # option injection would change the checkpoint identity.
             return request
         return self.business_registry.prepare_default_request(agent_id, request)
 
