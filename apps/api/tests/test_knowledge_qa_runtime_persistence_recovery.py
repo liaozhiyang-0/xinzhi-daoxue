@@ -269,7 +269,9 @@ async def test_submit_input_rejects_stale_state_version_without_mutating_control
             controls = TaskControlService(
                 db,
                 MockAgentProvider(),
-                Settings(app_env="test", _env_file=None),
+                Settings(  # type: ignore[call-arg]
+                    app_env="test", _env_file=None
+                ),
             )
             with pytest.raises(ConflictError):
                 await controls.submit_input(
