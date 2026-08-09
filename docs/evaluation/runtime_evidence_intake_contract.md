@@ -24,6 +24,21 @@
 - `synthetic`、缺 suite、缺 sidecar、非法 JSON、证据不完整或任何绑定失败都必须
   fail-closed，`release_eligible` 不得为真。测试中的 fixture 只能证明合同，不是发布证据。
 
+## LearningLoop 能力身份映射
+
+当前两个 LearningLoop Runtime capability 已由代码显式声明同一个 Agent artifact
+版本，但仍使用各自的 Runtime plan 版本：
+
+| capability | `agent_version` | `runtime_plan_version` | 当前 evidence 状态 |
+| --- | --- | --- | --- |
+| `TEACHING_INTERACTION_V1` | `learning-agent-v1` | `teaching-interaction-v1` | 无 authorized paired suite/semantic sidecar |
+| `LEARNING_PROGRESS_V1` | `learning-agent-v1` | `learning-progress-v1` | 无 authorized paired suite/semantic sidecar |
+
+readiness API 对上述值只做 provider-free 投影和共享 release registry 查询；
+`canary_release_eligible=false`/`canary_release_evidence_missing` 是当前无 evidence
+的正确结果，不是代码失败。release record 仍必须显式传入 expected Agent/plan
+versions，不能把 readiness、Mock、synthetic artifact 或自描述版本当作授权。
+
 ## 真实执行到离线门禁的顺序
 
 真实流程需要由有权限的操作员在仓库外或受控私有目录完成；下面的顺序是操作合同，

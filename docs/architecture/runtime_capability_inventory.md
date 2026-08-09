@@ -28,6 +28,11 @@
 | 每个已注册 Agent 的 Runtime readiness | `apps/api/app/services/runtime_agent_readiness.py:67-303`；`apps/api/app/api/v1/agents.py:109-126` |
 | Task Runtime pause/resume/approve/input 控制 | `apps/api/app/api/v1/tasks.py:379-440` |
 | 学习动作独立入口与学习 Runtime 审批入口 | `apps/api/app/api/v1/learning.py:33-67` |
+| LearningLoop capability descriptor 的字段与 provider-free 构造 | `apps/api/app/services/runtime_capability_descriptor.py:50-113,182-284`；`apps/api/app/main.py:346-365` |
+| LearningLoop `agent_version` 显式身份声明 | `e883606`；`apps/api/app/services/teaching_interaction_runtime.py:53-59`；`apps/api/app/services/learning_progress_runtime.py:60-66`；`apps/api/tests/test_runtime_capability_descriptor.py` |
+| LearningLoop readiness 投影及版本/canary 字段 | `apps/api/app/contracts/learning.py:479-513`；`apps/api/app/api/v1/learning.py:223-275,408-504` |
+| LearningLoop readiness 的显式版本与 fail-closed 测试 | `apps/api/tests/test_learning_runtime_readiness_api.py`；`apps/api/tests/test_learning_runtime_release_readiness.py` |
+| canary artifact/semantic evidence 的版本绑定与发布门禁 | `apps/api/app/services/runtime_canary_release.py:20-149`；`docs/evaluation/runtime_evidence_intake_contract.md`；`docs/evaluation/runtime_authorized_paired_trace_release_runbook.md` |
 | LearningLoop 的 Legacy/Teaching/LearningProgress 分流 | `apps/api/app/services/learning_loop.py:91-190` |
 | TeachingInteractionRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/teaching_interaction_runtime.py:42-146` |
 | LearningProgressRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/learning_progress_runtime.py:51-153` |
@@ -91,14 +96,14 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 | `RESEARCH_02_ACADEMIC_WRITING_V1` | 学术写作 | 是：`AcademicWritingRuntimeService` | 是 | 已进入 Task Runtime |
 | `RESEARCH_03_DATA_ANALYSIS_V1` | 研究数据分析 | 是：`ResearchAnalysisRuntimeService`，由 `RuntimeExecutionBoundary` 单独注入 | 是 | 已进入 Task Runtime，但仍存在 TaskRunner 中的兼容分支 |
 
-### 4.2 LearningLoop 专用 Runtime ID
+### 4.2 LearningLoop 专用 Runtime ID 与 readiness 投影
 
-| Runtime ID | 领域服务 | 是否在 `agent_configs/registry.yaml` | 是否在 `RuntimeBusinessRegistry` | 现有控制面 |
-| --- | --- | --- | --- | --- |
-| `TEACHING_INTERACTION_V1` | `TeachingInteractionRuntimeService` | 否 | 否 | LearningLoop 专用 execute/approve；没有统一 Agent readiness 条目 |
-| `LEARNING_PROGRESS_V1` | `LearningProgressRuntimeService` | 否 | 否 | LearningLoop 专用 execute/approve；没有统一 Agent readiness 条目 |
+| Runtime ID | 领域服务/计划版本来源 | 是否在 `agent_configs/registry.yaml` | 是否在 `RuntimeBusinessRegistry` | readiness 投影与当前证据 | 当前判断 |
+| --- | --- | --- | --- | --- | --- |
+| `TEACHING_INTERACTION_V1` | `TeachingInteractionRuntimeService.agent_version = learning-agent-v1`；`plan_version = teaching-interaction-v1`；descriptor 将二者分别投影 | 否 | 否 | `GET /api/v1/learning/runtime-readiness` 可列出；返回 `agent_version`、`runtime_plan_version`、`canary_release_eligible`、`canary_reason`；当前无授权 evidence，故 canary 仍为 false | Runtime DAG 与 capability identity 已实现，仍未完成正式 Agent Registry 接入，也未授权 canary/default |
+| `LEARNING_PROGRESS_V1` | `LearningProgressRuntimeService.agent_version = learning-agent-v1`；`plan_version = learning-progress-v1`；descriptor 将二者分别投影 | 否 | 否 | 同上；版本身份已显式声明，但不能替代 authorized evidence | Runtime DAG 与 capability identity 已实现，默认配置仍受 feature flag/证据门禁约束 |
 
-这两个 ID 是 Runtime 运行记录中的 `agent_id`，但不是当前 Agent Registry 的可路由 Agent。不能因为它们已经使用 `AgentRun` 就宣称它们已经完成“统一 Agent 接入”。
+这里的 `runtime_plan_version` 是当前可核验的计划版本；它不是 `agent_version` 的替代品。`RuntimeCapabilityDescriptor` 已包含 `agent_version`，两个真实 LearningLoop service 均显式声明 `learning-agent-v1`，descriptor builder 和 readiness API 分别保留两个身份字段。`_project_learning_runtime_descriptor()` 仍只读取 descriptor 明确提供的值，不从 canary artifact 或 plan version 推断。现有真实 descriptor 测试证明身份投影成立；没有 authorized evidence 时，release registry 仍返回 `canary_release_evidence_missing` 并保持 fail-closed。
 
 ## 5. 当前统一程度与缺口
 
@@ -111,8 +116,9 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 ### 尚未统一的部分
 
 - `TEACHING_INTERACTION_V1` 和 `LEARNING_PROGRESS_V1` 仍不在 `RuntimeBusinessRegistry`，因此不会被 `RuntimeAgentReadinessService` 作为正式 Task Agent 评估，也不会出现在 `/api/v1/agents/runtime-readiness` 的 Agent 清单中；它们现在通过独立的 `/api/v1/learning/runtime-readiness` 只读投影暴露。
-- Task 的通用 pause/resume/approve/input 控制面与 LearningLoop 的专用 approve 仍不是同一个业务 API 合同；学习 Runtime 现在有独立的 controls 投影和 control 入口，但 pause/resume/input 仍显式拒绝，且尚无统一的 canary/release evidence 入口。
-- Task readiness 的主键仍来自 Agent Registry；LearningLoop 现在通过 typed capability descriptor 暴露动作、版本、控制面和结果合同，但不改变 `LearningActionRequest` 或领域 `supports()` 语义。
+- LearningLoop readiness 已有 typed contract 字段 `agent_version`、`runtime_plan_version`、`canary_release_eligible`、`canary_reason`；真实 descriptor 已显式声明 `learning-agent-v1`，并复用共享 `RuntimeCanaryReleaseRegistry` 做 provider-free 检查。但当前仍没有 authorized evidence；readiness 字段不是授权，也不替代 `authorized_paired` structural suite、semantic sidecar 或独立发布审批。
+- Task 的通用 pause/resume/approve/input 控制面与 LearningLoop 的专用 approve 仍不是同一个业务 API 合同；学习 Runtime 有独立的 controls 投影和 control 入口，但 pause/resume/input 仍显式拒绝。
+- Task readiness 的主键仍来自 Agent Registry；LearningLoop 的 descriptor 只读投影不改变 `LearningActionRequest` 或领域 `supports()` 语义。
 - TaskRunner 仍保留若干业务兼容分支，即使对应 Runtime service 已存在；是否迁移完成不能只看是否创建了 Runtime 类，必须看默认/Canary 入口、结果交接和 Legacy 分支是否有证据。
 - LearningLoop 的 Runtime 结果仍需要以 `LearningActionResponse` 和 `LearningInteractionModel` 完成领域交接，不能直接复用 Task 的通用结果展示合同。
 
@@ -123,19 +129,19 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 1. **不改变请求协议归属**：Task 继续接收 `AgentRequest`；学习动作继续接收 `LearningActionRequest`。学习动作不能为了接入统一 Runtime 而硬接到 `AgentRequest`，也不能通过伪造 `agent_id` 绕过学习领域的用户、来源 Task、幂等和领域校验。
 2. **不改变结果协议归属**：Task 继续通过 Task/SSE/AgentResult 交接；学习动作继续通过 LearningActionResponse/LearningInteractionModel 交接。共享的是 Runtime 生命周期和审计语义，不是把两个业务结果合同抹平。
 
-### 6.2 建议的统一方式
+### 6.2 当前能力投影与剩余统一方式
 
-新增一个面向 Runtime 的能力描述/投影层（名称可在实现时确定），至少为每项能力声明：
+仓库已经有 provider-free 的 `RuntimeCapabilityDescriptor` 和 LearningLoop readiness 投影。当前已声明/可观察的字段包括：
 
 - 稳定 capability/runtime ID 与版本；
 - 所属域（Task Agent 或 LearningLoop）；
 - 输入适配器类型（`AgentRequest` 或 `LearningActionRequest`）；
 - plan version、节点和副作用边界；
 - 是否支持 pause/resume/input/approval；
-- readiness、canary、默认发布所需的证据；
+- readiness、canary、默认发布所需的证据字段；LearningLoop readiness 还暴露 `agent_version`、`runtime_plan_version`、`canary_release_eligible`、`canary_reason`；
 - 领域结果交接器与失败/回退策略。
 
-该投影层可以让 Operator 使用统一的 readiness/control 视图，但不要求 LearningLoop 服务实现 `RuntimeBusinessService` 的 `AgentRequest` 签名。更安全的第一步是保留学习域 registry/adapter，再让统一 control/readiness 查询该 adapter 的 descriptor。
+该投影层可以让 Operator 使用统一的 readiness/control 视图，但不要求 LearningLoop 服务实现 `RuntimeBusinessService` 的 `AgentRequest` 签名。LearningLoop 的 `agent_version` 来源现已在服务和 descriptor 中明确；剩余门槛是让授权 paired evidence 与 `agent_version`/`runtime_plan_version` 严格绑定，在此之前不得把 readiness 的 canary 字段解释为已授权发布。
 
 ## 7. 分阶段迁移与验收条件
 
@@ -156,9 +162,11 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 **验收**：
 
 - descriptor 能明确区分 `task_agent` 与 `learning_loop`；
-- 每个 descriptor 能报告 runtime ID/version、plan、支持动作/能力、控制能力、enabled 状态和领域交接器；
+- 每个 descriptor 能报告 runtime ID/version、计划版本、支持动作/能力、控制能力、enabled 状态和领域交接器；LearningLoop 真实 descriptor 还显式报告 `agent_version=learning-agent-v1`；
 - 缺少 descriptor 或版本不匹配时，readiness 明确阻断，不自动提升为 Default；
 - provider-free 测试覆盖全量 Agent Registry 与两个 Learning Runtime。
+
+**当前证据**：descriptor 构造、main wiring、两个 service 的 `agent_version` 声明、readiness API 和 provider-free 测试均已存在；授权 evidence 仍未完成。
 
 ### 阶段 2：统一 readiness/control 投影
 
@@ -166,10 +174,12 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 
 **验收**：
 
-- Operator 可以看到 Learning Runtime 的 `legacy_only`、`runtime_implemented`、`canary_ready`、`blocked` 等状态及阻塞原因；
+- Operator 可以通过独立 readiness/status/control 投影看到 Learning Runtime 的版本、动作、控制能力、canary reason 和阻塞原因；该投影不等于 Agent Registry 条目或发布授权；
 - pause/resume/approval/input 权限、用户身份、状态版本和 ownership 校验在两个域中语义一致；
 - 控制请求只改变 Runtime 状态和领域允许的控制数据，不直接执行 Provider，不跳过 LearningLoop 领域校验；
 - SSE/学习事件的顺序、重连和幂等测试不回归。
+
+**当前证据**：`test_learning_runtime_readiness_api.py`、`test_learning_runtime_release_readiness.py` 证明投影 provider-free、域过滤、真实 descriptor 的显式版本读取、共享 release registry 查询和缺失版本时 fail-closed；未证明真实 paired trace 或生产 canary。
 
 ### 阶段 3：TeachingInteraction canary
 
@@ -218,24 +228,69 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 
 ## 10. Control projection checkpoint
 
-The cross-entry descriptor and LearningLoop status projection now share a
-provider-free, fail-closed control policy. Task Runtime defaults to the
-unified pause/resume/approval/input surface; LearningLoop exposes only
-approval while waiting for approval. Unknown runtime kinds and terminal or
-unsupported states expose no controls. This policy describes availability
-only; ownership, identity, state-version, persistence, and domain result
-commit remain enforced by the existing backend services. LearningLoop now
-also exposes `/api/v1/learning/runtime/{run_id}/controls` and
-`/api/v1/learning/runtime/{run_id}/control`: `approve` delegates to the
-existing domain approval flow, while unsupported controls are audited and
-rejected without invoking a Provider.
+跨入口 descriptor 和 LearningLoop status/control 投影共享 provider-free、
+fail-closed 的控制策略。Task Runtime 默认声明 pause/resume/approval/input；
+LearningLoop 目前只在 `waiting_approval` 暴露 `approve`。未知 Runtime kind、
+不支持状态和终态不暴露控制动作。该策略只说明“可显示/可请求的控制能力”，
+不替代现有后端对 ownership、用户身份、state version、持久化和领域结果提交的
+校验。
+
+LearningLoop 已提供：
+
+- `GET /api/v1/learning/runtime/{run_id}/controls`：读取当前可用控制；
+- `POST /api/v1/learning/runtime/{run_id}/control`：`approve` 委托现有领域审批；
+- `pause`、`resume`、`input`：审计并拒绝，`provider_called=false`。
+
+因此“有 approval 控制”应记录为已实现的控制合同；“有完整暂停/恢复/输入控制”仍是未实现能力。
 
 ## 11. LearningLoop readiness checkpoint
 
-`GET /api/v1/learning/runtime-readiness` is a separate, provider-free
-projection for the two LearningLoop Runtime capabilities. It reports their
-runtime/version, supported learning actions, control scope, result contract,
-and explicit blockers such as unsupported pause/resume/input, disabled
-capability, or missing authorized paired evidence. The control projection is
-available from the per-Run status endpoint, but it is not a Task Agent
-registry entry and does not authorize canary or default execution.
+`GET /api/v1/learning/runtime-readiness` 是两个 LearningLoop Runtime capability
+的独立、provider-free 只读投影。当前可核验字段如下：
+
+| 字段 | 代码来源/含义 | 当前真实状态 | 不能据此推出 |
+| --- | --- | --- | --- |
+| `capability_id` / `runtime_id` | descriptor 与两个 Runtime service 的稳定 ID | `TEACHING_INTERACTION_V1`、`LEARNING_PROGRESS_V1` 可投影 | 已进入 Agent Registry 或可路由 |
+| `version` | `RuntimeCapabilityDescriptor.version`，由学习服务的 `plan_version` 读取 | `teaching-interaction-v1` / `learning-progress-v1` | 这是 Agent 发布版本 |
+| `runtime_plan_version` | readiness 投影优先读取 descriptor 的同名字段，否则回退到 `version` | 当前真实 descriptor 通过回退得到计划版本 | 已绑定真实 Agent artifact |
+| `agent_version` | 只读取 descriptor 明确声明的同名字段 | 两个真实 LearningLoop descriptor 均为 `learning-agent-v1` | 该字段仍不能替代 authorized evidence，不能由 artifact 反向授权 |
+| `canary_release_eligible` | 调用共享 `RuntimeCanaryReleaseRegistry.release_eligible()`，不执行 Provider | 当前为 `false`：`learning-agent-v1`/plan 版本已声明，但 registry 没有授权 evidence | readiness 本身不是 canary/default 授权 |
+| `canary_reason` | 共享 release registry 的结构/语义/版本阻塞原因，或版本 expectation 缺失 | 当前真实 descriptor + 空 registry 为 `canary_release_evidence_missing`；缺失版本的负向测试仍为 `canary_artifact_version_expectation_missing` | 不是质量分数，也不是实际执行结果 |
+| `blockers` | API 投影的控制、enabled 和 authorized paired evidence 阻塞项 | 包含 pause/resume/input 未实现及 `learning_runtime_authorized_paired_evidence_missing` 等 | 不能把 synthetic/Mock 测试变成真实证据 |
+
+测试证据：`test_learning_runtime_readiness_api.py` 验证域过滤、字段投影、provider-free
+行为与 approve-only 控制事实；`test_learning_runtime_release_readiness.py` 验证显式
+`agent_version` 可被读取、共享 release registry 会被查询，以及缺失 Agent version
+不会从 artifact 推断。它们都是 contract/synthetic evidence，不是发布证据。
+
+## 12. LearningLoop 后续迁移证据矩阵
+
+状态含义固定为：
+
+- **实现**：代码路径和局部合同存在；
+- **可评测**：有可重复的 provider-free/结构测试或离线门禁输入合同；
+- **已授权**：有版本绑定的真实 `authorized_paired` Legacy/Runtime trace、独立 semantic sidecar 和发布审批。只有这一列成立才可进入 canary/default 决策。
+
+| 能力/动作 | 实现证据 | 可评测证据 | 已授权证据 | 当前结论/下一门槛 |
+| --- | --- | --- | --- | --- |
+| `TEACHING_INTERACTION_V1` descriptor 与版本身份 | `runtime_capability_descriptor.py:182-284`；`teaching_interaction_runtime.py:53-59`；`main.py:351-365` | `test_runtime_capability_descriptor.py`、`test_learning_runtime_readiness_api.py`、`test_learning_runtime_release_readiness.py` | 无 authorized paired suite | **实现、可评测**；版本身份已完成，下一门槛是授权结构 suite |
+| Teaching `request_more_hint` / `submit_check_response` / `switch_to_direct_answer` | `teaching_interaction_runtime.py:70-75,145-180`；`learning.py:83-105` | Runtime/approval contract tests；只证明注入的本地领域执行器 | 无；仓库没有该能力的授权 Legacy/Runtime trace | **实现、可局部评测**；需同输入 paired trace、领域语义审查和回滚记录 |
+| `LEARNING_PROGRESS_V1` descriptor 与版本身份 | `runtime_capability_descriptor.py:193-222,233-284`；`learning_progress_runtime.py:60-66`；`main.py:341-365` | `test_runtime_capability_descriptor.py`、`test_learning_runtime_readiness_api.py`、`test_learning_runtime_release_readiness.py` | 无 authorized paired suite | **实现、可评测**；版本身份已完成，下一门槛是授权结构 suite |
+| LearningProgress `submit_attempt_revision` / `start_retest` / `complete_retest` / `dismiss_retest` | `learning_progress_runtime.py:77-83,152-187`；`learning.py:83-95` | Runtime/领域合同测试可验证状态边界和 provider-free wiring | 无；没有逐动作授权 paired trace/semantic sidecar | **实现、可局部评测**；需幂等、掌握度/重测结果的成对语义证据 |
+| `agent_version` identity | 两个 LearningLoop service 的显式声明；descriptor `runtime_capability_descriptor.py:73-112,252-265`；readiness `learning.py:426-438` | 真实 descriptor identity 测试、readiness release 测试；缺失值仍有 fail-closed 负向测试 | 无；版本声明存在但没有授权 trace/审批 | **实现、可核验但未授权**；下一步采集与 `learning-agent-v1` 绑定的 authorized evidence |
+| `runtime_plan_version` identity | 学习服务 `plan_version`；descriptor builder `runtime_capability_descriptor.py:249-255`；readiness fallback `learning.py:426-428` | readiness API 与 release readiness 测试 | 无；当前只有代码/contract 版本，不是授权 trace | **实现、可评测**；必须与 suite、sidecar、checkpoint 和 release record 一致 |
+| canary readiness | `learning.py:434-504`；`runtime_canary_release.py:86-149` | `test_learning_runtime_release_readiness.py`；evidence intake/preflight contract tests | 当前无 evidence，故不具备资格 | **可检查但未授权**；需要显式版本、结构 suite、semantic sidecar 和独立审批 |
+| Legacy → Runtime 迁移/默认切换 | `learning_loop.py:91-190` 的分流和两个 Runtime adapter | 离线 collector、结构审计、semantic sidecar schema 可评测 | 未发现 LearningLoop 的真实授权 release record 或 canary decision | **未迁移完成**；保持当前 Legacy/受控 Runtime 路径，禁止默认提升 |
+
+### 12.1 证据链顺序
+
+对任一 LearningLoop capability，版本身份已由代码显式声明；后续必须按以下顺序补证据，不能把 readiness 当作授权：
+
+1. 从 descriptor/readiness 核验 `agent_version=learning-agent-v1` 和对应 `runtime_plan_version`，并固定 release record 的 expected versions；
+2. 在受控环境以同一输入采集 Legacy 与 Runtime 的真实成对 trace，保存脱敏 Task/学习结果、checkpoint 和事件摘要；
+3. 通过 `collect_runtime_canary.py` 和 checkpoint/replay audit，生成同时绑定 Agent version 与 plan version 的 `authorized_paired` structural suite；
+4. 由独立评审生成绑定同一 Agent/plan/suite/case 的 semantic sidecar；
+5. 使用 `check_runtime_release_preflight.py` 显式传入 `--expected-agent-version` 与 `--expected-runtime-plan-version`；
+6. 由有权限的发布者决定继续 Legacy、进入 canary、回滚或 default，并记录配置和回滚点。
+
+本仓库当前已具备第 1 步的代码身份和离线门禁合同，以及第 3-5 步的工具/测试合同；仍没有 authorized 真实 trace、semantic sidecar 或独立发布审批。Mock、synthetic、readiness 和 preflight 的 provider-free 成功均不能填充“已授权”列。

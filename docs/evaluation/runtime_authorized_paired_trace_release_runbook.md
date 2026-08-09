@@ -42,6 +42,21 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/agents/GENERAL_QUESTION_V1 |
 
 只有已发布、能力可用、Runtime 计划和 Provider/Flow 配置完整、且授权记录明确的候选，才可以进入真实执行。readiness 的状态只用于检查，不替代真实执行授权。
 
+#### LearningLoop 当前身份核对
+
+两个 LearningLoop Runtime capability 已在服务和 descriptor 中显式声明
+`agent_version=learning-agent-v1`，但计划版本不同：
+
+| capability | Agent version | Runtime plan version | 当前发布结论 |
+| --- | --- | --- | --- |
+| `TEACHING_INTERACTION_V1` | `learning-agent-v1` | `teaching-interaction-v1` | 尚无 authorized evidence，保持 fail-closed |
+| `LEARNING_PROGRESS_V1` | `learning-agent-v1` | `learning-progress-v1` | 尚无 authorized evidence，保持 fail-closed |
+
+`GET /api/v1/learning/runtime-readiness` 返回的版本和 canary 字段只用于核对身份与
+阻塞原因；它不把 LearningLoop 变成 `/api/v1/agents/runtime-readiness` 的 Agent
+Registry 条目，也不授予真实 Provider、canary 或 default。采集前仍需取得授权并
+在 release preflight 中显式传入相同的 expected versions。
+
 ### 1.2 运行配置与凭据
 
 真实执行环境必须使用项目既有的 Provider 配置和密钥注入方式。不要把凭据写进命令行、JSON、事件、checkpoint 或本 runbook。发布 gate 相关配置的实际环境变量是：

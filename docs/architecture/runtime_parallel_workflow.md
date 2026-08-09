@@ -190,6 +190,15 @@ checkpoint: state_version / sequence / event_sequence
 - 验证不足时优先产生结构化 `reason_code` 和 `replan`/`ask_user`/`fail` 决策，而不是补写一段未经验证的答案。
 - checkpoint 必须足以恢复计划版本、节点状态、控制请求、证据引用和预算；不得依赖进程内隐式变量。
 
+版本身份必须区分：`runtime_plan_version` 标识本次计划/Runtime 合同，
+`agent_version` 标识待发布的 Agent artifact。前者存在不代表后者存在；
+不能从 canary artifact、测试 fixture 或 synthetic payload 反推缺失的
+`agent_version`。LearningLoop 的当前 readiness 投影会显式返回两个字段和
+`canary_release_eligible`/`canary_reason`；两个真实 LearningLoop descriptor
+已显式声明 `agent_version=learning-agent-v1`，但尚无 `authorized_paired`
+evidence 时仍必须保持 fail-closed。readiness、Mock、synthetic contract 测试
+和 provider-free preflight 都不是“已授权”证据。
+
 ### 5.3 Task/SSE 事件
 
 - Task/SSE 是现有客户端兼容边界；Runtime 事件通过事件桥接进入同一事件存储和 SSE 通道。
@@ -402,7 +411,17 @@ git diff --check
 
 ### Wave 3：受控发布
 
-先保持 shadow/canary；只有 Agent readiness、结构化回归和 semantic evidence 均满足 release gate，且有明确回滚配置时，才允许扩大流量。未获授权的真实 Provider 仍保持关闭，不能用本地 Mock 代替真实资格证据。
+先保持 shadow/canary；只有 Agent readiness、结构化回归和 semantic evidence 均满足 release gate，且有明确回滚配置时，才允许扩大流量。未获授权的真实 Provider 仍保持关闭，不能用本地 Mock 代替真实资格证据。LearningLoop 当前已由 capability descriptor 显式声明 `agent_version=learning-agent-v1`；仍必须检查该版本与 `runtime_plan_version` 是否和 authorized evidence 完整绑定，仅有 readiness 投影不够。
+
+### Wave 3A：能力盘点与证据分层
+
+能力盘点 Agent 只维护架构/评测文档中的事实矩阵，不修改 Runtime 实现、Provider、数据库或冻结基线。每一项能力必须分开记录：
+
+1. **实现**：可定位的 service/adapter/plan/node/API 代码；
+2. **可评测**：可重复的 provider-free、结构合同或离线 intake/preflight 测试；
+3. **已授权**：真实、脱敏、同输入的 `authorized_paired` Legacy/Runtime trace，加上版本绑定的 semantic sidecar 和独立发布审批。
+
+文档更新前先读取当前代码和测试，提交中只能包含任务声明的 docs write set。能力盘点不得把测试中显式注入的版本、`RuntimeCanaryEvidence(kind="synthetic")`、Mock/local 结果或 readiness 字段写成真实发布证据。缺少证据时写出具体 blocker、来源路径和下一门槛，并保持 Legacy/blocked 结论。
 
 ## 12. 完成定义（Definition of Done）
 
@@ -422,6 +441,7 @@ git diff --check
 - 评测/安全 Agent 独立确认没有凭据泄露、冻结 Solver 变化、静默 fallback 或虚假成功；
 - canary/default 决策、配置、回滚点和证据位置已记录；
 - 未执行的 Docker、真实 Provider、外部授权和真实用户评测没有被描述为已完成。
+- 能力盘点文档中的“已授权”列有对应的真实 evidence 路径和审批记录；仅有 readiness、Mock、synthetic 或离线 preflight 时，必须标记为“未授权/待补证据”。
 
 ## 13. 最小交付报告模板
 
