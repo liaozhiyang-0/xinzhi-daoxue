@@ -1226,3 +1226,28 @@ This is a bounded recovery contract, not evidence of production answer
 quality or unrestricted autonomy. The next gate is an authorized paired
 Legacy/Runtime trace that includes the waiting-input and replan lifecycle,
 followed by semantic review and the existing release preflight.
+
+## 2026-08-09 structured parallel goal checkpoint
+
+The structured `RuntimeGoal` contract now supports explicit
+`parallel_groups`. The Goal Planner compiles each group into an independent
+Runtime batch, keeps groups ordered, and makes every node in a later group
+depend on all nodes in the previous group. Empty, duplicated, omitted, or
+unrequired capabilities fail closed. An empty `parallel_groups` value keeps
+the previous sequential behavior, so concurrency is an explicit goal
+declaration rather than an unverified inference by a model or tool.
+
+The contract matrix now covers the combined observe/decide/act/verify loop,
+typed tool and sub-agent dispatch, bounded replan, approval/pause/resume,
+checkpoint identity, and evidence identity. These are provider-free contract
+fixtures; they do not authorize a production Agent or prove Provider answer
+quality.
+
+LearningLoop now exposes a redacted operator-control projection and an
+explicit control endpoint. It supports only the domain's existing `approve`
+action; `pause`, `resume`, and `input` are represented as visible,
+audited, fail-closed rejections rather than silently mapped to approval.
+Operator authorization, ownership, state-version checks, and the existing
+`LearningActionResponse` result contract remain in force. This is a control
+surface alignment step, not a claim that LearningLoop has gained arbitrary
+task control or production release evidence.
