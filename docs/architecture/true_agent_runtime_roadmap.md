@@ -972,7 +972,11 @@ handler descriptors, launch policy, and evaluated release artifacts without
 calling a Provider or executing a business service. The next release step is
 to collect an authorized paired trace for one selected Agent, then use this
 view as the operational checklist before moving that Agent from `canary` to
-`default`.
+`default`. Readiness records now also expose fixed, provider-free
+`recommended_actions` identifiers, so operators can distinguish “collect
+authorized evidence”, “refresh a stale artifact”, “configure canary”, and
+“observe before default approval” without exposing paths, credentials, or raw
+inputs.
 
 ## 2026-08-09 Runtime safety and evidence checkpoint
 
