@@ -14,7 +14,10 @@ from app.contracts import (
 from app.contracts.conversation import ConversationContextBundle
 from app.models import TaskModel, TaskStatus
 from app.runtime import AgentRun
-from app.services.task_result_commit import TaskResultCommitService
+from app.services.task_result_commit import (
+    TaskResultCommitService,
+    ensure_terminal_success,
+)
 from app.services.task_result_presentation import TaskResultPresentationService
 from app.services.task_session_commit import TaskSessionCommitService
 
@@ -58,6 +61,10 @@ class TaskTerminalBoundary:
         completed_at: datetime,
         total_latency_ms: int,
     ) -> AgentResult:
+        # Guard before presentation, Task status, session messages, or any
+        # other terminal side effect. The commit service repeats this check
+        # at its own write boundary for direct callers and defense in depth.
+        ensure_terminal_success(result=result, runtime_run=runtime_run)
         result = self.presentation.apply(
             definition=agent_definition,
             result=result,

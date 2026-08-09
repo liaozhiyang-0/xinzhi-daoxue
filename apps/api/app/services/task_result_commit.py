@@ -5,11 +5,47 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import AgentDefinition
-from app.contracts import AgentEventType, AgentRequest, AgentResult
+from app.contracts import (
+    AgentEventType,
+    AgentRequest,
+    AgentResult,
+    AgentResultStatus,
+)
+from app.core.errors import ConflictError
 from app.models import AgentRunModel, ArtifactModel, TaskModel
-from app.runtime import AgentRun
+from app.runtime import AgentRun, RuntimeRunStatus
 from app.services.event_service import append_task_event
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
+
+
+class TaskTerminalCommitError(ConflictError):
+    """Raised when a non-successful result reaches the terminal boundary."""
+
+    code = "task_terminal_commit_rejected"
+
+
+def ensure_terminal_success(
+    *, result: AgentResult, runtime_run: AgentRun | None
+) -> None:
+    """Reject terminal success unless both result and Runtime are complete.
+
+    This guard is intentionally side-effect free so callers can invoke it
+    before mutating the Task or opening the terminal side-effect group.
+    """
+
+    if result.status != AgentResultStatus.COMPLETED:
+        raise TaskTerminalCommitError(
+            "only completed AgentResult values may enter terminal commit",
+            details={"result_status": result.status.value},
+        )
+    if runtime_run is not None and runtime_run.status in {
+        RuntimeRunStatus.FAILED,
+        RuntimeRunStatus.CANCELLED,
+    }:
+        raise TaskTerminalCommitError(
+            "failed or cancelled Runtime Run cannot enter terminal commit",
+            details={"runtime_status": runtime_run.status.value},
+        )
 
 
 class TaskResultCommitService:
@@ -35,6 +71,7 @@ class TaskResultCommitService:
         context_usage: dict[str, object],
     ) -> None:
         """Write the terminal result, run record, artifacts, and completion events."""
+        ensure_terminal_success(result=result, runtime_run=runtime_run)
         result_payload = result.model_dump(mode="json")
         if context_usage:
             result_payload["context_usage"] = context_usage
