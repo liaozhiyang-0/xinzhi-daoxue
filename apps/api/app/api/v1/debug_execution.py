@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db, require_admin
 from app.models import AgentRunModel, AgentRunNodeModel, TaskModel
 from app.repositories import AgentRunRepository
+from app.runtime import AgentRun
 from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(
@@ -252,6 +253,7 @@ async def get_execution(
         )
     runtime_nodes = []
     runtime_children = []
+    restored_runtime: AgentRun | None = None
     runtime_launch_decision: dict[str, Any] = {}
     runtime_compatibility_snapshot: dict[str, Any] = {}
     runtime_goal_contract: dict[str, Any] = {}
