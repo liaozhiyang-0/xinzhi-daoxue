@@ -558,7 +558,7 @@ def test_general_question_runtime_default_launch_mode_requires_no_runtime_option
     )
 
 
-def test_local_retrieval_runtime_default_launch_skips_legacy_retrieval(
+def test_local_retrieval_runtime_default_launch_fails_closed_without_evidence(
     api, app
 ) -> None:
     runner = app.state.task_runner
@@ -578,24 +578,15 @@ def test_local_retrieval_runtime_default_launch_skips_legacy_retrieval(
     )
     response = api.client.post("/api/v1/tasks", json=payload)
     assert response.status_code == 202, response.text
-    completed = api.wait_for_task(response.json()["id"], timeout=15)
+    failed = api.wait_for_task(response.json()["id"], timeout=15)
 
-    assert completed["status"] == "completed"
-    assert completed["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
-    assert completed["result_content"]["structured_result"]["mode"] in {
-        "retrieval_only",
-        "local_rag_model_generation",
-    }
-    debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
+    assert failed["status"] == "failed"
+    debug = api.client.get(f"/api/v1/debug/execution/{failed['id']}")
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
     assert runtime["launch_decision"]["mode"] == "default"
-    assert [node["node_id"] for node in runtime["nodes"]] == [
-        "knowledge.execute",
-        "knowledge.verify",
-    ]
-    assert all(node["status"] == "succeeded" for node in runtime["nodes"])
-    events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
+    assert runtime["status"] == "failed"
+    events = api.client.get(f"/api/v1/tasks/{failed['id']}/events")
     assert events.status_code == 200
     assert not any(
         event["event_data"].get("stage_id") == "local_retrieval"

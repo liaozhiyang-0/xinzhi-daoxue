@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts import (
     AgentRequest,
     AgentResult,
+    AgentResultStatus,
     IntentExecutionPlan,
     RouteDecision,
 )
@@ -56,6 +57,9 @@ class RuntimeTaskHandoff:
 
     result: AgentResult | None
     bypass_legacy_execution: bool
+    legacy_fallback: bool = False
+    runtime_status: str = ""
+    fallback_reason: str = ""
 
 
 class RuntimeExecutionBoundary:
@@ -121,13 +125,51 @@ class RuntimeExecutionBoundary:
         runtime_result: AgentResult | None,
         *,
         decision: RuntimeLaunchDecision,
+        run: AgentRun | None = None,
     ) -> RuntimeTaskHandoff:
         """Make Runtime/legacy ownership explicit after Runtime execution."""
 
         if runtime_result is not None:
+            runtime_status = (
+                run.status.value
+                if run is not None
+                else runtime_result.status.value
+            )
+            runtime_completed = (
+                (run is None or run.status == RuntimeRunStatus.COMPLETED)
+                and runtime_result.status == AgentResultStatus.COMPLETED
+            )
+            if not runtime_completed:
+                reason = f"runtime_execution_{runtime_status}"
+                failed_result = runtime_result.model_copy(
+                    update={
+                        "status": AgentResultStatus.FAILED,
+                        "fallback_used": True,
+                        "fallback_reason": reason,
+                    }
+                )
+                if run is not None:
+                    RuntimeExecutionBoundary._record_handoff_failure(
+                        run,
+                        runtime_status=runtime_status,
+                        reason=reason,
+                    )
+                if decision.requires_runtime:
+                    raise NotConfiguredError(
+                        "default Runtime execution did not complete "
+                        f"(status={runtime_status})"
+                    )
+                return RuntimeTaskHandoff(
+                    result=failed_result,
+                    bypass_legacy_execution=False,
+                    legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
+                    runtime_status=runtime_status,
+                    fallback_reason=reason,
+                )
             return RuntimeTaskHandoff(
                 result=runtime_result,
                 bypass_legacy_execution=True,
+                runtime_status=RuntimeRunStatus.COMPLETED.value,
             )
         if decision.requires_runtime:
             raise NotConfiguredError(
@@ -136,7 +178,29 @@ class RuntimeExecutionBoundary:
         return RuntimeTaskHandoff(
             result=None,
             bypass_legacy_execution=False,
+            legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
+            runtime_status=(
+                "missing" if decision.mode == RuntimeLaunchMode.CANARY else ""
+            ),
+            fallback_reason=(
+                "runtime_result_missing"
+                if decision.mode == RuntimeLaunchMode.CANARY
+                else ""
+            ),
         )
+
+    @staticmethod
+    def _record_handoff_failure(
+        run: AgentRun, *, runtime_status: str, reason: str
+    ) -> None:
+        control_data = dict(run.control_data)
+        control_data["runtime_handoff"] = {
+            "status": "legacy_fallback",
+            "runtime_status": runtime_status,
+            "bypass_legacy_execution": False,
+            "fallback_reason": reason,
+        }
+        run.control_data = control_data
 
     @staticmethod
     def validate_resume_invariants(
@@ -277,7 +341,7 @@ class RuntimeExecutionBoundary:
         service = self.business_registry.resolve(agent_id, request)
         if service is None:
             return None
-        return await service.run(
+        result = await service.run(
             request,
             run,
             context=context,
@@ -287,8 +351,38 @@ class RuntimeExecutionBoundary:
             decision_event_hook=decision_event_hook,
             plan_proposal_provider=plan_proposal_provider,
         )
+        if result is not None and run.status != RuntimeRunStatus.COMPLETED:
+            reason = f"runtime_execution_{run.status.value}"
+            self._record_handoff_failure(
+                run,
+                runtime_status=run.status.value,
+                reason=reason,
+            )
+            result = result.model_copy(
+                update={
+                    "status": AgentResultStatus.FAILED,
+                    "fallback_used": True,
+                    "fallback_reason": reason,
+                }
+            )
+        return result
 
     async def finalize(self, db: AsyncSession, **kwargs: Any) -> AgentRun | None:
         """Persist terminal state without exposing lifecycle details to callers."""
 
+        run = kwargs.get("run")
+        if (
+            isinstance(run, AgentRun)
+            and run.control_data.get("runtime_handoff", {}).get("status")
+            == "legacy_fallback"
+            and kwargs.get("status")
+            in {RuntimeRunStatus.COMPLETED, RuntimeRunStatus.COMPLETED.value}
+        ):
+            kwargs["status"] = RuntimeRunStatus.FAILED
+            kwargs["error_code"] = kwargs.get("error_code", "") or (
+                "runtime_handoff_failed"
+            )
+            kwargs["terminal_reason"] = kwargs.get("terminal_reason", "") or (
+                "runtime failed; legacy fallback was used"
+            )
         return await self.lifecycle.finalize(db, **kwargs)
