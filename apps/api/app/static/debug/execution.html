@@ -17,7 +17,21 @@
       <button class="active" type="button" data-tab-target="overview">任务概览</button><button type="button" data-tab-target="runtime">Agent Runtime</button><button type="button" data-tab-target="route">路由与计划</button><button type="button" data-tab-target="retrieval">检索与证据</button><button type="button" data-tab-target="workflow">工作流调用</button><button type="button" data-tab-target="citation">引用与结果</button><button type="button" data-tab-target="performance">性能</button>
     </nav>
     <section class="execution-panel" data-tab-panel="overview"><div id="overview-panel"></div></section>
-    <section class="execution-panel" data-tab-panel="runtime" hidden><div id="runtime-panel"></div></section>
+    <section class="execution-panel" data-tab-panel="runtime" hidden>
+      <section id="runtime-controls" class="runtime-control-panel" hidden aria-labelledby="runtime-controls-title">
+        <header class="runtime-control-heading">
+          <div><h2 id="runtime-controls-title">Runtime 控制面</h2><p>仅提交显式的暂停、恢复或人工审批请求；最终权限与状态由后端校验。</p></div>
+          <span id="runtime-control-state" class="runtime-control-state" aria-live="polite"></span>
+        </header>
+        <div class="runtime-control-actions" role="group" aria-label="Runtime 控制动作">
+          <button id="runtime-pause" class="button secondary" type="button" data-runtime-action="pause">暂停</button>
+          <button id="runtime-resume" class="button secondary" type="button" data-runtime-action="resume">恢复</button>
+          <button id="runtime-approve" class="button primary" type="button" data-runtime-action="approve">人工批准</button>
+        </div>
+        <p id="runtime-control-feedback" class="runtime-control-feedback" role="status" aria-live="polite"></p>
+      </section>
+      <div id="runtime-panel"></div>
+    </section>
     <section class="execution-panel" data-tab-panel="route" hidden><div id="route-panel"></div></section>
     <section class="execution-panel" data-tab-panel="retrieval" hidden><div id="retrieval-panel"></div></section>
     <section class="execution-panel" data-tab-panel="workflow" hidden><div id="workflow-panel"></div></section>

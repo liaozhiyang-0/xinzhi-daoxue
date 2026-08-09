@@ -3,8 +3,15 @@ let execution = null;
 let runtimePollTimer = null;
 let runtimePollToken = 0;
 let runtimePollAttempts = 0;
+let runtimeControlBusy = false;
+let runtimeControlFeedback = null;
 const runtimePollStatuses = new Set(["running", "queued", "waiting_input", "waiting_approval", "paused"]);
 const runtimePollDelaysMs = [1000, 2000, 4000, 8000, 16000];
+const runtimeControlAllowedStatuses = {
+  pause: new Set(["created", "queued", "running"]),
+  resume: new Set(["paused", "waiting_input"]),
+  approve: new Set(["waiting_approval"]),
+};
 const runtimeStatusLabels = { created: "已创建", queued: "排队中", running: "运行中", waiting_input: "等待输入", waiting_approval: "等待审批", paused: "已暂停", completed: "已完成", succeeded: "成功", failed: "失败", cancelled: "已取消", pending: "待执行", ready: "就绪", partial: "部分完成", skipped: "已跳过", blocked: "已阻塞" };
 const runtimeEffectLabels = { not_started: "未开始", in_progress: "进行中", completed: "已完成", unknown: "未知" };
 function runtimeStatusKey(status) { return String(status || "").trim().toLowerCase(); }
@@ -79,6 +86,102 @@ function runtimeControlSurface(runtime, controlEvent) {
   const description = { pause_requested: "已提交暂停请求，Runtime 会在安全边界处理。", approval_required: "Runtime 正在等待审批门通过。", approved: "审批已通过，等待恢复执行。", rejected: "审批被拒绝，Runtime 保持暂停。", resumed: "已提交恢复请求，等待 Runtime 继续执行。", applied: "新计划已应用，等待 Runtime 继续执行。" }[eventStatus] || { waiting_input: "Runtime 正在等待用户输入。", waiting_approval: "Runtime 正在等待审批门通过。", paused: "Runtime 已暂停，后续节点尚未继续。", running: "Runtime 正在执行。" }[status] || "当前没有暂停或审批等待状态。";
   return kvSurface("暂停 / 审批 / 恢复", [["当前状态", runtimeStatusLabel(status)], ["说明", description], ["最近控制事件", eventData.status || controlEvent?.type || "未报告"], ["proposal_id", eventData.proposal_id], ["受影响节点", eventData.affected_node_ids], ["原因", eventData.reason || eventData.reason_codes], ["state_version", runtime.state_version]]);
 }
+
+function setRuntimeControlFeedback(message, tone = "") {
+  runtimeControlFeedback = message ? { message, tone } : null;
+  const target = $("#runtime-control-feedback");
+  if (!target) return;
+  target.className = `runtime-control-feedback${tone ? ` ${tone}` : ""}`;
+  target.textContent = message || "";
+}
+
+function safeRuntimeControlError(error) {
+  const status = Number(error?.status);
+  if (status === 401) return "操作失败：请先登录。";
+  if (status === 403) return "操作失败：当前身份没有执行该控制动作的权限。";
+  if (status === 404) return "操作失败：任务不存在或已不可见。";
+  if (status === 409) return "操作失败：Runtime 状态已变化，请刷新后重试。";
+  return "操作失败：服务暂时无法处理，请稍后重试。";
+}
+
+function renderRuntimeControls(data) {
+  const panel = $("#runtime-controls");
+  if (!panel) return;
+  const taskId = String(data?.task?.id || $("#task-id")?.value || "").trim();
+  panel.hidden = !taskId;
+  if (!taskId) return;
+
+  const runtime = asRecord(data?.runtime);
+  const status = runtimeStatusKey(runtime.status);
+  const state = $("#runtime-control-state");
+  if (state) {
+    state.textContent = status ? `当前状态：${runtimeStatusLabel(status)}` : "未发现 Runtime 状态";
+    state.dataset.status = status || "unknown";
+  }
+  ["pause", "resume", "approve"].forEach((action) => {
+    const button = $(`#runtime-${action}`);
+    if (!button) return;
+    const applicable = Boolean(runtime.run_id) && runtimeControlAllowedStatuses[action].has(status);
+    button.disabled = runtimeControlBusy || !applicable;
+    button.setAttribute("aria-disabled", String(button.disabled));
+    button.title = runtimeControlBusy
+      ? "正在提交 Runtime 控制请求"
+      : applicable
+        ? "提交后由后端按当前身份和 Runtime 状态校验"
+        : "当前 Runtime 状态不支持此动作";
+  });
+  const feedback = $("#runtime-control-feedback");
+  if (feedback) {
+    feedback.className = `runtime-control-feedback${runtimeControlFeedback?.tone ? ` ${runtimeControlFeedback.tone}` : ""}`;
+    feedback.textContent = runtimeControlFeedback?.message || "";
+  }
+}
+
+async function refreshExecutionOnce(id) {
+  if ($("#task-id")?.value.trim() !== id) return;
+  stopRuntimePolling();
+  const token = runtimePollToken;
+  try {
+    const latest = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`);
+    if (token !== runtimePollToken || $("#task-id")?.value.trim() !== id) return;
+    renderAll(latest);
+    scheduleRuntimePolling(id, latest, token);
+  } catch (_error) {
+    setRuntimeControlFeedback("请求已提交，但状态刷新失败，请手动重新载入。", "warning");
+  }
+}
+
+async function executeRuntimeControl(action) {
+  const id = String(execution?.task?.id || $("#task-id")?.value || "").trim();
+  const runtime = asRecord(execution?.runtime);
+  const status = runtimeStatusKey(runtime.status);
+  if (!id || runtimeControlBusy || !runtime.run_id || !runtimeControlAllowedStatuses[action]?.has(status)) return;
+
+  runtimeControlBusy = true;
+  setRuntimeControlFeedback("正在提交 Runtime 控制请求…", "pending");
+  renderRuntimeControls(execution);
+  try {
+    const query = `?runtime_run_id=${encodeURIComponent(runtime.run_id)}`;
+    const options = { method: "POST" };
+    if (action === "approve") {
+      const stateVersion = Number(runtime.state_version);
+      const payload = { decision: "approved" };
+      if (Number.isInteger(stateVersion) && stateVersion >= 1) payload.expected_state_version = stateVersion;
+      options.headers = { "Content-Type": "application/json" };
+      options.body = JSON.stringify(payload);
+    }
+    await api(`/api/v1/tasks/${encodeURIComponent(id)}/${action}${query}`, options);
+    const labels = { pause: "暂停请求已提交。", resume: "恢复请求已提交。", approve: "人工审批请求已提交。" };
+    setRuntimeControlFeedback(`${labels[action]} 正在刷新 Runtime 状态。`, "success");
+  } catch (error) {
+    setRuntimeControlFeedback(safeRuntimeControlError(error), "failed");
+  } finally {
+    await refreshExecutionOnce(id);
+    runtimeControlBusy = false;
+    if (execution) renderRuntimeControls(execution);
+  }
+}
+
 function runtimeBudgetPair(budget, usedKey, maxKey) {
   const used = budget[usedKey]; const max = budget[maxKey];
   if (used == null && max == null) return "—";
@@ -124,6 +227,7 @@ function renderRuntime(data) {
   const goalContract = runtime.goal_contract || {};
   const controlEvent = runtimeControlEvent(data);
   const handoff = runtimeHandoff(data, runtime);
+  renderRuntimeControls(data);
   const hasRuntime = Boolean(runtime.run_id || runtime.status || runtime.goal || nodes.length);
   if (!hasRuntime) {
     $("#runtime-panel").replaceChildren(section("Agent Runtime", "本次任务没有返回 Runtime checkpoint；保留现有 Legacy 执行数据。", el("div", { class: "empty-state", text: "未发现 Runtime run、Goal 或 node 状态。" })));
@@ -237,6 +341,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const query = new URLSearchParams(location.search); $("#task-id").value = query.get("task_id") || localStorage.getItem("xinzhi_last_task") || "";
   all("[data-tab-target]").forEach((button) => button.addEventListener("click", () => { all("[data-tab-target]").forEach((item) => item.classList.toggle("active", item === button)); all("[data-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== button.dataset.tabTarget; }); }));
   $("#load-execution").addEventListener("click", loadExecution); $("#task-id").addEventListener("keydown", (event) => { if (event.key === "Enter") loadExecution(); });
+  all("[data-runtime-action]").forEach((button) => button.addEventListener("click", () => executeRuntimeControl(button.dataset.runtimeAction)));
   if (location.pathname === "/debug/rag") document.querySelector('[data-tab-target="retrieval"]').click();
   if ($("#task-id").value) loadExecution();
 });
