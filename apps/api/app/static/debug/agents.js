@@ -3,9 +3,45 @@ const state = { agents: [], actionsEnabled: false, mocksEnabled: false, selected
 const runtimeReadinessLabels = { blocked: "已阻塞", default_ready: "默认就绪", canary_ready: "Canary 就绪", shadow_ready: "Shadow 就绪", runtime_implemented: "已实现", explicit_goal_only: "仅显式 Goal", legacy_only: "仅 Legacy" };
 function runtimeReadinessTone(status) { return status === "blocked" ? "failed" : ["default_ready", "canary_ready", "shadow_ready", "runtime_implemented"].includes(status) ? "ready" : status === "explicit_goal_only" ? "partial" : "planned"; }
 function runtimeReadinessBadge(readiness = {}) { const status = readiness.status || "unknown"; return badge(runtimeReadinessTone(status), runtimeReadinessLabels[status] || "未报告"); }
+function readinessTextItems(value) {
+  const values = Array.isArray(value) ? value : value == null ? [] : [value];
+  return values.map((item) => {
+    if (typeof item === "string") return item.trim();
+    if (!item || typeof item !== "object") return "";
+    return [item.message, item.text, item.description, item.label].find((candidate) => typeof candidate === "string" && candidate.trim())?.trim() || "";
+  }).filter(Boolean);
+}
+function runtimeReadinessActionHints(readiness, status) {
+  const backendActions = readinessTextItems(readiness.recommended_actions ?? readiness.next_actions ?? readiness.next_action);
+  const statusHint = {
+    blocked: "当前 Runtime 被阻塞；请先处理下方原因，页面不会自动执行任何操作。",
+    canary_ready: "当前已具备 Canary 条件，可按受控发布流程继续；页面不会自动执行发布。",
+    default_ready: "当前已具备默认 Runtime 条件，可按既有发布流程使用；页面不会自动执行变更。",
+  }[status];
+  return statusHint ? [statusHint, ...backendActions] : backendActions;
+}
+function runtimeReadinessNextSteps(readiness, blockers) {
+  const status = readiness.status || "unknown";
+  const actions = runtimeReadinessActionHints(readiness, status);
+  const actionList = actions.length
+    ? el("ul", { class: "runtime-readiness-action-list" }, actions.map((item) => el("li", { text: item })))
+    : el("p", { class: "runtime-readiness-note", text: "后端未提供下一步建议。" });
+  const blocked = status === "blocked";
+  const blockerList = blockers.length
+    ? el("ul", { class: "runtime-readiness-blocker-list" }, blockers.map((item) => el("li", { text: item })))
+    : el("p", { class: "runtime-readiness-note", text: blocked ? "Runtime 报告为阻塞，但未提供具体原因。" : "当前没有报告阻塞原因。" });
+  return el("section", { class: `runtime-readiness-actions${blocked ? " is-blocked" : ""}` }, [
+    el("div", { class: "runtime-readiness-actions-heading" }, [
+      el("h3", { text: blocked ? "阻塞与下一步" : "推荐操作 / 下一步" }),
+      runtimeReadinessBadge(readiness),
+    ]),
+    blocked ? el("div", { class: "runtime-readiness-blockers" }, [el("strong", { text: "阻塞原因" }), blockerList]) : null,
+    el("div", { class: "runtime-readiness-recommendations" }, [el("strong", { text: "操作提示" }), actionList]),
+  ].filter(Boolean));
+}
 function runtimeReadinessDetails(readiness) {
   if (!readiness || !Object.keys(readiness).length) return el("p", { class: "empty-state", text: "当前 Agent 未提供 Runtime readiness 字段。" });
-  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+  const blockers = readinessTextItems(readiness.blockers);
   return el("div", { class: "runtime-readiness-details" }, [
     el("div", { class: "definition-cards" }, [
       el("article", { class: "metric-card" }, [runtimeReadinessBadge(readiness), el("strong", { text: readiness.effective_launch_mode || "未声明" }), el("small", { text: `生效模式 · ${readiness.launch_source || "未知来源"}` })]),
@@ -13,7 +49,7 @@ function runtimeReadinessDetails(readiness) {
       el("article", { class: "metric-card" }, [badge(readiness.canary_release_eligible ? "ready" : "planned", readiness.canary_release_eligible ? "Canary 通过" : "Canary 未通过"), el("strong", { text: readiness.launch_reason || "未提供" }), el("small", { text: readiness.canary_reason || "无 Canary 原因" })]),
     ]),
     el("p", { class: "runtime-readiness-note", text: `运行选项：${(readiness.runtime_option_keys || []).join(", ") || "未声明"}；显式 Goal Runtime：${readiness.explicit_goal_runtime_available ? "可用" : "不可用"}` }),
-    blockers.length ? el("p", { class: "field-error", text: `阻塞原因：${blockers.join("、")}` }) : el("p", { class: "runtime-readiness-note", text: "当前没有报告阻塞原因。" }),
+    runtimeReadinessNextSteps(readiness, blockers),
   ]);
 }
 function requestPayload(allowMock = false) { return { question: $("#agent-question").value, course_id: $("#agent-course").value, intent: $("#agent-intent").value, allow_mock: allowMock, canonical_input: {}, options: {} }; }
