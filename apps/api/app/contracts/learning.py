@@ -425,6 +425,39 @@ class LearningRuntimeStatusRead(BaseModel):
     resumable: bool = False
 
 
+class LearningRuntimeCapabilityRead(BaseModel):
+    """Provider-free descriptor for one LearningLoop Runtime capability."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: str = Field(min_length=1, max_length=100)
+    domain: Literal["learning_loop"] = "learning_loop"
+    runtime_id: str = Field(min_length=1, max_length=120)
+    version: str = Field(min_length=1, max_length=120)
+    enabled: bool
+    supported_actions: list[str] = Field(default_factory=list, max_length=64)
+    supports_pause: bool = False
+    supports_resume: bool = False
+    supports_approval: bool = False
+    supports_input: bool = False
+    control_scope: str = Field(min_length=1, max_length=64)
+    result_contract: str = Field(min_length=1, max_length=160)
+    blockers: list[str] = Field(default_factory=list, max_length=16)
+
+
+class LearningRuntimeReadinessRead(BaseModel):
+    """Read-only readiness projection for the LearningLoop Runtime boundary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    provider_called: Literal[False] = False
+    capabilities: list[LearningRuntimeCapabilityRead] = Field(
+        default_factory=list, max_length=2
+    )
+    blockers: list[str] = Field(default_factory=list, max_length=32)
+
+
 class LearningFollowUpContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
