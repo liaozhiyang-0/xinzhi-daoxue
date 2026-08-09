@@ -5,6 +5,7 @@ import inspect
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
 from app.contracts.research_analysis import (
+    ResearchAnalysisRequest,
     ResearchAnalysisResult,
     ResearchDataQualityReport,
 )
@@ -20,6 +21,36 @@ from app.services.research_analysis_runtime import ResearchAnalysisRuntimeServic
 from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
 
 AGENT_ID = "RESEARCH_03_DATA_ANALYSIS_V1"
+PREPARE_NODE_ID = "analysis.prepare"
+EXECUTE_NODE_ID = "analysis.execute"
+VERIFY_NODE_ID = "analysis.verify"
+
+
+def _expected_prepared_control_data(request: AgentRequest) -> dict[str, object]:
+    options = request.options["research_analysis_v2"]
+    assert isinstance(options, dict)
+    payload = ResearchAnalysisRequest.model_validate(
+        options["request"]
+    ).model_dump(mode="json")
+    manifest = payload["data_manifest"]
+    assert isinstance(manifest, dict)
+    return {
+        "research_analysis_prepared": {
+            "schema_version": "research-analysis-prepared-v1",
+            "payload": payload,
+            "execution_mode": "local",
+            "execution_options": {"execute": True},
+            "authorization_manifest_ref": {
+                "present": True,
+                "dataset_id": manifest["dataset_id"],
+                "version": manifest["version"],
+                "format": manifest["format"],
+                "checksum_sha256": manifest["checksum_sha256"],
+                "authorized": manifest["authorized"],
+                "contains_sensitive_data": manifest["contains_sensitive_data"],
+            },
+        }
+    }
 
 
 def _request(*, options: dict[str, object] | None = None) -> AgentRequest:
@@ -36,10 +67,21 @@ def _runtime_request() -> AgentRequest:
         options={
             "research_analysis_v2": {
                 "execute": True,
+                "execution_mode": "local",
                 "request": {
                     "research_question": "Does the intervention change the outcome?",
                     "analysis_goal": "compare",
                     "design": "experimental_comparison",
+                    "data_manifest": {
+                        "dataset_id": "research03-boundary-fixture",
+                        "version": "v1",
+                        "format": "csv",
+                        "checksum_sha256": "a" * 64,
+                        "row_count": 2,
+                        "column_count": 3,
+                        "authorized": True,
+                        "source_ref": "attachment:research03-boundary",
+                    },
                 },
             }
         }
@@ -93,7 +135,7 @@ def test_research03_code_has_distinct_legacy_runtime_and_capability_edges() -> N
     assert "AgentProvider" not in runtime_source
 
 
-def test_research03_runtime_plan_owns_execution_and_verification_only() -> None:
+def test_research03_runtime_plan_has_prepare_execute_verify_contract() -> None:
     fake = ProviderFreeInternalAgent()
     service = ResearchAnalysisRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
 
@@ -101,16 +143,20 @@ def test_research03_runtime_plan_owns_execution_and_verification_only() -> None:
 
     assert plan.version == "research-v2"
     assert [node.node_id for node in plan.nodes] == [
-        "analysis.execute",
-        "analysis.verify",
+        PREPARE_NODE_ID,
+        EXECUTE_NODE_ID,
+        VERIFY_NODE_ID,
     ]
-    execute, verify = plan.nodes
-    assert execute.node_type == "workflow"
+    prepare, execute, verify = plan.nodes
+    assert prepare.handler_id == "research.analysis.prepare"
     assert execute.handler_id == "research.analysis.execute"
     assert verify.node_type == "verification"
     assert verify.handler_id == "research.analysis.verify"
+    assert prepare.node_type == "control"
+    assert execute.depends_on == [prepare.node_id]
     assert verify.depends_on == [execute.node_id]
     assert plan.success_criteria == [
+        "analysis_request_prepared",
         "analysis_result_present",
         "analysis_result_passes_runtime_verification",
     ]
@@ -126,12 +172,22 @@ def test_research03_runtime_is_provider_free_at_the_runtime_seam() -> None:
         goal="research analysis",
         plan=service.build_plan(request),
     )
+    completed_prepare_without_agent_call = False
 
-    result = asyncio.run(service.run(request, run))
+    def event(event_name: str, _run: AgentRun, node_id: str) -> None:
+        nonlocal completed_prepare_without_agent_call
+        if event_name == "node_completed" and node_id == PREPARE_NODE_ID:
+            completed_prepare_without_agent_call = True
+            assert fake.calls == 0
+
+    result = asyncio.run(service.run(request, run, event_hook=event))
 
     assert result.status == AgentResultStatus.COMPLETED
     assert fake.calls == 1
     assert run.status.value == "completed"
+    assert completed_prepare_without_agent_call is True
+    assert run.nodes[PREPARE_NODE_ID].status == RuntimeNodeStatus.SUCCEEDED
+    assert run.control_data == _expected_prepared_control_data(request)
     assert all(
         node.status == RuntimeNodeStatus.SUCCEEDED for node in run.nodes.values()
     )

@@ -398,10 +398,21 @@ def test_research03_is_lifecycle_candidate_and_learning_loop_is_approve_only() -
         options={
             "research_analysis_v2": {
                 "execute": True,
+                "mode": "execute",
                 "request": {
                     "research_question": "Does the intervention change the outcome?",
                     "analysis_goal": "compare",
                     "design": "experimental_comparison",
+                    "data_manifest": {
+                        "dataset_id": "research03-contract-fixture",
+                        "version": "v1",
+                        "format": "csv",
+                        "checksum_sha256": "c" * 64,
+                        "row_count": 2,
+                        "column_count": 3,
+                        "authorized": True,
+                        "source_ref": "fixture://research03-contract",
+                    },
                 },
             }
         },
@@ -412,9 +423,16 @@ def test_research03_is_lifecycle_candidate_and_learning_loop_is_approve_only() -
     plan = service.build_plan(request)
 
     assert [node.node_id for node in plan.nodes] == [
+        "analysis.prepare",
         "analysis.execute",
         "analysis.verify",
     ]
+    prepare, execute, verify = plan.nodes
+    assert prepare.handler_id == "research.analysis.prepare"
+    assert execute.handler_id == "research.analysis.execute"
+    assert execute.depends_on == [prepare.node_id]
+    assert verify.handler_id == "research.analysis.verify"
+    assert verify.depends_on == [execute.node_id]
     assert service.supports(RESEARCH_AGENT_ID, request) is True
     assert service.supports(
         RESEARCH_AGENT_ID,
