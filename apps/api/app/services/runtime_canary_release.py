@@ -200,6 +200,12 @@ class RuntimeCanaryReleaseRegistry:
                 RuntimeSemanticEvidence.model_validate(item)
                 for item in raw_evidence
             )
+            if not report.evidence.release_ready:
+                raise ValueError(
+                    "Runtime semantic evidence requires an authorized, "
+                    "redacted structural suite for "
+                    f"{normalized_agent_id}"
+                )
             for evidence in evidence_items:
                 cls._validate_semantic_binding(
                     normalized_agent_id,
@@ -263,6 +269,16 @@ class RuntimeCanaryReleaseRegistry:
                 "Runtime semantic evidence case_id mismatch for "
                 f"{agent_id}"
             )
+        if evidence.redaction_status != "redacted":
+            raise ValueError(
+                "Runtime semantic evidence redaction_status must be redacted "
+                f"for {agent_id}"
+            )
+        if not evidence.authorization_ref.strip():
+            raise ValueError(
+                "Runtime semantic evidence authorization_ref is required "
+                f"for {agent_id}"
+            )
 
     def _semantic_evidence_for(
         self,
@@ -292,6 +308,10 @@ class RuntimeCanaryReleaseRegistry:
             return "semantic_evidence_agent_version_mismatch"
         if evidence.runtime_plan_version != report.evidence.runtime_plan_version:
             return "semantic_evidence_runtime_plan_version_mismatch"
+        if evidence.redaction_status != "redacted":
+            return "semantic_redaction_status_invalid"
+        if not evidence.authorization_ref.strip():
+            return "semantic_authorization_ref_missing"
         if evidence.decision != "pass":
             return "semantic_decision_not_pass"
         return None
@@ -303,7 +323,7 @@ class RuntimeCanaryReleaseRegistry:
         expected_agent_version: str | None,
         expected_runtime_plan_version: str | None,
     ) -> bool:
-        if not report.release_eligible:
+        if not report.release_eligible or not report.evidence.release_ready:
             return False
         if expected_agent_version is not None and (
             report.evidence.agent_version != expected_agent_version
