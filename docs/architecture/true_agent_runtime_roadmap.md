@@ -1195,3 +1195,11 @@ internal-agent/Provider boundary. Ordinary V1 requests remain Legacy; the
 explicit `research_analysis_v2` path remains a canary candidate. Structural
 fixtures and synthetic traces are test evidence only and cannot authorize a
 production promotion.
+
+The Research03 verification node now parses the typed
+`ResearchAnalysisResult` contract. A generic completed envelope or an
+`analysis_v2` marker is not sufficient: only `status=executed` passes,
+`needs_review` waits for approval, and planning/quality-blocked/insufficient
+results fail closed. The Runtime task execution regression confirms that a
+plan-only request cannot be reported as completed or fall through to Legacy
+model generation.

@@ -103,3 +103,14 @@ Runtime 可以接管的责任限定为：
 4. 先以 canary 运行并收集真实证据，再考虑 default；没有证据时维持本文第 5 节的 fail-closed 行为。
 
 本评测子任务不执行以上迁移，只记录边界和可验证的下一步。
+
+## 8. Runtime verification checkpoint
+
+The Runtime verification node now parses the typed `ResearchAnalysisResult`
+inside the `AgentResult` envelope. The generic `completed` envelope and the
+`analysis_v2` marker alone are insufficient. Only `status=executed` can pass
+Runtime verification; `planning`, `quality_blocked`, and `insufficient_data`
+fail closed, while `needs_review` enters an approval wait. An explicit
+`execute=false` request therefore cannot complete a Task or fall through to
+Legacy generation. This keeps plan-only output visibly distinct from an
+executed analysis result.
