@@ -110,9 +110,9 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 
 ### 尚未统一的部分
 
-- `TEACHING_INTERACTION_V1` 和 `LEARNING_PROGRESS_V1` 不在 `RuntimeBusinessRegistry`，因此不会被 `RuntimeAgentReadinessService` 作为正式 Agent 评估，也不会自然出现在 `/api/v1/agents/runtime-readiness` 的 Agent 清单中。
-- Task 的通用 pause/resume/approve/input 控制面与 LearningLoop 的专用 approve 不是同一个 API 合同；学习 Runtime 暂无统一的 control projection、operator action、canary/release evidence 入口。
-- Task readiness 的主键来自 Agent Registry；LearningLoop 的能力边界来自 `LearningActionRequest.action` 和 Runtime service 的 `supports()`，两套能力目录尚未建立可比的稳定 descriptor。
+- `TEACHING_INTERACTION_V1` 和 `LEARNING_PROGRESS_V1` 仍不在 `RuntimeBusinessRegistry`，因此不会被 `RuntimeAgentReadinessService` 作为正式 Task Agent 评估，也不会出现在 `/api/v1/agents/runtime-readiness` 的 Agent 清单中；它们现在通过独立的 `/api/v1/learning/runtime-readiness` 只读投影暴露。
+- Task 的通用 pause/resume/approve/input 控制面与 LearningLoop 的专用 approve 不是同一个 API 合同；学习 Runtime 已有只读 control/readiness 投影，但仍没有统一 operator action、canary/release evidence 入口。
+- Task readiness 的主键仍来自 Agent Registry；LearningLoop 现在通过 typed capability descriptor 暴露动作、版本、控制面和结果合同，但不改变 `LearningActionRequest` 或领域 `supports()` 语义。
 - TaskRunner 仍保留若干业务兼容分支，即使对应 Runtime service 已存在；是否迁移完成不能只看是否创建了 Runtime 类，必须看默认/Canary 入口、结果交接和 Legacy 分支是否有证据。
 - LearningLoop 的 Runtime 结果仍需要以 `LearningActionResponse` 和 `LearningInteractionModel` 完成领域交接，不能直接复用 Task 的通用结果展示合同。
 
@@ -225,3 +225,13 @@ approval while waiting for approval. Unknown runtime kinds and terminal or
 unsupported states expose no controls. This policy describes availability
 only; ownership, identity, state-version, persistence, and domain result
 commit remain enforced by the existing backend services.
+
+## 11. LearningLoop readiness checkpoint
+
+`GET /api/v1/learning/runtime-readiness` is a separate, provider-free
+projection for the two LearningLoop Runtime capabilities. It reports their
+runtime/version, supported learning actions, control scope, result contract,
+and explicit blockers such as missing approval controls, unsupported
+pause/resume/input, disabled capability, or missing authorized paired
+evidence. It is not a Task Agent registry entry and does not authorize canary
+or default execution.

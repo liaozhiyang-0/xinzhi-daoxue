@@ -1203,3 +1203,10 @@ The Research03 verification node now parses the typed
 results fail closed. The Runtime task execution regression confirms that a
 plan-only request cannot be reported as completed or fall through to Legacy
 model generation.
+
+The LearningLoop boundary also now has a dedicated read-only
+`GET /api/v1/learning/runtime-readiness` projection. It reports the two
+domain Runtime descriptors and fail-closed blockers without merging
+`LearningActionRequest` into `AgentRequest`, invoking a Provider, or implying
+that LearningLoop has entered the Task Agent Registry. LearningLoop remains a
+separate canary/release track until authorized paired evidence exists.
