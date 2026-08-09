@@ -122,6 +122,7 @@ async def list_runtime_readiness(request: Request) -> dict[str, Any]:
         "release_gate_required": readiness.launch_policy.release_gate_required,
         "counts": counts,
         "agents": items,
+        "capabilities": readiness.capability_dicts(),
     }
 
 

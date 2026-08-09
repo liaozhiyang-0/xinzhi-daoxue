@@ -1158,3 +1158,11 @@ The cross-entry capability inventory is recorded in
 Learning Progress already reuse the durable Runtime kernel, but remain
 LearningLoop-specific until a typed capability descriptor, unified read-only
 readiness projection, and domain-safe control adapter are implemented.
+
+The first typed descriptor layer is now provider-free and read-only in
+`app.services.runtime_capability_descriptor`. The readiness endpoint exposes
+the additive `capabilities` projection, while each Agent readiness item can
+include the matching `runtime_capabilities`. The projection describes Task
+Agent and LearningLoop domains, runtime/version, supported actions, control
+scope, and domain result contract; it does not execute a service or merge the
+two request protocols. The debug Agent page consumes the field defensively.

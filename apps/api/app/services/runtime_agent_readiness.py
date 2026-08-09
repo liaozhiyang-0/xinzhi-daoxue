@@ -11,6 +11,9 @@ from app.contracts import AgentRequest
 from app.runtime import RuntimeHandlerRegistry
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
+from app.services.runtime_capability_descriptor import (
+    RuntimeCapabilityDescriptor,
+)
 from app.services.runtime_launch_policy import (
     RuntimeLaunchMode,
     RuntimeLaunchPolicy,
@@ -44,6 +47,7 @@ class RuntimeAgentReadiness:
     status: str
     blockers: tuple[str, ...]
     recommended_actions: tuple[str, ...]
+    runtime_capabilities: tuple[dict[str, Any], ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +65,7 @@ class RuntimeAgentReadiness:
             "status": self.status,
             "blockers": list(self.blockers),
             "recommended_actions": list(self.recommended_actions),
+            "runtime_capabilities": [dict(item) for item in self.runtime_capabilities],
         }
 
 
@@ -76,6 +81,7 @@ class RuntimeAgentReadinessService:
         lifecycle_enabled: bool,
         release_registry: RuntimeCanaryReleaseRegistry,
         handler_registry: RuntimeHandlerRegistry | None = None,
+        capability_descriptors: Iterable[RuntimeCapabilityDescriptor] = (),
     ) -> None:
         self.agent_registry = agent_registry
         self.business_registry = business_registry
@@ -83,6 +89,21 @@ class RuntimeAgentReadinessService:
         self.lifecycle_enabled = lifecycle_enabled
         self.release_registry = release_registry
         self.handler_registry = handler_registry
+        self.capability_descriptors = tuple(capability_descriptors)
+
+    def capability_dicts(self) -> list[dict[str, Any]]:
+        """Return the provider-free cross-entry capability projection."""
+
+        return [descriptor.to_dict() for descriptor in self.capability_descriptors]
+
+    def _capabilities_for_agent(
+        self, agent_id: str
+    ) -> tuple[dict[str, Any], ...]:
+        return tuple(
+            descriptor.to_dict()
+            for descriptor in self.capability_descriptors
+            if descriptor.capability_id == agent_id
+        )
 
     def list_all(self) -> list[RuntimeAgentReadiness]:
         return [
@@ -217,6 +238,7 @@ class RuntimeAgentReadinessService:
             status=status,
             blockers=tuple(dict.fromkeys(blockers)),
         )
+        runtime_capabilities = self._capabilities_for_agent(agent_id)
         return RuntimeAgentReadiness(
             agent_id=agent_id,
             runtime_services=service_names,
@@ -232,6 +254,7 @@ class RuntimeAgentReadinessService:
             status=status,
             blockers=tuple(dict.fromkeys(blockers)),
             recommended_actions=recommended_actions,
+            runtime_capabilities=runtime_capabilities,
         )
 
     @staticmethod

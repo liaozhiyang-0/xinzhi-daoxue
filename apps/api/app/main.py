@@ -77,6 +77,10 @@ from app.services.retrieval_context import (
     RetrievalContextService,
 )
 from app.services.runtime_agent_readiness import RuntimeAgentReadinessService
+from app.services.runtime_capability_descriptor import (
+    descriptors_from_learning_loop_services,
+    descriptors_from_task_runtime_services,
+)
 from app.services.scenario_catalog import ScenarioCatalog
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
@@ -329,14 +333,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime_subagent_registry=runtime_subagent_registry,
         runtime_handler_registry=runtime_handler_registry,
     )
-    runtime_agent_readiness = RuntimeAgentReadinessService(
-        agent_registry,
-        task_runner.runtime_boundary.business_registry,
-        task_runner.runtime_launch_policy,
-        lifecycle_enabled=task_runner.runtime_lifecycle.enabled,
-        release_registry=task_runner.runtime_canary_release,
-        handler_registry=runtime_handler_registry,
-    )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,
         teaching_interaction_runtime=teaching_interaction_runtime,
@@ -347,6 +343,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         enabled=app_settings.agent_runtime_learning_progress_enabled,
     )
     learning_loop.learning_progress_runtime = learning_progress_runtime
+    task_runtime_services = tuple(
+        service
+        for service in task_runner.runtime_boundary.business_registry.services()
+        if getattr(service, "agent_id", "") != "*"
+    )
+    runtime_capability_descriptors = (
+        descriptors_from_task_runtime_services(task_runtime_services)
+        + descriptors_from_learning_loop_services(
+            teaching_interaction=teaching_interaction_runtime,
+            learning_progress=learning_progress_runtime,
+        )
+    )
+    runtime_agent_readiness = RuntimeAgentReadinessService(
+        agent_registry,
+        task_runner.runtime_boundary.business_registry,
+        task_runner.runtime_launch_policy,
+        lifecycle_enabled=task_runner.runtime_lifecycle.enabled,
+        release_registry=task_runner.runtime_canary_release,
+        handler_registry=runtime_handler_registry,
+        capability_descriptors=runtime_capability_descriptors,
+    )
     task_executor = LocalTaskExecutor(task_runner)
     rag_debug = RAGDebugService(
         app_settings,
