@@ -73,3 +73,5 @@ def test_execution_sse_reconnect_uses_existing_task_stream_cursor_and_preserves_
     assert '"task.completed", "task.failed", "task.cancelled"' in script
     assert 'api(`/api/v1/debug/execution/${encodeURIComponent(id)}`)' in script
     assert "closeExecutionEventStream({ hide: true })" in script
+    assert 'setExecutionLiveState("closed", "任务已进入终态"' in script
+    assert "refreshExecutionOnce(taskId);" in script
