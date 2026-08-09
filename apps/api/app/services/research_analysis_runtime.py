@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import inspect
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
@@ -17,10 +17,12 @@ from app.runtime import (
     PlanProposalProvider,
     RuntimeController,
     RuntimeDecision,
+    RuntimeEffectStatus,
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
     RuntimeNode,
     RuntimeNodeError,
+    RuntimeNodeState,
     RuntimeNodeStatus,
     RuntimeObservation,
     RuntimeRunStatus,
@@ -399,6 +401,60 @@ class ResearchAnalysisRuntimeService:
         )
 
     @staticmethod
+    def _reset_legacy_node_state(state: RuntimeNodeState) -> RuntimeNodeState:
+        return state.model_copy(
+            update={
+                "status": RuntimeNodeStatus.PENDING,
+                "budget_reservation": "",
+                "effect_status": RuntimeEffectStatus.NOT_STARTED,
+                "observation": None,
+                "error_code": "",
+                "started_at": None,
+                "completed_at": None,
+            }
+        )
+
+    def _upgrade_legacy_checkpoint(
+        self, request: AgentRequest, run: AgentRun
+    ) -> None:
+        """Add prepare to old checkpoints without replaying completed work."""
+
+        prepare_id = self._prepare_node_id(run)
+        if prepare_id is not None:
+            if (
+                run.nodes[prepare_id].status == RuntimeNodeStatus.SUCCEEDED
+                and self._prepared_record(run, request) is None
+            ):
+                run.nodes[prepare_id] = self._reset_legacy_node_state(
+                    run.nodes[prepare_id]
+                )
+            return
+
+        old_nodes = {node.node_id: node for node in run.plan.nodes}
+        old_states = dict(run.nodes)
+        next_plan = self.build_plan(request, iteration=run.iteration)
+        next_states: dict[str, RuntimeNodeState] = {}
+        for node in next_plan.nodes:
+            previous_node = old_nodes.get(node.node_id)
+            previous_state = old_states.get(node.node_id)
+            if previous_node is None or previous_state is None:
+                next_states[node.node_id] = RuntimeNodeState(node_id=node.node_id)
+            elif previous_state.status in {
+                RuntimeNodeStatus.RUNNING,
+                RuntimeNodeStatus.FAILED,
+            }:
+                next_states[node.node_id] = self._reset_legacy_node_state(
+                    previous_state
+                )
+            else:
+                next_states[node.node_id] = previous_state.model_copy(deep=True)
+        run.plan = next_plan
+        run.nodes = next_states
+        run.status = RuntimeRunStatus.RUNNING
+        run.completed_at = None
+        run.updated_at = datetime.now(UTC)
+
+    @staticmethod
     def _restore_result(run: AgentRun) -> AgentResult | None:
         """Restore the last durable business result after worker restart."""
 
@@ -476,34 +532,9 @@ class ResearchAnalysisRuntimeService:
         result_holder: dict[str, AgentResult] = {}
         request_for_plan = request
         request_for_attempt = request
+        self._upgrade_legacy_checkpoint(request, run)
         restored_result = self._restore_result(run)
         prepared_record = self._prepared_record(run, request)
-        _prepare_node_id, execute_node_id, _verify_node_id = (
-            self._current_node_ids(run)
-        )
-        prepare_node_id = self._prepare_node_id(run)
-        if prepared_record is None and prepare_node_id is None:
-            execute_succeeded = run.nodes[execute_node_id].status in {
-                RuntimeNodeStatus.SUCCEEDED,
-                RuntimeNodeStatus.SKIPPED,
-            }
-            if restored_result is None or not execute_succeeded:
-                try:
-                    prepared_record = self._build_prepared_record(request)
-                except ValueError as exc:
-                    if restored_result is None:
-                        raise RuntimeNodeError(
-                            "analysis_prepare_contract_invalid",
-                            "research analysis request failed prepare validation",
-                        ) from exc
-                if prepared_record is not None:
-                    control_data = dict(run.control_data)
-                    control_data[self.prepared_control_key] = prepared_record
-                    run.control_data = control_data
-                    if checkpoint_hook is not None:
-                        checkpoint_result = checkpoint_hook(run)
-                        if inspect.isawaitable(checkpoint_result):
-                            await checkpoint_result
         if prepared_record is not None:
             request_for_attempt = self._request_from_prepared(
                 request, prepared_record
@@ -516,7 +547,7 @@ class ResearchAnalysisRuntimeService:
             current: AgentRun, node: RuntimeNode
         ) -> RuntimeObservation:
             try:
-                prepared_record = self._build_prepared_record(request)
+                prepared_record = self._build_prepared_record(request_for_plan)
             except ValueError as exc:
                 raise RuntimeNodeError(
                     "analysis_prepare_contract_invalid",
