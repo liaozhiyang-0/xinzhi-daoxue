@@ -123,12 +123,19 @@ class RuntimeLaunchPolicy:
                     source="configured_launch_mode",
                     reason="runtime_lifecycle_disabled",
                 )
+            version_expectations_available = (
+                self._version_expectations_available(
+                    expected_agent_version,
+                    expected_runtime_plan_version,
+                )
+            )
             if (
                 self._release_gate_required
                 and configured
                 in {RuntimeLaunchMode.CANARY, RuntimeLaunchMode.DEFAULT}
                 and (
-                    self._release_registry is None
+                    not version_expectations_available
+                    or self._release_registry is None
                     or not self._release_registry.release_eligible(
                         agent_id,
                         expected_agent_version=expected_agent_version,
@@ -141,13 +148,17 @@ class RuntimeLaunchPolicy:
                     mode=RuntimeLaunchMode.LEGACY,
                     source="canary_release_gate",
                     reason=(
-                        self._release_registry.reason(
-                            agent_id,
-                            expected_agent_version=expected_agent_version,
-                            expected_runtime_plan_version=expected_runtime_plan_version,
+                        "canary_artifact_version_expectation_missing"
+                        if not version_expectations_available
+                        else (
+                            self._release_registry.reason(
+                                agent_id,
+                                expected_agent_version=expected_agent_version,
+                                expected_runtime_plan_version=expected_runtime_plan_version,
+                            )
+                            if self._release_registry is not None
+                            else "canary_release_evidence_missing"
                         )
-                        if self._release_registry is not None
-                        else "canary_release_evidence_missing"
                     ),
                 )
             return RuntimeLaunchDecision(
@@ -198,6 +209,18 @@ class RuntimeLaunchPolicy:
     @property
     def release_gate_required(self) -> bool:
         return self._release_gate_required
+
+    @staticmethod
+    def _version_expectations_available(
+        expected_agent_version: str | None,
+        expected_runtime_plan_version: str | None,
+    ) -> bool:
+        return bool(
+            expected_agent_version
+            and expected_agent_version.strip()
+            and expected_runtime_plan_version
+            and expected_runtime_plan_version.strip()
+        )
 
     @staticmethod
     def _explicit_runtime_option(

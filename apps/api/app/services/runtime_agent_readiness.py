@@ -130,16 +130,27 @@ class RuntimeAgentReadinessService:
         expected_plan_version = self.business_registry.runtime_plan_version(
             agent_id
         )
+        version_expectations_available = bool(
+            definition.version.strip()
+            and expected_plan_version
+            and expected_plan_version.strip()
+        )
         canary_eligible = self.release_registry.release_eligible(
             agent_id,
             expected_agent_version=definition.version,
             expected_runtime_plan_version=expected_plan_version,
         )
-        canary_reason = self.release_registry.reason(
-            agent_id,
-            expected_agent_version=definition.version,
-            expected_runtime_plan_version=expected_plan_version,
+        canary_reason = (
+            "canary_artifact_version_expectation_missing"
+            if not version_expectations_available
+            else self.release_registry.reason(
+                agent_id,
+                expected_agent_version=definition.version,
+                expected_runtime_plan_version=expected_plan_version,
+            )
         )
+        if not version_expectations_available:
+            canary_eligible = False
         blockers: list[str] = []
         if not runtime_plan_available:
             blockers.append("runtime_service_missing")

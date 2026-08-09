@@ -100,8 +100,11 @@ class RuntimeBusinessRegistry:
             ),
             None,
         )
-        version = getattr(service, "runtime_plan_version", None)
-        return version if isinstance(version, str) and version else None
+        for attribute in ("runtime_plan_version", "plan_version"):
+            version = getattr(service, attribute, None)
+            if isinstance(version, str) and version:
+                return version
+        return None
 
     def prepare_default_request(
         self, agent_id: str, request: AgentRequest

@@ -77,11 +77,11 @@ class RuntimeCanaryReleaseRegistry:
             return "canary_structural_gate_failed"
         if not report.evidence.release_ready:
             return "canary_authorized_evidence_missing"
-        if expected_agent_version and (
+        if expected_agent_version is not None and (
             report.evidence.agent_version != expected_agent_version
         ):
             return "canary_artifact_agent_version_mismatch"
-        if expected_runtime_plan_version and (
+        if expected_runtime_plan_version is not None and (
             report.evidence.runtime_plan_version
             != expected_runtime_plan_version
         ):
@@ -99,11 +99,11 @@ class RuntimeCanaryReleaseRegistry:
     ) -> bool:
         if not report.release_eligible:
             return False
-        if expected_agent_version and (
+        if expected_agent_version is not None and (
             report.evidence.agent_version != expected_agent_version
         ):
             return False
-        if expected_runtime_plan_version and (
+        if expected_runtime_plan_version is not None and (
             report.evidence.runtime_plan_version
             != expected_runtime_plan_version
         ):
