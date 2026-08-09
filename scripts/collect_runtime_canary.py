@@ -18,7 +18,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.runtime import (  # noqa: E402
+from app.runtime import (  # type: ignore[import-untyped]  # noqa: E402
     RuntimeCanaryEvidence,
     RuntimeCanaryPair,
     RuntimeCanarySuite,
