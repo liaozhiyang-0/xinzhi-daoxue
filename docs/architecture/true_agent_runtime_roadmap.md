@@ -50,9 +50,10 @@ contract tests 覆盖；它们说明 Runtime 合同已经落地，不等于所�
   崩溃质量仍需通过受授权的运行证据验证。
 - handler registry、typed subagent、预算/权限/幂等与 replay policy 已实现；synthetic
   handler 测试不代表真实 Provider、网络、检索质量或生产副作用已验证。
-- LangGraph 仍可能是 academic solver 的独立生产路径，当前必须审计其实际启用范围、
-  checkpoint backend、恢复语义和与 Runtime 的边界；这是一项路径审计/迁移决策，不应被
-  混写成 Runtime 核心代码“尚未完成”。
+- LangGraph 已确认是冻结 academic solver 的 Legacy/internal 图路径；开发环境可使用
+  进程内 memory saver，但生产配置明确拒绝 memory checkpoint。外层
+  `AcademicSolverRuntimeService` 的 durable Runtime checkpoint 不等于 LangGraph 内部图
+  自身跨进程可恢复，因此当前保留 Legacy 兼容边界，不宣称该内部图是默认 Runtime。
 - 剩余发布门槛是业务真实 Legacy/Runtime paired trace、独立 semantic sidecar、授权
   canary/default 决策及可回滚配置，而不是再补一套 synthetic Runtime 核心。
 
@@ -84,8 +85,8 @@ DAG 依赖推进、并发批次、预算与失败传播、`RuntimeController` �
 
 ### L2：Durable Run Service
 
-**状态：核心能力已实现并接入受支持 Runtime 路径；生产级跨进程与独立 LangGraph
-路径仍需审计/取证。**
+**状态：核心能力已实现并接入受支持 Runtime 路径；LangGraph 已确认是冻结 academic
+solver 的 Legacy/internal 图路径，其内部 durable backend 仍未提供。**
 
 新增 Run Repository 和恢复入口：
 
@@ -102,8 +103,8 @@ LearningLoop 的受控路径均有恢复/控制测试。安全重放与不可安
 
 数据库变更只允许新增增量 migration，不修改已提交 migration。现有测试证明的是
 repository/恢复合同和 synthetic fault scenarios；不能单独证明真实生产 worker 崩溃、SSE
-跨进程重连或 LangGraph 的生产恢复已经完成。LangGraph 是否仍有独立生产路径，以及该
-路径是否必须迁移到同一 durable backend，列为审计结论，而不是在本节虚构为已迁移。
+跨进程重连或 LangGraph 的生产恢复已经完成。LangGraph 内部图仍作为 Legacy 路径保留；
+是否必须迁移到同一 durable backend，列为后续决策，而不是在本节虚构为已迁移。
 
 ### L3：Tool/Agent Runtime
 
@@ -189,15 +190,15 @@ Runtime 合同，不代表真实 Provider 或生产流量验证完成。
 3. 恢复同一 Run、复用 request/launch identity、safe replay、unsafe side-effect
    reconcile、暂停/审批/输入控制及恢复测试。
 
-因此“代码尚未完成”不再是当前主要描述。仍未关闭的是证据与路径审计：真实生产 worker
-崩溃/跨进程恢复和 SSE 行为需要授权运行验证；还必须审计 LangGraph 是否存在独立生产
-路径、该路径是否仍使用进程内 checkpoint，以及是否应迁移/并行保留。未完成审计前，不
-宣称 LangGraph 已完成 durable 迁移或生产可恢复。
+因此“代码尚未完成”不再是当前主要描述。仍未关闭的是证据边界：真实生产 worker
+崩溃/跨进程恢复和 SSE 行为需要授权运行验证；LangGraph 内部图没有受支持的 durable
+backend，继续作为 Legacy/internal 路径保留，不能宣称其自身生产可恢复。
 
 ### Phase 3：Tool/Agent Handler Registry（实现完成；synthetic/provider-free 合同已覆盖）
 
 Phase 3 的 handler descriptor/registry、tool/Provider/internal-Agent adapter、typed
-subagent registry、预算/权限/风险/幂等/replay policy 和人工审批门已经实现；新增能力
+subagent registry、预算/权限/风险/幂等/replay policy、人工审批门和受限 input-schema
+校验已经实现；新增能力
 可以沿 descriptor + handler 注册边界接入，不需要为每个能力新增 TaskRunner 分支。相关
 注册、subagent、预算、审批、重放和 fail-closed 行为有 synthetic/provider-free tests。
 
@@ -293,8 +294,8 @@ Repository、handler registry 或 synthetic loop，而是关闭发布与路径�
    不一致时保持 release preflight fail-closed。
 3. 由有权限的发布决策者记录带回滚配置的 Canary/default 决策；在此之前不切换生产默认
    路径。
-4. 审计 LangGraph 是否仍有独立生产路径，核对实际 checkpoint backend、恢复语义以及
-   与 Runtime 的责任边界，再决定迁移、并行保留或下线。
+4. 保持 LangGraph 内部图与 Runtime durable checkpoint 的责任边界，继续作为 Legacy
+   兼容路径运行；只有在提供受支持 durable backend 和独立验证后，才评估进一步迁移。
 
 当前已增加 `AGENT_RUNTIME_SHADOW_ENABLED` 配置。开启后，旧 TaskRunner 会为每个任务
 创建一个明确标记为 `legacy.task_runner.*` 的兼容 Runtime Run，并在任务完成、失败或
