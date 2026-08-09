@@ -74,6 +74,25 @@ def test_explicit_opt_in_canary_works_without_agent_allowlist() -> None:
     assert decision.explicit_opt_in is True
 
 
+def test_explicit_opt_in_cannot_bypass_required_release_gate() -> None:
+    policy = RuntimeLaunchPolicy(
+        release_registry=RuntimeCanaryReleaseRegistry(),
+        release_gate_required=True,
+    )
+
+    decision = policy.resolve(
+        "GENERAL_QUESTION_V1",
+        _request({"general_question_runtime": {"execute": True}}),
+        lifecycle_enabled=True,
+        expected_agent_version=AGENT_VERSION,
+        expected_runtime_plan_version=RUNTIME_PLAN_VERSION,
+    )
+
+    assert decision.mode == RuntimeLaunchMode.LEGACY
+    assert decision.source == "canary_release_gate"
+    assert decision.reason == "canary_release_evidence_missing"
+
+
 def test_configured_runtime_mode_fails_closed_without_canary_artifact() -> None:
     policy = RuntimeLaunchPolicy(
         "GENERAL_QUESTION_V1=canary",

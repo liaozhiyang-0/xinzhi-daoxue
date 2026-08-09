@@ -811,15 +811,21 @@ class TaskRouter:
         )
         return {
             "enabled": definition.enabled,
-            "published": definition.publication_status in {"published", "local"},
-            "flow_configured": self.registry.is_configured(agent_id, self.settings),
+            "published": self.registry.is_execution_eligible(agent_id),
+            "flow_configured": (
+                self.registry.is_execution_eligible(agent_id)
+                and self.registry.is_configured(agent_id, self.settings)
+            ),
             "provider_available": (
-                internal_available
-                or definition.provider == "local"
-                or (
-                    self.settings.xingchen_enabled
-                    and bool(self.settings.xingchen_api_key.get_secret_value())
-                    and bool(self.settings.xingchen_api_secret.get_secret_value())
+                self.registry.is_execution_eligible(agent_id)
+                and (
+                    internal_available
+                    or definition.provider == "local"
+                    or (
+                        self.settings.xingchen_enabled
+                        and bool(self.settings.xingchen_api_key.get_secret_value())
+                        and bool(self.settings.xingchen_api_secret.get_secret_value())
+                    )
                 )
             ),
             "input_mode_supported": input_type in definition.supports,
@@ -1522,21 +1528,45 @@ class TaskRouter:
         runtime_available = local_analysis_v2 or self.registry.is_runtime_available(
             primary.agent_id, self.settings
         )
+        primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
         local_only = (
             primary.provider == "xingchen"
             and not cloud_allowed
             and not internal_available
         )
-        if local_only or not runtime_available:
+        if not primary_eligible or local_only or not runtime_available:
             fallback = self.registry.resolve_fallback(primary.agent_id)
-            if fallback is not None and self.registry.is_runtime_available(
-                fallback.agent_id, self.settings
+            if fallback is not None and self.registry.is_execution_eligible(
+                fallback.agent_id
+            ) and (
+                self.registry.is_runtime_available(fallback.agent_id, self.settings)
+                or self.registry.allows_unconfigured_route(fallback.agent_id)
             ):
                 selected = fallback
                 fallback_used = True
                 source = "local_degraded"
-            elif local_only:
-                source = "local_only"
+            elif primary_eligible and (
+                self.registry.allows_unconfigured_route(primary.agent_id)
+                or (
+                    local_only
+                    and self.registry.has_local_execution_contract(primary.agent_id)
+                )
+            ):
+                source = "local_only" if local_only else "local_degraded"
+            else:
+                return RouteDecision(
+                    agent_id="UNRESOLVED",
+                    scene=primary.scene,
+                    course_id=course_id,
+                    intent=intent,
+                    route_status=RouteStatus.UNRESOLVED,
+                    reason=f"configured agent unavailable: {primary.agent_id}",
+                    retrieval_required=False,
+                    provider_required=False,
+                    route_source="local_degraded",
+                    route_confidence=0.0,
+                    original_agent_id=primary.agent_id,
+                )
         self._ensure_supported(selected.agent_id, input_type)
         return RouteDecision(
             agent_id=selected.agent_id,
@@ -1556,6 +1586,7 @@ class TaskRouter:
                 and not internal_workflow_models_configured(
                     self.settings, selected.agent_id
                 )
+                and self.registry.is_runtime_available(selected.agent_id, self.settings)
             ),
             route_source=source,
             route_confidence=confidence,
@@ -1589,20 +1620,24 @@ class TaskRouter:
             and not cloud_allowed
             and not internal_available
         )
+        primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
 
-        if local_only or (
-            not primary.route_when_unconfigured
+        if not primary_eligible or local_only or (
+            not self.registry.allows_unconfigured_route(primary.agent_id)
             and not self.registry.is_runtime_available(primary.agent_id, self.settings)
         ):
             fallback = self.registry.resolve_fallback(primary.agent_id)
-            if fallback and (
-                fallback.route_when_unconfigured
+            if fallback and self.registry.is_execution_eligible(fallback.agent_id) and (
+                self.registry.allows_unconfigured_route(fallback.agent_id)
                 or self.registry.is_runtime_available(fallback.agent_id, self.settings)
             ):
                 selected = fallback
                 fallback_used = True
                 source = "local_degraded"
-            elif not local_only:
+            elif not primary_eligible or not (
+                local_only
+                and self.registry.has_local_execution_contract(primary.agent_id)
+            ):
                 return RouteDecision(
                     agent_id="UNRESOLVED",
                     scene=rule.scene,
@@ -1641,6 +1676,7 @@ class TaskRouter:
                 and not internal_workflow_models_configured(
                     self.settings, selected.agent_id
                 )
+                and self.registry.is_runtime_available(selected.agent_id, self.settings)
             ),
             route_source=source,
             route_confidence=0.9 if fallback_used else 0.98,
@@ -1670,7 +1706,7 @@ class TaskRouter:
             target = self.registry.get(target_agent_id)
         except KeyError as exc:
             raise RouteInvalidTargetError("云端调度返回未注册 Agent") from exc
-        if not target.enabled:
+        if not self.registry.is_execution_eligible(target.agent_id):
             raise RouteInvalidTargetError("云端调度返回未启用 Agent")
         if target.mode == "routing_only":
             raise RouteInvalidTargetError("云端调度目标不得再次进入调度 Agent")

@@ -116,6 +116,15 @@ class RuntimeAgentReadinessService:
             session_id="runtime-readiness",
             user_id="runtime-readiness",
         )
+        execution_blockers: list[str] = []
+        if not definition.enabled:
+            execution_blockers.append("agent_disabled")
+        if definition.execution_mode == "disabled":
+            execution_blockers.append("agent_execution_disabled")
+        if definition.publication_status not in {"published", "local"}:
+            execution_blockers.append(
+                f"agent_unpublished:{definition.publication_status}"
+            )
         decision = self.launch_policy.resolve(
             agent_id,
             request,
@@ -124,6 +133,12 @@ class RuntimeAgentReadinessService:
             expected_agent_version=definition.version,
             expected_runtime_plan_version=(
                 self.business_registry.runtime_plan_version(agent_id)
+            ),
+            execution_allowed=not execution_blockers,
+            execution_block_reason=(
+                execution_blockers[0]
+                if execution_blockers
+                else "agent_execution_unavailable"
             ),
         )
         configured = self.launch_policy.configured_mode(agent_id)
@@ -151,7 +166,11 @@ class RuntimeAgentReadinessService:
         )
         if not version_expectations_available:
             canary_eligible = False
+        if execution_blockers:
+            canary_eligible = False
+            canary_reason = execution_blockers[0]
         blockers: list[str] = []
+        blockers.extend(execution_blockers)
         if not runtime_plan_available:
             blockers.append("runtime_service_missing")
         if direct_services and not enabled_services:
@@ -161,7 +180,9 @@ class RuntimeAgentReadinessService:
                 blockers.append("runtime_lifecycle_disabled")
             if self.launch_policy.release_gate_required and not canary_eligible:
                 blockers.append(canary_reason)
-        if (
+        if execution_blockers:
+            status = "blocked"
+        elif (
             configured in {RuntimeLaunchMode.CANARY, RuntimeLaunchMode.DEFAULT}
             and blockers
         ):

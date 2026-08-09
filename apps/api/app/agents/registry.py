@@ -64,6 +64,7 @@ VALID_INPUT_MODES = {
     "pdf",
 }
 VALID_EXECUTION_MODES = {"local", "xingchen", "hybrid", "disabled"}
+VALID_PUBLICATION_STATUSES = {"published", "local"}
 VALID_VALIDATORS = {
     "generic",
     "learn_qa",
@@ -767,7 +768,7 @@ class AgentRegistry:
 
     def is_runtime_available(self, agent_id: str, settings: Settings) -> bool:
         agent = self.get(agent_id)
-        if not agent.enabled:
+        if not self.is_execution_eligible(agent_id):
             return False
         if internal_workflow_models_configured(settings, agent_id):
             return True
@@ -784,6 +785,8 @@ class AgentRegistry:
 
     def is_configured(self, agent_id: str, settings: Settings) -> bool:
         agent = self.get(agent_id)
+        if not self.is_execution_eligible(agent_id):
+            return False
         if internal_workflow_models_configured(settings, agent_id):
             return True
         if agent.provider == "local":
@@ -793,6 +796,35 @@ class AgentRegistry:
             and settings.xingchen_api_key.get_secret_value()
             and settings.xingchen_api_secret.get_secret_value()
             and self.resolve_flow_id(agent_id, settings)
+        )
+
+    def is_execution_eligible(self, agent_id: str) -> bool:
+        """Return whether an Agent may be selected for execution."""
+
+        agent = self.get(agent_id)
+        return bool(
+            agent.enabled
+            and agent.execution_mode != "disabled"
+            and agent.publication_status in VALID_PUBLICATION_STATUSES
+        )
+
+    def has_local_execution_contract(self, agent_id: str) -> bool:
+        """Return whether an eligible Agent declares a local/hybrid handler."""
+
+        agent = self.get(agent_id)
+        return bool(
+            self.is_execution_eligible(agent_id)
+            and agent.execution_mode in {"local", "hybrid"}
+            and agent.local_handler
+        )
+
+    def allows_unconfigured_route(self, agent_id: str) -> bool:
+        """Return whether the local/hybrid fallback contract permits routing."""
+
+        agent = self.get(agent_id)
+        return bool(
+            agent.route_when_unconfigured
+            and self.has_local_execution_contract(agent_id)
         )
 
     def resolve_fallback(self, agent_id: str) -> AgentDefinition | None:

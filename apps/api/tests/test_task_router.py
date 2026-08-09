@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from app.agents import AgentRegistry, TaskRouter
 from app.contracts import AgentRequest, AttachmentRef, RouteStatus
@@ -36,6 +38,69 @@ def test_ct_solve_routes_to_solver() -> None:
 
     assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
     assert decision.provider_required is False
+
+
+def test_solver_hybrid_fallback_routes_when_cloud_is_allowed_but_unconfigured() -> None:
+    task_request = request("CT", "solve_problem").model_copy(
+        update={
+            "options": {
+                "allow_cloud": True,
+                "_scenario_catalog_bound": True,
+                "scenario_agent_id": "SOLVER_CT_V1",
+            }
+        }
+    )
+    settings = Settings(
+        _env_file=None,
+        xingchen_enabled=True,
+        xingchen_api_key="",
+        xingchen_api_secret="",
+    )
+
+    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
+
+    assert decision.agent_id == "SOLVER_CT_V1"
+    assert decision.provider_required is False
+    assert decision.route_status == RouteStatus.SELECTED
+
+
+def test_unconfigured_provider_without_local_contract_is_not_selected() -> None:
+    task_request = request("CT", "academic_writing").model_copy(
+        update={"options": {"allow_cloud": True}}
+    )
+    settings = Settings(
+        _env_file=None,
+        xingchen_enabled=True,
+        xingchen_api_key="",
+        xingchen_api_secret="",
+    )
+
+    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
+
+    assert decision.agent_id == "UNRESOLVED"
+    assert decision.route_status == RouteStatus.UNRESOLVED
+
+
+def test_disabled_xingchen_agent_is_not_kept_by_local_only_routing() -> None:
+    registry = AgentRegistry()
+    primary = registry.get("ACADEMIC_PROBLEM_SOLVER")
+    registry._agents[primary.agent_id] = replace(
+        primary,
+        provider="xingchen",
+        enabled=False,
+        publication_status="published",
+        execution_mode="hybrid",
+        route_when_unconfigured=True,
+    )
+
+    decision = TaskRouter(registry, Settings(_env_file=None)).route(
+        request("CT", "solve_problem").model_copy(
+            update={"options": {"allow_cloud": False}}
+        )
+    )
+
+    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert decision.agent_id != primary.agent_id
 
 
 @pytest.mark.parametrize(

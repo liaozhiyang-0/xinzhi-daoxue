@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -51,6 +52,7 @@ class _UnversionedRuntimeService:
 def _readiness(
     services: list[object],
     *,
+    agent_registry: AgentRegistry | None = None,
     launch_modes: str = "",
     release_gate_required: bool = False,
     handler_registry: RuntimeHandlerRegistry | None = None,
@@ -67,7 +69,7 @@ def _readiness(
         else release_registry
     )
     return RuntimeAgentReadinessService(
-        AgentRegistry(),
+        agent_registry or AgentRegistry(),
         RuntimeBusinessRegistry(services),  # type: ignore[arg-type]
         RuntimeLaunchPolicy(
             launch_modes,
@@ -114,6 +116,40 @@ def test_direct_runtime_service_is_reported_as_implemented() -> None:
     assert item.runtime_plan_available is True
     assert item.runtime_services == ("_RuntimeService",)
     assert item.blockers == ()
+
+
+def test_disabled_agent_with_runtime_service_is_not_reported_ready() -> None:
+    readiness = _readiness([_RuntimeService()])
+    definition = readiness.agent_registry.get("GENERAL_QUESTION_V1")
+    readiness.agent_registry._agents[definition.agent_id] = replace(
+        definition, enabled=False
+    )
+
+    item = readiness.inspect(definition.agent_id)
+
+    assert item.status == "blocked"
+    assert item.effective_launch_mode == "legacy"
+    assert item.runtime_plan_available is True
+    assert "agent_disabled" in item.blockers
+    assert item.canary_release_eligible is False
+
+
+def test_unpublished_agent_with_runtime_service_is_not_reported_ready() -> None:
+    registry = AgentRegistry()
+    definition = registry.get("GENERAL_QUESTION_V1")
+    registry._agents[definition.agent_id] = replace(
+        definition, publication_status="planned"
+    )
+
+    item = _readiness(
+        [_RuntimeService()], agent_registry=registry
+    ).inspect(definition.agent_id)
+
+    assert item.status == "blocked"
+    assert item.effective_launch_mode == "legacy"
+    assert item.runtime_plan_available is True
+    assert "agent_unpublished:planned" in item.blockers
+    assert item.canary_release_eligible is False
 
 
 def test_configured_default_without_canary_is_blocked() -> None:
