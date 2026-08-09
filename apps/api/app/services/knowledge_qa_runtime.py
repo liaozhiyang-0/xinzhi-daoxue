@@ -107,6 +107,22 @@ class KnowledgeQARuntimeService:
                 continue
         return None
 
+    @staticmethod
+    def _evidence_count(run: AgentRun, result: AgentResult) -> int:
+        """Recover the retrieval count without changing the result contract."""
+        observations = [*run.observations]
+        for state in run.nodes.values():
+            if state.observation is not None:
+                observations.append(state.observation)
+        for observation in reversed(observations):
+            count = observation.facts.get("evidence_count")
+            if isinstance(count, int) and count >= 0:
+                return count
+        structured_count = result.structured_result.get("evidence_count")
+        if isinstance(structured_count, int) and structured_count >= 0:
+            return structured_count
+        return len(result.citations)
+
     async def run(
         self,
         request: AgentRequest,
@@ -160,34 +176,63 @@ class KnowledgeQARuntimeService:
                     "knowledge verification requires an execution result",
                 )
             mode = str(result.structured_result.get("mode", ""))
+            evidence_status = result.evidence_status.strip().lower()
+            evidence_count = self._evidence_count(_run, result)
+            citation_count = len(result.citations)
+            has_artifact = bool(result.artifacts)
             passed = (
                 result.status != AgentResultStatus.FAILED
                 and bool(result.answer.strip())
                 and mode in {"retrieval_only", "local_rag_model_generation"}
             )
-            if not passed:
+            facts = {
+                "passed": passed,
+                "result_status": result.status.value,
+                "mode": mode,
+                "evidence_status": evidence_status,
+                "evidence_count": evidence_count,
+                "citation_count": citation_count,
+            }
+            if evidence_status in {"sufficient", "complete"} and not (
+                citation_count or has_artifact
+            ):
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.PARTIAL,
+                    artifact_ids=[],
+                    facts={
+                        **facts,
+                        "passed": False,
+                        "needs_review": True,
+                        "reason_code": "knowledge_citations_missing",
+                    },
+                    warnings=list(result.warnings[:8]),
+                )
+            if evidence_status in {"insufficient", "none"}:
                 return RuntimeObservation(
                     node_id=_node.node_id,
                     terminal_status=RuntimeNodeStatus.PARTIAL,
                     artifact_ids=[item.artifact_id for item in result.artifacts],
                     facts={
+                        **facts,
                         "passed": False,
-                        "replan_required": False,
-                        "result_status": result.status.value,
-                        "mode": mode,
+                        "needs_review": True,
+                        "reason_code": "knowledge_evidence_insufficient",
                     },
+                    warnings=list(result.warnings[:8]),
+                )
+            if not passed:
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.PARTIAL,
+                    artifact_ids=[item.artifact_id for item in result.artifacts],
+                    facts={**facts, "passed": False, "replan_required": False},
                     warnings=list(result.warnings[:8]),
                 )
             return RuntimeObservation(
                 node_id=_node.node_id,
                 artifact_ids=[item.artifact_id for item in result.artifacts],
-                facts={
-                    "passed": True,
-                    "result_status": result.status.value,
-                    "mode": mode,
-                    "citation_count": len(result.citations),
-                    "evidence_status": result.evidence_status,
-                },
+                facts={**facts, "passed": True},
             )
 
         registry.register(
