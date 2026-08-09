@@ -3,9 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 
+from app.contracts import AgentEventType
 from app.models import TaskModel, TaskStatus
-from app.repositories import AgentRunRepository, RuntimePlanProposalRepository
+from app.repositories import (
+    AgentRunRepository,
+    RuntimePlanProposalRepository,
+    TaskRepository,
+)
 from app.runtime import AgentRun, AgentRunPlan, RuntimeNode
+from app.services.event_service import append_task_event
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
 
 
@@ -50,6 +56,49 @@ def test_sse_ids_follow_database_sequence(api, client) -> None:
     ]
     assert ids == sorted(ids)
     assert ids == list(range(1, len(ids) + 1))
+
+
+def test_concurrent_event_appends_keep_unique_contiguous_sequences(
+    api, app, client
+) -> None:
+    session = api.create_session()
+    task = api.create_task(session["id"])
+    api.wait_for_task(task["id"])
+
+    async def append_concurrently() -> list[int]:
+        async def append_one(worker_id: int) -> None:
+            async with app.state.session_factory() as db:
+                await append_task_event(
+                    db,
+                    task["id"],
+                    AgentEventType.AGENT_PROGRESS,
+                    data={"worker_id": worker_id},
+                )
+                await db.commit()
+
+        await asyncio.gather(*(append_one(worker_id) for worker_id in range(8)))
+        async with app.state.session_factory() as db:
+            events = await TaskRepository(db).list_events(task["id"])
+            return [event.sequence for event in events]
+
+    sequences = asyncio.run(append_concurrently())
+    assert sequences == list(range(1, len(sequences) + 1))
+    assert len(sequences) == len(set(sequences))
+
+    full_records = _parse_sse(client.get(f"/api/v1/tasks/{task['id']}/stream").text)
+    full_ids = [record["id"] for record in full_records]
+    assert full_ids == sequences
+
+    cutoff = full_ids[-4]
+    reconnect_records = _parse_sse(
+        client.get(
+            f"/api/v1/tasks/{task['id']}/stream",
+            headers={"Last-Event-ID": str(cutoff)},
+        ).text
+    )
+    reconnect_ids = [record["id"] for record in reconnect_records]
+    assert reconnect_ids == [event_id for event_id in full_ids if event_id > cutoff]
+    assert len(reconnect_ids) == len(set(reconnect_ids))
 
 
 def test_general_runtime_sse_reconnect_preserves_node_order(api, app, client) -> None:
