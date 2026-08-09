@@ -11,6 +11,14 @@
   <section id="execution-metrics" class="debug-section"><h2>最近执行概览</h2><p>正在读取脱敏聚合指标…</p></section>
   <section class="trace-loader"><label for="task-id">任务 ID</label><input id="task-id" placeholder="输入 task_…，或自动读取最近一次任务"><button id="load-execution" class="button" type="button">载入执行链</button></section>
   <div id="execution-notice" aria-live="polite"></div>
+  <section id="execution-live" class="execution-live" hidden aria-live="polite" data-live-state="idle">
+    <div class="execution-live-copy"><strong id="execution-live-title">实时事件通道</strong><p id="execution-live-detail">等待选择任务。</p></div>
+    <div class="execution-live-meta">
+      <span id="execution-live-transport" class="execution-live-transport">未连接</span>
+      <span id="execution-live-cursor">sequence —</span>
+      <button id="execution-live-reconnect" class="button secondary" type="button">重新连接</button>
+    </div>
+  </section>
   <section id="execution-console" hidden data-tabs>
     <header id="execution-summary" class="execution-summary"></header>
     <nav class="execution-tabs" aria-label="执行调试标签">

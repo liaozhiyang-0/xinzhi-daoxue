@@ -11,8 +11,26 @@ let learningRuntimeStatusToken = 0;
 let learningRuntimeControls = null;
 let learningRuntimeControlsRunId = "";
 let learningRuntimeControlsToken = 0;
+let executionEventStream = null;
+let executionEventStreamTaskId = "";
+let executionEventStreamCursor = 0;
+let executionEventStreamRetryTimer = null;
+let executionEventStreamRetryAttempts = 0;
+let executionEventStreamToken = 0;
+let executionEventStreamRefreshTimer = null;
+let executionEventStreamExhausted = false;
 const runtimePollStatuses = new Set(["running", "queued", "waiting_input", "waiting_approval", "paused"]);
 const runtimePollDelaysMs = [1000, 2000, 4000, 8000, 16000];
+const executionEventStreamRetryDelaysMs = [1000, 2000, 4000, 8000, 16000];
+const executionEventNames = [
+  "task.created", "task.queued", "task.running", "task.completed", "task.failed", "task.cancelled",
+  "agent.started", "agent.progress", "agent.input_required", "agent.input_submitted", "agent.output",
+  "plan.created", "plan.node_started", "plan.node_completed", "plan.rerouted", "route.selected", "route.reevaluated",
+  "intent.recognized", "skill.selected", "tool.selected", "subagent.spawned",
+  "knowledge.retrieved", "knowledge.query_normalized", "knowledge.context_built", "knowledge.insufficient",
+  "external_retrieval.started", "external_retrieval.completed", "external_retrieval.failed",
+  "answer.retrieval_only_created", "artifact.created", "cancel.requested",
+];
 const runtimeControlAllowedStatuses = {
   pause: new Set(["created", "queued", "running"]),
   resume: new Set(["paused", "waiting_input"]),
@@ -56,6 +74,132 @@ function displayValue(value) {
   }
   return String(value);
 }
+function executionLiveElement(id) { return document.getElementById(id); }
+function setExecutionLiveState(state, title, detail) {
+  const surface = executionLiveElement("execution-live");
+  if (!surface) return;
+  surface.hidden = false;
+  surface.dataset.liveState = state || "idle";
+  const titleElement = executionLiveElement("execution-live-title");
+  const detailElement = executionLiveElement("execution-live-detail");
+  const transportElement = executionLiveElement("execution-live-transport");
+  if (titleElement) titleElement.textContent = title || "实时事件通道";
+  if (detailElement) detailElement.textContent = detail || "未报告";
+  if (transportElement) transportElement.textContent = {
+    connected: "SSE 已连接",
+    reconnecting: "SSE 重连中",
+    error: "SSE 不可用",
+    closed: "SSE 已关闭",
+  }[state] || "未连接";
+}
+function setExecutionLiveCursor(cursor) {
+  const element = executionLiveElement("execution-live-cursor");
+  if (element) element.textContent = `sequence ${Number.isFinite(Number(cursor)) ? cursor : "—"}`;
+}
+function parseExecutionEvent(event) {
+  try {
+    const parsed = JSON.parse(event?.data || "{}");
+    return asRecord(parsed);
+  } catch (_error) {
+    return {};
+  }
+}
+function executionEventKind(eventName, data) {
+  const runtimeEvent = String(data?.runtime_event || "").toLowerCase();
+  const errorCode = String(data?.error_code || "").toLowerCase();
+  if (runtimeEvent.includes("failed") || runtimeEvent.includes("recovery_required") || errorCode.includes("reconcil")) return "error";
+  if (runtimeEvent.includes("recovered") || runtimeEvent.includes("checkpoint")) return "checkpoint";
+  if (eventName === "task.failed" || eventName === "external_retrieval.failed") return "error";
+  return "progress";
+}
+function scheduleExecutionEventRefresh(taskId, token) {
+  if (executionEventStreamRefreshTimer) window.clearTimeout(executionEventStreamRefreshTimer);
+  executionEventStreamRefreshTimer = window.setTimeout(async () => {
+    executionEventStreamRefreshTimer = null;
+    if (token !== executionEventStreamToken || executionEventStreamTaskId !== taskId) return;
+    await refreshExecutionOnce(taskId);
+  }, 250);
+}
+function closeExecutionEventStream({ hide = false } = {}) {
+  executionEventStreamToken += 1;
+  if (executionEventStreamRetryTimer) window.clearTimeout(executionEventStreamRetryTimer);
+  if (executionEventStreamRefreshTimer) window.clearTimeout(executionEventStreamRefreshTimer);
+  executionEventStreamRetryTimer = null;
+  executionEventStreamRefreshTimer = null;
+  if (executionEventStream) executionEventStream.close();
+  executionEventStream = null;
+  if (hide) {
+    const surface = executionLiveElement("execution-live");
+    if (surface) surface.hidden = true;
+  }
+}
+function scheduleExecutionEventReconnect(taskId, token) {
+  if (token !== executionEventStreamToken || executionEventStreamTaskId !== taskId) return;
+  if (executionEventStreamRetryTimer || executionEventStreamRetryAttempts >= executionEventStreamRetryDelaysMs.length) {
+    if (executionEventStreamRetryAttempts >= executionEventStreamRetryDelaysMs.length) {
+      executionEventStreamExhausted = true;
+      setExecutionLiveState("error", "SSE 事件通道不可用", "已停止自动重连；保留有限轮询，点击“重新连接”可再次尝试。\u00a0");
+    }
+    return;
+  }
+  const delay = executionEventStreamRetryDelaysMs[executionEventStreamRetryAttempts];
+  executionEventStreamRetryAttempts += 1;
+  setExecutionLiveState("reconnecting", "SSE 连接已断开", `${delay / 1000}s 后第 ${executionEventStreamRetryAttempts} 次重连；已收到的 sequence 会作为续传游标。`);
+  executionEventStreamRetryTimer = window.setTimeout(() => {
+    executionEventStreamRetryTimer = null;
+    connectExecutionEventStream(taskId, { preserveCursor: true, token, autoRetry: true });
+  }, delay);
+}
+function handleExecutionEvent(taskId, eventName, event, token) {
+  if (token !== executionEventStreamToken || executionEventStreamTaskId !== taskId) return;
+  const sequence = Number(event?.lastEventId);
+  if (Number.isSafeInteger(sequence) && sequence >= executionEventStreamCursor) executionEventStreamCursor = sequence;
+  setExecutionLiveCursor(executionEventStreamCursor);
+  const payload = parseExecutionEvent(event);
+  const runtimeEvent = payload.runtime_event || eventName;
+  const node = payload.node_id ? ` · node ${payload.node_id}` : "";
+  setExecutionLiveState("connected", `收到 ${runtimeEvent}`, `sequence ${executionEventStreamCursor}${node}；调试快照将随后刷新。`);
+  scheduleExecutionEventRefresh(taskId, token);
+  if (["task.completed", "task.failed", "task.cancelled"].includes(eventName)) {
+    closeExecutionEventStream();
+    setExecutionLiveState("closed", "任务已进入终态", `最后事件 ${eventName}；保留 sequence ${executionEventStreamCursor}，不再自动重连。`);
+  }
+}
+function connectExecutionEventStream(taskId, { preserveCursor = false, token = null, autoRetry = false } = {}) {
+  const id = String(taskId || "").trim();
+  if (!id) return;
+  if (token != null && token !== executionEventStreamToken) return;
+  if (typeof EventSource !== "function") {
+    executionEventStreamExhausted = true;
+    setExecutionLiveState("error", "SSE 不可用", "当前浏览器不支持 EventSource；保留有限轮询，不影响旧 Task 调试快照。");
+    return;
+  }
+  const newTask = executionEventStreamTaskId !== id;
+  closeExecutionEventStream();
+  executionEventStreamTaskId = id;
+  if (newTask || !preserveCursor) executionEventStreamCursor = 0;
+  if (!autoRetry) {
+    executionEventStreamRetryAttempts = 0;
+    executionEventStreamExhausted = false;
+  }
+  const streamToken = executionEventStreamToken;
+  const query = executionEventStreamCursor > 0 ? `?after=${encodeURIComponent(executionEventStreamCursor)}` : "";
+  setExecutionLiveCursor(executionEventStreamCursor);
+  setExecutionLiveState("reconnecting", "正在连接 SSE 事件通道", "使用现有 Task stream 合同；后端负责权限与事件顺序。");
+  const stream = new EventSource(`/api/v1/tasks/${encodeURIComponent(id)}/stream${query}`);
+  executionEventStream = stream;
+  stream.onopen = () => {
+    if (streamToken !== executionEventStreamToken) return;
+    setExecutionLiveState("connected", "SSE 事件通道已连接", `监听 task ${id}；Last-Event-ID 续传游标为 ${executionEventStreamCursor || "—"}。`);
+  };
+  executionEventNames.forEach((eventName) => stream.addEventListener(eventName, (event) => handleExecutionEvent(id, eventName, event, streamToken)));
+  stream.onerror = () => {
+    if (streamToken !== executionEventStreamToken) return;
+    stream.close();
+    executionEventStream = null;
+    scheduleExecutionEventReconnect(id, streamToken);
+  };
+}
 function runtimeControlEvent(data) {
   const events = Array.isArray(data.events) ? data.events : [];
   const statuses = new Set(["approval_required", "pause_requested", "resumed", "approved", "rejected", "applied"]);
@@ -95,7 +239,7 @@ function runtimeStatusNotice(runtime, controlEvent, handoff) {
     runtimeStatusBadge(runtime.status),
   ]);
 }
-function runtimeNodeSurface(runtime) {
+function runtimeNodeSurfaceLegacy(runtime) {
   const nodes = Array.isArray(runtime.nodes) ? runtime.nodes : [];
   if (!nodes.length) return el("div", { class: "empty-state", text: "本次响应未提供 Runtime node checkpoint。" });
   const counts = nodes.reduce((result, node) => { const key = runtimeStatusKey(node?.status) || "unknown"; result[key] = (result[key] || 0) + 1; return result; }, {});
@@ -107,6 +251,147 @@ function runtimeNodeSurface(runtime) {
     node.error_code ? el("p", { class: "runtime-node-error", text: `错误：${node.error_code}` }) : null,
   ])));
   return el("div", {}, [summary, list]);
+}
+function runtimePlanNodeRecords(data, runtime) {
+  const candidates = [
+    runtime?.plan?.nodes,
+    runtime?.plan_nodes,
+    data?.runtime_plan?.nodes,
+    data?.execution_plan?.nodes,
+  ];
+  return candidates.find((items) => Array.isArray(items)) || [];
+}
+function runtimeDependencySurface(data, runtime) {
+  const runtimeNodes = Array.isArray(runtime?.nodes) ? runtime.nodes : [];
+  const planNodes = runtimePlanNodeRecords(data, runtime);
+  const planById = new Map(planNodes.filter((item) => item && typeof item === "object").map((item) => [String(item.node_id || ""), item]));
+  const records = runtimeNodes.length ? runtimeNodes : planNodes;
+  if (!records.length) return el("div", { class: "empty-state", text: "No node dependency data reported." });
+  const graph = el("div", { class: "runtime-graph" });
+  records.forEach((node) => {
+    const nodeId = String(node?.node_id || "Unnamed node");
+    const planNode = planById.get(nodeId) || {};
+    const dependencies = node?.depends_on ?? node?.dependencies ?? planNode.depends_on ?? planNode.dependencies;
+    const hasDependencies = Array.isArray(dependencies);
+    const status = node?.status || planNode.status || "unknown";
+    graph.append(el("div", { class: "runtime-graph-row" }, [
+      el("strong", { text: nodeId }),
+      el("span", { class: `runtime-graph-dependencies${hasDependencies ? "" : " runtime-graph-empty"}`, text: hasDependencies ? (dependencies.length ? `depends_on: ${dependencies.join(", ")}` : "depends_on: none") : "depends_on: not reported by debug contract" }),
+      runtimeStatusBadge(status),
+    ]));
+  });
+  return graph;
+}
+function runtimeNodeSurfaceEnhanced(runtime) {
+  const nodes = Array.isArray(runtime?.nodes) ? runtime.nodes : [];
+  if (!nodes.length) return el("div", { class: "empty-state", text: "No Runtime node checkpoint reported." });
+  const counts = nodes.reduce((result, node) => { const key = runtimeStatusKey(node?.status) || "unknown"; result[key] = (result[key] || 0) + 1; return result; }, {});
+  const summary = el("div", { class: "runtime-node-summary" }, Object.entries(counts).map(([status, count]) => el("span", { class: "runtime-node-count" }, [runtimeStatusBadge(status), el("strong", { text: count })])));
+  const list = el("div", { class: "runtime-node-list" });
+  nodes.forEach((node) => {
+    const observation = asRecord(node?.observation);
+    const facts = asRecord(observation.facts);
+    const effect = asRecord(node?.runtime_effect);
+    const observationStatus = observation.terminal_status || (Object.keys(observation).length ? "reported" : "not_reported");
+    const warningCount = Array.isArray(observation.warnings) ? observation.warnings.length : 0;
+    const errorCount = Array.isArray(observation.errors) ? observation.errors.length : 0;
+    const effectStatus = node.effect_status || effect.status || "not_reported";
+    list.append(el("article", { class: "runtime-node-row" }, [
+      el("div", { class: "runtime-node-heading" }, [el("strong", { text: node.node_id || "Unnamed node" }), runtimeStatusBadge(node.status)]),
+      el("div", { class: "runtime-node-meta" }, [el("span", { text: `${node.node_type || "node"} · ${node.handler_id || "handler"}` }), el("span", { text: `attempt ${node.attempt ?? 0}` }), el("span", { text: `effect ${runtimeEffectLabels[runtimeStatusKey(effectStatus)] || effectStatus}` }), node.execution_key ? el("span", { text: `key ${node.execution_key}` }) : null]),
+      el("div", { class: "runtime-observation" }, [el("span", { text: `observation: ${observationStatus}` }), el("span", { text: `facts: ${Object.keys(facts).length}` }), el("span", { text: `warnings/errors: ${warningCount}/${errorCount}` })]),
+      node.error_code ? el("p", { class: "runtime-node-error", text: `error: ${node.error_code}` }) : null,
+    ]));
+  });
+  return el("div", {}, [summary, list]);
+}
+// Keep the existing renderer name as the compatibility seam used by older
+// Task pages while routing the Debug console through the richer projection.
+function runtimeNodeSurface(runtime) { return runtimeNodeSurfaceEnhanced(runtime); }
+function runtimeEventRecords(data) {
+  return (Array.isArray(data?.events) ? data.events : []).map((event) => ({
+    sequence: event?.sequence,
+    type: String(event?.type || "event"),
+    data: asRecord(event?.data),
+    createdAt: event?.created_at,
+  }));
+}
+function runtimePhaseSurface(data, runtime) {
+  const events = runtimeEventRecords(data);
+  const runtimeEvents = events.map((event) => String(event.data.runtime_event || "").toLowerCase());
+  const nodes = Array.isArray(runtime?.nodes) ? runtime.nodes : [];
+  const decision = asRecord(runtime?.last_decision);
+  const observability = asRecord(runtime?.observability);
+  const decisions = Array.isArray(observability.decisions) ? observability.decisions : [];
+  const verifications = Array.isArray(observability.verifications) ? observability.verifications : [];
+  const hasObservation = nodes.some((node) => Object.keys(asRecord(node?.observation)).length > 0)
+    || verifications.length > 0;
+  const hasDecision = Boolean(decision.action)
+    || decisions.length > 0
+    || events.some((event) => event.data.action || event.data.approval_scope || ["approval_required", "pause_requested", "resumed", "approved", "rejected", "applied"].includes(String(event.data.status || "").toLowerCase()));
+  const hasAction = runtimeEvents.some((event) => ["node_started", "node_completed", "node_retrying", "node_failed", "node_suspended", "node_recovered"].includes(event)) || nodes.some((node) => !["pending", "ready"].includes(runtimeStatusKey(node?.status)));
+  const hasVerification = verifications.length > 0
+    || nodes.some((node) => `${node?.node_type || ""} ${node?.handler_id || ""}`.toLowerCase().includes("verif"))
+    || (String(data?.validation?.status || "").toLowerCase() !== "not_run" && data?.validation?.status != null);
+  const hasReplan = runtimeEvents.includes("replan")
+    || runtimeStatusKey(decision.action) === "replan"
+    || decisions.some((item) => runtimeStatusKey(item?.action) === "replan")
+    || events.some((event) => String(event.data.action || "").toLowerCase() === "replan")
+    || Number(data?.reroute?.reroute_count) > 0;
+  const status = runtimeStatusKey(runtime?.status);
+  const phases = [
+    ["observe", hasObservation, "node observation / evidence"],
+    ["decide", hasDecision, "structured action or control event"],
+    ["act", hasAction, "node execution and effect"],
+    ["verify", hasVerification, "verification node or result validation"],
+    ["replan", hasReplan, "explicit replan or reroute"],
+  ];
+  const strip = el("div", { class: "runtime-phase-strip" });
+  phases.forEach(([name, reported, evidence]) => {
+    const waiting = name === "decide" && ["waiting_input", "waiting_approval", "paused"].includes(status);
+    const state = waiting ? "waiting" : reported ? "observed" : "not_reported";
+    strip.append(el("div", { class: "runtime-phase", "data-phase-state": state }, [
+      el("strong", { text: name }),
+      el("span", { text: waiting ? `waiting: ${status}` : reported ? `reported · ${evidence}` : "not reported by current snapshot" }),
+    ]));
+  });
+  return strip;
+}
+function runtimeResilienceSurface(data, runtime, controlEvent) {
+  const events = runtimeEventRecords(data);
+  const runtimeEvents = events.map((event) => String(event.data.runtime_event || "").toLowerCase());
+  const nodes = Array.isArray(runtime?.nodes) ? runtime.nodes : [];
+  const checkpoints = Array.isArray(runtime?.checkpoints) ? runtime.checkpoints : [];
+  const recoveryRequired = runtimeEvents.includes("node_recovery_required")
+    || events.some((event) => String(event.data.error_code || "").toLowerCase().includes("reconcil"))
+    || nodes.some((node) => runtimeStatusKey(node?.effect_status) === "unknown");
+  const recovered = runtimeEvents.includes("node_recovered")
+    || events.some((event) => String(event.data.status || "").toLowerCase() === "recovered");
+  const waiting = ["waiting_input", "waiting_approval", "paused"].includes(runtimeStatusKey(runtime?.status));
+  const cards = [
+    ["Checkpoint", Number(runtime?.state_version) > 0 ? "observed" : "not_reported", Number(runtime?.state_version) > 0 ? `state_version ${runtime.state_version}${checkpoints.length ? ` · ${checkpoints.length} snapshots` : ""}` : "state_version not reported"],
+    ["Recovery", recoveryRequired ? "attention" : recovered ? "observed" : "not_reported", recoveryRequired ? "reconciliation required or effect unknown" : recovered ? "safe replay reported" : "no recovery event reported"],
+    ["Control gate", waiting ? "attention" : controlEvent ? "observed" : "not_reported", waiting ? `waiting: ${runtimeStatusLabel(runtime.status)}` : controlEvent ? "control event reported" : "no pause/input/approval gate reported"],
+  ];
+  return el("div", { class: "runtime-resilience-grid" }, cards.map(([title, state, detail]) => el("article", { class: "runtime-resilience-card", "data-state": state }, [el("strong", { text: title }), el("span", { text: detail })])));
+}
+function runtimeEventSurface(data) {
+  const events = runtimeEventRecords(data).slice(-40).reverse();
+  if (!events.length) return el("div", { class: "empty-state", text: "No Task/SSE events reported." });
+  const list = el("div", { class: "runtime-event-list" });
+  events.forEach((event) => {
+    const runtimeEvent = event.data.runtime_event || event.type;
+    const node = event.data.node_id ? `node ${event.data.node_id}` : "task scope";
+    const detail = event.data.action
+      ? `${node} · action ${event.data.action}`
+      : `${node}${event.data.status ? ` · ${event.data.status}` : ""}${event.data.error_code ? ` · ${event.data.error_code}` : ""}`;
+    list.append(el("div", { class: "runtime-event-row", "data-event-kind": executionEventKind(event.type, event.data) }, [
+      el("span", { class: "runtime-event-sequence", text: `#${event.sequence ?? "—"}` }),
+      el("div", { class: "runtime-event-detail" }, [el("strong", { text: runtimeEvent }), el("span", { text: detail })]),
+      runtimeStatusBadge(event.data.status || "unknown"),
+    ]));
+  });
+  return list;
 }
 function runtimeControlSurface(runtime, controlEvent) {
   const eventData = controlEvent?.data || {};
@@ -624,6 +909,15 @@ function renderRuntime(data) {
     section("Node 状态", "按 Runtime checkpoint 展示每个节点的状态、尝试次数和副作用状态。", runtimeNodeSurface(runtime)),
     section("子运行", "展示 Runtime 已记录的子运行状态及其父节点关系。", runtimeChildrenSurface(runtime)),
   );
+  const runtimePanel = $("#runtime-panel");
+  if (runtimePanel && hasRuntime) {
+    runtimePanel.append(
+      section("Observe → Decide → Act → Verify → Replan", "仅按当前调试快照和已记录事件标记阶段；未返回的阶段保持未报告。", runtimePhaseSurface(data, runtime)),
+      section("依赖与执行拓扑", "优先使用后端返回的 depends_on；当前响应未提供时明确显示未报告，不从节点顺序推断依赖。", runtimeDependencySurface(data, runtime)),
+      section("Checkpoint / Recovery / Control", "把 state_version、副作用恢复和人工控制门聚合为操作员可读的安全边界。", runtimeResilienceSurface(data, runtime, controlEvent)),
+      section("Runtime 事件时间线", "展示 Task/SSE 已持久化的结构化事件；不展示隐藏思维链或未返回的内部决策。", runtimeEventSurface(data)),
+    );
+  }
 }
 
 function section(title, description, content) { return el("section", { class: "debug-section" }, [el("h2", { text: title }), el("p", { text: description }), content]); }
@@ -658,7 +952,13 @@ function renderCitation(data) { const answer = el("div", { class: "answer-previe
 
 function renderPerformance(data) { const perf = data.performance || {}; const context = perf.context || {}; const max = Math.max(1, ...(perf.waterfall || []).map((item) => Number(item.duration_ms) || 0)); const chart = el("div", { class: "waterfall" }); (perf.waterfall || []).forEach((item) => chart.append(el("div", { class: "waterfall-row" }, [el("span", { text: item.label }), el("div", { class: "waterfall-track" }, el("div", { class: "waterfall-bar", style: `width:${Math.max(1, (Number(item.duration_ms) || 0) / max * 100)}%` })), el("strong", { text: `${item.duration_ms || 0} ms` })]))); const budget = el("p", { text: `上下文估算 ${context.estimated_tokens || 0} / ${context.budget_tokens || 0} token；消息 ${context.message_count || 0}；缓存 ${context.cache_hit ? "命中" : "未命中"}（${context.cache_backend || "none"}）` }); $("#performance-panel").replaceChildren(section("执行时间与上下文预算", `总耗时 ${perf.total_ms || 0} ms；token 为保守估算值。`, el("div", {}, [budget, chart]))); }
 
-function renderAll(data) { execution = data; renderSummary(data); renderOverview(data); renderRuntime(data); loadLearningRuntimeStatus(data); loadLearningRuntimeControls(data); renderRoute(data); renderRetrieval(data); renderWorkflow(data); renderCitation(data); renderPerformance(data); $("#execution-console").hidden = false; }
+function renderAll(data) {
+  execution = data;
+  renderSummary(data); renderOverview(data); renderRuntime(data); loadLearningRuntimeStatus(data); loadLearningRuntimeControls(data); renderRoute(data); renderRetrieval(data); renderWorkflow(data); renderCitation(data); renderPerformance(data); $("#execution-console").hidden = false;
+  const taskId = String(data?.task?.id || "").trim();
+  const terminal = ["completed", "failed", "cancelled"].includes(runtimeStatusKey(data?.task?.status));
+  if (taskId && !terminal && !executionEventStream && !executionEventStreamRetryTimer && !executionEventStreamExhausted) connectExecutionEventStream(taskId);
+}
 
 function stopRuntimePolling() {
   runtimePollToken += 1;
@@ -703,6 +1003,9 @@ async function loadMetrics() {
 }
 
 async function loadExecution() {
+  closeExecutionEventStream({ hide: true });
+  executionEventStreamTaskId = "";
+  executionEventStreamExhausted = false;
   stopRuntimePolling();
   const requestToken = runtimePollToken;
   const id = $("#task-id").value.trim(); if (!id) { $("#execution-notice").replaceChildren(el("div", { class: "notice warning", text: "请先输入一个真实任务 ID。" })); return; }
@@ -718,7 +1021,14 @@ window.addEventListener("DOMContentLoaded", () => {
   const query = new URLSearchParams(location.search); $("#task-id").value = query.get("task_id") || localStorage.getItem("xinzhi_last_task") || "";
   all("[data-tab-target]").forEach((button) => button.addEventListener("click", () => { all("[data-tab-target]").forEach((item) => item.classList.toggle("active", item === button)); all("[data-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== button.dataset.tabTarget; }); }));
   $("#load-execution").addEventListener("click", loadExecution); $("#task-id").addEventListener("keydown", (event) => { if (event.key === "Enter") loadExecution(); });
+  $("#execution-live-reconnect")?.addEventListener("click", () => {
+    const taskId = String($("#task-id")?.value || execution?.task?.id || "").trim();
+    if (!taskId) return;
+    executionEventStreamRetryAttempts = 0;
+    connectExecutionEventStream(taskId, { preserveCursor: executionEventStreamTaskId === taskId });
+  });
   all("[data-runtime-action]").forEach((button) => button.addEventListener("click", () => executeRuntimeControl(button.dataset.runtimeAction)));
   if (location.pathname === "/debug/rag") document.querySelector('[data-tab-target="retrieval"]').click();
   if ($("#task-id").value) loadExecution();
 });
+window.addEventListener("beforeunload", () => closeExecutionEventStream({ hide: true }));
