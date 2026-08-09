@@ -31,6 +31,7 @@ from app.runtime import (
     RuntimeObservation,
     RuntimeRunStatus,
     RuntimeRunSuspended,
+    RuntimeStateMachine,
 )
 from app.services.external_retrieval import ExternalCitationValidator
 from app.services.external_retrieval_intent import ExternalRetrievalIntentRecognizer
@@ -55,6 +56,8 @@ class ExternalResearchRuntimeService:
     fetch_node_id = "research.fetch"
     answer_node_id = "research.answer"
     verify_node_id = "research.verify"
+    approval_scope = "external_research_evidence_review"
+    approval_control_key = "external_research_approval_granted"
 
     def __init__(
         self,
@@ -85,11 +88,18 @@ class ExternalResearchRuntimeService:
         )
 
     def build_plan(
-        self, request: AgentRequest, *, iteration: int = 0
+        self,
+        request: AgentRequest,
+        *,
+        iteration: int = 0,
+        answer_only: bool = False,
     ) -> AgentRunPlan:
         suffix = "" if iteration == 0 else f".replan.{iteration}"
-        intent_node_id = f"{self.intent_node_id}{suffix}"
-        fetch_node_id = f"{self.fetch_node_id}{suffix}"
+        intent_node_id = self.intent_node_id
+        fetch_node_id = self.fetch_node_id
+        if not answer_only:
+            intent_node_id = f"{self.intent_node_id}{suffix}"
+            fetch_node_id = f"{self.fetch_node_id}{suffix}"
         answer_node_id = f"{self.answer_node_id}{suffix}"
         verify_node_id = f"{self.verify_node_id}{suffix}"
         return AgentRunPlan(
@@ -134,6 +144,13 @@ class ExternalResearchRuntimeService:
                 "external_evidence_contract_verified",
             ],
         )
+
+    @staticmethod
+    def _requires_review(result: ExternalRetrievalResult) -> bool:
+        return result.status == "partial" or result.review_status in {
+            "failed",
+            "rejected",
+        }
 
     @staticmethod
     def _current_node_ids(run: AgentRun) -> tuple[str, str, str, str]:
@@ -241,6 +258,7 @@ class ExternalResearchRuntimeService:
             external_holder["result"] = restored_external
         if restored_result is not None:
             result_holder["result"] = restored_result
+        await self._restore_approved_review(run, checkpoint_hook)
         registry = RuntimeHandlerRegistry()
 
         async def intent_handler(
@@ -383,11 +401,20 @@ class ExternalResearchRuntimeService:
             )
             answer = await self.research_frontier.run(answer_request)
             result_holder["result"] = answer
+            answer_ok = answer.status != AgentResultStatus.FAILED and bool(
+                answer.answer.strip()
+            )
             return RuntimeObservation(
                 node_id=_node.node_id,
+                terminal_status=(
+                    RuntimeNodeStatus.SUCCEEDED
+                    if answer_ok
+                    else RuntimeNodeStatus.PARTIAL
+                ),
                 artifact_ids=[item.artifact_id for item in answer.artifacts],
                 facts={
                     "result_status": answer.status.value,
+                    "answer_present": bool(answer.answer.strip()),
                     "external_item_count": len(result.items),
                     "result_payload": answer.model_dump(mode="json"),
                 },
@@ -447,18 +474,37 @@ class ExternalResearchRuntimeService:
             )
             if external.items and self.policy.require_citations:
                 passed = passed and validation.valid
-            return RuntimeObservation(
-                node_id=_node.node_id,
-                terminal_status=(
+            requires_review = self._requires_review(external)
+            approval_granted = (
+                run.control_data.get(self.approval_control_key) is True
+            )
+            approval_required = requires_review and passed
+            if approval_granted:
+                control_data = dict(run.control_data)
+                control_data.pop(self.approval_control_key, None)
+                run.control_data = control_data
+            if approval_required and not approval_granted:
+                terminal_status = RuntimeNodeStatus.PARTIAL
+            else:
+                terminal_status = (
                     RuntimeNodeStatus.SUCCEEDED
                     if passed
                     else RuntimeNodeStatus.PARTIAL
-                ),
+                )
+            return RuntimeObservation(
+                node_id=_node.node_id,
+                terminal_status=terminal_status,
                 artifact_ids=[item.artifact_id for item in answer.artifacts],
                 facts={
                     "passed": passed,
+                    "requires_approval": approval_required and not approval_granted,
+                    "review_required": approval_required,
+                    "approval_granted": approval_granted,
+                    "replan_required": not passed,
                     "citation_status": "passed" if validation.valid else "failed",
                     "evidence_count": len(external.items),
+                    "external_status": external.status,
+                    "review_status": external.review_status,
                     "result_status": answer.status.value,
                 },
                 warnings=list(answer.warnings[:8]),
@@ -525,15 +571,48 @@ class ExternalResearchRuntimeService:
                 RuntimeNodeStatus.SUCCEEDED,
                 RuntimeNodeStatus.SKIPPED,
             }:
+                if current.nodes[answer_id].status in {
+                    RuntimeNodeStatus.PARTIAL,
+                    RuntimeNodeStatus.FAILED,
+                }:
+                    if current.iteration >= current.budget.max_iterations - 1:
+                        return RuntimeDecision(
+                            action=DecisionAction.FAIL,
+                            reason_codes=[
+                                "external_answer_replan_budget_exhausted"
+                            ],
+                        )
+                    return RuntimeDecision(
+                        action=DecisionAction.REPLAN,
+                        reason_codes=["external_answer_requires_replan"],
+                    )
                 return RuntimeDecision(
                     action=DecisionAction.EXECUTE,
                     node_ids=[answer_id],
                     reason_codes=["research_answer_required"],
                 )
-            if current.nodes[verify_id].status == RuntimeNodeStatus.PARTIAL:
+            if current.nodes[verify_id].status in {
+                RuntimeNodeStatus.PARTIAL,
+                RuntimeNodeStatus.FAILED,
+            }:
+                observation = current.nodes[verify_id].observation
+                facts = observation.facts if observation is not None else {}
+                if facts.get("requires_approval") is True:
+                    return RuntimeDecision(
+                        action=DecisionAction.REQUEST_APPROVAL,
+                        approval_scope=self.approval_scope,
+                        reason_codes=["external_evidence_review_required"],
+                    )
+                if current.iteration >= current.budget.max_iterations - 1:
+                    return RuntimeDecision(
+                        action=DecisionAction.FAIL,
+                        reason_codes=[
+                            "external_verification_replan_budget_exhausted"
+                        ],
+                    )
                 return RuntimeDecision(
-                    action=DecisionAction.FAIL,
-                    reason_codes=["external_evidence_verification_failed"],
+                    action=DecisionAction.REPLAN,
+                    reason_codes=["external_verification_requires_replan"],
                 )
             if current.nodes[verify_id].status not in {
                 RuntimeNodeStatus.SUCCEEDED,
@@ -549,6 +628,13 @@ class ExternalResearchRuntimeService:
                 reason_codes=["external_research_runtime_verified"],
             )
 
+        def replan(current: AgentRun, _decision: RuntimeDecision) -> AgentRunPlan:
+            return self.build_plan(
+                request_for_attempt,
+                iteration=current.iteration,
+                answer_only=True,
+            )
+
         controller = RuntimeController(
             PlanExecutor(
                 registry,
@@ -559,6 +645,7 @@ class ExternalResearchRuntimeService:
             checkpoint_hook=checkpoint_hook,
             control_provider=control_provider,
             decision_event_hook=decision_event_hook,
+            replan_provider=replan,
             plan_proposal_provider=plan_proposal_provider,
         )
         await controller.run(run)
@@ -572,6 +659,31 @@ class ExternalResearchRuntimeService:
         if result is None:
             raise RuntimeNodeError("external_research_result_missing")
         return result
+
+    async def _restore_approved_review(
+        self,
+        run: AgentRun,
+        checkpoint_hook: Callable[[AgentRun], Any] | None,
+    ) -> None:
+        if run.status != RuntimeRunStatus.WAITING_APPROVAL:
+            return
+        if run.control_data.get("approved") is not True:
+            return
+        if (
+            run.last_decision is None
+            or run.last_decision.approval_scope != self.approval_scope
+        ):
+            return
+        control_data = dict(run.control_data)
+        control_data.pop("approved", None)
+        control_data[self.approval_control_key] = True
+        run.control_data = control_data
+        RuntimeStateMachine.replace_plan(run, run.plan.model_copy(deep=True))
+        if checkpoint_hook is None:
+            return
+        checkpoint_result = checkpoint_hook(run)
+        if inspect.isawaitable(checkpoint_result):
+            await checkpoint_result
 
     async def _emit_external_event(
         self,

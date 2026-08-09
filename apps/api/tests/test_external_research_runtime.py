@@ -6,6 +6,7 @@ import pytest
 from app.contracts import (
     AgentRequest,
     AgentResult,
+    AgentResultStatus,
     ExternalEvidenceItem,
     ExternalEvidenceSupport,
     ExternalRetrievalPolicy,
@@ -24,6 +25,9 @@ from pydantic import AnyHttpUrl, TypeAdapter
 
 
 class FakeResearchFrontier:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def classify_intent(
         self, _request: AgentRequest
     ) -> ResearchIntentDecision:
@@ -34,6 +38,7 @@ class FakeResearchFrontier:
         )
 
     async def run(self, request: AgentRequest) -> AgentResult:
+        self.calls += 1
         external = request.options["external_retrieval"]
         assert isinstance(external, dict)
         evidence_id = str(external["items"][0]["evidence_id"])
@@ -44,6 +49,37 @@ class FakeResearchFrontier:
             structured_result={
                 "status": "completed",
                 "external_references": [evidence_id],
+            },
+            evidence_status="sufficient",
+        )
+
+
+class SequencedResearchFrontier(FakeResearchFrontier):
+    def __init__(self, *modes: str) -> None:
+        super().__init__()
+        self.modes = list(modes)
+
+    async def run(self, request: AgentRequest) -> AgentResult:
+        self.calls += 1
+        external = request.options["external_retrieval"]
+        assert isinstance(external, dict)
+        evidence_id = str(external["items"][0]["evidence_id"])
+        mode = self.modes.pop(0) if self.modes else "valid"
+        if mode == "failed":
+            return AgentResult(
+                status=AgentResultStatus.FAILED,
+                agent_id="RESEARCH_01_ACADEMIC_SEARCH_V1",
+                provider="local_agent",
+                warnings=["synthetic answer failure"],
+            )
+        reference_id = "missing-paper" if mode == "invalid_citation" else evidence_id
+        return AgentResult(
+            agent_id="RESEARCH_01_ACADEMIC_SEARCH_V1",
+            provider="local_agent",
+            answer=f"A finding [{reference_id}]",
+            structured_result={
+                "status": "completed",
+                "external_references": [reference_id],
             },
             evidence_status="sufficient",
         )
@@ -73,6 +109,26 @@ def _external_result(
         ],
         provider_status={"fake": "completed"},
         retrieval_trace_id=retrieval_trace_id,
+    )
+
+
+def _runtime_request(task_id: str) -> AgentRequest:
+    return AgentRequest(
+        task_id=task_id,
+        session_id=f"{task_id}-session",
+        user_id=f"{task_id}-user",
+        canonical_input={"text": "latest agent planning papers"},
+        options={"external_research_runtime": {"execute": True}},
+    )
+
+
+def _degraded_external_result(query: str) -> ExternalRetrievalResult:
+    return _external_result(query).model_copy(
+        update={
+            "status": "partial",
+            "review_status": "failed",
+            "warnings": ["synthetic degraded review"],
+        }
     )
 
 
@@ -184,6 +240,257 @@ async def test_external_research_runtime_executes_intent_fetch_answer_verify() -
     )
     assert run.nodes["research.verify"].observation is not None
     assert run.nodes["research.verify"].observation.facts["passed"] is True
+
+
+@pytest.mark.asyncio
+async def test_external_research_runtime_review_waits_for_approval_and_resumes(
+) -> None:
+    fetch_calls = 0
+
+    async def retrieve(
+        request: AgentRequest,
+        _policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool,
+    ) -> ExternalRetrievalResult:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        assert allow_degraded_review is True
+        return _degraded_external_result(str(request.canonical_input["text"]))
+
+    frontier = FakeResearchFrontier()
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+    service = ExternalResearchRuntimeService(
+        frontier,  # type: ignore[arg-type]
+        policy=policy,
+        retrieve=retrieve,
+        external_enabled=True,
+        enabled=True,
+    )
+    request = _runtime_request("external-approval-task")
+    plan = service.build_plan(request)
+    run = AgentRun(
+        run_id="external-approval-run",
+        task_id=request.task_id,
+        goal=plan.goal,
+        plan=plan,
+    )
+
+    with pytest.raises(RuntimeRunSuspended):
+        await service.run(request, run)
+
+    assert run.status.value == "waiting_approval"
+    assert run.last_decision is not None
+    assert run.last_decision.approval_scope == service.approval_scope
+    assert run.nodes["research.fetch"].status == RuntimeNodeStatus.SUCCEEDED
+    assert run.nodes["research.verify"].status == RuntimeNodeStatus.PARTIAL
+    assert fetch_calls == 1
+
+    run.control_data["approved"] = True
+    result = await service.run(request, run)
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert run.status.value == "completed"
+    assert fetch_calls == 1
+    assert frontier.calls == 1
+    assert run.control_data == {}
+    assert run.nodes["research.fetch"].attempt == 1
+    assert run.nodes["research.verify"].observation is not None
+    assert run.nodes["research.verify"].observation.facts["approval_granted"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_mode", ["answer", "verify"])
+async def test_external_research_runtime_replans_answer_only_without_refetch(
+    failure_mode: str,
+) -> None:
+    fetch_calls = 0
+
+    async def retrieve(
+        request: AgentRequest,
+        _policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool,
+    ) -> ExternalRetrievalResult:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        assert allow_degraded_review is True
+        return _external_result(str(request.canonical_input["text"]))
+
+    frontier = SequencedResearchFrontier(
+        "failed" if failure_mode == "answer" else "invalid_citation",
+        "valid",
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+    service = ExternalResearchRuntimeService(
+        frontier,  # type: ignore[arg-type]
+        policy=policy,
+        retrieve=retrieve,
+        external_enabled=True,
+        enabled=True,
+    )
+    request = _runtime_request(f"external-replan-{failure_mode}-task")
+    plan = service.build_plan(request)
+    run = AgentRun(
+        run_id=f"external-replan-{failure_mode}-run",
+        task_id=request.task_id,
+        goal=plan.goal,
+        plan=plan,
+    )
+
+    result = await service.run(request, run)
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert run.iteration == 1
+    assert fetch_calls == 1
+    assert frontier.calls == 2
+    assert set(run.nodes) == {
+        "research.intent",
+        "research.fetch",
+        "research.answer.replan.1",
+        "research.verify.replan.1",
+    }
+    assert run.nodes["research.fetch"].status == RuntimeNodeStatus.SUCCEEDED
+    assert run.nodes["research.fetch"].attempt == 1
+    assert run.nodes["research.answer.replan.1"].status == (
+        RuntimeNodeStatus.SUCCEEDED
+    )
+    assert run.nodes["research.verify.replan.1"].status == (
+        RuntimeNodeStatus.SUCCEEDED
+    )
+
+
+@pytest.mark.asyncio
+async def test_external_research_runtime_bounds_answer_only_replans() -> None:
+    fetch_calls = 0
+
+    async def retrieve(
+        request: AgentRequest,
+        _policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool,
+    ) -> ExternalRetrievalResult:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        assert allow_degraded_review is True
+        return _external_result(str(request.canonical_input["text"]))
+
+    frontier = SequencedResearchFrontier("failed", "failed", "failed")
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+    service = ExternalResearchRuntimeService(
+        frontier,  # type: ignore[arg-type]
+        policy=policy,
+        retrieve=retrieve,
+        external_enabled=True,
+        enabled=True,
+    )
+    request = _runtime_request("external-replan-budget-task")
+    plan = service.build_plan(request)
+    run = AgentRun(
+        run_id="external-replan-budget-run",
+        task_id=request.task_id,
+        goal=plan.goal,
+        plan=plan,
+    )
+
+    result = await service.run(request, run)
+
+    assert result.status == AgentResultStatus.FAILED
+    assert run.iteration == 2
+    assert fetch_calls == 1
+    assert frontier.calls == 3
+    assert run.last_decision is not None
+    assert run.last_decision.reason_codes == [
+        "external_answer_replan_budget_exhausted"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_external_research_runtime_recovery_restores_checkpointed_result(
+) -> None:
+    fetch_calls = 0
+
+    async def retrieve(
+        request: AgentRequest,
+        _policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool,
+    ) -> ExternalRetrievalResult:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        assert allow_degraded_review is True
+        trace_id = request.options.get("external_retrieval_trace_id")
+        assert isinstance(trace_id, str) and trace_id
+        return _external_result(
+            str(request.canonical_input["text"]),
+            retrieval_trace_id=trace_id,
+        )
+
+    first_frontier = FakeResearchFrontier()
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+    first_service = ExternalResearchRuntimeService(
+        first_frontier,  # type: ignore[arg-type]
+        policy=policy,
+        retrieve=retrieve,
+        external_enabled=True,
+        enabled=True,
+    )
+    request = _runtime_request("external-checkpoint-result-task")
+    plan = first_service.build_plan(request)
+    run = AgentRun(
+        run_id="external-checkpoint-result-run",
+        task_id=request.task_id,
+        goal=plan.goal,
+        plan=plan,
+    )
+    process_loss_simulated = False
+
+    async def checkpoint(run_to_checkpoint: AgentRun) -> None:
+        nonlocal process_loss_simulated
+        if (
+            not process_loss_simulated
+            and run_to_checkpoint.nodes["research.fetch"].status
+            == RuntimeNodeStatus.SUCCEEDED
+            and run_to_checkpoint.nodes["research.answer"].status
+            == RuntimeNodeStatus.READY
+        ):
+            process_loss_simulated = True
+            raise RuntimeError("simulated checkpoint loss after fetch")
+
+    with pytest.raises(
+        RuntimeError, match="simulated checkpoint loss after fetch"
+    ):
+        await first_service.run(request, run, checkpoint_hook=checkpoint)
+    assert fetch_calls == 1
+    assert run.nodes["research.fetch"].observation is not None
+    assert "external_result_payload" in run.nodes["research.fetch"].observation.facts
+
+    second_frontier = FakeResearchFrontier()
+    second_service = ExternalResearchRuntimeService(
+        second_frontier,  # type: ignore[arg-type]
+        policy=policy,
+        retrieve=retrieve,
+        external_enabled=True,
+        enabled=True,
+    )
+    result = await second_service.run(request, run)
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert fetch_calls == 1
+    assert second_frontier.calls == 1
+    assert run.nodes["research.fetch"].attempt == 1
 
 
 @pytest.mark.asyncio
