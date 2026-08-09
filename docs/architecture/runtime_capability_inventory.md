@@ -215,3 +215,13 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 ## 9. 维护规则
 
 每次新增 Agent、Runtime service、学习动作或入口时，同一变更必须更新本盘点对应表格，并补充：事实来源路径、输入/结果合同、Registry/readiness/control 状态、Legacy 分支、版本和验收证据。若只实现了 Runtime 类而未完成注册、控制、结果交接或证据，不得把状态写成“已迁移”。
+
+## 10. Control projection checkpoint
+
+The cross-entry descriptor and LearningLoop status projection now share a
+provider-free, fail-closed control policy. Task Runtime defaults to the
+unified pause/resume/approval/input surface; LearningLoop exposes only
+approval while waiting for approval. Unknown runtime kinds and terminal or
+unsupported states expose no controls. This policy describes availability
+only; ownership, identity, state-version, persistence, and domain result
+commit remain enforced by the existing backend services.

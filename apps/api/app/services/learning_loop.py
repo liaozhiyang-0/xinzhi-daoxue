@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 import yaml
@@ -42,6 +42,7 @@ from app.services.learning_progress_runtime import (
 )
 from app.services.practice_generation import PracticeGenerationService
 from app.services.retest_plans import RetestPlanService
+from app.services.runtime_control_policy import control_policy_for_runtime_kind
 from app.services.session_working_state import SessionWorkingStateService
 from app.services.student_answer_review import StudentAnswerReviewService
 from app.services.student_attempts import StudentAttemptService
@@ -548,6 +549,10 @@ class LearningLoopService:
             "learning_progress",
         }:
             raise NotFoundError("learning Runtime run not found")
+        run_kind = cast(
+            Literal["teaching_interaction", "learning_progress"],
+            model.run_kind,
+        )
         task = await session.get(TaskModel, model.task_id)
         if task is None or (user_id and task.user_id != user_id):
             raise NotFoundError("learning Runtime run not found")
@@ -568,11 +573,12 @@ class LearningLoopService:
             for node in run.plan.nodes
         ]
         status = run.status.value
+        control_policy = control_policy_for_runtime_kind(run_kind)
         return LearningRuntimeStatusRead(
             run_id=run.run_id,
             task_id=run.task_id,
             runtime_id=model.agent_id,
-            run_kind=model.run_kind,
+            run_kind=run_kind,
             status=status,
             state_version=run.state_version,
             goal=run.goal,
@@ -581,7 +587,9 @@ class LearningLoopService:
             goal_source=goal.source,
             node_statuses=node_statuses,
             available_controls=(
-                ["approve"] if status == "waiting_approval" else []
+                ["approve"]
+                if control_policy.allows("approve", status)
+                else []
             ),
             approval_required=status == "waiting_approval",
             resumable=status in {"paused", "waiting_input", "waiting_approval"},

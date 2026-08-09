@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from app.services.runtime_business_registry import RuntimeBusinessService
+from app.services.runtime_control_policy import control_policy_for_runtime_kind
 
 CapabilityDomain = Literal["task_agent", "learning_loop"]
 
@@ -138,6 +139,10 @@ def descriptor_from_task_runtime_service(
         "version",
         default="unversioned",
     )
+    control_scope = _first_text(
+        service, "control_scope", default="task_runtime"
+    )
+    control_policy = control_policy_for_runtime_kind(control_scope)
     return RuntimeCapabilityDescriptor(
         capability_id=_first_text(service, "capability_id", default=capability_id),
         domain="task_agent",
@@ -147,16 +152,30 @@ def descriptor_from_task_runtime_service(
         supported_actions=_read_actions(
             service, default=TASK_RUNTIME_ACTIONS
         ),
-        supports_pause=_read_bool(service, "supports_pause", default=True),
-        supports_resume=_read_bool(service, "supports_resume", default=True),
-        supports_approval=_read_bool(service, "supports_approval", default=True),
-        supports_input=_read_bool(service, "supports_input", default=True),
+        supports_pause=_read_bool(
+            service,
+            "supports_pause",
+            default="pause" in control_policy.declared_controls,
+        ),
+        supports_resume=_read_bool(
+            service,
+            "supports_resume",
+            default="resume" in control_policy.declared_controls,
+        ),
+        supports_approval=_read_bool(
+            service,
+            "supports_approval",
+            default="approve" in control_policy.declared_controls,
+        ),
+        supports_input=_read_bool(
+            service,
+            "supports_input",
+            default="input" in control_policy.declared_controls,
+        ),
         result_contract=_first_text(
             service, "result_contract", default="agent_result.v1"
         ),
-        control_scope=_first_text(
-            service, "control_scope", default="task_runtime"
-        ),
+        control_scope=control_scope,
     )
 
 
@@ -217,6 +236,10 @@ def _descriptor_from_learning_service(
     default_actions: tuple[str, ...],
 ) -> RuntimeCapabilityDescriptor:
     capability_id = _required_text(service, "agent_id")
+    control_scope = _first_text(
+        service, "control_scope", default="learning_loop"
+    )
+    control_policy = control_policy_for_runtime_kind(control_scope)
     return RuntimeCapabilityDescriptor(
         capability_id=_first_text(service, "capability_id", default=capability_id),
         domain="learning_loop",
@@ -234,16 +257,30 @@ def _descriptor_from_learning_service(
         supported_actions=_read_actions(service, default=default_actions),
         # LearningLoop currently exposes approve, while pause/resume remain
         # owned by the Task Runtime control surface.
-        supports_pause=_read_bool(service, "supports_pause", default=False),
-        supports_resume=_read_bool(service, "supports_resume", default=False),
-        supports_approval=_read_bool(service, "supports_approval", default=True),
-        supports_input=_read_bool(service, "supports_input", default=True),
+        supports_pause=_read_bool(
+            service,
+            "supports_pause",
+            default="pause" in control_policy.declared_controls,
+        ),
+        supports_resume=_read_bool(
+            service,
+            "supports_resume",
+            default="resume" in control_policy.declared_controls,
+        ),
+        supports_approval=_read_bool(
+            service,
+            "supports_approval",
+            default="approve" in control_policy.declared_controls,
+        ),
+        supports_input=_read_bool(
+            service,
+            "supports_input",
+            default="input" in control_policy.declared_controls,
+        ),
         result_contract=_first_text(
             service, "result_contract", default="learning_action_response.v1"
         ),
-        control_scope=_first_text(
-            service, "control_scope", default="learning_loop"
-        ),
+        control_scope=control_scope,
     )
 
 

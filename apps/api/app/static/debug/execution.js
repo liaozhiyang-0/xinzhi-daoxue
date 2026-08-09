@@ -5,6 +5,9 @@ let runtimePollToken = 0;
 let runtimePollAttempts = 0;
 let runtimeControlBusy = false;
 let runtimeControlFeedback = null;
+let learningRuntimeStatus = null;
+let learningRuntimeStatusRunId = "";
+let learningRuntimeStatusToken = 0;
 const runtimePollStatuses = new Set(["running", "queued", "waiting_input", "waiting_approval", "paused"]);
 const runtimePollDelaysMs = [1000, 2000, 4000, 8000, 16000];
 const runtimeControlAllowedStatuses = {
@@ -107,6 +110,10 @@ function safeRuntimeControlError(error) {
 function renderRuntimeControls(data) {
   const panel = $("#runtime-controls");
   if (!panel) return;
+  if (learningRuntimeReference(data)) {
+    panel.hidden = true;
+    return;
+  }
   const taskId = String(data?.task?.id || $("#task-id")?.value || "").trim();
   panel.hidden = !taskId;
   if (!taskId) return;
@@ -221,14 +228,76 @@ function runtimeChildrenSurface(runtime) {
   ])));
   return list;
 }
+function learningRuntimeReference(data) {
+  const runtime = asRecord(data?.runtime);
+  const inline = data?.learning_runtime;
+  const learning = asRecord(inline);
+  const runKind = String(learning.run_kind || data?.runtime_kind || runtime.run_kind || "").trim();
+  const controlScope = learning.control_scope || data?.control_scope || runtime.control_scope;
+  const isLearningLoop = inline != null || data?.runtime_run_id || controlScope === "learning_loop" || ["teaching_interaction", "learning_progress"].includes(runKind);
+  if (!isLearningLoop) return null;
+  const runId = learning.runtime_run_id || learning.run_id || data?.runtime_run_id || runtime.runtime_run_id || (runKind ? runtime.run_id : "");
+  if (!runId) return null;
+  const status = learning.status || learning.runtime_status || data?.runtime_status || runtime.status;
+  const snapshot = asRecord(data?.learning_runtime_status || inline || (controlScope === "learning_loop" ? runtime : {}));
+  return { runId: String(runId), runKind, status, snapshot };
+}
+function learningRuntimeStatusSurface(reference) {
+  const snapshot = learningRuntimeStatusRunId === reference.runId && learningRuntimeStatus
+    ? learningRuntimeStatus
+    : reference.snapshot;
+  const controls = Array.isArray(snapshot.available_controls) ? snapshot.available_controls : undefined;
+  return section("LearningLoop Runtime (read-only)", "只读取 LearningLoop Runtime 状态；可用控制动作仅按后端返回展示，不在此页面执行控制。", kvSurface("Runtime status contract", [
+    ["runtime_id", snapshot.runtime_id || snapshot.runtime_run_id || snapshot.run_id || reference.runId],
+    ["status", snapshot.status || snapshot.runtime_status || reference.status],
+    ["control_scope", snapshot.control_scope],
+    ["available_controls", controls],
+  ]));
+}
+function loadLearningRuntimeStatus(data) {
+  const reference = learningRuntimeReference(data);
+  if (!reference) {
+    learningRuntimeStatus = null;
+    learningRuntimeStatusRunId = "";
+    learningRuntimeStatusToken += 1;
+    return;
+  }
+  const inlineContract = reference.snapshot.control_scope && Array.isArray(reference.snapshot.available_controls);
+  if (inlineContract) {
+    learningRuntimeStatus = reference.snapshot;
+    learningRuntimeStatusRunId = reference.runId;
+    return;
+  }
+  if (learningRuntimeStatusRunId === reference.runId && learningRuntimeStatus) return;
+  learningRuntimeStatusRunId = reference.runId;
+  learningRuntimeStatus = {
+    ...reference.snapshot,
+    run_id: reference.runId,
+    status: reference.snapshot.status || reference.status,
+    control_scope: reference.snapshot.control_scope || "not_reported",
+    available_controls: Array.isArray(reference.snapshot.available_controls) ? reference.snapshot.available_controls : undefined,
+  };
+  const token = ++learningRuntimeStatusToken;
+  api(`/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}`)
+    .then((snapshot) => {
+      if (token !== learningRuntimeStatusToken || learningRuntimeStatusRunId !== reference.runId) return;
+      learningRuntimeStatus = asRecord(snapshot);
+      renderRuntime(execution || data);
+    })
+    .catch(() => {
+      if (token !== learningRuntimeStatusToken || learningRuntimeStatusRunId !== reference.runId) return;
+      renderRuntime(execution || data);
+    });
+}
 function renderRuntime(data) {
   const runtime = data.runtime || {};
   const nodes = Array.isArray(runtime.nodes) ? runtime.nodes : [];
+  const learningReference = learningRuntimeReference(data);
   const goalContract = runtime.goal_contract || {};
   const controlEvent = runtimeControlEvent(data);
   const handoff = runtimeHandoff(data, runtime);
   renderRuntimeControls(data);
-  const hasRuntime = Boolean(runtime.run_id || runtime.status || runtime.goal || nodes.length);
+  const hasRuntime = Boolean(runtime.run_id || runtime.status || runtime.goal || nodes.length || learningReference);
   if (!hasRuntime) {
     $("#runtime-panel").replaceChildren(section("Agent Runtime", "本次任务没有返回 Runtime checkpoint；保留现有 Legacy 执行数据。", el("div", { class: "empty-state", text: "未发现 Runtime run、Goal 或 node 状态。" })));
     return;
@@ -239,6 +308,7 @@ function renderRuntime(data) {
       kvSurface("运行身份", [["Run ID", runtime.run_id], ["Run kind", runtime.run_kind], ["状态", runtimeStatusLabel(runtime.status)], ["迭代", runtime.iteration], ["state_version", runtime.state_version], ["终止原因", runtime.terminal_reason]]),
       runtimeControlSurface(runtime, controlEvent),
     ])),
+    ...(learningReference ? [learningRuntimeStatusSurface(learningReference)] : []),
     section("Goal / Plan", "只展示 Runtime 已持久化的目标契约与计划身份，不推断未返回的计划节点依赖。", el("div", { class: "debug-grid" }, [
       kvSurface("Goal 契约", [["目标", runtime.goal || goalContract.objective], ["Goal 版本", runtime.goal_version || goalContract.version], ["成功标准", goalContract.success_criteria], ["所需能力", goalContract.required_capabilities], ["来源", goalContract.source]]),
       kvSurface("Plan 身份", [["Plan ID", runtime.plan_id], ["版本", runtime.plan_version], ["节点 checkpoint", nodes.length], ["子运行", Array.isArray(runtime.children) ? runtime.children.length : 0], ["启动模式", runtime.launch_decision?.mode], ["启动原因", runtime.launch_decision?.reason]]),
@@ -281,7 +351,7 @@ function renderCitation(data) { const answer = el("div", { class: "answer-previe
 
 function renderPerformance(data) { const perf = data.performance || {}; const context = perf.context || {}; const max = Math.max(1, ...(perf.waterfall || []).map((item) => Number(item.duration_ms) || 0)); const chart = el("div", { class: "waterfall" }); (perf.waterfall || []).forEach((item) => chart.append(el("div", { class: "waterfall-row" }, [el("span", { text: item.label }), el("div", { class: "waterfall-track" }, el("div", { class: "waterfall-bar", style: `width:${Math.max(1, (Number(item.duration_ms) || 0) / max * 100)}%` })), el("strong", { text: `${item.duration_ms || 0} ms` })]))); const budget = el("p", { text: `上下文估算 ${context.estimated_tokens || 0} / ${context.budget_tokens || 0} token；消息 ${context.message_count || 0}；缓存 ${context.cache_hit ? "命中" : "未命中"}（${context.cache_backend || "none"}）` }); $("#performance-panel").replaceChildren(section("执行时间与上下文预算", `总耗时 ${perf.total_ms || 0} ms；token 为保守估算值。`, el("div", {}, [budget, chart]))); }
 
-function renderAll(data) { execution = data; renderSummary(data); renderOverview(data); renderRuntime(data); renderRoute(data); renderRetrieval(data); renderWorkflow(data); renderCitation(data); renderPerformance(data); $("#execution-console").hidden = false; }
+function renderAll(data) { execution = data; renderSummary(data); renderOverview(data); renderRuntime(data); loadLearningRuntimeStatus(data); renderRoute(data); renderRetrieval(data); renderWorkflow(data); renderCitation(data); renderPerformance(data); $("#execution-console").hidden = false; }
 
 function stopRuntimePolling() {
   runtimePollToken += 1;

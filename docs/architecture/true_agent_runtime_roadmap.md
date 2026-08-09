@@ -1176,3 +1176,22 @@ state version, approval wait, and resumability, while excluding the original
 `request_snapshot` and student input payload. The endpoint is read-only and
 does not advance a Run or call a Provider; the existing domain-specific
 approval endpoint remains responsible for LearningLoop result persistence.
+
+## 2026-08-09 control projection and Research03 boundary checkpoint
+
+The Task Runtime and LearningLoop projections now share an immutable,
+provider-free control policy. The unified Task Runtime declares
+pause/resume/approval/input, while LearningLoop declares only approval and
+only while a checkpoint is waiting for approval. Unknown runtime kinds and
+unsupported states fail closed. The policy is a declaration layer only; it
+does not replace identity, ownership, state-version, persistence, or domain
+result checks.
+
+The first deferred migration boundary is now recorded for
+`RESEARCH_03_DATA_ANALYSIS_V1`. Runtime owns the durable
+`analysis.execute -> analysis.verify` lifecycle and bounded re-planning, but
+the actual analysis capability remains delegated to the existing
+internal-agent/Provider boundary. Ordinary V1 requests remain Legacy; the
+explicit `research_analysis_v2` path remains a canary candidate. Structural
+fixtures and synthetic traces are test evidence only and cannot authorize a
+production promotion.
