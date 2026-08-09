@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
+from app.contracts.research_analysis import (
+    ResearchAnalysisResult,
+    ResearchDataQualityReport,
+)
 from app.runtime import (
     AgentRun,
     RuntimeNodeStatus,
@@ -21,7 +25,7 @@ def make_request() -> AgentRequest:
         user_id="user-1",
         options={
             "research_analysis_v2": {
-                "execute": False,
+                "execute": True,
                 "request": {
                     "research_question": "Does the intervention change the outcome?",
                     "analysis_goal": "compare",
@@ -60,13 +64,19 @@ class FakeInternalAgents:
 
 
 def make_result(status: AgentResultStatus = AgentResultStatus.COMPLETED) -> AgentResult:
+    analysis_status = "executed" if status == AgentResultStatus.COMPLETED else "failed"
+    analysis_payload = ResearchAnalysisResult(
+        status=analysis_status,  # type: ignore[arg-type]
+        data_quality=ResearchDataQualityReport(status="passed"),
+        design_assessment="provider-free runtime fixture",
+    ).model_dump(mode="json")
     return AgentResult(
         status=status,
         agent_id=ResearchAnalysisRuntimeService.agent_id,
         provider="local_analysis_v2",
         answer="analysis complete",
-        structured_result={"analysis_v2": True},
-        business_data={"rows": 2},
+        structured_result={"analysis_v2": True, "business_data": analysis_payload},
+        business_data=analysis_payload,
     )
 
 

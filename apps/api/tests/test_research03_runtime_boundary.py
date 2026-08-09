@@ -4,6 +4,10 @@ import asyncio
 import inspect
 
 from app.contracts import AgentRequest, AgentResult, AgentResultStatus
+from app.contracts.research_analysis import (
+    ResearchAnalysisResult,
+    ResearchDataQualityReport,
+)
 from app.runtime import (
     AgentRun,
     RuntimeCanaryEvidence,
@@ -31,7 +35,7 @@ def _runtime_request() -> AgentRequest:
     return _request(
         options={
             "research_analysis_v2": {
-                "execute": False,
+                "execute": True,
                 "request": {
                     "research_question": "Does the intervention change the outcome?",
                     "analysis_goal": "compare",
@@ -58,13 +62,18 @@ class ProviderFreeInternalAgent:
         assert request.task_id == "research03-boundary-task"
         assert context is None
         self.calls += 1
+        payload = ResearchAnalysisResult(
+            status="executed",
+            data_quality=ResearchDataQualityReport(status="passed"),
+            design_assessment="provider-free runtime fixture",
+        ).model_dump(mode="json")
         return AgentResult(
             status=AgentResultStatus.COMPLETED,
             agent_id=AGENT_ID,
             provider="local_analysis_fixture",
             answer="fixture analysis result",
-            structured_result={"analysis_v2": True},
-            business_data={"status": "planning"},
+            structured_result={"analysis_v2": True, "business_data": payload},
+            business_data=payload,
         )
 
 
