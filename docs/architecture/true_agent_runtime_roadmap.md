@@ -837,8 +837,15 @@ The CI-style release gate is:
 
 ```powershell
 .venv\Scripts\python.exe scripts/evaluate_runtime_canary.py `
-  RUNTIME_CANARY_SUITE.json --require-canary-eligible
+  RUNTIME_CANARY_SUITE.json --require-release-eligible
 ```
+
+`--require-release-eligible` checks the authorized release decision, including
+the structural `canary_eligible` result and the required paired evidence.
+Existing automation may continue to pass `--require-canary-eligible`; that
+option remains a compatibility alias for the same release gate and is labeled
+as such in the CLI help. Without either option, the command prints the report
+and exits successfully even when the suite is not release eligible.
 
 After two already-captured, redacted result payloads and a Runtime checkpoint
 trace have been approved for comparison, package one pair with:
