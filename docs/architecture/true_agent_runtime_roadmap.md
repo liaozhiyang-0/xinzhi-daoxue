@@ -996,7 +996,7 @@ The compatibility boundary now has four additional protections:
    the adapter mapping are checked without reading credentials or the original
    workflow YAML inputs.
 
-The latest provider-free Runtime gate covers 145 tests in one isolated
+The latest provider-free Runtime gate covers 150 tests in one isolated
 process. It includes Runtime execution paths, restart recovery, approval,
 availability, SSE, task non-blocking behavior, and SOLVER freeze checks. The
 remaining long-term exit condition is not another compatibility patch: one
@@ -1094,3 +1094,27 @@ The next release gate remains external and intentional: collect an authorized
 paired trace for `GENERAL_QUESTION_V1`, generate its semantic sidecar, and
 promote only after the release registry accepts both structural and semantic
 evidence.
+
+## 2026-08-09 parallel delivery and release preflight checkpoint
+
+The project now has an executable parallel-agent workflow documented in
+`docs/architecture/runtime_parallel_workflow.md`. Frontend, Runtime backend,
+and evaluation agents declare disjoint write sets, publish shared field
+contracts before consuming them, and submit independently before the main
+integrator runs cross-boundary regression. The first shared contract is
+`runtime.handoff`, exposed by the debug API and consumed by the Runtime
+execution view without assuming the field exists.
+
+The release boundary now has a provider-free CLI at
+`scripts/check_runtime_release_preflight.py`. It reports structural,
+semantic, and release eligibility separately, fails closed for missing or
+unauthorized evidence, and never invokes a Provider, tool, or model. Synthetic
+fixtures remain test-only and are explicitly rejected as production evidence.
+
+The terminal protocol now rejects non-completed AgentResults and failed or
+cancelled Runtime Runs before mutating Task state or emitting
+`task.completed`. The debug UI also performs bounded `1/2/4/8/16` second
+refreshes for active Runs and stops at terminal or unknown status. The complete
+isolated Runtime gate now passes 150 tests. The remaining promotion step is
+still the authorized paired trace and semantic review for
+`GENERAL_QUESTION_V1`; no synthetic result has been promoted.
