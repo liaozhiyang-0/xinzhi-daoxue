@@ -182,6 +182,7 @@ class ModelService:
             ),
             extra_options=None,
             vision=False,
+            max_retries=self.settings.model_max_retries,
         )
 
     async def _execute_route(
@@ -203,6 +204,11 @@ class ModelService:
         call_options = dict(extra_options or {})
         allow_route_fallback = bool(call_options.pop("_allow_route_fallback", True))
         preferred_alias = call_options.pop("_preferred_route_alias", None)
+        max_retries = (
+            self.settings.model_max_retries
+            if route.max_retries is None
+            else route.max_retries
+        )
         route_aliases = {route.primary, route.fallback}
         if preferred_alias is not None and preferred_alias not in route_aliases:
             raise InvalidModelRequestError(
@@ -223,6 +229,12 @@ class ModelService:
         last_error: ModelProviderError | None = None
         failed_usage: ModelUsage | None = None
         for index, alias in enumerate(item for item in aliases if item):
+            if (
+                index > 0
+                and isinstance(last_error, ModelTimeoutError)
+                and not route.fallback_on_timeout
+            ):
+                break
             circuit = self._circuit(alias)
             if not circuit.allow_request():
                 definition = self.registry.get_model(alias)
@@ -248,6 +260,7 @@ class ModelService:
                     operation=operation,
                     extra_options={**route.options, **call_options},
                     vision=vision,
+                    max_retries=max_retries,
                 )
                 circuit.record_success()
                 if index > 0:
@@ -316,9 +329,10 @@ class ModelService:
         ],
         extra_options: dict[str, Any] | None,
         vision: bool,
+        max_retries: int,
     ) -> ModelResponse:
         definition, provider = self._resolve(alias)
-        max_attempts = 1 + self.settings.model_max_retries
+        max_attempts = 1 + max(0, min(1, max_retries))
         last_error: ModelProviderError | None = None
         for attempt in range(max_attempts):
             started = self.tracer.now()

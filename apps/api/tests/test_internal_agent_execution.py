@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from hashlib import sha256
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -56,11 +58,13 @@ class FakeHub:
                 "citation_check_required": True,
             },
             "DATA_ANALYSIS_LOCAL_V1": {
-                "analysis_status": "plan",
+                "analysis_status": "interpreted",
                 "method": "先检查分组和缺失值",
                 "steps": ["定义变量", "选择模型"],
-                "interpretation": "尚无数据，只能给出方案。",
-                "limitations": ["缺少样本"],
+                "interpretation": (
+                    "The computed comparison addresses the declared research question."
+                ),
+                "limitations": ["Review assignment and sampling before causal claims."],
             },
         }
         return InternalAgentResult(
@@ -87,6 +91,19 @@ class FakeGeneralQuestion:
                 "status": "completed",
                 "model_execution": {"status": "success"},
             },
+        )
+
+
+class FakeResearchFrontier:
+    def available(self) -> bool:
+        return True
+
+    async def run(self, _: AgentRequest) -> AgentResult:
+        return AgentResult(
+            agent_id="RESEARCH_01_ACADEMIC_SEARCH_V1",
+            provider="local_agent",
+            answer="科研前沿证据简报",
+            structured_result={"status": "completed"},
         )
 
 
@@ -179,11 +196,12 @@ def test_internal_agent_availability_is_sanitized() -> None:
 
 
 @pytest.mark.asyncio
-async def test_research_frontier_alias_uses_local_general_agent() -> None:
+async def test_research_frontier_alias_uses_local_research_agent() -> None:
     hub = FakeHub()
     executor = InternalAgentExecutionService(
         cast(InternalAgentHub, hub),
         general_question=cast(Any, FakeGeneralQuestion()),
+        research_frontier=cast(Any, FakeResearchFrontier()),
     )
 
     assert executor.available("RESEARCH_01_ACADEMIC_SEARCH_V1") is True
@@ -193,6 +211,89 @@ async def test_research_frontier_alias_uses_local_general_agent() -> None:
 
     assert result.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     assert result.provider == "local_agent"
+
+
+@pytest.mark.asyncio
+async def test_research_analysis_v2_prefers_direct_model_and_keeps_local_fallback(
+    tmp_path: Path,
+) -> None:
+    executor, hub = service()
+    data_path = tmp_path / "analysis.csv"
+    data_path.write_text(
+        "outcome,treatment\n10,control\n12,control\n16,treatment\n18,treatment\n",
+        encoding="utf-8",
+    )
+    task_request = request(Intent.DATA_ANALYSIS).model_copy(
+        update={
+            "options": {
+                "request_id": "request-v2",
+                "research_analysis_v2": {
+                    "execute": True,
+                    "model_assist": False,
+                    "output_dir": str(tmp_path / "pack"),
+                    "request": {
+                        "research_question": "What is the declared group difference?",
+                        "hypothesis": "The declared groups differ.",
+                        "analysis_goal": "compare",
+                        "design": "experimental_comparison",
+                        "unit_of_analysis": "one row",
+                        "variables": [
+                            {"name": "outcome", "role": "outcome", "unit": "score"},
+                            {"name": "treatment", "role": "treatment"},
+                        ],
+                        "data_manifest": {
+                            "dataset_id": "local-test",
+                            "version": "1",
+                            "format": "csv",
+                            "checksum_sha256": sha256(
+                                data_path.read_bytes()
+                            ).hexdigest(),
+                            "row_count": 4,
+                            "column_count": 2,
+                            "authorized": True,
+                            "source_ref": str(data_path),
+                        },
+                        "data_dictionary": "outcome and treatment are documented",
+                        "evidence": [
+                            {
+                                "evidence_id": "method-001",
+                                "role": "method_reference",
+                                "source_ref": "https://example.test/method",
+                                "cited": True,
+                            }
+                        ],
+                        "exploratory": False,
+                    },
+                },
+            }
+        }
+    )
+
+    result = await executor.run("RESEARCH_03_DATA_ANALYSIS_V1", task_request)
+
+    assert result.provider == "local_analysis_v2"
+    assert result.business_data["status"] == "executed"
+    assert result.metrics.model_calls == 0
+    assert result.business_data["evidence_ids"] == ["method-001"]
+    assert result.business_data["evidence_references"][0]["role"] == (
+        "method_reference"
+    )
+    assert hub.input_text == ""
+
+    assisted_options = dict(task_request.options)
+    assisted_analysis = dict(assisted_options["research_analysis_v2"])
+    assisted_analysis["model_assist"] = True
+    assisted_options["research_analysis_v2"] = assisted_analysis
+    assisted_request = task_request.model_copy(update={"options": assisted_options})
+    assisted = await executor.run("RESEARCH_03_DATA_ANALYSIS_V1", assisted_request)
+
+    assert assisted.provider == "model_analysis:iflytek_spark+dashscope"
+    assert assisted.metrics.model_calls == 2
+    assert assisted.business_data["explanation_source"] == "model_direct"
+    assert assisted.structured_result["model_analysis"]["status"] == "used"
+    assert "受控数据" in hub.input_text
+    assert '"outcome":"10"' in hub.input_text
+    assert str(data_path) not in hub.input_text
 
 
 class FakeTaskInternalExecution:

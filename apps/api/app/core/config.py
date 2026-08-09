@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     overall_routing_enabled: bool = True
     overall_routing_timeout_seconds: float = Field(default=10, gt=0, le=30)
     overall_routing_max_tokens: int = Field(default=160, ge=64, le=512)
+    overall_routing_skip_confidence_threshold: float = Field(
+        default=0.95, ge=0.5, le=1.0
+    )
 
     model_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
     model_read_timeout_seconds: float = Field(default=120, gt=0, le=600)
@@ -210,6 +213,23 @@ class Settings(BaseSettings):
     document_converter_command: str = "soffice"
     local_storage_fallback: bool = True
     local_storage_path: Path = PROJECT_ROOT / "local_storage"
+    research_analysis_artifact_root: Path = (
+        PROJECT_ROOT / ".local_outputs" / "research_analysis"
+    )
+    research_analysis_temp_root: Path = (
+        PROJECT_ROOT / ".local_outputs" / "research_analysis_tmp"
+    )
+    research_analysis_model_assist_enabled: bool = True
+    research_analysis_model_assist_max_tokens: int = Field(
+        default=900, ge=256, le=4000
+    )
+    research_analysis_model_direct_enabled: bool = True
+    research_analysis_model_direct_max_tokens: int = Field(
+        default=2400, ge=512, le=8000
+    )
+    research_analysis_model_input_max_chars: int = Field(
+        default=80_000, ge=10_000, le=500_000
+    )
     sse_heartbeat_seconds: float = Field(default=10.0, gt=0)
 
     knowledge_enabled: bool = True
@@ -288,6 +308,15 @@ class Settings(BaseSettings):
     qdrant_local_path: Path = PROJECT_ROOT / "knowledge_indexes" / "qdrant"
     qdrant_text_collection: str = "xinzhi_kb_text_v2"
     qdrant_image_collection: str = "xinzhi_kb_image_v2"
+    qdrant_research_collection: str = "xinzhi_research_evidence_v1"
+
+    research_knowledge_enabled: bool = True
+    research_knowledge_maintenance_enabled: bool = True
+    research_knowledge_maintenance_interval_seconds: int = Field(
+        default=86_400, ge=3_600, le=2_592_000
+    )
+    research_knowledge_retention_days: int = Field(default=1095, ge=30, le=3650)
+    research_knowledge_search_top_k: int = Field(default=8, ge=1, le=30)
 
     # LangGraph checkpoints are process-local until a durable saver is wired.
     # Keep the backend explicit so production cannot mistake memory for a
@@ -321,7 +350,7 @@ class Settings(BaseSettings):
     # still approve the request before any provider is contacted.
     external_retrieval_enabled: bool = True
     external_retrieval_intent_gate_enabled: bool = True
-    external_retrieval_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    external_retrieval_timeout_seconds: float = Field(default=120, gt=0, le=180)
     external_retrieval_review_enabled: bool = True
     external_retrieval_planning_timeout_seconds: float = Field(
         default=6, gt=0, le=60
@@ -332,6 +361,13 @@ class Settings(BaseSettings):
     external_retrieval_review_timeout_seconds: float = Field(default=10, gt=0, le=60)
     external_retrieval_review_max_tokens: int = Field(default=2400, ge=512, le=8000)
     external_retrieval_provider_retries: int = Field(default=1, ge=0, le=3)
+    external_retrieval_max_provider_concurrency: int = Field(
+        default=4, ge=1, le=16
+    )
+    external_retrieval_max_query_variants: int = Field(default=2, ge=1, le=6)
+    external_retrieval_rate_limit_cooldown_seconds: float = Field(
+        default=60, ge=0, le=3600
+    )
     external_retrieval_cache_size: int = Field(default=128, ge=0, le=10_000)
     external_retrieval_cache_ttl_seconds: float = Field(
         default=120, ge=0, le=86_400
@@ -343,12 +379,34 @@ class Settings(BaseSettings):
         default=12_000, ge=500, le=100_000
     )
     external_arxiv_base_url: str = "https://export.arxiv.org/api"
+    external_arxiv_min_delay_seconds: float = Field(default=3, ge=0, le=30)
+    external_arxiv_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_arxiv_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_crossref_base_url: str = "https://api.crossref.org"
+    external_crossref_mailto: str = ""
+    external_crossref_min_delay_seconds: float = Field(
+        default=0.5, ge=0, le=10
+    )
+    external_crossref_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_crossref_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_openalex_base_url: str = "https://api.openalex.org"
     external_openalex_api_key: SecretStr = SecretStr("")
     external_openalex_mailto: str = ""
+    external_openalex_min_delay_seconds: float = Field(
+        default=0.5, ge=0, le=10
+    )
+    external_openalex_timeout_seconds: float = Field(default=45, gt=0, le=120)
+    external_openalex_max_concurrency: int = Field(default=2, ge=1, le=4)
     external_semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
     external_semantic_scholar_api_key: SecretStr = SecretStr("")
+    external_semantic_scholar_allow_unauthenticated: bool = False
+    external_semantic_scholar_min_delay_seconds: float = Field(
+        default=1, ge=0, le=30
+    )
+    external_semantic_scholar_timeout_seconds: float = Field(
+        default=30, gt=0, le=120
+    )
+    external_semantic_scholar_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_cnki_base_url: str = ""
     external_cnki_api_key: SecretStr = SecretStr("")
     external_cnki_auth_header: str = "x-api-key"
@@ -357,6 +415,69 @@ class Settings(BaseSettings):
     external_web_search_api_key: SecretStr = SecretStr("")
     external_web_search_auth_header: str = "x-api-key"
     external_web_search_timeout_seconds: float = Field(default=15, gt=0, le=120)
+    external_tavily_base_url: str = "https://api.tavily.com/search"
+    external_tavily_api_key: SecretStr = SecretStr("")
+    external_tavily_auth_header: str = "Authorization"
+    external_tavily_auth_scheme: str = "Bearer"
+    external_tavily_search_depth: str = "basic"
+    external_tavily_topic: str = "general"
+    external_tavily_include_answer: bool = False
+    external_tavily_include_raw_content: bool = False
+    external_tavily_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_tavily_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_tavily_max_results: int = Field(default=5, ge=1, le=20)
+    external_tavily_max_concurrency: int = Field(default=1, ge=1, le=4)
+    external_brave_base_url: str = (
+        "https://api.search.brave.com/res/v1/web/search"
+    )
+    external_brave_api_key: SecretStr = SecretStr("")
+    external_brave_auth_header: str = "X-Subscription-Token"
+    external_brave_country: str = "CN"
+    external_brave_search_lang: str = "zh"
+    external_brave_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_brave_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_brave_max_results: int = Field(default=5, ge=1, le=20)
+    external_brave_max_concurrency: int = Field(default=1, ge=1, le=4)
+    external_serpapi_base_url: str = "https://serpapi.com/search.json"
+    external_serpapi_api_key: SecretStr = SecretStr("")
+    external_serpapi_engine: str = "google"
+    external_serpapi_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_serpapi_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_serpapi_max_results: int = Field(default=5, ge=1, le=20)
+    external_serpapi_max_concurrency: int = Field(default=1, ge=1, le=4)
+    external_searxng_base_url: str = ""
+    external_searxng_api_key: SecretStr = SecretStr("")
+    external_searxng_format: str = "json"
+    external_searxng_categories: str = "general"
+    external_searxng_language: str = "zh-CN"
+    external_searxng_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_searxng_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_searxng_max_results: int = Field(default=5, ge=1, le=20)
+    external_searxng_max_concurrency: int = Field(default=1, ge=1, le=4)
+    # Optional domestic web-search fallbacks.  They remain inactive until an
+    # API key is supplied and their provider adapter is explicitly enabled.
+    external_aliyun_iqs_base_url: str = "https://cloud-iqs.aliyuncs.com/search/unified"
+    external_aliyun_iqs_api_key: SecretStr = SecretStr("")
+    external_aliyun_iqs_engine_type: str = "Generic"
+    external_aliyun_iqs_time_range: str = "NoLimit"
+    external_aliyun_iqs_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_aliyun_iqs_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_aliyun_iqs_max_results: int = Field(default=5, ge=1, le=20)
+    external_aliyun_iqs_max_concurrency: int = Field(default=1, ge=1, le=4)
+    external_bocha_base_url: str = "https://api.bochaai.com/v1/web-search"
+    external_bocha_api_key: SecretStr = SecretStr("")
+    external_bocha_auth_header: str = "Authorization"
+    external_bocha_auth_scheme: str = "Bearer"
+    external_bocha_freshness: str = "noLimit"
+    external_bocha_summary: bool = True
+    external_bocha_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_bocha_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    external_bocha_max_results: int = Field(default=5, ge=1, le=20)
+    external_bocha_max_concurrency: int = Field(default=1, ge=1, le=4)
+    external_news_rss_base_url: str = "https://news.google.com/rss/search"
+    external_news_rss_timeout_seconds: float = Field(default=15, gt=0, le=120)
+    external_news_rss_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_news_rss_max_concurrency: int = Field(default=1, ge=1, le=4)
 
     rag_debug_enabled: bool = True
     rag_debug_max_input_chars: int = Field(default=2000, ge=100, le=20000)
@@ -414,6 +535,22 @@ class Settings(BaseSettings):
     local_total_p95_target_ms: int = Field(default=1000, ge=1, le=30000)
     task_lease_seconds: int = Field(default=120, ge=30, le=3600)
     task_recovery_enabled: bool = True
+    agent_runtime_shadow_enabled: bool = False
+    agent_runtime_launch_modes: str = ""
+    agent_runtime_research_enabled: bool = False
+    agent_runtime_solver_enabled: bool = False
+    agent_runtime_general_enabled: bool = False
+    agent_runtime_general_auto_enabled: bool = False
+    agent_runtime_general_canary_enabled: bool = False
+    agent_runtime_teaching_enabled: bool = False
+    agent_runtime_teaching_interaction_enabled: bool = False
+    agent_runtime_learning_progress_enabled: bool = False
+    agent_runtime_knowledge_qa_enabled: bool = False
+    agent_runtime_external_research_enabled: bool = False
+    agent_runtime_plan_proposals_enabled: bool = False
+    agent_runtime_goal_capabilities: str = ""
+    agent_runtime_canary_artifacts: str = ""
+    agent_runtime_release_gate_required: bool = True
 
     @field_validator("log_level")
     @classmethod

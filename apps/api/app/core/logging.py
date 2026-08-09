@@ -18,7 +18,9 @@ SENSITIVE_KEYS = {
 }
 SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s]+"),
-    re.compile(r"(?i)((?:api[_-]?key|token|secret|password)\s*[=:]\s*)[^\s,;]+"),
+    re.compile(
+        r"(?i)((?:[?&]|\b)(?:api[_-]?key|token|secret|password)\s*[=:]\s*)[^\s,;&]+"
+    ),
     re.compile(r"(?i)(://[^:/\s]+:)[^@\s]+(@)"),
 )
 REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="-")

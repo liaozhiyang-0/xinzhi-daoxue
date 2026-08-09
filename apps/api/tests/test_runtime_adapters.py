@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from app.contracts import AgentRequest, AgentResult
+from app.providers.base import AgentProvider
+from app.runtime import (
+    AgentRun,
+    AgentRunPlan,
+    PlanExecutor,
+    RuntimeNode,
+    RuntimeNodeStatus,
+    build_runtime_handler_registry,
+)
+from app.tools import default_tool_registry
+
+
+def make_run(
+    node: RuntimeNode,
+    *,
+    control_data: dict[str, Any] | None = None,
+) -> AgentRun:
+    return AgentRun(
+        run_id=f"run-{node.node_id}",
+        task_id=f"task-{node.node_id}",
+        goal="adapter test",
+        plan=AgentRunPlan(
+            plan_id=f"plan-{node.node_id}",
+            goal="adapter test",
+            nodes=[node],
+        ),
+        control_data=control_data or {},
+    )
+
+
+class FakeProvider(AgentProvider):
+    provider_name = "fake"
+
+    def __init__(self) -> None:
+        self.last_request: AgentRequest | None = None
+
+    async def run(
+        self,
+        agent_id: str,
+        request: AgentRequest,
+        stream: bool = True,
+    ) -> AgentResult:
+        self.last_request = request
+        return AgentResult(
+            agent_id=agent_id,
+            provider=self.provider_name,
+            answer=request.canonical_input.get("text", ""),
+            structured_result={"stream": stream},
+        )
+
+    async def cancel(self, run_id: str) -> None:
+        del run_id
+
+    async def get_status(self, run_id: str) -> dict[str, Any]:
+        return {"run_id": run_id, "status": "completed"}
+
+
+class FakeInternalAgents:
+    async def run(
+        self,
+        agent_id: str,
+        request: AgentRequest,
+        context: Any = None,
+    ) -> AgentResult:
+        assert context is None
+        return AgentResult(
+            agent_id=agent_id,
+            provider="internal",
+            answer=request.canonical_input.get("text", ""),
+            structured_result={"internal": True},
+        )
+
+
+def test_runtime_adapters_register_and_execute_existing_capabilities() -> None:
+    provider = FakeProvider()
+    registry = build_runtime_handler_registry(
+        default_tool_registry(),
+        provider,
+        FakeInternalAgents(),
+    )
+
+    tool_run = make_run(
+        RuntimeNode(
+            node_id="calculator",
+            node_type="tool",
+            handler_id="tool.calculator",
+            timeout_ms=10_000,
+        ),
+        control_data={
+            "node_inputs": {"calculator": {"expression": "2 + 3"}}
+        },
+    )
+    asyncio.run(PlanExecutor(registry).execute(tool_run))
+    assert tool_run.status.value == "completed"
+    assert tool_run.nodes["calculator"].status == RuntimeNodeStatus.SUCCEEDED
+    assert tool_run.nodes["calculator"].observation is not None
+    assert tool_run.nodes["calculator"].observation.facts["output"] == 5
+
+    request = AgentRequest(
+        session_id="session-adapter",
+        user_id="user-adapter",
+        canonical_input={"text": "provider input"},
+    )
+    provider_run = make_run(
+        RuntimeNode(
+            node_id="provider",
+            node_type="provider",
+            handler_id="provider.default",
+            target_id="PROVIDER_AGENT",
+        ),
+        control_data={"request": request.model_dump(mode="json")},
+    )
+    asyncio.run(PlanExecutor(registry).execute(provider_run))
+    assert provider_run.status.value == "completed"
+    assert provider_run.nodes["provider"].observation is not None
+    assert provider_run.nodes["provider"].observation.facts["agent_id"] == (
+        "PROVIDER_AGENT"
+    )
+    assert provider_run.nodes["provider"].observation.facts["structured_result"] == {
+        "stream": False
+    }
+
+    internal_run = make_run(
+        RuntimeNode(
+            node_id="internal",
+            node_type="subagent",
+            handler_id="agent.internal",
+            target_id="INTERNAL_AGENT",
+        ),
+        control_data={"request": request.model_dump(mode="json")},
+    )
+    asyncio.run(PlanExecutor(registry).execute(internal_run))
+    assert internal_run.status.value == "completed"
+    assert internal_run.nodes["internal"].observation is not None
+    assert internal_run.nodes["internal"].observation.facts["provider"] == (
+        "internal"
+    )
+
+
+def test_runtime_request_adapter_propagates_resumed_user_input() -> None:
+    provider = FakeProvider()
+    registry = build_runtime_handler_registry(
+        default_tool_registry(),
+        provider,
+        FakeInternalAgents(),
+    )
+    request = AgentRequest(
+        task_id="task-input-adapter",
+        session_id="session-adapter",
+        user_id="user-adapter",
+        canonical_input={"text": "resume"},
+    )
+    run = make_run(
+        RuntimeNode(
+            node_id="provider",
+            node_type="provider",
+            handler_id="provider.default",
+            target_id="PROVIDER_AGENT",
+        ),
+        control_data={
+            "request": request.model_dump(mode="json"),
+            "user_input": {"confirmed": True},
+        },
+    )
+
+    asyncio.run(PlanExecutor(registry).execute(run))
+
+    assert run.nodes["provider"].observation is not None
+    assert run.nodes["provider"].observation.facts["structured_result"] == {
+        "stream": False
+    }
+    assert provider.last_request is not None
+    assert provider.last_request.options["runtime_user_input"] == {"confirmed": True}
+
+
+def test_runtime_request_adapter_injects_dependency_observations() -> None:
+    provider = FakeProvider()
+    registry = build_runtime_handler_registry(
+        default_tool_registry(),
+        provider,
+        FakeInternalAgents(),
+    )
+    request = AgentRequest(
+        task_id="task-dependency-adapter",
+        session_id="session-adapter",
+        user_id="user-adapter",
+        canonical_input={"text": "continue"},
+    )
+    run = AgentRun(
+        run_id="run-dependency-adapter",
+        task_id="task-dependency-adapter",
+        goal="dependency context",
+        plan=AgentRunPlan(
+            plan_id="plan-dependency-adapter",
+            goal="dependency context",
+            nodes=[
+                RuntimeNode(
+                    node_id="observe",
+                    node_type="tool",
+                    handler_id="tool.calculator",
+                    timeout_ms=10_000,
+                ),
+                RuntimeNode(
+                    node_id="decide",
+                    node_type="provider",
+                    handler_id="provider.default",
+                    target_id="PROVIDER_AGENT",
+                    depends_on=["observe"],
+                ),
+            ],
+        ),
+        control_data={
+            "request": request.model_dump(mode="json"),
+            "node_inputs": {"observe": {"expression": "2 + 3"}},
+        },
+    )
+
+    asyncio.run(PlanExecutor(registry).execute(run))
+
+    assert provider.last_request is not None
+    dependency = provider.last_request.options["runtime_context"]["dependencies"][
+        "observe"
+    ]
+    assert dependency["status"] == "succeeded"
+    assert dependency["facts"]["output"] == 5

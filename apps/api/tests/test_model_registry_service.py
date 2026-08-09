@@ -140,15 +140,19 @@ def test_registry_loads_models_and_routes() -> None:
         "query_rewrite",
         "retrieval_keyword_generation",
         "knowledge_answer",
-        "general_question_answer",
         "multi_image_summary",
         "academic_problem_solving_simple",
         "lesson_prep",
         "assignment_review",
+    ):
+        assert registry.get_route(task_type).primary == "spark_reasoner"
+    for task_type in (
+        "general_question_answer",
         "academic_writing",
         "data_analysis_explanation",
     ):
-        assert registry.get_route(task_type).primary == "spark_reasoner"
+        assert registry.get_route(task_type).primary == "qwen_text_fast"
+    assert registry.get_route("data_analysis_explanation").fallback == "spark_reasoner"
     assert (
         registry.get_route("structured_output_normalization").primary
         == "qwen_text_fast"

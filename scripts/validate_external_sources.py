@@ -52,8 +52,8 @@ def validate() -> dict[str, object]:
         if source_type not in KNOWN_SOURCE_TYPES:
             raise ValueError(f"{source_id}: unsupported source_type={source_type}")
         source_types.add(str(source_type))
-        if source.get("scope") != "academic":
-            raise ValueError(f"{source_id}: current registry expects academic scope")
+        if source.get("scope") not in {"academic", "web"}:
+            raise ValueError(f"{source_id}: scope must be academic or web")
         _public_http_url(
             source.get("default_base_url"), field=f"{source_id}.default_base_url"
         )

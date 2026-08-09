@@ -56,6 +56,24 @@ class VectorStoreAdapter(Protocol):
 
     def prune(self, *, text_ids: set[str], image_ids: set[str]) -> dict[str, int]: ...
 
+    def ensure_research_collection(self, dimension: int) -> None: ...
+
+    def research_collection_exists(self) -> bool: ...
+
+    def upsert_research(
+        self, records: Sequence[dict[str, Any]], vectors: Sequence[Sequence[float]]
+    ) -> None: ...
+
+    def search_research(
+        self,
+        vector: Sequence[float],
+        *,
+        limit: int,
+        topic: str = "",
+    ) -> list[VectorSearchHit]: ...
+
+    def delete_research(self, evidence_ids: Sequence[str]) -> int: ...
+
     def health(self) -> dict[str, Any]: ...
 
     def metrics(self) -> dict[str, dict[str, Any]]: ...
@@ -96,6 +114,7 @@ class QdrantVectorStoreAdapter:
         local_path: Path,
         text_collection: str,
         image_collection: str,
+        research_collection: str = "xinzhi_research_evidence_v1",
         trust_env: bool = False,
     ) -> None:
         self.mode = mode
@@ -104,6 +123,7 @@ class QdrantVectorStoreAdapter:
         self.local_path = local_path
         self.text_collection = text_collection
         self.image_collection = image_collection
+        self.research_collection = research_collection
         self.trust_env = trust_env
         self._client: QdrantClient | None = None
         self._error: str | None = None
@@ -183,6 +203,96 @@ class QdrantVectorStoreAdapter:
             except (ValueError, NotImplementedError):
                 # Embedded Qdrant can filter without an explicit payload index.
                 continue
+
+    @_observe("ensure_research_collection")
+    def ensure_research_collection(self, dimension: int) -> None:
+        """Create the isolated research evidence collection on first ingest."""
+
+        if not self._exists(self.research_collection):
+            self.client.create_collection(
+                collection_name=self.research_collection,
+                vectors_config={
+                    "text_dense": models.VectorParams(
+                        size=dimension, distance=models.Distance.COSINE
+                    )
+                },
+            )
+        if self.mode != "local":
+            for field in ("evidence_id", "topic", "status", "source_type"):
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.research_collection,
+                        field_name=field,
+                        field_schema=models.PayloadSchemaType.KEYWORD,
+                        wait=True,
+                    )
+                except (ValueError, NotImplementedError):
+                    continue
+
+    @_observe("research_collection_exists")
+    def research_collection_exists(self) -> bool:
+        return self._exists(self.research_collection)
+
+    @_observe("upsert_research")
+    def upsert_research(
+        self,
+        records: Sequence[dict[str, Any]],
+        vectors: Sequence[Sequence[float]],
+    ) -> None:
+        if len(records) != len(vectors):
+            raise ValueError("科研证据记录与向量数量不一致")
+        points = [
+            models.PointStruct(
+                id=qdrant_point_id(str(record["evidence_id"])),
+                vector={"text_dense": list(vector)},
+                payload=dict(record),
+            )
+            for record, vector in zip(records, vectors, strict=True)
+        ]
+        if points:
+            self.client.upsert(
+                collection_name=self.research_collection, points=points, wait=True
+            )
+
+    @_observe("search_research")
+    def search_research(
+        self,
+        vector: Sequence[float],
+        *,
+        limit: int,
+        topic: str = "",
+    ) -> list[VectorSearchHit]:
+        must: list[models.Condition] = [
+            models.FieldCondition(
+                key="status", match=models.MatchValue(value="active")
+            )
+        ]
+        if topic:
+            must.append(
+                models.FieldCondition(key="topic", match=models.MatchValue(value=topic))
+            )
+        response = self.client.query_points(
+            collection_name=self.research_collection,
+            query=list(vector),
+            using="text_dense",
+            query_filter=models.Filter(must=must),
+            limit=limit,
+            with_payload=True,
+        )
+        return [self._hit(item) for item in response.points]
+
+    @_observe("delete_research")
+    def delete_research(self, evidence_ids: Sequence[str]) -> int:
+        if not evidence_ids or not self._exists(self.research_collection):
+            return 0
+        self.client.delete(
+            collection_name=self.research_collection,
+            points_selector=models.PointIdsList(
+                points=[qdrant_point_id(item) for item in evidence_ids]
+            ),
+            wait=True,
+        )
+        return len(evidence_ids)
 
     @_observe("upsert_text")
     def upsert_text(
@@ -401,6 +511,7 @@ class QdrantVectorStoreAdapter:
                 "mode": self.mode,
                 "text_collection": self.text_collection,
                 "image_collection": self.image_collection,
+                "research_collection": self.research_collection,
                 "text_vector_count": int(text_count),
                 "image_vector_count": int(image_count),
                 "reason": None,
@@ -415,6 +526,7 @@ class QdrantVectorStoreAdapter:
                 "mode": self.mode,
                 "text_collection": self.text_collection,
                 "image_collection": self.image_collection,
+                "research_collection": self.research_collection,
                 "text_vector_count": 0,
                 "image_vector_count": 0,
                 "reason": self._error,

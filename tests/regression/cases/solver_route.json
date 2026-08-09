@@ -3,7 +3,7 @@
   "input": {"message": "已知电路中电阻为10Ω、电压源为20V，求支路电流。"},
   "expected_course": "CT",
   "expected_intent": "solve_problem",
-  "expected_agent": "SOLVER_CT_V1",
+  "expected_agent": "ACADEMIC_PROBLEM_SOLVER",
   "expected_status": "success",
   "required_keywords": ["电流"],
   "forbidden_claims": ["新增支路"],

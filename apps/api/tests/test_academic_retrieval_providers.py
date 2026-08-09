@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -11,6 +12,7 @@ from app.providers.retrieval import (
     CnkiAcademicProvider,
     CrossrefAcademicProvider,
     OpenAlexAcademicProvider,
+    ProviderSearchContext,
     SemanticScholarAcademicProvider,
 )
 from app.providers.retrieval.academic import AcademicProviderError
@@ -63,6 +65,41 @@ async def test_arxiv_provider_parses_atom_metadata() -> None:
     assert items[0].content_excerpt == "An abstract about filters."
 
 
+async def test_arxiv_context_uses_boolean_query_and_bounded_candidates() -> None:
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update({key: value for key, value in request.url.params.multi_items()})
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/atom+xml"},
+            content=ARXIV_XML.encode("utf-8"),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = ArxivAcademicProvider(
+            base_url="https://export.arxiv.org/api",
+            client=client,
+            min_delay_seconds=0,
+        )
+        items = await provider.search_with_context(
+            ProviderSearchContext(
+                query="近三年柔性电子器件进展",
+                normalized_query="近三年柔性电子器件进展",
+                limit=2,
+                freshness_days=1095,
+            )
+        )
+    finally:
+        await client.aclose()
+
+    assert items
+    assert "all:flexible" in captured["search_query"]
+    assert "all:electronics" in captured["search_query"]
+    assert captured["max_results"] == "4"
+
+
 async def test_crossref_provider_normalizes_doi_and_abstract() -> None:
     payload = {
         "message": {
@@ -93,6 +130,55 @@ async def test_crossref_provider_normalizes_doi_and_abstract() -> None:
     assert str(items[0].canonical_url) == "https://doi.org/10.1234/example"
     assert items[0].content_excerpt == "A paper abstract."
     assert items[0].venue == "Test Journal"
+
+
+async def test_crossref_context_uses_polite_pool_and_date_filter() -> None:
+    payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1234/flexible",
+                    "title": ["Flexible electronics sensor"],
+                    "published": {"date-parts": [[2025, 2, 3]]},
+                    "URL": "https://doi.org/10.1234/flexible",
+                    "container-title": ["Flexible Journal"],
+                }
+            ]
+        }
+    }
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update({key: value for key, value in request.url.params.multi_items()})
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=json.dumps(payload).encode("utf-8"),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = CrossrefAcademicProvider(
+            base_url="https://api.crossref.org",
+            mailto="research@example.org",
+            client=client,
+            min_delay_seconds=0,
+        )
+        items = await provider.search_with_context(
+            ProviderSearchContext(
+                query="近三年柔性电子器件进展",
+                normalized_query="近三年柔性电子器件进展",
+                limit=2,
+                freshness_days=1095,
+            )
+        )
+    finally:
+        await client.aclose()
+
+    assert items[0].metadata["query_adapter"] == "crossref_v1"
+    assert captured["mailto"] == "research@example.org"
+    assert "from-pub-date:" in captured["filter"]
+    assert "flexible electronics" in captured["query.bibliographic"]
 
 
 async def test_semantic_scholar_provider_preserves_external_ids() -> None:
@@ -158,6 +244,143 @@ async def test_openalex_provider_reconstructs_abstract_and_metadata() -> None:
     assert items[0].content_excerpt == "An electronics abstract."
     assert items[0].authors == ["Alice Example"]
     assert items[0].venue == "Example Journal"
+
+
+async def test_http_provider_tracks_request_counts_and_peak_concurrency() -> None:
+    active = 0
+    peak = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak
+        del request
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=json.dumps({"message": {"items": []}}).encode("utf-8"),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = CrossrefAcademicProvider(
+            base_url="https://api.crossref.org",
+            client=client,
+            min_delay_seconds=0,
+            max_concurrency=1,
+        )
+        await asyncio.gather(
+            provider.search("electronics", limit=1),
+            provider.search("flexible electronics", limit=1),
+        )
+    finally:
+        await client.aclose()
+
+    stats = provider.runtime_stats()
+    assert stats["requests_started"] == 2
+    assert stats["requests_completed"] == 2
+    assert stats["peak_active_requests"] == 1
+    assert peak == 1
+
+
+async def test_openalex_adapter_translates_question_and_applies_date_filter() -> None:
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/W456",
+                "title": "Flexible electronics sensor platform",
+                "publication_date": "2025-02-03",
+                "abstract_inverted_index": {
+                    "Flexible": [0],
+                    "electronics": [1],
+                    "sensor": [2],
+                },
+                "primary_location": {
+                    "landing_page_url": "https://example.org/flexible",
+                    "source": {"display_name": "Flexible Journal"},
+                },
+            }
+        ]
+    }
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update({key: value for key, value in request.url.params.multi_items()})
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=json.dumps(payload).encode("utf-8"),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = OpenAlexAcademicProvider(
+            base_url="https://api.openalex.org", client=client
+        )
+        items = await provider.search_with_context(
+            ProviderSearchContext(
+                query="近三年柔性电子器件有哪些关键进展？",
+                normalized_query="近三年柔性电子器件有哪些关键进展？",
+                limit=3,
+                freshness_days=1095,
+            )
+        )
+    finally:
+        await client.aclose()
+
+    assert items
+    assert "flexible electronics" in captured["search"]
+    assert "from_publication_date:" in captured["filter"]
+    assert "to_publication_date:" in captured["filter"]
+    assert items[0].metadata["query_adapter"] == "openalex_v1"
+
+
+async def test_openalex_retries_rate_limit_using_retry_after() -> None:
+    calls = 0
+    payload = {
+        "results": [
+            {
+                "id": "https://openalex.org/W789",
+                "title": "A flexible electronics paper",
+                "publication_date": "2025-02-03",
+                "abstract_inverted_index": {"Flexible": [0], "electronics": [1]},
+                "primary_location": {
+                    "landing_page_url": "https://example.org/flexible-789"
+                },
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "0"})
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=json.dumps(payload).encode("utf-8"),
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = OpenAlexAcademicProvider(
+            base_url="https://api.openalex.org",
+            client=client,
+            min_delay_seconds=0,
+        )
+        result = await AcademicSearchService(
+            [provider], cache_size=0, max_retries=1
+        ).search("flexible electronics", limit=1)
+    finally:
+        await client.aclose()
+
+    assert calls == 2
+    assert result.status == "completed"
+    assert result.provider_status == {"openalex": "completed"}
+    assert result.items[0].evidence_id == "openalex-W789"
 
 
 async def test_cnki_provider_uses_authorized_gateway_contract() -> None:
@@ -329,3 +552,149 @@ async def test_academic_search_service_retries_and_caches_successful_results() -
     assert second.cache_hit is True
     assert second.retrieval_trace_id == "trace-2"
     assert service.health()["cache"]["entries"] == 1
+
+
+async def test_academic_search_service_cools_down_rate_limited_provider() -> None:
+    calls = 0
+
+    class RateLimitedProvider:
+        provider_name = "rate-limited-fixture"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            nonlocal calls
+            del query, limit
+            calls += 1
+            raise AcademicProviderError("rate-limited-fixture: rate_limited")
+
+    service = AcademicSearchService(
+        [RateLimitedProvider()],
+        cache_size=0,
+        max_retries=0,
+        rate_limit_cooldown_seconds=60,
+    )
+
+    first = await service.search("cooldown query", limit=1)
+    second = await service.search("cooldown query 2", limit=1)
+
+    assert first.provider_status == {"rate-limited-fixture": "rate_limited"}
+    assert second.provider_status == {"rate-limited-fixture": "rate_limited"}
+    assert calls == 1
+    assert service.health()["rate_limit_cooldowns"]
+
+
+async def test_academic_search_service_prioritizes_relevance_before_recency() -> None:
+    now = datetime.now(UTC)
+
+    class Provider:
+        provider_name = "ranking-fixture"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            del query, limit
+            return [
+                ExternalEvidenceItem(
+                    evidence_id="recent-low-relevance",
+                    source_type=ExternalSourceType.ACADEMIC_PAPER,
+                    provider=self.provider_name,
+                    source_ref="external://ranking/recent",
+                    title="Recent but weak match",
+                    canonical_url="https://example.org/recent",
+                    published_at=now,
+                    retrieved_at=now,
+                    relevance_score=0.2,
+                ),
+                ExternalEvidenceItem(
+                    evidence_id="older-high-relevance",
+                    source_type=ExternalSourceType.ACADEMIC_PAPER,
+                    provider=self.provider_name,
+                    source_ref="external://ranking/older",
+                    title="Older but strong match",
+                    canonical_url="https://example.org/older",
+                    published_at=now - timedelta(days=90),
+                    retrieved_at=now,
+                    relevance_score=0.9,
+                ),
+            ]
+
+    result = await AcademicSearchService(
+        [Provider()], cache_size=0, max_retries=0
+    ).search("ranking query", limit=2)
+
+    assert [item.evidence_id for item in result.items] == [
+        "older-high-relevance",
+        "recent-low-relevance",
+    ]
+
+
+async def test_academic_search_service_stops_after_satisfied_provider_tier() -> None:
+    calls = {"first": 0, "fallback": 0}
+
+    class FirstProvider:
+        provider_name = "first"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            del query, limit
+            calls["first"] += 1
+            return [
+                ExternalEvidenceItem(
+                    evidence_id="first-result",
+                    source_type=ExternalSourceType.ACADEMIC_PAPER,
+                    provider=self.provider_name,
+                    source_ref="external://first/result",
+                    title="First result",
+                    canonical_url="https://example.org/first",
+                    retrieved_at=datetime.now(UTC),
+                )
+            ]
+
+    class FallbackProvider:
+        provider_name = "fallback"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            del query, limit
+            calls["fallback"] += 1
+            return []
+
+    service = AcademicSearchService(
+        [FirstProvider(), FallbackProvider()],
+        cache_size=0,
+        max_retries=0,
+        provider_tiers=(("first",), ("fallback",)),
+    )
+    result = await service.search("tiered query", limit=1)
+
+    assert result.status == "completed"
+    assert result.provider_status == {"first": "completed"}
+    assert calls == {"first": 1, "fallback": 0}
+
+
+async def test_academic_search_many_covers_all_variants_before_review() -> None:
+    calls: list[str] = []
+
+    class Provider:
+        provider_name = "variant-fixture"
+
+        async def search(self, query: str, *, limit: int) -> list[ExternalEvidenceItem]:
+            del limit
+            calls.append(query)
+            return [
+                ExternalEvidenceItem(
+                    evidence_id="variant-result",
+                    source_type=ExternalSourceType.ACADEMIC_PAPER,
+                    provider=self.provider_name,
+                    source_ref="external://variant/result",
+                    title="Variant result",
+                    canonical_url="https://example.org/variant",
+                    retrieved_at=datetime.now(UTC),
+                )
+            ]
+
+    service = AcademicSearchService([Provider()], cache_size=0, max_retries=0)
+    result = await service.search_many(
+        "variant query",
+        query_variants=["first variant", "second variant", "third variant"],
+        limit=1,
+    )
+
+    assert result.status == "completed"
+    assert calls == ["first variant", "second variant"]
+    assert result.search_queries == ["first variant", "second variant"]

@@ -79,6 +79,12 @@ def _check_routes(base_url: str, checks: list[tuple[str, bool, str]]) -> None:
 def _check_rag_status(base_url: str, checks: list[tuple[str, bool, str]]) -> None:
     try:
         rag = request_json(f"{base_url}/api/v1/debug/rag/status")
+        rag_disabled = rag.get("rag_enabled") is False
+        vector_count = sum(
+            value if isinstance(value := rag.get(field), int) else 0
+            for field in ("text_vector_count", "image_vector_count")
+        )
+        index_ready = bool(rag.get("index_version")) or rag_disabled or vector_count > 0
         checks.extend(
             [
                 (
@@ -93,8 +99,12 @@ def _check_rag_status(base_url: str, checks: list[tuple[str, bool, str]]) -> Non
                 ),
                 (
                     "知识库索引",
-                    bool(rag.get("index_version")),
-                    str(rag.get("index_version") or "unavailable"),
+                    index_ready,
+                    (
+                        "disabled by configuration"
+                        if rag_disabled
+                        else str(rag.get("index_version") or f"vectors:{vector_count}")
+                    ),
                 ),
                 (
                     "LEARN Flow",
@@ -112,8 +122,13 @@ def _check_rag_status(base_url: str, checks: list[tuple[str, bool, str]]) -> Non
 def _check_agent_status(base_url: str, checks: list[tuple[str, bool, str]]) -> None:
     try:
         agents = request_json(f"{base_url}/api/v1/agents")
-        registered = list(agents.get("agents") or [])
-        solver = next(
+        raw_registered = agents.get("agents")
+        registered: list[dict[str, object]] = (
+            [item for item in raw_registered if isinstance(item, dict)]
+            if isinstance(raw_registered, list)
+            else []
+        )
+        solver: dict[str, object] = next(
             (item for item in registered if "SOLVER_CT" in str(item.get("agent_id"))),
             {},
         )

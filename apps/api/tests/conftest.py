@@ -119,6 +119,12 @@ def settings(tmp_path: Path) -> Settings:
         knowledge_dsp_path=tmp_path / "knowledge" / "DSP",
         knowledge_comm_path=tmp_path / "knowledge" / "COMM",
         local_storage_path=tmp_path / "storage",
+        research_analysis_artifact_root=tmp_path / "research-artifacts",
+        research_analysis_temp_root=tmp_path / "research-temp",
+        research_knowledge_enabled=False,
+        # Keep API tests deterministic: live academic providers are covered by
+        # provider/service tests with explicit fakes, not by TestClient flows.
+        external_retrieval_enabled=False,
         sse_heartbeat_seconds=0.02,
         _env_file=None,
     )

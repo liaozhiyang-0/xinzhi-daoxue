@@ -1,13 +1,29 @@
 routes:
   overall_routing:
     primary: qwen_text_fast
+    max_retries: 0
+    fallback_on_timeout: false
     options: {temperature: 0.0, max_tokens: 160}
   academic_paper_review:
     primary: qwen_text_fast
     options: {temperature: 0.0, max_tokens: 2400}
   academic_search_planning:
     primary: qwen_text_fast
+    max_retries: 0
+    fallback_on_timeout: false
     options: {temperature: 0.0, max_tokens: 700}
+  research_intent_classification:
+    primary: qwen_text_fast
+    fallback: spark_reasoner
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {temperature: 0.0, max_tokens: 500}
+  research_frontier_brief:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {temperature: 0.1, max_tokens: 5000}
   course_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
   intent_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
   query_rewrite: {primary: spark_reasoner, fallback: qwen_text_fast}
@@ -16,7 +32,12 @@ routes:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
   knowledge_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
-  general_question_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
+  general_question_answer:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {timeout: 45}
   academic_direct_answer:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
@@ -32,8 +53,8 @@ routes:
     options: {high_resolution: true}
   multi_image_summary: {primary: spark_reasoner, fallback: qwen_text_fast}
   conversation_memory_summary:
-    primary: spark_reasoner
-    fallback: qwen_text_fast
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
     options: {temperature: 0.1, max_tokens: 1200}
   complex_circuit_reasoning:
     primary: spark_reasoner
@@ -54,5 +75,15 @@ routes:
       spark_stream_total_timeout_seconds: 50
   lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
   assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}
-  academic_writing: {primary: spark_reasoner, fallback: qwen_vision_primary}
-  data_analysis_explanation: {primary: spark_reasoner, fallback: qwen_vision_primary}
+  academic_writing:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {timeout: 45}
+  data_analysis_explanation:
+    primary: qwen_text_fast
+    fallback: spark_reasoner
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {timeout: 90, temperature: 0.1, max_tokens: 2400}

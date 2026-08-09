@@ -119,11 +119,20 @@ class AcademicWritingDraft(BaseModel):
 
 
 class DataAnalysisExplanation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     analysis_status: Literal["plan", "interpreted", "insufficient_data"]
     method: str = Field(min_length=1, max_length=500)
     steps: list[str] = Field(min_length=1, max_length=12)
     interpretation: str = Field(min_length=1, max_length=3000)
     limitations: list[str] = Field(min_length=1, max_length=10)
+    summary: str = Field(default="", max_length=3000)
+    findings: list[str] = Field(default_factory=list, max_length=20)
+    effect_estimates: list[str] = Field(default_factory=list, max_length=20)
+    uncertainty: list[str] = Field(default_factory=list, max_length=20)
+    diagnostics: list[str] = Field(default_factory=list, max_length=30)
+    robustness: list[str] = Field(default_factory=list, max_length=20)
+    conclusion_boundary: str = Field(default="", max_length=3000)
 
 
 class VisionComponent(BaseModel):

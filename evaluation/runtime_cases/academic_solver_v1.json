@@ -1,0 +1,17 @@
+{
+  "case_version": "1",
+  "case_id": "academic_solver_runtime_v1",
+  "expected_status": "completed",
+  "required_node_statuses": {
+    "solver.observe": "succeeded",
+    "solver.execute": "succeeded",
+    "solver.verify": "succeeded"
+  },
+  "required_handler_ids": [
+    "academic.solver.observe",
+    "academic.solver.execute",
+    "academic.solver.verify"
+  ],
+  "max_iterations": 3,
+  "require_checkpoint_trace": true
+}

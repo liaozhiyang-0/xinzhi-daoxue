@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db, require_admin
-from app.models import AgentRunModel, TaskModel
+from app.models import AgentRunModel, AgentRunNodeModel, TaskModel
+from app.repositories import AgentRunRepository
 from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(
@@ -35,6 +36,10 @@ def _redact(value: Any) -> Any:
     if isinstance(value, list):
         return [_redact(item) for item in value]
     return value
+
+
+def _redact_dict(value: dict[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], _redact(value))
 
 
 @router.get("/metrics/summary", response_model=dict[str, Any])
@@ -187,7 +192,7 @@ async def get_metrics_summary(
     slowest = sorted(
         records, key=lambda item: int(item.get("latency_ms") or 0), reverse=True
     )[:10]
-    return _redact(
+    return _redact_dict(
         {
             "count": len(records),
             "aggregates": aggregates,
@@ -231,10 +236,63 @@ async def get_execution(
     result_validation = structured.get("validation") or {"status": "not_run"}
     run = await db.scalar(
         select(AgentRunModel)
-        .where(AgentRunModel.task_id == task_id)
+        .where(
+            AgentRunModel.task_id == task_id,
+            AgentRunModel.run_kind == "runtime",
+        )
         .order_by(AgentRunModel.created_at.desc())
         .limit(1)
     )
+    if run is None:
+        run = await db.scalar(
+            select(AgentRunModel)
+            .where(AgentRunModel.task_id == task_id)
+            .order_by(AgentRunModel.created_at.desc())
+            .limit(1)
+        )
+    runtime_nodes = []
+    runtime_children = []
+    runtime_launch_decision: dict[str, Any] = {}
+    runtime_compatibility_snapshot: dict[str, Any] = {}
+    runtime_goal_contract: dict[str, Any] = {}
+    if run is not None and run.run_kind == "runtime":
+        restored_runtime = await AgentRunRepository(db).restore(run.id)
+        if (
+            restored_runtime is not None
+            and restored_runtime.launch_decision is not None
+        ):
+            runtime_launch_decision = (
+                restored_runtime.launch_decision.model_dump(mode="json")
+            )
+        if (
+            restored_runtime is not None
+            and restored_runtime.compatibility_snapshot is not None
+        ):
+            runtime_compatibility_snapshot = (
+                restored_runtime.compatibility_snapshot.model_dump(mode="json")
+            )
+        if restored_runtime is not None and restored_runtime.goal_contract is not None:
+            runtime_goal_contract = restored_runtime.goal_contract.model_dump(
+                mode="json"
+            )
+        runtime_nodes = list(
+            (
+                await db.scalars(
+                    select(AgentRunNodeModel)
+                    .where(AgentRunNodeModel.run_id == run.id)
+                    .order_by(AgentRunNodeModel.node_id)
+                )
+            ).all()
+        )
+        runtime_children = list(
+            (
+                await db.scalars(
+                    select(AgentRunModel)
+                    .where(AgentRunModel.parent_run_id == run.id)
+                    .order_by(AgentRunModel.created_at)
+                )
+            ).all()
+        )
     runtime_metrics = (
         run.metrics_data
         if run is not None and isinstance(run.metrics_data, dict)
@@ -321,7 +379,7 @@ async def get_execution(
             "duration_ms": result_metrics.get("disclosure_filter_ms", 0),
         },
     ]
-    return _redact(
+    return _redact_dict(
         {
             "task": {
                 "id": task.id,
@@ -368,6 +426,63 @@ async def get_execution(
                     "business_data": structured.get("business_data", {}),
                     "parse_status": structured.get("parse_status", "not_reported"),
                 },
+            },
+            "runtime": {
+                "run_kind": run.run_kind if run is not None else "",
+                "run_id": run.id if run is not None else "",
+                "plan_id": run.plan_id if run is not None else "",
+                "plan_version": run.plan_version if run is not None else "",
+                "iteration": run.iteration if run is not None else 0,
+                "status": run.status if run is not None else "",
+                "goal": (
+                    restored_runtime.goal
+                    if restored_runtime is not None
+                    else ""
+                ),
+                "goal_contract": runtime_goal_contract,
+                "state_version": run.state_version if run is not None else 0,
+                "launch_decision": runtime_launch_decision,
+                "compatibility_snapshot": runtime_compatibility_snapshot,
+                "budget": (
+                    run.budget_data
+                    if run is not None and isinstance(run.budget_data, dict)
+                    else {}
+                ),
+                "terminal_reason": (
+                    run.terminal_reason if run is not None else ""
+                ),
+                "children": [
+                    {
+                        "run_id": child.id,
+                        "run_kind": child.run_kind,
+                        "parent_node_id": child.parent_node_id,
+                        "agent_id": child.agent_id,
+                        "status": child.status,
+                        "state_version": child.state_version,
+                        "plan_id": child.plan_id,
+                    }
+                    for child in runtime_children
+                ],
+                "nodes": [
+                    {
+                        "node_id": node.node_id,
+                        "node_type": node.node_type,
+                        "handler_id": node.handler_id,
+                        "target_id": node.target_id,
+                        "execution_key": node.execution_key,
+                        "runtime_effect": (
+                            node.observation_data.get("_runtime_effect", {})
+                            if isinstance(node.observation_data, dict)
+                            else {}
+                        ),
+                        "effect_status": node.effect_status,
+                        "status": node.status,
+                        "attempt": node.attempt,
+                        "error_code": node.error_code,
+                        "observation": node.observation_data,
+                    }
+                    for node in runtime_nodes
+                ],
             },
             "citation": validation,
             "validation": result_validation,

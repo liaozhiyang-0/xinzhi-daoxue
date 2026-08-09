@@ -1,0 +1,119 @@
+schema_version: "bug_backlog.v1"
+last_updated: "2026-08-09"
+owner: null
+source_protocol: "docs/quality/long_term_verification_and_bug_triage.md"
+entries:
+  - bug_id: "BUG-20260809-001"
+    kind: "code_bug"
+    severity: "P1"
+    status: "observed"
+    title: "Runtime targets migration contains a Ruff E501 line-length violation"
+    detected_at: "2026-08-09"
+    detected_by: "codex-read-only-quality-audit"
+    first_seen_command: ".\\.venv\\Scripts\\python.exe -m ruff check ."
+    failure_signature: "E501 apps/api/alembic/versions/20260808_0018_agent_runtime_targets.py:17 89 > 88"
+    affected_paths:
+      - "apps/api/alembic/versions/20260808_0018_agent_runtime_targets.py"
+    evidence:
+      - "stdout from ruff check in the 2026-08-09 quality audit"
+    reproduction:
+      preconditions: "当前工作树包含该未提交 migration"
+      steps:
+        - "运行 .\\.venv\\Scripts\\python.exe -m ruff check ."
+      expected: "Ruff exits with code 0"
+      actual: "Ruff reports E501 at line 17"
+    conflict_risk: "active_worktree"
+    owner: null
+    suggested_fix: "仅按 Ruff 建议拆分 sa.Column 调用或迁移该行；不要改变 migration 语义。"
+    regression_test: "Ruff check plus migration tests"
+    verification_command: ".\\.venv\\Scripts\\python.exe -m ruff check apps/api/alembic/versions/20260808_0018_agent_runtime_targets.py"
+    resolved_at: null
+    notes: "该 migration 属于另一进程当前改造范围，本轮未直接修改。"
+
+  - bug_id: "BUG-20260809-002"
+    kind: "contract_bug"
+    severity: "P1"
+    status: "observed"
+    title: "Contest package manifest disagrees with the enforced demo evidence boundary"
+    detected_at: "2026-08-09"
+    detected_by: "codex-read-only-quality-audit"
+    first_seen_command: ".\\.venv\\Scripts\\python.exe scripts\\audit_readiness_consistency.py"
+    failure_signature: "demo_cases_included: static=False:runtime=True"
+    affected_paths:
+      - "submission/contest_package/package_manifest.yaml"
+      - "scripts/audit_course_assets.py"
+      - "scripts/audit_readiness_consistency.py"
+    evidence:
+      - "audit_readiness_consistency.py output: status=review"
+    reproduction:
+      preconditions: "提交包 manifest 当前声明 demo_cases_included=true"
+      steps:
+        - "运行 .\\.venv\\Scripts\\python.exe scripts\\audit_readiness_consistency.py"
+      expected: "静态提交包边界与运行时边界一致"
+      actual: "静态 manifest 为 true，审计运行时边界为 false"
+    conflict_risk: "active_worktree"
+    owner: null
+    suggested_fix: "按现有审计和提交材料的安全边界，将 manifest 的 demo_cases_included 与运行时声明统一；若要保留 true，必须先同步审计规则和证据政策。"
+    regression_test: "audit_readiness_consistency.py and contest package validation"
+    verification_command: ".\\.venv\\Scripts\\python.exe scripts\\audit_readiness_consistency.py"
+    resolved_at: null
+    notes: "当前文档说明演示案例仍为负责人待补材料，不能把 synthetic/demo 当作正式竞赛证据。"
+
+  - bug_id: "BUG-20260809-003"
+    kind: "governance_gap"
+    severity: "P2"
+    status: "blocked_external"
+    title: "CT/AE/DE reviewed error-template coverage remains incomplete"
+    detected_at: "2026-08-09"
+    detected_by: "codex-read-only-quality-audit"
+    first_seen_command: ".\\.venv\\Scripts\\python.exe scripts\\validate_config.py"
+    failure_signature: "error pool reviewed coverage CT=0.50 AE=0.3333 DE=0.25"
+    affected_paths:
+      - "config/error_pool/CT.yaml"
+      - "config/error_pool/AE.yaml"
+      - "config/error_pool/DE.yaml"
+      - "config/error_pool/proposals/"
+      - "config/error_pool/reviews/"
+    evidence:
+      - "validate_config.py output teaching_foundation.error_pool_coverage"
+    reproduction:
+      preconditions: "候选错误模板仍为 pending_teacher_review"
+      steps:
+        - "运行 .\\.venv\\Scripts\\python.exe scripts\\validate_config.py"
+      expected: "所有已声明运行时错误签名都有已审核、可用模板，或明确记录外部阻塞"
+      actual: "多个签名只有 proposal，尚未进入运行时错误池"
+    conflict_risk: "external_dependency"
+    owner: null
+    suggested_fix: "由课程专家完成证据引用、审核人和审核日期，再使用既有 promotion gate；不得直接把 proposal 复制进运行时 YAML。"
+    regression_test: "test_error_pool.py, test_error_pool_promotion.py, audit_course_assets.py"
+    verification_command: ".\\.venv\\Scripts\\python.exe scripts\\validate_config.py"
+    resolved_at: null
+    notes: "这不是可由代码进程凭空修复的领域事实问题，当前保持显式 blocked_external。"
+
+  - bug_id: "VERIFY-20260809-004"
+    kind: "verification_blocker"
+    severity: "P2"
+    status: "needs_recheck"
+    title: "Mypy full-app verification exceeded the bounded check window"
+    detected_at: "2026-08-09"
+    detected_by: "codex-read-only-quality-audit"
+    first_seen_command: ".\\.venv\\Scripts\\python.exe -m mypy apps/api/app --no-incremental"
+    failure_signature: "process timed out after 124 seconds without a final result"
+    affected_paths:
+      - "apps/api/app/"
+    evidence:
+      - "quality audit tool result: command timed out after 124037 ms"
+    reproduction:
+      preconditions: "另一进程同时运行多个 Python/test 进程"
+      steps:
+        - "等待工作树和测试资源空闲"
+        - "重新运行 mypy with --no-incremental"
+      expected: "Mypy returns a definitive success or error report"
+      actual: "No definitive result within the bounded window"
+    conflict_risk: "active_worktree"
+    owner: null
+    suggested_fix: "不修改代码；在其他进程结束后单独重跑，必要时按模块分片定位。"
+    regression_test: "Full mypy plus targeted module checks"
+    verification_command: ".\\.venv\\Scripts\\python.exe -m mypy apps/api/app --no-incremental"
+    resolved_at: null
+    notes: "超时不是类型检查通过或失败的证据，不能标记为 code bug。"

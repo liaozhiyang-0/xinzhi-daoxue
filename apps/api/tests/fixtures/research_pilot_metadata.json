@@ -1,0 +1,23 @@
+{
+  "research_question": "Do the declared groups differ?",
+  "hypothesis": "The declared groups differ.",
+  "analysis_goal": "compare",
+  "design": "experimental_comparison",
+  "unit_of_analysis": "one row",
+  "variables": [
+    {"name": "outcome", "role": "outcome", "unit": "score"},
+    {"name": "treatment", "role": "treatment", "unit": "label"}
+  ],
+  "data_manifest": {
+    "dataset_id": "synthetic-pilot-metadata",
+    "version": "1",
+    "format": "csv",
+    "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "row_count": 4,
+    "column_count": 2,
+    "authorized": true,
+    "source_ref": "synthetic://pilot-input-not-for-execution"
+  },
+  "data_dictionary": "outcome is a score; treatment is a declared group",
+  "exploratory": false
+}

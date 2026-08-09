@@ -118,7 +118,7 @@ async def run_benchmark() -> dict[str, Any]:
                         metadata={"course_id": "CT", "intent": "follow_up_question"},
                     )
                 await db.commit()
-                long_bundle = await app.state.context_assembly.assemble(
+                await app.state.context_assembly.assemble(
                     db,
                     session_id=session.id,
                     user_id=USER_ID,
@@ -128,8 +128,10 @@ async def run_benchmark() -> dict[str, Any]:
                     agent_id="LEARN_01_LOCAL_RETRIEVAL_V1",
                 )
                 summary, compaction_ms = (
-                    await app.state.session_compaction.compact_if_needed(
-                        db, session=session, bundle=long_bundle
+                    await app.state.session_compaction.summarize_completed_turn(
+                        db,
+                        session=session,
+                        source_task_id="synthetic-benchmark-task",
                     )
                 )
                 await db.commit()

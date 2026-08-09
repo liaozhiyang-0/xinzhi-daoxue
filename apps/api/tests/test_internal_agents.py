@@ -111,11 +111,15 @@ def test_internal_agent_catalog_maps_to_model_routes() -> None:
 
     agents = agent_hub.list_agents()
 
-    assert len(agents) == 12
+    # The catalog is extensible; do not freeze the count as local agents grow.
+    assert len(agents) >= 12
     assert {item["agent_id"] for item in agents} >= {
         "COURSE_CLASSIFIER_LOCAL_V1",
         "CIRCUIT_PLANNER_LOCAL_V1",
         "CIRCUIT_VISION_EXTRACTOR_LOCAL_V1",
+        "RESEARCH_INTENT_CLASSIFIER_LOCAL_V1",
+        "RESEARCH_FRONTIER_BRIEF_LOCAL_V1",
+        "RESEARCH_FRONTIER_KNOWLEDGE_LOCAL_V1",
     }
     assert all(item["configured"] for item in agents)
 
@@ -202,5 +206,5 @@ def test_internal_agents_api_lists_subordinate_policy(client: Any) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["agents"]) == 12
+    assert len(payload["agents"]) >= 12
     assert payload["execution_policy"].startswith("subordinate_only")

@@ -2,7 +2,7 @@ schema_version: "contest_package_manifest.v1"
 package_status: "draft_evidence_only"
 official_rules_verified: false
 official_score_claims_allowed: false
-demo_cases_included: false
+demo_cases_included: true
 real_user_outcomes_included: false
 real_provider_results_included: false
 artifacts:
@@ -14,7 +14,7 @@ artifacts:
     status: "drafted"
   - id: "demo_user_guide"
     path: "03_demo_user_guide.md"
-    status: "pending_owner_designed_demos"
+    status: "drafted_with_five_case_playbooks_pending_owner_review"
   - id: "product_solution"
     path: "04_product_solution.md"
     status: "drafted"

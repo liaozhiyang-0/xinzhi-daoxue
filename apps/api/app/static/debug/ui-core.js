@@ -170,9 +170,11 @@
     applyTheme();
     matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (preferredTheme() === "system") applyTheme("system"); });
     document.addEventListener("keydown", (event) => { if (event.key === "Escape") document.body.classList.remove("drawer-open"); });
-    api("/api/v1/health", {}, 10000).then((data) => {
-      const dot = $("#global-health"); if (dot) { dot.classList.add(data.status === "ok" ? "ready" : "degraded"); dot.title = data.status === "ok" ? "本地 API 正常" : "本地 API 降级"; }
-    }).catch(() => { const dot = $("#global-health"); if (dot) { dot.classList.add("failed"); dot.title = "无法连接本地 API"; } });
+    if (audience !== "student") {
+      api("/api/v1/health", {}, 10000).then((data) => {
+        const dot = $("#global-health"); if (dot) { dot.classList.add(data.status === "ok" ? "ready" : "degraded"); dot.title = data.status === "ok" ? "本地 API 正常" : "本地 API 降级"; }
+      }).catch(() => { const dot = $("#global-health"); if (dot) { dot.classList.add("failed"); dot.title = "无法连接本地 API"; } });
+    }
   }
 
   const mathSymbols = Object.freeze({

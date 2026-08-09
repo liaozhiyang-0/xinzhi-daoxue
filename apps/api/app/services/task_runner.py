@@ -20,6 +20,7 @@ from app.contracts import (
     ExternalRetrievalPolicy,
     ExternalRetrievalResult,
     Intent,
+    IntentExecutionPlan,
     KnowledgeHit,
     RAGInteractionMode,
     RetrievalContextPacket,
@@ -31,10 +32,9 @@ from app.contracts import (
 )
 from app.contracts.conversation import (
     ConversationContextBundle,
-    MessageRole,
     MessageStatus,
 )
-from app.contracts.learning import StudentAttempt, TeachingMode
+from app.contracts.learning import TeachingMode
 from app.contracts.scenarios import (
     KnowledgeEvidencePolicy,
     ScenarioEvidenceReviewResponse,
@@ -42,23 +42,36 @@ from app.contracts.scenarios import (
 from app.contracts.solver import AcademicProblem, SolverResult
 from app.core.errors import AppError, NotConfiguredError, ProviderCancelledError
 from app.courses import CourseRegistry
-from app.models import AgentRunModel, ArtifactModel, TaskModel, TaskStatus
+from app.models import AgentPlanProposalModel, AgentRunModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.providers.retrieval.academic import (
     AcademicSearchService,
-    merge_academic_results,
 )
-from app.repositories import SessionRepository, TaskRepository
+from app.repositories import AgentRunRepository, SessionRepository, TaskRepository
+from app.runtime import (
+    AgentRun,
+    AgentRunPlan,
+    DecisionAction,
+    RuntimeDecision,
+    RuntimeHandlerRegistry,
+    RuntimePlanProposal,
+    RuntimeRunStatus,
+    RuntimeRunSuspended,
+    RuntimeSubagentRegistry,
+    to_task_event,
+)
 from app.services.academic_paper_review import AcademicPaperReviewService
 from app.services.academic_search_planner import (
     AcademicSearchPlannerService,
-    requested_minimum,
 )
+from app.services.academic_solver_runtime import AcademicSolverRuntimeService
+from app.services.academic_writing_runtime import AcademicWritingRuntimeService
 from app.services.agent_result_governance import (
     AgentResultValidatorRegistry,
     BusinessResultRendererRegistry,
 )
 from app.services.agent_runtime import AgentExecutionPlanner
+from app.services.assignment_review_runtime import AssignmentReviewRuntimeService
 from app.services.citation_validator import CitationValidator
 from app.services.context_assembly import ContextAssemblyService
 from app.services.conversation_message_service import ConversationMessageService
@@ -69,38 +82,61 @@ from app.services.event_service import append_task_event
 from app.services.external_research_answer import (
     external_search_view,
     is_academic_search_follow_up,
-    is_academic_search_request,
     is_academic_writing_source_follow_up,
-    normalize_academic_search_query,
     render_external_search_answer,
 )
+from app.services.external_research_runtime import ExternalResearchRuntimeService
 from app.services.external_retrieval import (
     ExternalCitationValidator,
     ExternalContentFetcher,
-    ExternalFetchError,
+)
+from app.services.external_retrieval_execution import (
+    ExternalRetrievalExecutionService,
 )
 from app.services.external_retrieval_intent import ExternalRetrievalIntentRecognizer
+from app.services.general_question_runtime import GeneralQuestionRuntimeService
+from app.services.generic_goal_runtime import GenericGoalRuntimeService
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.knowledge_base import KnowledgeBaseService
+from app.services.knowledge_qa_runtime import KnowledgeQARuntimeService
 from app.services.knowledge_qa_service import (
     KnowledgeQAExecution,
     KnowledgeQAService,
 )
 from app.services.learning_outcome import LearningOutcomeService
+from app.services.lesson_prep_runtime import LessonPrepRuntimeService
 from app.services.math_formatting_service import MathFormattingService
-from app.services.memory_service import MemoryService
 from app.services.overall_routing import OverallRoutingService
 from app.services.rag_retrieval import RAGRetrievalService
+from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
+from app.services.research_frontier_service import ResearchFrontierService
+from app.services.research_knowledge import ResearchKnowledgeService
+from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
+from app.services.runtime_child_run import RuntimeChildRunService
+from app.services.runtime_compatibility_preparation import (
+    RuntimeCompatibilityPreparationService,
+)
+from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
+from app.services.runtime_goal_intake import RuntimeGoalIntakePolicy
+from app.services.runtime_launch_policy import (
+    RuntimeLaunchDecision,
+    RuntimeLaunchMode,
+    RuntimeLaunchPolicy,
+)
+from app.services.runtime_plan_proposals import RuntimePlanProposalService
+from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
-from app.services.session_context import SessionContextService
-from app.services.session_working_state import SessionWorkingStateService
 from app.services.solver_boundary_policy import BoundaryDecision, SolverBoundaryPolicy
 from app.services.solver_quality_gate import SolverQualityGateService
 from app.services.storage import StorageService
 from app.services.student_attempts import StudentAttemptService
-from app.services.task_presentation import build_task_views
+from app.services.task_result_commit import TaskResultCommitService
+from app.services.task_result_presentation import TaskResultPresentationService
+from app.services.task_session_commit import TaskSessionCommitService
+from app.services.task_terminal_boundary import TaskTerminalBoundary
 from app.services.teaching_foundation import TeachingFoundationService
+from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +175,13 @@ class TaskRunner:
         external_fetcher: ExternalContentFetcher | None = None,
         external_paper_reviewer: AcademicPaperReviewService | None = None,
         external_search_planner: AcademicSearchPlannerService | None = None,
+        research_frontier: ResearchFrontierService | None = None,
+        research_knowledge: ResearchKnowledgeService | None = None,
         overall_router: OverallRoutingService | None = None,
         scenario_evidence_review: ScenarioEvidenceReviewService | None = None,
+        tool_registry: ToolRegistry | None = None,
+        runtime_subagent_registry: RuntimeSubagentRegistry | None = None,
+        runtime_handler_registry: RuntimeHandlerRegistry | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -158,8 +199,44 @@ class TaskRunner:
         self.external_fetcher = external_fetcher
         self.external_paper_reviewer = external_paper_reviewer
         self.external_search_planner = external_search_planner
+        self.external_retrieval_execution = ExternalRetrievalExecutionService(
+            settings=knowledge_base.settings,
+            external_search=external_search,
+            external_fetcher=external_fetcher,
+            external_paper_reviewer=external_paper_reviewer,
+            external_search_planner=external_search_planner,
+        )
+        self.research_frontier = research_frontier
+        self.research_knowledge = research_knowledge
         self.overall_router = overall_router
         self.scenario_evidence_review = scenario_evidence_review
+        self.tool_registry = tool_registry
+        self.runtime_subagent_registry = runtime_subagent_registry
+        self.generic_goal_runtime = (
+            GenericGoalRuntimeService(
+                runtime_handler_registry,
+                intake_policy=RuntimeGoalIntakePolicy.from_config(
+                    knowledge_base.settings.agent_runtime_goal_capabilities
+                ),
+            )
+            if runtime_handler_registry is not None
+            else None
+        )
+        self.runtime_canary_release = RuntimeCanaryReleaseRegistry.from_paths(
+            knowledge_base.settings.agent_runtime_canary_artifacts
+        )
+        self.runtime_launch_policy = RuntimeLaunchPolicy(
+            knowledge_base.settings.agent_runtime_launch_modes,
+            release_registry=self.runtime_canary_release,
+            release_gate_required=(
+                knowledge_base.settings.agent_runtime_release_gate_required
+            ),
+        )
+        self.runtime_child_run = (
+            RuntimeChildRunService(session_factory, internal_agents)
+            if internal_agents is not None
+            else None
+        )
         self.external_intent_recognizer = ExternalRetrievalIntentRecognizer()
         self.student_attempts = StudentAttemptService()
         self.solver_quality_gate = SolverQualityGateService()
@@ -168,22 +245,162 @@ class TaskRunner:
         self.result_validators = AgentResultValidatorRegistry()
         self.business_renderers = BusinessResultRendererRegistry()
         self.math_formatting = MathFormattingService()
+        self.result_presentation = TaskResultPresentationService(
+            self.business_renderers,
+            self.math_formatting,
+        )
         self.execution_planner = AgentExecutionPlanner(
             agent_registry, knowledge_base.settings
         )
+        self.runtime_compatibility = RuntimeCompatibilityPreparationService(
+            self.execution_planner,
+            self.overall_router,
+            self.context_assembly,
+        )
+        self.knowledge_qa_runtime = KnowledgeQARuntimeService(
+            knowledge_qa,
+            enabled=knowledge_base.settings.agent_runtime_knowledge_qa_enabled,
+        )
+        self.external_research_runtime = (
+            ExternalResearchRuntimeService(
+                research_frontier,
+                policy=agent_registry.get(
+                    ResearchFrontierService.agent_id
+                ).external_retrieval,
+                retrieve=self._retrieve_external_with_deadline,
+                external_event_hook=self._append_external_event,
+                external_enabled=knowledge_base.settings.external_retrieval_enabled,
+                enabled=knowledge_base.settings.agent_runtime_external_research_enabled,
+            )
+            if research_frontier is not None
+            else None
+        )
+        self.runtime_lifecycle = RuntimeRunLifecycleService(
+            enabled=self.runtime_launch_policy.lifecycle_enabled(
+                knowledge_base.settings.agent_runtime_shadow_enabled
+            ),
+            timeout_ms=knowledge_base.settings.workflow_default_timeout_seconds * 1000,
+            max_retries=knowledge_base.settings.workflow_max_retries,
+        )
+        self.research_analysis_runtime = ResearchAnalysisRuntimeService(
+            internal_agents,
+            enabled=knowledge_base.settings.agent_runtime_research_enabled,
+        ) if internal_agents is not None else None
+        self.academic_solver_runtime = AcademicSolverRuntimeService(
+            internal_agents,
+            enabled=knowledge_base.settings.agent_runtime_solver_enabled,
+            tool_registry=tool_registry,
+            rag_retrieval=rag_retrieval,
+            retrieval_context=knowledge_qa.context_service,
+            subagent_registry=runtime_subagent_registry,
+        ) if internal_agents is not None else None
+        self.general_question_runtime = GeneralQuestionRuntimeService(
+            internal_agents,
+            enabled=knowledge_base.settings.agent_runtime_general_enabled,
+            auto_enabled=knowledge_base.settings.agent_runtime_general_auto_enabled,
+            canary_enabled=knowledge_base.settings.agent_runtime_general_canary_enabled,
+            tool_registry=tool_registry,
+            rag_retrieval=rag_retrieval,
+            retrieval_context=knowledge_qa.context_service,
+            subagent_registry=runtime_subagent_registry,
+            child_run_service=self.runtime_child_run,
+        ) if internal_agents is not None else None
+        self.lesson_prep_runtime = LessonPrepRuntimeService(
+            internal_agents,
+            enabled=knowledge_base.settings.agent_runtime_teaching_enabled,
+            tool_registry=tool_registry,
+            rag_retrieval=rag_retrieval,
+            retrieval_context=knowledge_qa.context_service,
+            subagent_registry=runtime_subagent_registry,
+            child_run_service=self.runtime_child_run,
+        ) if internal_agents is not None else None
+        self.assignment_review_runtime = (
+            AssignmentReviewRuntimeService(
+                internal_agents,
+                enabled=knowledge_base.settings.agent_runtime_teaching_enabled,
+                tool_registry=tool_registry,
+                rag_retrieval=rag_retrieval,
+                retrieval_context=knowledge_qa.context_service,
+                subagent_registry=runtime_subagent_registry,
+                child_run_service=self.runtime_child_run,
+            )
+            if internal_agents is not None
+            else None
+        )
+        self.academic_writing_runtime = (
+            AcademicWritingRuntimeService(
+                internal_agents,
+                enabled=knowledge_base.settings.agent_runtime_research_enabled,
+                tool_registry=tool_registry,
+                rag_retrieval=rag_retrieval,
+                retrieval_context=knowledge_qa.context_service,
+                subagent_registry=runtime_subagent_registry,
+                child_run_service=self.runtime_child_run,
+            )
+            if internal_agents is not None
+            else None
+        )
+        self.runtime_boundary = RuntimeExecutionBoundary(
+            self.runtime_lifecycle,
+            self.research_analysis_runtime,
+            compatibility_preparation=self.runtime_compatibility,
+            business_services=(
+                [
+                    service
+                    for service in (
+                        self.academic_solver_runtime,
+                        self.general_question_runtime,
+                        self.lesson_prep_runtime,
+                        self.assignment_review_runtime,
+                        self.academic_writing_runtime,
+                        self.knowledge_qa_runtime,
+                        self.external_research_runtime,
+                        self.generic_goal_runtime,
+                    )
+                    if service is not None
+                ]
+            ),
+        )
+        self.result_commit = TaskResultCommitService(self.runtime_boundary)
+        self.session_commit = TaskSessionCommitService(
+            knowledge_base.settings,
+            learning_outcome=learning_outcome,
+            student_attempts=self.student_attempts,
+            compaction_enabled=session_compaction is not None,
+        )
+        self.terminal_boundary = TaskTerminalBoundary(
+            self.result_presentation,
+            self.session_commit,
+            self.result_commit,
+        )
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._deferred_submissions: set[str] = set()
         self._post_tasks: dict[str, asyncio.Task[None]] = {}
+        self._research_tasks: dict[str, asyncio.Task[None]] = {}
         self._summary_locks: dict[str, asyncio.Lock] = {}
         self.execution_owner = f"local-{uuid4().hex[:12]}"
 
     def submit(self, task_id: str) -> bool:
         existing = self._tasks.get(task_id)
         if existing is not None and not existing.done():
+            # A control endpoint may requeue a task in the small window where
+            # its suspended worker is unwinding. Preserve that durable intent
+            # and submit it once the current worker exits.
+            self._deferred_submissions.add(task_id)
             return False
         background = asyncio.create_task(self.run(task_id), name=f"xzd-task-{task_id}")
         self._tasks[task_id] = background
-        background.add_done_callback(lambda _: self._tasks.pop(task_id, None))
+        background.add_done_callback(
+            lambda _: self._on_task_finished(task_id)
+        )
         return True
+
+    def _on_task_finished(self, task_id: str) -> None:
+        self._tasks.pop(task_id, None)
+        if task_id not in self._deferred_submissions:
+            return
+        self._deferred_submissions.remove(task_id)
+        self.submit(task_id)
 
     async def recover_pending_tasks(self) -> int:
         """Requeue work left behind by a process restart."""
@@ -239,11 +456,19 @@ class TaskRunner:
             task.cancel()
         if active:
             await asyncio.gather(*active, return_exceptions=True)
+        await self.external_retrieval_execution.shutdown()
         if self.rag_retrieval is not None:
             await asyncio.to_thread(self.rag_retrieval.close)
 
     async def run(self, task_id: str) -> None:
         request: AgentRequest
+        runtime_run: AgentRun | None = None
+        runtime_launch_decision = RuntimeLaunchDecision(
+            agent_id="",
+            mode=RuntimeLaunchMode.LEGACY,
+            source="uninitialized",
+            reason="runtime_not_considered",
+        )
         conversation_bundle: ConversationContextBundle | None = None
         runner_started = perf_counter()
         started_at = utc_now()
@@ -265,6 +490,13 @@ class TaskRunner:
                 if task.cancellation_requested:
                     await self._mark_cancelled(db, task_id, "任务在执行前已取消")
                     return
+                existing_runtime = await AgentRunRepository(db).get_for_task(
+                        task_id,
+                    for_update=True,
+                )
+                runtime_resume = existing_runtime is not None and (
+                    RuntimeExecutionBoundary.is_resumable(existing_runtime.status)
+                )
                 agent_id = task.agent_id
                 agent_definition = self.agent_registry.get(agent_id)
                 internal_available = bool(
@@ -300,57 +532,183 @@ class TaskRunner:
                     agent_id=task.agent_id,
                     data={"provider": active_provider},
                 )
-                request = AgentRequest.model_validate(task.input_content)
+                runtime_snapshot, request_payload = (
+                    await self.runtime_boundary.restore_request_payload(
+                        db,
+                        runtime_id=(
+                            existing_runtime.id
+                            if existing_runtime is not None and runtime_resume
+                            else None
+                        ),
+                        fallback=dict(task.input_content),
+                    )
+                )
+                request = AgentRequest.model_validate(request_payload)
+                if runtime_snapshot is not None and runtime_snapshot.launch_decision:
+                    runtime_launch_decision = (
+                        RuntimeLaunchDecision.from_snapshot(
+                            runtime_snapshot.launch_decision
+                        )
+                    )
                 decision = RouteDecision.model_validate(
                     request.options.get("_routing", {})
                 )
-                if self.context_assembly is not None:
-                    conversation_bundle = await self.context_assembly.assemble(
-                        db,
-                        session_id=task.session_id,
-                        user_id=task.user_id,
-                        current_message_id=task.user_message_id,
-                        course_id=task.course_id,
-                        task_family=task.intent,
-                        agent_id=task.agent_id,
-                    )
-                    request = self._with_conversation_context(
-                        request, conversation_bundle
-                    )
+                intent_plan = self._intent_plan_from_request(request)
                 overall_route_latency_ms = 0
                 overall_route_metadata: dict[str, object] = {
-                    "status": "not_configured",
+                    "status": "restored" if runtime_resume else "not_configured",
                     "model_calls": 0,
                 }
-                if self.overall_router is not None:
-                    overall_outcome = await self.overall_router.route(request, decision)
-                    overall_route_latency_ms = overall_outcome.latency_ms
-                    overall_route_metadata = dict(overall_outcome.metadata)
-                    if overall_outcome.used:
-                        previous_agent_id = agent_id
-                        decision = overall_outcome.decision
-                        agent_id = decision.agent_id
-                        agent_definition = self.agent_registry.get(agent_id)
-                        request = self._with_routing_context(request, decision)
-                        task.agent_id = agent_id
-                        task.course_id = decision.course_id
-                        task.intent = decision.intent
-                        task.route_status = decision.route_status.value
-                        task.route_reason = decision.reason
+                if not runtime_resume:
+                    route_stage_started = perf_counter()
+                    await self._append_progress_event(
+                        task_id,
+                        agent_id,
+                        db=db,
+                        stage_id="route_refinement",
+                        status="started",
+                    label="正在确认执行路径",
+                        progress=0.05,
+                    )
+                preparation = await self.runtime_boundary.prepare_compatibility(
+                    db,
+                    request=request,
+                    decision=decision,
+                    agent_id=agent_id,
+                    session_id=task.session_id,
+                    user_id=task.user_id,
+                    current_message_id=task.user_message_id,
+                    course_id=task.course_id,
+                    fallback_task_family=task.intent,
+                    runtime_resume=runtime_resume,
+                )
+                request = preparation.request
+                decision = preparation.decision
+                agent_id = preparation.agent_id
+                conversation_bundle = preparation.conversation_bundle
+                overall_route_latency_ms = preparation.route_latency_ms
+                overall_route_metadata = preparation.route_metadata
+                agent_definition = self.agent_registry.get(agent_id)
+                compatibility_snapshot = (
+                    runtime_snapshot.compatibility_snapshot
+                    if (
+                        runtime_resume
+                        and runtime_snapshot is not None
+                        and runtime_snapshot.compatibility_snapshot is not None
+                    )
+                    else preparation.to_snapshot()
+                )
+                if preparation.route_reevaluated is not None:
+                    task.agent_id = agent_id
+                    task.course_id = decision.course_id
+                    task.intent = decision.intent
+                    task.route_status = decision.route_status.value
+                    task.route_reason = decision.reason
+                    await append_task_event(
+                        db,
+                        task_id,
+                        AgentEventType.ROUTE_REEVALUATED,
+                        agent_id=agent_id,
+                        data=preparation.route_reevaluated,
+                    )
+                if not runtime_resume:
+                    await self._append_progress_event(
+                        task_id,
+                        agent_id,
+                        db=db,
+                        stage_id="route_refinement",
+                        status="completed",
+                    label="执行路径已确认",
+                        progress=0.12,
+                        elapsed_ms=int((perf_counter() - route_stage_started) * 1000),
+                        detail=str(overall_route_metadata.get("status", "completed")),
+                    )
+                cloud_workflow_allowed = self._cloud_workflow_allowed(request)
+                execution_plan = preparation.execution_plan
+                if runtime_resume and runtime_snapshot is not None:
+                    self.runtime_boundary.validate_resume_invariants(
+                        runtime_snapshot,
+                        task_agent_id=task.agent_id,
+                        request=request,
+                        execution_plan=execution_plan,
+                    )
+                if intent_plan is not None and not runtime_resume:
+                    for node in intent_plan.nodes:
+                        if node.depends_on:
+                            continue
                         await append_task_event(
                             db,
                             task_id,
-                            AgentEventType.ROUTE_REEVALUATED,
-                            agent_id=agent_id,
+                            AgentEventType.PLAN_NODE_STARTED,
+                            agent_id=task.agent_id,
                             data={
-                                "previous_agent_id": previous_agent_id,
-                                "routing": decision.model_dump(mode="json"),
-                                "overall_router": overall_route_metadata,
+                                "plan_id": intent_plan.plan_id,
+                                "node_id": node.node_id,
+                                "node_type": node.node_type,
+                                "target_id": node.target_id,
                             },
                         )
-                cloud_workflow_allowed = self._cloud_workflow_allowed(request)
-                execution_plan = self.execution_planner.build(decision, request)
-                request = self._with_execution_plan(request, execution_plan)
+                runtime_goal = (
+                    intent_plan.goal
+                    if intent_plan is not None and intent_plan.goal.strip()
+                    else str(
+                        request.canonical_input.get(
+                            "text",
+                            request.canonical_input.get("question", ""),
+                        )
+                    )
+                )
+                if not (
+                    runtime_resume
+                    and runtime_snapshot is not None
+                    and runtime_snapshot.launch_decision is not None
+                ):
+                    runtime_launch_decision = self.runtime_launch_policy.resolve(
+                        task.agent_id,
+                        request,
+                        lifecycle_enabled=self.runtime_lifecycle.enabled,
+                        runtime_option_key=self.runtime_boundary.runtime_option_key(
+                            task.agent_id
+                        ),
+                        expected_agent_version=self.agent_registry.get(
+                            task.agent_id
+                        ).version,
+                        expected_runtime_plan_version=(
+                            self.runtime_boundary.runtime_plan_version(
+                                task.agent_id
+                            )
+                        ),
+                    )
+                request = self.runtime_boundary.prepare_request_for_launch(
+                    task.agent_id,
+                    request,
+                    runtime_launch_decision.mode,
+                )
+                runtime_plan = (
+                    runtime_snapshot.plan
+                    if runtime_resume and runtime_snapshot is not None
+                    else self.runtime_boundary.build_plan(task.agent_id, request)
+                )
+                if runtime_launch_decision.requires_runtime and runtime_plan is None:
+                    raise NotConfiguredError(
+                        "default Runtime launch has no registered business plan"
+                    )
+                runtime_run = await self.runtime_boundary.start_or_restore(
+                    db,
+                    task_id=task.id,
+                    agent_id=task.agent_id,
+                    provider=active_provider,
+                    goal=runtime_goal,
+                    intent_plan=intent_plan,
+                    runtime_plan=runtime_plan,
+                    request=request,
+                    launch_decision=runtime_launch_decision.to_snapshot(),
+                    compatibility_snapshot=compatibility_snapshot,
+                )
+                if runtime_launch_decision.requires_runtime and runtime_run is None:
+                    raise NotConfiguredError(
+                        "default Runtime launch is not available"
+                    )
                 await db.commit()
                 lease_task = asyncio.create_task(
                     self._lease_heartbeat(task_id),
@@ -368,6 +726,37 @@ class TaskRunner:
             citation_latency_ms = 0
             context_injected = False
             external_intent_decision: ExternalRetrievalIntentDecision | None = None
+            runtime_result: AgentResult | None = None
+            if (
+                runtime_plan is not None
+                and runtime_run is not None
+                and runtime_launch_decision.should_execute
+            ):
+                request = self._with_upstream_elapsed(request, runner_started)
+                runtime_result = await self.runtime_boundary.execute(
+                    agent_id,
+                    request,
+                    runtime_run,
+                    context=None,
+                    checkpoint_hook=self._checkpoint_runtime_run,
+                    event_hook=self._append_runtime_event,
+                    control_provider=self._runtime_control_provider,
+                    decision_event_hook=self._append_runtime_decision_event,
+                    plan_proposal_provider=(
+                        self._runtime_plan_proposal_provider
+                        if (
+                            self.knowledge_base.settings
+                            .agent_runtime_plan_proposals_enabled
+                        )
+                        else None
+                    ),
+                )
+            runtime_handoff = self.runtime_boundary.handoff_result(
+                runtime_result,
+                decision=runtime_launch_decision,
+            )
+            runtime_result = runtime_handoff.result
+            runtime_selected = runtime_handoff.bypass_legacy_execution
             if agent_definition.mode == "routing_only":
                 if (
                     self.provider.provider_name == "xingchen"
@@ -384,9 +773,29 @@ class TaskRunner:
                 ).route_cloud_response(dispatch_result.answer, request)
                 agent_id = decision.agent_id
                 agent_definition = self.agent_registry.get(agent_id)
-                options = dict(request.options)
-                options["_routing"] = decision.model_dump(mode="json")
-                request = request.model_copy(update={"options": options})
+                task.agent_id = agent_id
+                task.course_id = decision.course_id
+                task.intent = decision.intent
+                task.route_status = decision.route_status.value
+                task.route_reason = decision.reason
+                request = self._with_routing_context(request, decision)
+                if (
+                    self.context_assembly is not None
+                    and not runtime_resume
+                    and not runtime_selected
+                ):
+                    conversation_bundle = await self.context_assembly.assemble(
+                        db,
+                        session_id=task.session_id,
+                        user_id=task.user_id,
+                        current_message_id=task.user_message_id,
+                        course_id=decision.course_id,
+                        task_family=self._route_task_family(decision, task.intent),
+                        agent_id=agent_id,
+                    )
+                    request = self._with_conversation_context(
+                        request, conversation_bundle
+                    )
                 await self._append_cloud_route_event(task_id, decision)
                 execution_plan = self.execution_planner.build(decision, request)
                 request = self._with_execution_plan(request, execution_plan)
@@ -395,12 +804,65 @@ class TaskRunner:
             internal_available = bool(
                 self.internal_agents and self.internal_agents.available(agent_id)
             )
+            research_intent = None
+            if (
+                not runtime_resume
+                and not runtime_selected
+                and agent_id == ResearchFrontierService.agent_id
+                and self.research_frontier is not None
+            ):
+                intent_stage_started = perf_counter()
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="research_intent",
+                    status="started",
+                    label="正在拆分科研问题",
+                    progress=0.14,
+                )
+                research_intent = await self.research_frontier.classify_intent(request)
+                if research_intent is not None:
+                    options = dict(request.options)
+                    options["research_intent"] = research_intent.model_dump(mode="json")
+                    request = request.model_copy(update={"options": options})
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="research_intent",
+                    status="completed",
+                    label="科研问题已拆分",
+                    progress=0.2,
+                    elapsed_ms=int((perf_counter() - intent_stage_started) * 1000),
+                    detail="已生成检索范围与回答结构",
+                )
             boundary_preflight = self._academic_boundary_preflight(
                 request,
                 agent_id,
             )
             external_policy = agent_definition.external_retrieval
-            if external_policy.enabled and self._external_query(request):
+            if (
+                not runtime_resume
+                and not runtime_selected
+                and agent_id == ResearchFrontierService.agent_id
+                and research_intent is not None
+            ):
+                external_intent_decision = ExternalRetrievalIntentDecision(
+                    decision=(
+                        "retrieve" if research_intent.requires_web else "skip"
+                    ),
+                    category="agent_intent",
+                    threshold=external_policy.intent_score_threshold,
+                    reason_codes=[
+                        "model_research_intent",
+                        *research_intent.reason_codes,
+                    ][:8],
+                )
+            elif (
+                not runtime_resume
+                and not runtime_selected
+                and external_policy.enabled
+                and self._external_query(request)
+            ):
                 external_intent_decision = self.external_intent_recognizer.classify(
                     request,
                     external_policy,
@@ -420,9 +882,22 @@ class TaskRunner:
                             "matched_signals": [],
                         }
                     )
-            if self._external_retrieval_allowed(
-                external_policy, request, external_intent_decision
+            if (
+                not runtime_resume
+                and not runtime_selected
+                and self._external_retrieval_allowed(
+                    external_policy, request, external_intent_decision
+                )
             ):
+                external_stage_started = perf_counter()
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="external_retrieval",
+                    status="started",
+                    label="正在检索外部证据",
+                    progress=0.22,
+                )
                 await self._append_external_event(
                     task_id,
                     agent_id,
@@ -438,9 +913,22 @@ class TaskRunner:
                         ),
                     },
                 )
-                external_result = await self._retrieve_external(
-                    request, external_policy
+                external_result = await self._retrieve_external_with_deadline(
+                    request,
+                    external_policy,
+                    allow_degraded_review=(
+                        agent_id == ResearchFrontierService.agent_id
+                    ),
                 )
+                if (
+                    self.research_knowledge is not None
+                    and agent_id == ResearchFrontierService.agent_id
+                ):
+                    self._schedule_research_ingest(
+                        external_result,
+                        query=self._knowledge_query(request),
+                        task_id=request.task_id,
+                    )
                 event_type = (
                     AgentEventType.EXTERNAL_RETRIEVED
                     if external_result.status in {"completed", "partial"}
@@ -452,13 +940,25 @@ class TaskRunner:
                     event_type,
                     self._external_event_data(external_result),
                 )
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="external_retrieval",
+                    status=(
+                        "completed"
+                        if external_result.status in {"completed", "partial"}
+                        else "failed"
+                    ),
+                    label="外部证据检索完成",
+                    progress=0.42,
+                    elapsed_ms=int((perf_counter() - external_stage_started) * 1000),
+                    detail=f"返回 {len(external_result.items)} 条候选证据",
+                )
 
-            paper_search_request = is_academic_search_request(
-                self._knowledge_query(request)
-            )
-            if agent_definition.mode == "external_search" or (
-                paper_search_request and external_policy.enabled
-            ):
+            if runtime_selected:
+                assert runtime_result is not None
+                result = runtime_result
+            elif agent_definition.mode == "external_search":
                 if external_result is None:
                     external_result = ExternalRetrievalResult(
                         query=self._external_query(request) or "academic paper search",
@@ -471,21 +971,54 @@ class TaskRunner:
                 result = self._build_external_search_result(agent_id, external_result)
             elif agent_definition.mode == "retrieval_only":
                 if self.knowledge_base.settings.enable_local_knowledge_qa:
+                    retrieval_stage_started = perf_counter()
+                    await self._append_progress_event(
+                        task_id,
+                        agent_id,
+                        stage_id="local_retrieval",
+                        status="started",
+                        label="正在检索课程资料",
+                        progress=0.3,
+                    )
                     execution = await self.knowledge_qa.run_with_generation(
                         agent_id, request
                     )
                 else:
+                    retrieval_stage_started = perf_counter()
+                    await self._append_progress_event(
+                        task_id,
+                        agent_id,
+                        stage_id="local_retrieval",
+                        status="started",
+                        label="正在检索课程资料",
+                        progress=0.3,
+                    )
                     execution = await asyncio.to_thread(
                         self.knowledge_qa.run, agent_id, request
                     )
                 await self._append_local_knowledge_events(task_id, agent_id, execution)
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="local_retrieval",
+                    status="completed",
+                    label="课程资料检索完成",
+                    progress=0.5,
+                    elapsed_ms=int((perf_counter() - retrieval_stage_started) * 1000),
+                    detail=f"命中 {len(execution.context.evidence)} 条资料",
+                )
                 result = execution.result
                 retrieval_result = execution.retrieval
                 retrieval_packet = execution.context
                 knowledge_hits = list(execution.context.evidence)
                 retrieval_attempted = True
             else:
-                if execution_plan.use_rag and boundary_preflight is None:
+                if (
+                    execution_plan.use_rag
+                    and boundary_preflight is None
+                    and not runtime_resume
+                    and not runtime_selected
+                ):
                     (
                         retrieval_result,
                         retrieval_attempted,
@@ -508,6 +1041,15 @@ class TaskRunner:
                     )
                     context_latency_ms += int((perf_counter() - context_started) * 1000)
                 provider_started = perf_counter()
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="model_generation",
+                    status="started",
+                    label="正在生成结构化回答",
+                    progress=0.55,
+                    detail="内部只保留可核验的阶段状态，不展示隐藏推理过程",
+                )
                 provider_request = self._cloud_safe_request(request)
                 if (
                     self.provider.provider_name == "xingchen"
@@ -536,8 +1078,49 @@ class TaskRunner:
                     provider_request = self._cloud_safe_request(request)
                 cloud_error: AppError | None = None
                 cloud_response_failed = False
+                local_analysis_v2 = (
+                    agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+                    and isinstance(request.options.get("research_analysis_v2"), dict)
+                )
                 try:
-                    if internal_available and self.internal_agents is not None:
+                    if local_analysis_v2:
+                        if self.internal_agents is None:
+                            raise NotConfiguredError(
+                                "科研数据分析 V2 本地执行器未注册"
+                            )
+                        request = self._with_upstream_elapsed(request, runner_started)
+                        if (
+                            runtime_run is not None
+                            and runtime_launch_decision.should_execute
+                        ):
+                            runtime_result = await self.runtime_boundary.execute(
+                                agent_id,
+                                request,
+                                runtime_run,
+                                context=None,
+                                checkpoint_hook=self._checkpoint_runtime_run,
+                                event_hook=self._append_runtime_event,
+                                control_provider=self._runtime_control_provider,
+                                decision_event_hook=(
+                                    self._append_runtime_decision_event
+                                ),
+                                plan_proposal_provider=(
+                                    self._runtime_plan_proposal_provider
+                                    if (
+                                        self.knowledge_base.settings
+                                        .agent_runtime_plan_proposals_enabled
+                                    )
+                                    else None
+                                ),
+                            )
+                        else:
+                            runtime_result = None
+                        if runtime_result is not None:
+                            result = runtime_result
+                        else:
+                            result = await self.internal_agents.run(agent_id, request)
+                        context_injected = False
+                    elif internal_available and self.internal_agents is not None:
                         request = self._with_upstream_elapsed(
                             request,
                             runner_started,
@@ -659,6 +1242,7 @@ class TaskRunner:
                     if fallback is not None and fallback.mode == "retrieval_only":
                         agent_id = fallback.agent_id
                         agent_definition = fallback
+                        workflow_definition = fallback
                 if cloud_error is None:
                     upstream_status = str(
                         result.structured_result.get("status", "success")
@@ -666,7 +1250,8 @@ class TaskRunner:
                     routing = dict(request.options.get("_routing", {}))
                     routing["cloud_status"] = (
                         "not_requested"
-                        if result.provider in {"local", "local_agent", "local_graph"}
+                        if result.provider
+                        in {"local", "local_agent", "local_graph", "local_analysis_v2"}
                         else f"cloud_{upstream_status}"
                     )
                     options = dict(request.options)
@@ -712,6 +1297,7 @@ class TaskRunner:
                             request = request.model_copy(update={"options": options})
                             agent_id = fallback.agent_id
                             agent_definition = fallback
+                            workflow_definition = fallback
                             cloud_response_failed = True
                         elif not self._uses_local_retrieval_fallback(agent_definition):
                             result = self._non_cloud_fallback_result(
@@ -771,6 +1357,20 @@ class TaskRunner:
                                 local_confidence=1.0,
                                 visited_agents=visited,
                                 reroute_count=1,
+                                route_revision=(
+                                    int(routing.get("route_revision", 0)) + 1
+                                ),
+                                route_trace=[
+                                    *list(routing.get("route_trace", [])),
+                                    {
+                                        "stage": "automatic_reroute",
+                                        "source": "automatic_reroute",
+                                        "from_agent_id": agent_definition.agent_id,
+                                        "to_agent_id": target.agent_id,
+                                        "intent": Intent.SOLVE_PROBLEM.value,
+                                        "reason": "learn_misrouted",
+                                    },
+                                ],
                             )
                             routing = decision.model_dump(mode="json")
                             options["_routing"] = routing
@@ -811,7 +1411,17 @@ class TaskRunner:
                             result = await self.provider.run(
                                 target.agent_id, request, stream=False
                             )
-                provider_latency_ms += int((perf_counter() - provider_started) * 1000)
+                provider_elapsed_ms = int((perf_counter() - provider_started) * 1000)
+                provider_latency_ms += provider_elapsed_ms
+                await self._append_progress_event(
+                    task_id,
+                    agent_id,
+                    stage_id="model_generation",
+                    status="completed",
+                    label="结构化回答已生成",
+                    progress=0.82,
+                    elapsed_ms=provider_elapsed_ms,
+                )
                 pipeline_requested = bool(
                     request.options.get("_routing", {}).get("requires_pipeline", False)
                 )
@@ -880,6 +1490,27 @@ class TaskRunner:
                             visited_agents=[
                                 agent_definition.agent_id,
                                 writing.agent_id,
+                            ],
+                            route_revision=int(
+                                request.options.get("_routing", {}).get(
+                                    "route_revision", 0
+                                )
+                            )
+                            + 1,
+                            route_trace=[
+                                *list(
+                                    request.options.get("_routing", {}).get(
+                                        "route_trace", []
+                                    )
+                                ),
+                                {
+                                    "stage": "sequential_pipeline",
+                                    "source": "sequential_pipeline",
+                                    "from_agent_id": agent_definition.agent_id,
+                                    "to_agent_id": writing.agent_id,
+                                    "intent": Intent.ACADEMIC_WRITING.value,
+                                    "reason": "data_analysis_then_academic_writing",
+                                },
                             ],
                         )
                         pipeline_options = dict(request.options)
@@ -1044,6 +1675,28 @@ class TaskRunner:
                 result.structured_result["external_retrieval_intent"] = (
                     external_intent_decision.model_dump(mode="json")
                 )
+            if agent_id == ResearchFrontierService.agent_id:
+                research_external = result.structured_result.get(
+                    "external_retrieval"
+                )
+                if isinstance(research_external, dict) and research_external:
+                    try:
+                        external_result = ExternalRetrievalResult.model_validate(
+                            research_external
+                        )
+                    except Exception:
+                        logger.warning(
+                            "research_external_result_sync_failed task_id=%s",
+                            task_id,
+                            exc_info=True,
+                        )
+                    else:
+                        if runtime_selected:
+                            self._schedule_research_ingest(
+                                external_result,
+                                query=self._knowledge_query(request),
+                                task_id=request.task_id,
+                            )
             if request.options.get("previous_external_context_used"):
                 previous_external = request.options.get("previous_external_retrieval")
                 if isinstance(previous_external, dict) and previous_external.get(
@@ -1185,16 +1838,36 @@ class TaskRunner:
                     result = self._teaching_degraded_result(result, request)
             if result.fallback_used and not result.fallback_reason:
                 result.fallback_reason = "route_cloud_unavailable"
+            validation_stage_started = perf_counter()
+            await self._append_progress_event(
+                task_id,
+                agent_id,
+                stage_id="result_validation",
+                status="started",
+                label="正在核验回答结构",
+                progress=0.86,
+            )
             result_validation = self.result_validators.validate(
                 workflow_definition, result, request, workflow_bundle
+            )
+            await self._append_progress_event(
+                task_id,
+                agent_id,
+                stage_id="result_validation",
+                status=(
+                    "completed"
+                    if result_validation.response_usable
+                    else "failed"
+                ),
+                label="回答结构核验完成",
+                progress=0.94,
+                elapsed_ms=int((perf_counter() - validation_stage_started) * 1000),
+                detail=result_validation.result_status,
             )
             result.structured_result["validation"] = result_validation.model_dump(
                 mode="json"
             )
             result.structured_result["result_status"] = result_validation.result_status
-            result.structured_result["business_view"] = self.business_renderers.render(
-                workflow_definition, result, result_validation
-            )
             result.structured_result["material_extraction"] = request.options.get(
                 "_material_extraction", {}
             )
@@ -1214,6 +1887,14 @@ class TaskRunner:
                     ),
                     "knowledge_hit_count": len(knowledge_hits),
                     "rag_status": result.rag_status,
+                    "intent_recognition": dict(
+                        routing.get("intent_recognition", {})
+                    ),
+                    "intent_plan": (
+                        intent_plan.model_dump(mode="json")
+                        if intent_plan is not None
+                        else {}
+                    ),
                     "evidence_status": result.evidence_status,
                     "related_images": result.related_images,
                     "retrieval_trace_id": result.retrieval_trace_id,
@@ -1305,283 +1986,35 @@ class TaskRunner:
                     "total_ms": total_latency_ms,
                 }
                 result.timings = timings
-                presentation_started = perf_counter()
-                presentation, execution_summary, evidence_view = build_task_views(
-                    definition=workflow_definition,
-                    result=result,
-                    bundle=workflow_bundle,
+                result = await self.terminal_boundary.commit(
+                    db,
+                    task=task,
+                    agent_id=agent_id,
+                    agent_definition=agent_definition,
+                    request=request,
                     routing=dict(routing),
+                    result=result,
+                    runtime_run=runtime_run,
+                    conversation_bundle=conversation_bundle,
+                    workflow_bundle=workflow_bundle,
                     timings=timings,
-                )
-                result.metrics.presentation_latency_ms = int(
-                    (perf_counter() - presentation_started) * 1000
-                )
-                result.structured_result.update(
-                    {
-                        "presentation": presentation.model_dump(mode="json"),
-                        "execution_summary": execution_summary.model_dump(mode="json"),
-                        "evidence_view": [
-                            item.model_dump(mode="json") for item in evidence_view
-                        ],
-                        "workflow_context": (
-                            workflow_bundle.model_dump(mode="json")
-                            if workflow_bundle is not None
-                            else None
-                        ),
-                    }
-                )
-                math_source = dict(result.structured_result)
-                math_source["answer_text"] = result.answer
-                math_content = self.math_formatting.build_from_structured_result(
-                    math_source
-                )
-                result.answer = math_content.markdown
-                result.math_content = math_content
-                result.structured_result["answer_text"] = math_content.markdown
-                result.structured_result["math_content"] = math_content.model_dump(
-                    mode="json"
-                )
-                if request.options.get("debug") is True:
-                    result.structured_result["math_debug"] = (
-                        self.math_formatting.debug_summary(math_content)
-                    )
-                for artifact in result.artifacts:
-                    if "answer" in artifact.content:
-                        artifact.content["answer"] = math_content.markdown
-                    if "answer_text" in artifact.content:
-                        artifact.content["answer_text"] = math_content.markdown
-                    artifact.content["math_content"] = math_content.model_dump(
-                        mode="json"
-                    )
-                task.agent_id = agent_id
-                task.provider = result.provider
-                task.status = TaskStatus.COMPLETED
-                task.completed_at = completed_at
-                task.updated_at = completed_at
-                task.heartbeat_at = completed_at
-                task.lease_expires_at = None
-                context_usage: dict[str, object] = {}
-                session = await SessionRepository(db).get_for_user(
-                    task.session_id, task.user_id, for_update=True
-                )
-                if session is not None:
-                    SessionContextService(self.knowledge_base.settings).update(
-                        session, request, result
-                    )
-                    await SessionWorkingStateService(db).update_from_result(
-                        request, result
-                    )
-                    await self._record_initial_attempt(
-                        db,
-                        task=task,
-                        request=request,
-                        result=result,
-                    )
-                    assistant_message = await ConversationMessageService(
-                        db
-                    ).append_assistant_for_task(task, result, session=session)
-                    task.assistant_message_id = assistant_message.id
-                    memory_started = perf_counter()
-                    memory_writes = 0
-                    memory_action = "none"
-                    try:
-                        memory_writes, memory_action = await MemoryService(
-                            db
-                        ).process_explicit_intent(
-                            user_id=task.user_id,
-                            session_id=task.session_id,
-                            message_id=task.user_message_id or "",
-                            text=ConversationMessageService.question_text(request),
-                            course_id=task.course_id,
-                            memory_enabled=session.memory_enabled,
-                            auto_memory_enabled=session.auto_memory_enabled,
-                        )
-                        if memory_action in {"remembered", "forgotten"}:
-                            confirmation = (
-                                "已按你的要求保存这项偏好。"
-                                if memory_action == "remembered"
-                                else (
-                                    f"已忘记 {memory_writes} 项相关记忆。"
-                                    if memory_writes
-                                    else "没有找到需要忘记的匹配记忆。"
-                                )
-                            )
-                            await ConversationMessageService(db).append(
-                                session=session,
-                                user_id=task.user_id,
-                                role=MessageRole.SYSTEM_EVENT,
-                                status=MessageStatus.COMPLETED,
-                                content_text=confirmation,
-                                source_task_id=task.id,
-                                reply_to_message_id=task.user_message_id,
-                                metadata={
-                                    "course_id": task.course_id,
-                                    "memory_action": memory_action,
-                                },
-                            )
-                    except AppError:
-                        logger.info(
-                            "memory_write_rejected task_id=%s reason=policy",
-                            task.id,
-                        )
-                    memory_latency_ms = (perf_counter() - memory_started) * 1000
-                    compaction_count = 0
-                    compaction_latency_ms = 0.0
-                    if conversation_bundle is not None:
-                        result.metrics = result.metrics.model_copy(
-                            update={
-                                "message_count": session.message_count,
-                                "recent_message_count": len(
-                                    conversation_bundle.recent_messages
-                                ),
-                                "older_message_count": len(
-                                    conversation_bundle.relevant_earlier_messages
-                                ),
-                                "session_summary_used": bool(
-                                    conversation_bundle.session_summary
-                                ),
-                                "summary_version": conversation_bundle.summary_version,
-                                "context_estimated_tokens": (
-                                    conversation_bundle.token_estimate
-                                ),
-                                "context_budget_tokens": conversation_bundle.budget,
-                                "context_budget_ratio": (
-                                    conversation_bundle.token_estimate
-                                    / max(1, conversation_bundle.budget)
-                                ),
-                                "context_trimmed": (
-                                    conversation_bundle.context_trimmed
-                                ),
-                                "compaction_count": compaction_count,
-                                "memory_enabled": session.memory_enabled,
-                                "memory_retrieval_count": len(
-                                    conversation_bundle.active_memories
-                                ),
-                                "memory_write_count": memory_writes,
-                                "context_cache_hit": (
-                                    conversation_bundle.cache_status == "hit"
-                                ),
-                                "context_cache_backend": (
-                                    conversation_bundle.cache_backend
-                                ),
-                                "context_build_latency_ms": (
-                                    conversation_bundle.build_latency_ms
-                                ),
-                                "compaction_latency_ms": compaction_latency_ms,
-                                "memory_latency_ms": memory_latency_ms,
-                            }
-                        )
-                        context_usage = {
-                            "memory_enabled": session.memory_enabled,
-                            "auto_memory_enabled": session.auto_memory_enabled,
-                            "active_memory_count": len(
-                                conversation_bundle.active_memories
-                            ),
-                            "active_memory_ids": list(
-                                conversation_bundle.source_memory_ids
-                            ),
-                            "memory_write_count": memory_writes,
-                            "memory_action": memory_action,
-                            "recent_message_count": len(
-                                conversation_bundle.recent_messages
-                            ),
-                            "older_message_count": len(
-                                conversation_bundle.relevant_earlier_messages
-                            ),
-                            "summary_used": bool(conversation_bundle.session_summary),
-                            "summary_version": conversation_bundle.summary_version,
-                            "estimated_tokens": conversation_bundle.token_estimate,
-                            "budget_tokens": conversation_bundle.budget,
-                            "budget_ratio": (
-                                conversation_bundle.token_estimate
-                                / max(1, conversation_bundle.budget)
-                            ),
-                            "trimmed": conversation_bundle.context_trimmed,
-                            "compaction_count": compaction_count,
-                            "summary_refresh_status": (
-                                "queued"
-                                if (
-                                    self.session_compaction is not None
-                                    and session.memory_enabled
-                                )
-                                else "disabled"
-                            ),
-                            "cache_status": conversation_bundle.cache_status,
-                            "build_latency_ms": (conversation_bundle.build_latency_ms),
-                        }
-                result_payload = result.model_dump(mode="json")
-                if context_usage:
-                    result_payload["context_usage"] = context_usage
-                task.result_content = result_payload
-
-                for artifact in result.artifacts:
-                    db.add(
-                        ArtifactModel(
-                            id=artifact.artifact_id,
-                            task_id=task.id,
-                            artifact_type=artifact.artifact_type.value,
-                            version=artifact.version,
-                            content=artifact.content,
-                            confidence=artifact.confidence,
-                            created_at=artifact.created_at,
-                        )
-                    )
-                    await append_task_event(
-                        db,
-                        task.id,
-                        AgentEventType.ARTIFACT_CREATED,
-                        agent_id=task.agent_id,
-                        data={"artifact_id": artifact.artifact_id},
-                    )
-
-                db.add(
-                    AgentRunModel(
-                        task_id=task.id,
-                        agent_id=task.agent_id,
-                        provider=result.provider,
-                        status=result.status.value,
-                        latency_ms=total_latency_ms,
-                        model_calls=result.metrics.model_calls,
-                        tool_calls=result.metrics.tool_calls,
-                        retrieval_calls=result.metrics.retrieval_calls,
-                        trace_id=result.trace_id or result.request_id or None,
-                        metrics_data=result.metrics.model_dump(mode="json"),
-                        started_at=started_at,
-                        completed_at=completed_at,
-                    )
-                )
-                await append_task_event(
-                    db,
-                    task.id,
-                    AgentEventType.AGENT_OUTPUT,
-                    agent_id=task.agent_id,
-                    data={
-                        "provider": result.provider,
-                        "mock": result.provider == "mock",
-                        "scene": agent_definition.scene,
-                        "mode": agent_definition.mode,
-                        "course": request.course_id,
-                        "intent": request.intent.value,
-                        "route_source": routing.get("route_source", "local_fast"),
-                        "route_confidence": routing.get("route_confidence", 1.0),
-                        "target_agent_id": agent_id,
-                        "fallback_used": routing.get("fallback_used", False),
-                    },
-                )
-                await append_task_event(
-                    db,
-                    task.id,
-                    AgentEventType.TASK_COMPLETED,
-                    agent_id=task.agent_id,
-                    data={
-                        "artifact_count": len(result.artifacts),
-                        "latency_ms": total_latency_ms,
-                    },
+                    validation=result_validation,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    total_latency_ms=total_latency_ms,
                 )
                 await self._cleanup_terminal_evaluation_attachments(db, task.id)
                 await db.commit()
                 if self.session_compaction is not None:
                     self._schedule_memory_summary(task.id, task.session_id)
+        except RuntimeRunSuspended as exc:
+            logger.info(
+                "runtime_run_suspended task_id=%s run_id=%s status=%s",
+                task_id,
+                exc.run_id,
+                exc.status.value,
+            )
+            return
         except ProviderCancelledError as exc:
             await self._cancel_after_exception(task_id, exc.message)
         except asyncio.CancelledError:
@@ -1632,6 +2065,50 @@ class TaskRunner:
         )
         self._post_tasks[task_id] = background
         background.add_done_callback(lambda _: self._post_tasks.pop(task_id, None))
+
+    def _schedule_research_ingest(
+        self,
+        result: ExternalRetrievalResult,
+        *,
+        query: str,
+        task_id: str,
+    ) -> None:
+        """Persist research evidence after the user-facing task can finish."""
+
+        service = self.research_knowledge
+        if service is None or not result.items:
+            return
+        existing = self._research_tasks.get(task_id)
+        if existing is not None and not existing.done():
+            return
+        background = asyncio.create_task(
+            self._ingest_research_evidence(service, result, query, task_id),
+            name=f"xzd-research-ingest-{task_id}",
+        )
+        self._research_tasks[task_id] = background
+        background.add_done_callback(
+            lambda completed: self._research_tasks.pop(task_id, None)
+            if self._research_tasks.get(task_id) is completed
+            else None
+        )
+
+    async def _ingest_research_evidence(
+        self,
+        service: ResearchKnowledgeService,
+        result: ExternalRetrievalResult,
+        query: str,
+        task_id: str,
+    ) -> None:
+        try:
+            await service.ingest(result, query=query, task_id=task_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "research_knowledge_ingest_background_failed task_id=%s",
+                task_id,
+                exc_info=True,
+            )
 
     async def _summarize_completed_task(self, task_id: str, session_id: str) -> None:
         if self.session_compaction is None:
@@ -2426,9 +2903,35 @@ class TaskRunner:
     def _with_execution_plan(
         request: AgentRequest, plan: AgentExecutionPlan
     ) -> AgentRequest:
-        options = dict(request.options)
-        options["_execution_plan"] = plan.model_dump(mode="json")
-        return request.model_copy(update={"options": options})
+        return RuntimeCompatibilityPreparationService.with_execution_plan(
+            request, plan
+        )
+
+    @staticmethod
+    def _intent_plan_from_request(
+        request: AgentRequest,
+    ) -> IntentExecutionPlan | None:
+        raw_plan = request.options.get("_intent_plan")
+        if not isinstance(raw_plan, dict):
+            return None
+        try:
+            return IntentExecutionPlan.model_validate(raw_plan)
+        except ValueError:
+            logger.warning(
+                "intent_plan_invalid task_id=%s",
+                request.task_id,
+                exc_info=True,
+            )
+            return None
+
+    @staticmethod
+    def _execution_plan_from_request(
+        request: AgentRequest,
+    ) -> AgentExecutionPlan | None:
+        """Restore the immutable execution policy for a Runtime resume."""
+        return RuntimeCompatibilityPreparationService.execution_plan_from_request(
+            request
+        )
 
     @staticmethod
     def _with_upstream_elapsed(
@@ -2446,50 +2949,23 @@ class TaskRunner:
     def _with_conversation_context(
         request: AgentRequest, bundle: ConversationContextBundle
     ) -> AgentRequest:
-        options = dict(request.options)
-        options.update(
-            {
-                "conversation_context": bundle.model_dump(mode="json"),
-                "conversation_summary": bundle.safe_prompt_text(),
-                "recent_messages": [
-                    item.model_dump(mode="json")
-                    for item in bundle.recent_messages[-12:]
-                ],
-                "active_memories": list(bundle.active_memories),
-                "working_state": bundle.working_state.model_dump(mode="json"),
-            }
+        return RuntimeCompatibilityPreparationService.with_conversation_context(
+            request, bundle
         )
-        return request.model_copy(update={"options": options})
 
     @staticmethod
     def _with_routing_context(
         request: AgentRequest, decision: RouteDecision
     ) -> AgentRequest:
-        options = dict(request.options)
-        options.update(
-            {
-                "_routing": decision.model_dump(mode="json"),
-                "task_subtype": decision.task_subtype,
-                "secondary_intents": list(decision.secondary_intents),
-                "requires_pipeline": decision.requires_pipeline,
-                "available_agents": [
-                    item.agent_id
-                    for item in decision.candidate_agents
-                    if item.available
-                ],
-                "candidate_agents": [
-                    item.model_dump(mode="json") for item in decision.candidate_agents
-                ],
-                "local_confidence": decision.local_confidence,
-                "_material_extraction": dict(decision.material_extraction),
-            }
+        return RuntimeCompatibilityPreparationService.with_routing_context(
+            request, decision
         )
-        return request.model_copy(
-            update={
-                "options": options,
-                "course_id": decision.course_id,
-                "intent": Intent(decision.intent),
-            }
+
+    @staticmethod
+    def _route_task_family(decision: RouteDecision, fallback: str) -> str:
+        """Use structured intent family for context, never the legacy alias."""
+        return RuntimeCompatibilityPreparationService._route_task_family(
+            decision, fallback
         )
 
     @staticmethod
@@ -2515,6 +2991,7 @@ class TaskRunner:
             previous_answer_summary=str(
                 request.options.get("previous_answer_summary", "")
             ),
+            previous_query=previous_query,
         ):
             return f"{previous_query}\nFollow-up requirement: {current}"
         return current
@@ -2627,6 +3104,7 @@ class TaskRunner:
             previous_answer_summary=str(
                 request.options.get("previous_answer_summary", "")
             ),
+            previous_query=str(request.options.get("previous_external_query", "")),
         )
         writing_source_follow_up = is_academic_writing_source_follow_up(
             self._knowledge_query(request),
@@ -2686,243 +3164,74 @@ class TaskRunner:
         self,
         request: AgentRequest,
         policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool = False,
     ) -> ExternalRetrievalResult:
-        query = self._external_query(request)
-        settings = self.knowledge_base.settings
-        if self.external_search is None or not query:
-            return ExternalRetrievalResult(
-                query=query or "external retrieval",
-                normalized_query=query or "external retrieval",
-                source_scopes=list(policy.source_scopes),
-                status="disabled",
+        service = getattr(self, "external_retrieval_execution", None)
+        if service is None:
+            service = ExternalRetrievalExecutionService(
+                settings=self.knowledge_base.settings,
+                external_search=getattr(self, "external_search", None),
+                external_fetcher=getattr(self, "external_fetcher", None),
+                external_paper_reviewer=getattr(
+                    self, "external_paper_reviewer", None
+                ),
+                external_search_planner=getattr(
+                    self, "external_search_planner", None
+                ),
             )
-        started = perf_counter()
-        result: ExternalRetrievalResult | None = None
-        try:
-            async with asyncio.timeout(
-                min(policy.timeout_seconds, settings.external_retrieval_timeout_seconds)
-            ):
-                planner_warning: str | None = None
-                plan = None
-                if self.external_search_planner is not None:
-                    plan, planner_warning = await self.external_search_planner.plan(
-                        query,
-                        request_id=str(request.options.get("request_id", "")),
-                    )
-                explicit_minimum = requested_minimum(query)
-                if plan is not None and explicit_minimum is not None:
-                    plan = plan.model_copy(
-                        update={
-                            "minimum_results": max(
-                                plan.minimum_results,
-                                min(explicit_minimum, 20),
-                            )
-                        }
-                    )
-                display_limit = min(
-                    policy.max_results, settings.external_retrieval_max_results
-                )
-                max_rounds = max(1, min(policy.max_iterations, 5))
-                round_results: list[ExternalRetrievalResult] = []
-                used_queries: set[str] = set()
-                previous_retrieval = request.options.get("previous_external_retrieval")
-                if isinstance(
-                    previous_retrieval, dict
-                ) and is_academic_search_follow_up(
-                    self._knowledge_query(request),
-                    previous_agent=str(request.options.get("previous_agent", "")),
-                    previous_answer_summary=str(
-                        request.options.get("previous_answer_summary", "")
-                    ),
-                ):
-                    try:
-                        previous_result = ExternalRetrievalResult.model_validate(
-                            previous_retrieval
-                        )
-                    except Exception:
-                        previous_result = None
-                    if previous_result is not None and previous_result.items:
-                        round_results.append(
-                            previous_result.model_copy(update={"search_round": 1})
-                        )
-                        used_queries.update(previous_result.search_queries)
-                for search_round in range(1, max_rounds + 1):
-                    query_variants = (
-                        plan.search_queries
-                        if plan is not None
-                        else [normalize_academic_search_query(query)]
-                    )
-                    query_variants = [
-                        value for value in query_variants if value not in used_queries
-                    ] or query_variants
-                    used_queries.update(query_variants)
-                    prefer_high_citation = bool(
-                        plan is not None
-                        and plan.citation_preference in {"prefer_high", "required"}
-                    )
-                    freshness_days = (
-                        None if prefer_high_citation else policy.freshness_days
-                    )
-                    search_many = getattr(self.external_search, "search_many", None)
-                    if callable(search_many):
-                        round_result = await search_many(
-                            query,
-                            query_variants=query_variants,
-                            limit=display_limit,
-                            provider_names=policy.providers,
-                            source_scopes=policy.source_scopes,
-                            freshness_days=freshness_days,
-                            prefer_high_citation=prefer_high_citation,
-                            retrieval_trace_id=str(request.options.get("trace_id", "")),
-                        )
-                    else:
-                        round_result = await self.external_search.search(
-                            query,
-                            normalized_query=query_variants[0],
-                            limit=display_limit,
-                            provider_names=policy.providers,
-                            source_scopes=policy.source_scopes,
-                            freshness_days=freshness_days,
-                            retrieval_trace_id=str(request.options.get("trace_id", "")),
-                        )
-                    if planner_warning and search_round == 1:
-                        round_result.warnings = [
-                            planner_warning,
-                            *round_result.warnings,
-                        ][:20]
-                    if self.external_paper_reviewer is not None:
-                        round_result = await self.external_paper_reviewer.review(
-                            query,
-                            round_result,
-                            request_id=str(request.options.get("request_id", "")),
-                            required_concepts=(
-                                plan.required_concepts if plan is not None else ()
-                            ),
-                            excluded_concepts=(
-                                plan.excluded_concepts if plan is not None else ()
-                            ),
-                        )
-                    round_result = round_result.model_copy(
-                        update={"search_round": search_round}
-                    )
-                    round_results.append(round_result)
-                    result = merge_academic_results(
-                        round_results,
-                        query=query,
-                        limit=display_limit,
-                        prefer_high_citation=prefer_high_citation,
-                        search_round=search_round,
-                    )
-                    if plan is None or result.approved_count >= plan.minimum_results:
-                        break
-                    if (
-                        self.external_search_planner is None
-                        or search_round >= max_rounds
-                    ):
-                        break
-                    (
-                        next_plan,
-                        refinement_warning,
-                    ) = await self.external_search_planner.refine(
-                        query,
-                        plan,
-                        result,
-                        round_number=search_round,
-                        request_id=str(request.options.get("request_id", "")),
-                    )
-                    if refinement_warning or next_plan is None:
-                        result.warnings = [
-                            *result.warnings,
-                            refinement_warning or "search refinement unavailable",
-                        ][:20]
-                        break
-                    next_queries = [
-                        value
-                        for value in next_plan.search_queries
-                        if value not in used_queries
-                    ]
-                    if not next_queries:
-                        result.warnings = [
-                            *result.warnings,
-                            "search refinement returned no new query variants",
-                        ][:20]
-                        break
-                    plan = next_plan.model_copy(
-                        update={
-                            "search_queries": next_queries,
-                            "minimum_results": plan.minimum_results,
-                            "citation_preference": (
-                                plan.citation_preference
-                                if plan.citation_preference != "not_requested"
-                                else next_plan.citation_preference
-                            ),
-                        }
-                    )
-                if result is None:
-                    result = ExternalRetrievalResult(
-                        query=query,
-                        normalized_query=query,
-                        source_scopes=list(policy.source_scopes),
-                        status="failed",
-                    )
-                if plan is not None and result.approved_count < plan.minimum_results:
-                    result.warnings = [
-                        *result.warnings,
-                        f"model-approved {result.approved_count} papers; "
-                        f"requested at least {plan.minimum_results}",
-                    ][:20]
-                if (
-                    policy.allow_full_text
-                    and settings.external_retrieval_allow_full_text
-                    and self.external_fetcher is not None
-                ):
-                    result = await self._fetch_external_items(result, policy)
-        except TimeoutError:
-            if result is not None:
-                result = result.model_copy(
-                    update={
-                        "status": "partial",
-                        "warnings": [
-                            *result.warnings,
-                            "external retrieval timed out; showing partial results",
-                        ][:20],
-                    }
-                )
-            else:
-                result = ExternalRetrievalResult(
-                    query=query,
-                    normalized_query=" ".join(query.split()),
-                    source_scopes=list(policy.source_scopes),
-                    status="failed",
-                    warnings=["external retrieval timed out"],
-                )
-        except Exception as exc:
-            logger.warning(
-                "external_retrieval_failed task_id=%s provider_error=%s",
-                request.task_id,
-                type(exc).__name__,
+        else:
+            # Keep test/runtime replacement of provider services visible while
+            # the compatibility wrapper remains on the TaskRunner boundary.
+            service.external_search = getattr(self, "external_search", None)
+            service.external_fetcher = getattr(self, "external_fetcher", None)
+            service.external_paper_reviewer = getattr(
+                self, "external_paper_reviewer", None
             )
-            if result is None or not result.items:
-                result = ExternalRetrievalResult(
-                    query=query,
-                    normalized_query=" ".join(query.split()),
-                    source_scopes=list(policy.source_scopes),
-                    status="failed",
-                    warnings=["external retrieval failed"],
-                )
-            else:
-                result = result.model_copy(
-                    update={
-                        "status": "partial",
-                        "warnings": [
-                            *result.warnings,
-                            "external retrieval stopped after a partial result",
-                        ][:20],
-                    }
-                )
-        assert result is not None
-        result.latency_ms = max(0, int((perf_counter() - started) * 1000))
-        return result
+            service.external_search_planner = getattr(
+                self, "external_search_planner", None
+            )
+        return await service.retrieve(
+            request,
+            policy,
+            allow_degraded_review=allow_degraded_review,
+        )
+
+    async def _retrieve_external_with_deadline(
+        self,
+        request: AgentRequest,
+        policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool = False,
+    ) -> ExternalRetrievalResult:
+        service = getattr(self, "external_retrieval_execution", None)
+        if service is None:
+            service = ExternalRetrievalExecutionService(
+                settings=self.knowledge_base.settings,
+                external_search=getattr(self, "external_search", None),
+                external_fetcher=getattr(self, "external_fetcher", None),
+                external_paper_reviewer=getattr(
+                    self, "external_paper_reviewer", None
+                ),
+                external_search_planner=getattr(
+                    self, "external_search_planner", None
+                ),
+            )
+        else:
+            service.external_search = getattr(self, "external_search", None)
+            service.external_fetcher = getattr(self, "external_fetcher", None)
+            service.external_paper_reviewer = getattr(
+                self, "external_paper_reviewer", None
+            )
+            service.external_search_planner = getattr(
+                self, "external_search_planner", None
+            )
+        return await service.retrieve_with_deadline(
+            request,
+            policy,
+            allow_degraded_review=allow_degraded_review,
+            retrieval=self._retrieve_external,
+        )
 
     @staticmethod
     def _build_external_search_result(
@@ -2952,38 +3261,6 @@ class TaskRunner:
             evidence_status="sufficient" if external_result.items else "insufficient",
             retrieval_latency_ms=external_result.latency_ms,
         )
-
-    async def _fetch_external_items(
-        self,
-        result: ExternalRetrievalResult,
-        policy: ExternalRetrievalPolicy,
-    ) -> ExternalRetrievalResult:
-        if self.external_fetcher is None or policy.max_fetches <= 0:
-            return result
-        selected = result.items[: policy.max_fetches]
-        responses = await asyncio.gather(
-            *(
-                self.external_fetcher.fetch(
-                    item,
-                    max_chars=self.knowledge_base.settings.external_retrieval_max_content_chars,
-                )
-                for item in selected
-            ),
-            return_exceptions=True,
-        )
-        enriched = []
-        warnings = list(result.warnings)
-        for item, response in zip(selected, responses, strict=True):
-            if isinstance(response, ExternalFetchError):
-                warnings.append(f"{item.evidence_id}: content unavailable")
-                enriched.append(item)
-            elif isinstance(response, BaseException):
-                warnings.append(f"{item.evidence_id}: content unavailable")
-                enriched.append(item)
-            else:
-                enriched.append(response)
-        enriched.extend(result.items[len(selected) :])
-        return result.model_copy(update={"items": enriched, "warnings": warnings})
 
     @staticmethod
     def _with_external_context(
@@ -3066,6 +3343,50 @@ class TaskRunner:
             )
             await db.commit()
 
+    async def _append_progress_event(
+        self,
+        task_id: str,
+        agent_id: str,
+        *,
+        db: AsyncSession | None = None,
+        stage_id: str,
+        status: str,
+        label: str,
+        progress: float,
+        elapsed_ms: int | None = None,
+        detail: str = "",
+    ) -> None:
+        """Persist safe stage progress without exposing hidden model reasoning."""
+
+        data: dict[str, object] = {
+            "stage_id": stage_id,
+            "status": status,
+            "label": label,
+            "progress": max(0.0, min(1.0, progress)),
+        }
+        if elapsed_ms is not None:
+            data["elapsed_ms"] = max(0, elapsed_ms)
+        if detail:
+            data["detail"] = detail[:240]
+        if db is not None:
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.AGENT_PROGRESS,
+                agent_id=agent_id,
+                data=data,
+            )
+            return
+        async with self.session_factory() as progress_db:
+            await append_task_event(
+                progress_db,
+                task_id,
+                AgentEventType.AGENT_PROGRESS,
+                agent_id=agent_id,
+                data=data,
+            )
+            await progress_db.commit()
+
     async def _append_cloud_route_event(
         self, task_id: str, decision: RouteDecision
     ) -> None:
@@ -3133,88 +3454,167 @@ class TaskRunner:
             )
             await db.commit()
 
-    async def _record_initial_attempt(
-        self,
-        db: AsyncSession,
-        *,
-        task: TaskModel,
-        request: AgentRequest,
-        result: AgentResult,
-    ) -> None:
-        """Persist explicit student work without copying it into session state."""
+    async def _checkpoint_runtime_run(self, run: AgentRun) -> None:
+        """Persist a Runtime snapshot from the long-running worker context."""
 
-        raw_attempt = request.options.get("student_attempt")
-        if self.learning_outcome is None or not isinstance(raw_attempt, dict):
-            return
-        attempt = StudentAttempt.model_validate(raw_attempt)
-        structured = result.structured_result
-        raw_report = structured.get("verification_report_v1")
-        teaching_loop = structured.get("teaching_loop")
-        if not isinstance(raw_report, dict) and isinstance(teaching_loop, dict):
-            raw_report = teaching_loop.get("verification")
-        verification_report = dict(raw_report) if isinstance(raw_report, dict) else {}
-        model = await self.student_attempts.create(
-            db,
-            task=task,
-            user_id=task.user_id,
-            idempotency_key=f"{task.id}:initial-attempt",
-            attempt=attempt,
-            teaching_mode=TeachingMode(
-                str(request.options.get("teaching_mode", TeachingMode.DIRECT_ANSWER))
-            ),
-            # The response hint is generated after this first submission.
-            hint_level_used=None,
-            full_solution_seen=False,
-            verification_report=verification_report,
+        async with self.session_factory() as db:
+            repository = AgentRunRepository(db)
+            runtime_model = await repository.get(run.run_id, for_update=True)
+            if runtime_model is None:
+                raise ValueError(f"runtime run does not exist: {run.run_id}")
+            runtime_control_data = dict(runtime_model.control_data or {})
+            if run.status == RuntimeRunStatus.PAUSED:
+                suspended_child_run_id = runtime_control_data.get(
+                    "suspended_child_run_id"
+                )
+                run.control_request = ""
+                run.control_data = (
+                    {"suspended_child_run_id": suspended_child_run_id}
+                    if isinstance(suspended_child_run_id, str)
+                    and suspended_child_run_id
+                    else {}
+                )
+            elif (
+                run.status == RuntimeRunStatus.RUNNING
+                and not run.control_data
+                and runtime_control_data.get("approved") is True
+            ):
+                # PlanExecutor consumed a one-shot approval before this
+                # checkpoint. Clear the durable grant so a later approval
+                # gate cannot inherit it accidentally.
+                run.control_request = ""
+                runtime_model.control_request = ""
+                runtime_model.control_data = {}
+            else:
+                # Preserve a control request that arrived between two worker
+                # checkpoints; normal state writes must not erase it. Runtime
+                # handlers may also update their serialized request envelope
+                # between checkpoints, so merge durable external controls with
+                # the worker's newer Runtime-owned state instead of replacing
+                # it with the stale database copy.
+                run.control_request = runtime_model.control_request
+                merged_control_data = dict(runtime_control_data)
+                merged_control_data.update(run.control_data)
+                run.control_data = merged_control_data
+            task = await TaskRepository(db).get(run.task_id, for_update=True)
+            if task is not None:
+                if run.status == RuntimeRunStatus.PAUSED:
+                    task.status = TaskStatus.WAITING_USER
+                elif run.status == RuntimeRunStatus.WAITING_INPUT:
+                    task.status = TaskStatus.WAITING_USER
+                elif run.status == RuntimeRunStatus.WAITING_APPROVAL:
+                    task.status = TaskStatus.WAITING_REVIEW
+                elif run.status == RuntimeRunStatus.RUNNING and task.status in {
+                    TaskStatus.WAITING_USER,
+                    TaskStatus.WAITING_REVIEW,
+                }:
+                    task.status = TaskStatus.RUNNING
+            await repository.save_checkpoint(run)
+            proposal_id = run.control_data.get("plan_proposal_id")
+            if isinstance(proposal_id, str) and proposal_id:
+                proposal_model = await db.get(
+                    AgentPlanProposalModel,
+                    proposal_id,
+                )
+                if (
+                    proposal_model is not None
+                    and proposal_model.run_id == run.run_id
+                    and proposal_model.status == "pending"
+                ):
+                    # The controller's suspension checkpoint is an additional
+                    # durable snapshot after proposal creation. Keep the
+                    # approval CAS token aligned with that latest snapshot.
+                    proposal_model.state_version = run.state_version
+            await db.commit()
+
+    async def _runtime_control_provider(
+        self, run: AgentRun
+    ) -> RuntimeDecision | None:
+        async with self.session_factory() as db:
+            runtime_model = await AgentRunRepository(db).get(run.run_id)
+            if runtime_model is None or runtime_model.control_request != "pause":
+                return None
+        return RuntimeDecision(
+            action=DecisionAction.PAUSE,
+            reason_codes=["pause_requested_by_user"],
         )
-        packet = structured.get("solution_packet")
-        skill_ids = (
-            [str(item) for item in packet.get("skill_ids", [])]
-            if isinstance(packet, dict)
-            else []
-        )
-        outcome = await self.learning_outcome.process_attempt(
-            db,
-            task=task,
-            attempt=model,
-            skill_ids=skill_ids,
-        )
-        due_retests = await self.learning_outcome.retests.list(
-            db,
-            user_id=task.user_id,
-            status="due",
-            offset=0,
-            limit=100,
-        )
-        result.metrics = result.metrics.model_copy(
-            update={
-                "attempt_sequence": int(model.attempt_sequence or 0),
-                "attempt_revision_created": False,
-                "due_retest_count": len(due_retests),
-                **outcome.metrics,
-            }
-        )
-        result.structured_result["learning_outcome"] = {
-            "attempt_id": model.id,
-            "attempt_sequence": model.attempt_sequence,
-            "mastery_evidence_types": [
-                item.evidence_type.value for item in outcome.evidence
-            ],
-            "retest_plan_ids": [item.retest_plan_id for item in outcome.retest_plans],
+
+    async def _runtime_plan_proposal_provider(
+        self,
+        run: AgentRun,
+        decision: RuntimeDecision,
+        plan: AgentRunPlan,
+    ) -> RuntimePlanProposal:
+        """Persist a replan candidate before the controller can apply it."""
+
+        async with self.session_factory() as db:
+            proposal = await RuntimePlanProposalService(db).create(
+                run.task_id,
+                run.run_id,
+                plan,
+                reason_codes=decision.reason_codes,
+                rationale=(
+                    "Runtime verification requested a bounded replacement "
+                    "plan; explicit review is required before application."
+                ),
+                approval_required=True,
+                expected_state_version=run.state_version,
+                target_iteration=run.iteration,
+            )
+        run.state_version = proposal.state_version
+        run.control_data = {
+            **run.control_data,
+            "plan_proposal_id": proposal.proposal_id,
+            "plan_proposal_status": "pending",
         }
-        await SessionWorkingStateService(db).update_phase3(
-            task,
-            current_attempt_id=model.id,
-            previous_attempt_id=None,
-            attempt_sequence=int(model.attempt_sequence or 0),
-            feedback_uptake_status=None,
-            mastery_evidence_type=(
-                outcome.evidence[0].evidence_type.value if outcome.evidence else None
-            ),
-            pending_retest_plan_ids=[
-                item.retest_plan_id for item in outcome.retest_plans
-            ],
-        )
+        run.control_request = ""
+        return proposal
+
+    async def _append_runtime_event(
+        self,
+        event: str,
+        run: AgentRun,
+        node_id: str,
+    ) -> None:
+        event_type, data = to_task_event(event, run, node_id)
+        data["runtime_event"] = event
+        async with self.session_factory() as db:
+            await append_task_event(
+                db,
+                run.task_id,
+                event_type,
+                data=data,
+            )
+            await db.commit()
+
+    async def _append_runtime_decision_event(
+        self, run: AgentRun, decision: RuntimeDecision
+    ) -> None:
+        event_type = {
+            DecisionAction.ASK_USER: AgentEventType.AGENT_INPUT_REQUIRED,
+            DecisionAction.REQUEST_APPROVAL: AgentEventType.AGENT_PROGRESS,
+            DecisionAction.PAUSE: AgentEventType.AGENT_PROGRESS,
+        }.get(decision.action)
+        if event_type is None:
+            return
+        data: dict[str, object] = {
+            "runtime_run_id": run.run_id,
+            "action": decision.action.value,
+            "reason_codes": list(decision.reason_codes),
+            "state_version": run.state_version,
+        }
+        if decision.user_prompt:
+            data["user_prompt"] = decision.user_prompt
+        if decision.approval_scope:
+            data["approval_scope"] = decision.approval_scope
+        async with self.session_factory() as db:
+            await append_task_event(
+                db,
+                run.task_id,
+                event_type,
+                data=data,
+            )
+            await db.commit()
 
     async def _mark_cancelled(
         self, db: AsyncSession, task_id: str, reason: str
@@ -3229,7 +3629,16 @@ class TaskRunner:
         task.error_message = reason
         task.failure_category = "cancelled"
         task.lease_expires_at = None
-        if task.started_at:
+        runtime_finalized = await self.runtime_boundary.finalize(
+            db,
+            task_id=task.id,
+            status=RuntimeRunStatus.CANCELLED,
+            provider=self.provider.provider_name,
+            latency_ms=elapsed_ms(task.started_at, now) if task.started_at else None,
+            error_code="cancelled",
+            terminal_reason=reason,
+        )
+        if task.started_at and runtime_finalized is None:
             db.add(
                 AgentRunModel(
                     task_id=task.id,
@@ -3303,19 +3712,31 @@ class TaskRunner:
             task.updated_at = now
             task.heartbeat_at = now
             task.lease_expires_at = None
-            db.add(
-                AgentRunModel(
-                    task_id=task.id,
-                    agent_id=task.agent_id,
-                    provider=self.provider.provider_name,
-                    status=TaskStatus.FAILED.value,
-                    latency_ms=(
-                        elapsed_ms(task.started_at, now) if task.started_at else None
-                    ),
-                    started_at=task.started_at,
-                    completed_at=now,
+            runtime_finalized = await self.runtime_boundary.finalize(
+                db,
+                task_id=task.id,
+                status=RuntimeRunStatus.FAILED,
+                provider=self.provider.provider_name,
+                latency_ms=(
+                    elapsed_ms(task.started_at, now) if task.started_at else None
                 )
             )
+            if runtime_finalized is None:
+                db.add(
+                    AgentRunModel(
+                        task_id=task.id,
+                        agent_id=task.agent_id,
+                        provider=self.provider.provider_name,
+                        status=TaskStatus.FAILED.value,
+                        latency_ms=(
+                            elapsed_ms(task.started_at, now)
+                            if task.started_at
+                            else None
+                        ),
+                        started_at=task.started_at,
+                        completed_at=now,
+                    )
+                )
             await append_task_event(
                 db,
                 task.id,

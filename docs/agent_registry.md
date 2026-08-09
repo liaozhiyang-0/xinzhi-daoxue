@@ -36,7 +36,7 @@
 | `LESSON_PREP_LOCAL_V1` | 备课草稿 | Spark 草稿 → Qwen3.5 归一 |
 | `ASSIGNMENT_REVIEW_LOCAL_V1` | 作业初审 | Spark 草稿 → Qwen3.5 归一 |
 | `ACADEMIC_WRITING_LOCAL_V1` | 学术表达改写 | Spark 草稿 → Qwen3.5 归一 |
-| `DATA_ANALYSIS_LOCAL_V1` | 数据分析解释 | Spark 草稿 → Qwen3.5 归一 |
+| `DATA_ANALYSIS_LOCAL_V1` | 模型主导数据分析 | Qwen 直接分析；按 `data_analysis_explanation` 路由失败时尝试 Spark |
 
 两段链的 Token 和耗时会合并计入一次内部 Agent 结果。结构校验失败不会自动切换模型再次生成，避免缺少业务字段时产生无上限重复调用；只有网络、限流和服务暂时不可用等 Provider 故障才按统一 ModelService 策略回退。
 

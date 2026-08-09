@@ -51,3 +51,202 @@ def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:
     assert completed["result_content"]["structured_result"]["scenario_id"] == (
         "faculty_course_copilot_v1"
     )
+
+
+def test_task_creation_does_not_read_another_users_session(api) -> None:
+    foreign_session = api.create_session(user_id="foreign-session-owner")
+    response = api.client.post(
+        "/api/v1/tasks",
+        json=api.task_payload(foreign_session["id"]),
+    )
+
+    assert response.status_code == 404
+
+
+def test_research_analysis_v2_api_persists_sanitized_provenance(api) -> None:
+    session = api.create_session()
+    options = {
+        "research_analysis_v2": {
+            "execute": False,
+            "request": {
+                "research_question": "Do the declared groups differ?",
+                "hypothesis": "The declared groups differ.",
+                "analysis_goal": "compare",
+                "design": "experimental_comparison",
+                "estimand": "treatment minus control mean outcome",
+                "unit_of_analysis": "one row",
+                "study_design": "randomized two-arm pilot; one measurement timepoint",
+                "variables": [
+                    {"name": "outcome", "role": "outcome", "unit": "score"},
+                    {"name": "treatment", "role": "treatment", "unit": "label"},
+                ],
+                "data_manifest": {
+                    "dataset_id": "api-provenance-test",
+                    "version": "1",
+                    "format": "csv",
+                    "checksum_sha256": "0" * 64,
+                    "row_count": 4,
+                    "column_count": 2,
+                    "authorized": True,
+                    "source_ref": "local://api-provenance-test.csv",
+                },
+                "data_dictionary": "outcome is a score; treatment is a group",
+                "evidence": [
+                    {
+                        "evidence_id": "method-api-contract",
+                        "role": "method_reference",
+                        "source_ref": "https://example.test/method-api-contract",
+                        "cited": True,
+                    }
+                ],
+                "exploratory": False,
+            },
+        }
+    }
+
+    created = api.create_task(session["id"], options=options, intent="data_analysis")
+    completed = api.wait_for_task(created["id"])
+
+    assert completed["agent_id"] == "RESEARCH_03_DATA_ANALYSIS_V1"
+    provenance = completed["result_content"]["business_data"]["provenance"]
+    assert provenance["dataset"]["dataset_id"] == "api-provenance-test"
+    assert provenance["dataset"]["checksum_sha256"] == "0" * 64
+    assert provenance["dataset"]["source_ref_included"] is False
+    assert "api-provenance-test.csv" not in str(provenance)
+    business_data = completed["result_content"]["business_data"]
+    assert business_data["plan"]["estimand"] == (
+        "treatment minus control mean outcome"
+    )
+    assert business_data["provenance"]["unit_of_analysis"] == "one row"
+    assert business_data["evidence_ids"] == ["method-api-contract"]
+
+
+def test_research_analysis_v2_executes_uploaded_csv_attachment(api, client) -> None:
+    session = api.create_session()
+    upload = client.post(
+        "/api/v1/files",
+        data={"purpose": "unified_task_material"},
+        files={
+            "upload": (
+                "experiment.csv",
+                b"score,group\n68,control\n72,control\n78,treatment\n82,treatment\n",
+                "text/csv",
+            )
+        },
+    )
+    assert upload.status_code == 201, upload.text
+    file = upload.json()
+    attachment = {
+        key: file[key]
+        for key in (
+            "id",
+            "filename",
+            "content_type",
+            "size_bytes",
+            "storage_key",
+            "checksum_sha256",
+        )
+    }
+    attachment["file_id"] = attachment.pop("id")
+    options = {
+        "research_analysis_v2": {
+            "execute": True,
+            "request": {
+                "research_question": "处理组与对照组的 score 是否不同？",
+                "hypothesis": "处理组的 score 高于对照组。",
+                "analysis_goal": "estimate_effect",
+                "design": "experimental_comparison",
+                "estimand": "treatment minus control mean score",
+                "unit_of_analysis": "one row per participant",
+                "variables": [
+                    {"name": "score", "role": "outcome", "unit": "score"},
+                    {"name": "group", "role": "treatment"},
+                ],
+                "data_manifest": {
+                    "dataset_id": file["id"],
+                    "format": "csv",
+                    "checksum_sha256": file["checksum_sha256"],
+                    "authorized": True,
+                    "source_ref": f"attachment:{file['id']}",
+                },
+                "data_dictionary": (
+                    "score is the primary outcome; group is the randomized arm."
+                ),
+                "exploratory": False,
+            },
+        }
+    }
+    payload = api.task_payload(
+        session["id"],
+        options=options,
+        attachments=[attachment],
+        intent="data_analysis",
+    )
+    payload.update(
+        {
+            "scene": "dispatch",
+            "scenario_id": "research_data_workbench_v1",
+            "canonical_input": {
+                "text": (
+                    "这是一项随机双臂实验，每行代表一名受试者，score 是主要结局。"
+                    "请比较 treatment 与 control 的差异并报告效应量。"
+                )
+            },
+        }
+    )
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    created = response.json()
+    completed = api.wait_for_task(created["id"], timeout=15)
+
+    assert completed["status"] == "completed"
+    assert completed["provider"] == "local_analysis_v2"
+    assert completed["result_content"]["business_data"]["status"] == "executed"
+    assert completed["result_content"]["structured_result"]["analysis_v2"] is True
+    assert "分析步骤" not in completed["result_content"]["answer"]
+    assert "复现要求" not in completed["result_content"]["answer"]
+    assert "先说结论" in completed["result_content"]["answer"]
+    assert "95%" in completed["result_content"]["answer"]
+    assert "随机分配" in completed["result_content"]["answer"]
+    assert "no_p_value_is_reported" not in completed["result_content"]["answer"]
+
+
+def test_research_analysis_v2_text_only_scenario_stays_local_plan(api) -> None:
+    session = api.create_session()
+    question = (
+        "这是一项随机双臂实验，请比较 treatment 与 control 的 score 差异，"
+        "并报告效应量、不确定性、诊断结果和结论边界。"
+    )
+    options = {
+        "research_analysis_v2": {
+            "execute": False,
+            "request": {
+                "research_question": question,
+                "analysis_goal": "estimate_effect",
+                "design": "experimental_comparison",
+                "estimand": "treatment minus control mean score",
+                "unit_of_analysis": "one row per participant",
+                "exploratory": True,
+            },
+        }
+    }
+    payload = api.task_payload(
+        session["id"], options=options, intent="data_analysis"
+    )
+    payload.update(
+        {
+            "scene": "dispatch",
+            "scenario_id": "research_data_workbench_v1",
+            "canonical_input": {"text": question},
+        }
+    )
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"], timeout=15)
+
+    assert completed["provider"] == "local_analysis_v2"
+    assert completed["result_content"]["structured_result"]["analysis_v2"] is True
+    assert completed["result_content"]["business_data"]["status"] == (
+        "insufficient_data"
+    )
+    assert "该工作流尚未发布" not in completed["result_content"]["answer"]

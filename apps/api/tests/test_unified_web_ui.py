@@ -63,19 +63,16 @@ def test_demo_scenarios_and_presentation_mode_are_explicit(client) -> None:
     page = client.get("/demo?presentation=1")
     script = client.get("/debug-assets/demo.js").text
     shell = client.get("/debug-assets/app-shell.css").text
+    scenarios = client.get("/api/v1/scenarios")
 
     assert page.status_code == 200
-    for scene in (
-        "课程知识问答",
-        "教案设计",
-        "作业批改",
-        "学术写作",
-        "数据分析",
-        "边界与一次重路由",
-    ):
-        assert scene in script
+    assert scenarios.status_code == 200
+    assert len(scenarios.json()) >= 6
+    assert 'api("/api/v1/scenarios"' in script
+    assert 'api("/api/v1/scenarios/readiness"' in script
+    assert "开始场景演示" in script
     assert "mode=solve" not in script
-    assert "预计时间" in script
+    assert "执行步骤" in script
     assert "presentation-mode" in shell
     assert "/api/v1/debug/execution/" in script
 

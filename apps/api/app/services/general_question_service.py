@@ -210,6 +210,22 @@ class GeneralQuestionService:
         conversation = str(request.options.get("conversation_summary", "")).strip()
         if conversation and conversation != previous:
             context_parts.append(f"对话上下文：{conversation[:6000]}")
+        retrieved_context = str(
+            request.options.get("retrieved_context", "")
+        ).strip()
+        if retrieved_context:
+            context_parts.append(
+                "[CONTROLLED_RETRIEVED_CONTEXT]\n"
+                + retrieved_context[:24_000]
+            )
+        runtime_tool_id = str(request.options.get("runtime_tool_id", "")).strip()
+        runtime_tool_result = request.options.get("runtime_tool_result")
+        if runtime_tool_id and runtime_tool_result is not None:
+            context_parts.append(
+                "[CONTROLLED_RUNTIME_TOOL_RESULT] "
+                f"tool={runtime_tool_id}\n"
+                f"result={str(runtime_tool_result)[:8000]}"
+            )
         method_reference = str(direct_fallback.get("method_reference", "")).strip()
         if method_reference:
             context_parts.append(

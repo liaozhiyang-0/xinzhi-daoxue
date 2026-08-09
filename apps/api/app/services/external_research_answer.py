@@ -51,10 +51,98 @@ FRESHNESS_TERMS = (
     "recent",
     "newest",
 )
+RESEARCH_TOPIC_TERMS = (
+    "\u67d4\u6027\u7535\u5b50",
+    "\u67d4\u6027\u5668\u4ef6",
+    "\u795e\u7ecf\u5f62\u6001",
+    "\u7535\u5b50\u76ae\u80a4",
+    "\u4f20\u611f\u5668",
+    "\u8584\u819c\u6676\u4f53\u7ba1",
+    "\u5fc6\u963b\u5668",
+    "flexible electronics",
+    "neuromorphic",
+    "electronic skin",
+    "wearable",
+    "sensor",
+    "\u4eba\u5de5\u667a\u80fd",
+    "\u673a\u5668\u5b66\u4e60",
+    "\u6df1\u5ea6\u5b66\u4e60",
+    "\u751f\u6210\u5f0f\u4eba\u5de5\u667a\u80fd",
+    "\u5927\u6a21\u578b",
+    "artificial intelligence",
+    "machine learning",
+    "deep learning",
+    "generative ai",
+    "large language model",
+    "foundation model",
+)
+RESEARCH_ACTION_TERMS = (
+    "\u5173\u952e\u8fdb\u5c55",
+    "\u6280\u672f\u65b9\u5411",
+    "\u7814\u7a76\u65b9\u5411",
+    "\u53d1\u5c55\u8d8b\u52bf",
+    "\u7814\u7a76\u73b0\u72b6",
+    "\u503c\u5f97\u5173\u6ce8",
+    "\u5b66\u672f\u524d\u6cbf",
+    "\u7814\u7a76\u6210\u679c",
+    "\u7efc\u8ff0",
+    "research trend",
+)
+RESEARCH_RECENCY_PATTERN = re.compile(
+    r"\u8fd1(?:\d+|[\u4e00-\u9fff]{1,4})\s*\u5e74|\u8fd1\u5e74\u6765|\u8fd1\u671f|\u6700\u65b0|recent|latest|last\s+(?:few|several)\s+years",
+    flags=re.IGNORECASE,
+)
 ACADEMIC_SEARCH_AGENT_ID = "RESEARCH_01_ACADEMIC_SEARCH_V1"
 FOLLOW_UP_MARKERS = (
     "只有", "仅有", "还需要", "需要", "至少", "补充", "再找", "增加", "不够",
-    "没找到", "仍然", "only", "need", "add", "more",
+    "没找到", "仍然", "接着", "继续", "额外", "另外", "还有", "再提供",
+    "下一批", "更多", "进一步", "补充一些", "请再", "其中", "上述", "上面",
+    "这些", "分别", "产品化", "落地", "only", "need", "add", "more",
+)
+
+# Conservative topic signatures used to isolate conversational evidence.
+RESEARCH_TOPIC_FAMILIES = {
+    "artificial_intelligence": (
+        "\u4eba\u5de5\u667a\u80fd",
+        "\u673a\u5668\u5b66\u4e60",
+        "\u6df1\u5ea6\u5b66\u4e60",
+        "\u751f\u6210\u5f0f\u4eba\u5de5\u667a\u80fd",
+        "\u5927\u6a21\u578b",
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "generative ai",
+        "large language model",
+        "foundation model",
+    ),
+    "flexible_electronics": (
+        "\u67d4\u6027\u7535\u5b50",
+        "\u67d4\u6027\u5668\u4ef6",
+        "\u7535\u5b50\u76ae\u80a4",
+        "\u53ef\u62c9\u4f38\u7535\u5b50",
+        "flexible electronics",
+        "stretchable electronics",
+        "electronic skin",
+    ),
+}
+AI_METHOD_TERMS = (
+    "artificial intelligence",
+    "ai-based",
+    "machine learning",
+    "deep learning",
+    "generative ai",
+    "large language model",
+    "llm",
+    "foundation model",
+    "transformer",
+    "multimodal",
+    "reinforcement learning",
+    "neural network",
+    "natural language processing",
+    "computer vision",
+    "diffusion model",
+    "reasoning",
+    "agentic",
 )
 STRONG_WRITING_MARKERS = (
     "改写", "润色", "修改稿", "写成", "学术表达", "rewrite", "write an abstract",
@@ -109,9 +197,16 @@ def is_academic_search_request(query: str) -> bool:
     )
     has_search = any(term.casefold() in normalized for term in SEARCH_TERMS)
     has_freshness = any(term.casefold() in normalized for term in FRESHNESS_TERMS)
+    has_research_topic = any(
+        term.casefold() in normalized for term in RESEARCH_TOPIC_TERMS
+    )
+    has_research_action = any(
+        term.casefold() in normalized for term in RESEARCH_ACTION_TERMS
+    )
+    has_research_recency = bool(RESEARCH_RECENCY_PATTERN.search(normalized))
     return has_explicit_paper and (has_search or has_freshness) or (
         has_search and has_paper
-    )
+    ) or (has_research_topic and (has_research_action or has_research_recency))
 
 
 def is_academic_search_follow_up(
@@ -119,10 +214,13 @@ def is_academic_search_follow_up(
     *,
     previous_agent: str = "",
     previous_answer_summary: str = "",
+    previous_query: str = "",
 ) -> bool:
     """Keep short quantity/correction follow-ups on the academic search path."""
 
     if previous_agent != ACADEMIC_SEARCH_AGENT_ID:
+        return False
+    if previous_query and research_topic_conflicts(query, previous_query):
         return False
     normalized = " ".join(query.casefold().split())
     if any(marker.casefold() in normalized for marker in STRONG_WRITING_MARKERS):
@@ -137,7 +235,62 @@ def is_academic_search_follow_up(
         term.casefold() in normalized
         for term in (*PAPER_TERMS, "论文", "文献", "paper", "article")
     ) or "论文" in previous_answer_summary
-    return has_follow_up and (has_count or has_paper_context)
+    # A short continuation may omit the topic entirely (for example,
+    # "接着提供一些额外的论文信息").  The previous research agent and
+    # answer summary are sufficient evidence that the user is continuing the
+    # same evidence thread; explicit writing markers still take precedence.
+    return has_follow_up and (
+        has_count or has_paper_context or bool(previous_answer_summary.strip())
+    )
+
+
+def research_topic_families(text: str) -> set[str]:
+    """Return known topic families present in a query or evidence text."""
+
+    normalized = " ".join(text.casefold().split())
+    families: set[str] = set()
+    for family, terms in RESEARCH_TOPIC_FAMILIES.items():
+        if any(term.casefold() in normalized for term in terms):
+            families.add(family)
+    return families
+
+
+def research_topic_conflicts(current_query: str, previous_query: str) -> bool:
+    """Detect an explicit topic switch before reusing conversational evidence."""
+
+    current = research_topic_families(current_query)
+    previous = research_topic_families(previous_query)
+    return bool(current and previous and current.isdisjoint(previous))
+
+
+def filter_research_evidence(
+    query: str, items: list[ExternalEvidenceItem]
+) -> list[ExternalEvidenceItem]:
+    """Drop evidence that explicitly belongs to a different known domain."""
+
+    requested = research_topic_families(query)
+    if not requested:
+        return items
+    filtered: list[ExternalEvidenceItem] = []
+    for item in items:
+        evidence_text = f"{item.title}\n{item.content_excerpt}"
+        evidence_families = research_topic_families(evidence_text)
+        if evidence_families and requested.isdisjoint(evidence_families):
+            continue
+        if "artificial_intelligence" in requested:
+            # A flexible/wearable paper may mention AI as an incidental tool.
+            # Keep it out of a broad AI frontier answer unless the evidence
+            # materially discusses an AI method in its title or abstract.
+            normalized_evidence = evidence_text.casefold()
+            method_hits = sum(
+                term in normalized_evidence for term in AI_METHOD_TERMS
+            )
+            if "flexible_electronics" in evidence_families and method_hits < 2:
+                continue
+            if method_hits == 0:
+                continue
+        filtered.append(item)
+    return filtered
 
 
 def is_academic_writing_source_follow_up(
@@ -186,6 +339,10 @@ def normalize_academic_search_query(query: str) -> str:
         "artificial intelligence machine learning deep learning",
     )
     normalized = normalized.replace("电子信息", "electronics information")
+    normalized = normalized.replace(
+        "\u4eba\u5de5\u667a\u80fd",
+        "artificial intelligence machine learning deep learning generative ai",
+    )
     normalized = " ".join(normalized.split())
     return normalized or (
         "electronics engineering information technology"
@@ -262,6 +419,7 @@ def _item_view(item: ExternalEvidenceItem) -> dict[str, Any]:
         "url": str(item.canonical_url),
         "provider": item.provider,
         "source_type": item.source_type.value,
+        "metadata": item.metadata,
         "authors": item.authors,
         "venue": item.venue,
         "published_at": item.published_at.isoformat() if item.published_at else None,

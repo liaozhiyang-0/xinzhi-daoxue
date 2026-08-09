@@ -21,6 +21,7 @@ const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答"
 const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_writing: "学术写作", data_analysis: "数据分析" };
 const ragLabels = { grounded_generation: "课程资料支撑", method_reference: "方法参考", reference_only: "资料参考", user_sources_only: "用户材料", data_context_only: "数据上下文", no_rag: "无需课程检索" };
 const maxMultiImageFiles = 8;
+const researchTabularExtensions = new Set(["csv", "tsv", "json", "xlsx", "parquet"]);
 const panelWidthStorage = {
   left: "xinzhi_workspace_left_width",
   right: "xinzhi_workspace_right_width",
@@ -53,11 +54,188 @@ const state = {
   activeMemoryIds: new Set(),
   archivedTaskIds: new Set(),
   showArchived: false,
+  liveProcessSteps: new Map(),
+  intentOverride: params.get("intent") || "",
 };
+let identityReady = Promise.resolve();
 localStorage.setItem("xinzhi_student_user", state.userId);
 
 function selectedCourse() {
   return $("#course-select").value;
+}
+
+function researchAnalysisQuestionDetected(text = "") {
+  const normalized = String(text || "").toLowerCase();
+  return /数据分析|研究设计|数据质量|效应量|置信区间|不确定性|诊断结果|结论边界|双臂实验|处理组|对照组|treatment|control|effect size|confidence interval/.test(normalized);
+}
+
+function researchAnalysisV2Enabled(text = "") {
+  const question = text || $("#question-input")?.value || "";
+  return params.get("analysis_v2") === "1"
+    || scenarioId === "research_data_workbench_v1"
+    || state.intentOverride === "data_analysis"
+    || researchAnalysisQuestionDetected(question);
+}
+
+function updateResearchAnalysisPanel() {
+  const panel = $("#research-analysis-v2-panel");
+  if (!panel) return;
+  panel.hidden = !researchAnalysisV2Enabled();
+}
+
+function parseResearchAnalysisVariables(raw) {
+  return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [name, role = "unknown", unit = "", description = ""] = line.split("|").map((item) => item.trim());
+    if (!name) throw new Error("科研分析变量行缺少变量名");
+    return { name, role, unit, description, dtype: "unknown" };
+  });
+}
+
+function parseResearchAnalysisJson(raw, label) {
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    throw new Error(`${label} JSON 无法解析`);
+  }
+}
+
+function researchTabularFormat(material) {
+  const filename = String(material?.uploaded?.filename || "");
+  const extension = filename.includes(".") ? filename.split(".").pop().toLowerCase() : "";
+  return researchTabularExtensions.has(extension) ? extension : "";
+}
+
+function splitResearchCsvHeader(line, delimiter = ",") {
+  const cells = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"' && line[index + 1] === '"' && quoted) {
+      current += '"'; index += 1; continue;
+    }
+    if (character === '"') { quoted = !quoted; continue; }
+    if (character === delimiter && !quoted) {
+      cells.push(current.trim()); current = ""; continue;
+    }
+    current += character;
+  }
+  cells.push(current.trim());
+  return cells.map((item) => item.replace(/^\uFEFF/, "").trim()).filter(Boolean);
+}
+
+function researchTabularColumns(material) {
+  const format = researchTabularFormat(material);
+  const extracted = String(material?.uploaded?.extracted_text || "").trim();
+  if (!extracted) return [];
+  if (format === "json") {
+    try {
+      const parsed = JSON.parse(extracted);
+      const rows = Array.isArray(parsed) ? parsed : [parsed];
+      return rows.length && rows[0] && typeof rows[0] === "object"
+        ? Object.keys(rows[0])
+        : [];
+    } catch (_error) { return []; }
+  }
+  const firstLine = extracted.split(/\r?\n/).find((line) => line.trim());
+  return firstLine ? splitResearchCsvHeader(firstLine, format === "tsv" ? "\t" : ",") : [];
+}
+
+function inferResearchAnalysisInputs(question, materials) {
+  const normalizedQuestion = String(question || "").toLowerCase();
+  const tabular = materials.find((item) => researchTabularFormat(item));
+  const columns = researchTabularColumns(tabular);
+  const findColumn = (patterns) => columns.find((column) => {
+    const normalized = column.toLowerCase();
+    return patterns.some((pattern) => normalized.includes(pattern));
+  });
+  const outcome = findColumn(["score", "outcome", "result", "endpoint", "结局", "指标", "分数"]);
+  const treatment = findColumn(["treatment", "group", "arm", "condition", "intervention", "处理", "分组", "组别"]);
+  const identifier = findColumn(["id", "subject", "participant", "受试者", "样本"]);
+  const comparisonRequested = /比较|差异|效应量|置信区间|不确定性|compare|difference|effect|uncertainty|interval/.test(normalizedQuestion);
+  const randomized = /随机|双臂|对照|处理组|treatment|control|random|controlled|trial/.test(normalizedQuestion);
+  const variables = [
+    identifier ? { name: identifier, role: "identifier", unit: "", description: "受试者标识" } : null,
+    outcome ? { name: outcome, role: "outcome", unit: outcome.toLowerCase().includes("score") ? "score" : "", description: "主要结局" } : null,
+    treatment ? { name: treatment, role: "treatment", unit: "label", description: "随机分配的处理/对照组" } : null,
+  ].filter(Boolean);
+  return {
+    design: randomized ? "experimental_comparison" : "",
+    analysisGoal: comparisonRequested ? "estimate_effect" : "describe",
+    estimand: outcome ? `treatment 与 control 的 ${outcome} 平均差异` : "处理组与对照组结果指标的平均差异",
+    unit: /每行|每名受试者|受试者一行|participant|subject/.test(normalizedQuestion)
+      ? "每位受试者一行" : "每行代表一个分析单位",
+    variables,
+    dataDictionary: columns.map((column) => `${column}: ${column === outcome ? "主要结局" : column === treatment ? "处理/对照分组" : column === identifier ? "受试者标识" : "待补证据"}`).join("\n"),
+    studyDesign: randomized ? question : "",
+  };
+}
+
+function buildResearchAnalysisV2(question, materials = []) {
+  if (!researchAnalysisV2Enabled(question)) return null;
+  const rawManifest = $("#research-analysis-manifest").value.trim();
+  const dataManifest = parseResearchAnalysisJson(rawManifest, "数据清单");
+  const rawEvidence = $("#research-analysis-evidence").value.trim();
+  const evidence = parseResearchAnalysisJson(rawEvidence, "方法证据");
+  if (evidence !== undefined && !Array.isArray(evidence)) {
+    throw new Error("方法证据必须是 JSON 数组");
+  }
+  const resamplingMethod = $("#research-analysis-resampling").value;
+  const requestedReplicates = Number(
+    $("#research-analysis-bootstrap-replicates").value || 0
+  );
+  const request = {
+    research_question: question || "请先补充研究问题",
+    hypothesis: $("#research-analysis-hypothesis").value.trim(),
+    analysis_goal: $("#research-analysis-goal").value,
+    design: $("#research-analysis-design").value,
+    estimand: $("#research-analysis-estimand").value.trim(),
+    unit_of_analysis: $("#research-analysis-unit").value.trim(),
+    study_design: $("#research-analysis-study-design").value.trim(),
+    resampling_method: resamplingMethod,
+    bootstrap_replicates: resamplingMethod === "bootstrap"
+      ? Math.max(100, Math.min(10000, requestedReplicates))
+      : 0,
+    random_seed: 0,
+    multiple_comparison_method: $("#research-analysis-multiple-comparison").value,
+    variables: parseResearchAnalysisVariables($("#research-analysis-variables").value),
+    data_dictionary: $("#research-analysis-dictionary").value.trim(),
+    exploratory: $("#research-analysis-exploratory").value === "true",
+  };
+  if (dataManifest) request.data_manifest = dataManifest;
+  const tabularMaterials = materials.filter((item) => researchTabularFormat(item));
+  if (tabularMaterials.length > 1) {
+    throw new Error("科研分析当前只允许一个主数据文件；其他文件可作为辅助材料");
+  }
+  const inferred = inferResearchAnalysisInputs(question, materials);
+  if (request.design === "experimental_comparison" && inferred.design) request.design = inferred.design;
+  if (request.analysis_goal === "describe" && inferred.analysisGoal !== "describe") {
+    request.analysis_goal = inferred.analysisGoal;
+  }
+  if (!request.estimand && request.analysis_goal === "estimate_effect") request.estimand = inferred.estimand;
+  if (!request.unit_of_analysis) request.unit_of_analysis = inferred.unit;
+  if (!request.variables.length) request.variables = inferred.variables;
+  if (!request.study_design) request.study_design = inferred.studyDesign;
+  if (!request.data_dictionary) request.data_dictionary = inferred.dataDictionary;
+  if (tabularMaterials.length === 1) {
+    const uploaded = tabularMaterials[0].uploaded;
+    const format = researchTabularFormat(tabularMaterials[0]);
+    request.data_manifest = {
+      ...(dataManifest || {}),
+      dataset_id: dataManifest?.dataset_id || uploaded.id,
+      version: dataManifest?.version || "upload",
+      format: dataManifest?.format && dataManifest.format !== "unknown"
+        ? dataManifest.format
+        : format,
+      checksum_sha256: dataManifest?.checksum_sha256 || uploaded.checksum_sha256,
+      authorized: dataManifest?.authorized ?? true,
+      contains_sensitive_data: dataManifest?.contains_sensitive_data ?? false,
+      source_ref: dataManifest?.source_ref || `attachment:${uploaded.id}`,
+    };
+  }
+  if (evidence) request.evidence = evidence;
+  return { request, execute: tabularMaterials.length === 1 };
 }
 
 function updateTeachingMode() {
@@ -77,7 +255,15 @@ function ownedTaskUrl(id) {
 }
 
 async function ensureSession(force = false) {
-  if (state.sessionId && !force) return state.sessionId;
+  if (state.sessionId && !force) {
+    try {
+      await api(`/api/v1/sessions/${state.sessionId}?user_id=${encodeURIComponent(state.userId)}`);
+      return state.sessionId;
+    } catch (_error) {
+      state.sessionId = "";
+      localStorage.removeItem("xinzhi_student_session");
+    }
+  }
   const session = await api("/api/v1/sessions", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ user_id: state.userId, course_id: state.activeCourse === "AUTO" ? "CT" : state.activeCourse, title: "" }),
@@ -97,9 +283,10 @@ function resetConversation() {
   state.cancelRequested = false;
   conversationMaterialUrls.forEach((url) => URL.revokeObjectURL(url));
   conversationMaterialUrls = [];
-  state.currentTask = null; state.archivedTaskIds.clear();
+  state.currentTask = null; state.archivedTaskIds.clear(); state.liveProcessSteps.clear();
   state.lastQuestion = ""; state.lastAnswer = "";
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
+  $("#context-task-title").textContent = "等待提问";
   $("#teaching-loop-panel").hidden = true;
   $("#learning-progress-panel").hidden = true;
   state.activeMemoryIds.clear();
@@ -570,6 +757,11 @@ function relatedImageCard(images) {
 
 function externalPaperCard(item) {
   const rawUrl = String(item.url || "").trim();
+  const category = item.metadata?.category === "conference"
+    ? "相关会议"
+    : item.source_type === "academic_paper"
+      ? "学术论文"
+      : "报道/网页";
   let safeUrl = "";
   try {
     const url = new URL(rawUrl, location.origin);
@@ -594,7 +786,7 @@ function externalPaperCard(item) {
   return el("article", { class: "external-paper-card" }, [
     el("div", { class: "external-paper-header" }, [
       el("span", { class: "evidence-id", text: item.evidence_id || "paper" }),
-      el("span", { class: "external-paper-date", text: item.source_type === "academic_paper" ? "学术论文" : "外部来源" }),
+      el("span", { class: "external-paper-date", text: category }),
     ]),
     el("h3", {}, title),
     el("small", { class: "external-paper-meta", text: metadata }),
@@ -611,8 +803,8 @@ function renderExternalPapers(items) {
   if (!items?.length) return null;
   return el("section", { class: "external-results" }, [
     el("div", { class: "external-results-heading" }, [
-      el("strong", { text: `外部论文 ${items.length} 篇 · 已通过模型审核` }),
-      el("span", { text: "摘要仅作快速概览，请以原文为准" }),
+      el("strong", { text: `外部科研证据 ${items.length} 条 · 已通过相关性审核` }),
+      el("span", { text: "论文、报道和会议线索均需打开原文核验" }),
     ]),
     ...items.map(externalPaperCard),
   ]);
@@ -629,8 +821,59 @@ function renderEvidence(items, presentation, relatedImages = [], externalItems =
 
 function renderProcess(steps = []) {
   const list = el("div", { class: "process-list" });
-  (steps.length ? steps : [{ label: "等待任务执行", status: "skipped" }]).forEach((step) => list.append(el("div", { class: `process-step ${step.status || "completed"}` }, [el("span", { class: "process-dot" }), el("div", {}, [el("strong", { text: step.label }), el("span", { text: ({ completed: "已完成", passed: "验证通过", failed: "需要检查", fallback: "已降级", skipped: "本次未执行" })[step.status] || step.status })])])));
+  const statusLabels = {
+    started: "进行中",
+    running: "进行中",
+    planned: "待执行",
+    completed: "已完成",
+    passed: "验证通过",
+    failed: "需要检查",
+    fallback: "已降级",
+    skipped: "本次未执行",
+  };
+  (steps.length ? steps : [{ label: "等待任务执行", status: "skipped" }]).forEach((step) => {
+    const status = String(step.status || "completed");
+    const detail = String(step.detail || "").trim();
+    const detailDisplay = ({ accepted: "已通过", fallback: "使用后备路径", partial: "部分完成" })[detail] || detail;
+    const detailSuffix = detailDisplay && detailDisplay !== status ? ` · ${detailDisplay}` : "";
+    list.append(el("div", { class: `process-step ${status === "started" ? "running" : status}` }, [
+      el("span", { class: "process-dot" }),
+      el("div", {}, [
+        el("strong", { text: step.label }),
+        el("span", { text: `${statusLabels[status] || status}${detailSuffix}` }),
+      ]),
+    ]));
+  });
   $("#context-process").replaceChildren(list);
+}
+
+function liveProgressData(event) {
+  try {
+    const payload = JSON.parse(event.data || "{}");
+    return payload.data && typeof payload.data === "object" ? payload.data : payload;
+  } catch (_error) {
+    return {};
+  }
+}
+
+function updateLiveProgress(data = {}, fallback = {}) {
+  const stageId = String(data.stage_id || fallback.stage_id || "").trim();
+  if (!stageId) return;
+  state.liveProcessSteps.set(stageId, {
+    label: String(data.label || fallback.label || stageId),
+    status: String(data.status || fallback.status || "running"),
+    detail: String(data.detail || fallback.detail || ""),
+  });
+  renderProcess([...state.liveProcessSteps.values()]);
+  selectContextTab("process");
+}
+
+function intentPlanSteps(plan = {}) {
+  const labels = { retrieval: "检索证据", agent: "调用本地 Agent", tool: "调用工具", skill: "加载 Skill", verifier: "结果核验", compose: "组织回答" };
+  return (plan.nodes || []).map((node) => ({
+    label: `${labels[node.node_type] || "执行节点"} · ${node.target_id}`,
+    status: "planned",
+  }));
 }
 
 function renderContextUsage(result = {}) {
@@ -819,7 +1062,7 @@ function renderResult(task) {
   renderMarkdown($("#answer-text"), state.lastAnswer);
   renderTeachingLoop(structured);
   void loadLearningProgress(task);
-  renderBusinessView(structured.business_view || {}, state.lastAnswer);
+  renderBusinessView(structured.business_view || researchBriefView(structured.research_brief), state.lastAnswer, structured);
   const notices = [];
   if (summary.mock || result.provider === "mock" || result.mock_used) notices.push({ status: "mock", text: "当前为开发态模拟结果，不代表正式智能能力输出。" });
   if (presentation.answer_quality_message) notices.push({
@@ -849,7 +1092,20 @@ function renderResult(task) {
     ...(result.related_images || []),
     ...(structured.knowledge?.images || []),
   ];
-  renderEvidence(evidence, presentation, relatedImages, externalItems); renderProcess(presentation.execution_steps || []);
+  const executionSteps = presentation.execution_steps?.length
+    ? presentation.execution_steps
+    : intentPlanSteps(structured.intent_plan);
+  if (state.liveProcessSteps.size && ["completed", "failed"].includes(task.status)) {
+    state.liveProcessSteps.forEach((step) => {
+      if (["started", "running", "planned"].includes(step.status)) {
+        step.status = task.status === "completed" ? "completed" : "failed";
+      }
+    });
+  }
+  const finalSteps = state.liveProcessSteps.size
+    ? [...state.liveProcessSteps.values()]
+    : executionSteps;
+  renderEvidence(evidence, presentation, relatedImages, externalItems); renderProcess(finalSteps);
   renderContextUsage(result);
   const renderMs = performance.now() - renderStarted; localStorage.setItem("xinzhi_last_render_ms", renderMs.toFixed(1));
   renderInfo(task, result, summary, presentation, renderMs);
@@ -1175,22 +1431,140 @@ function businessSectionAlreadyInAnswer(answer, section) {
   return values.length > 0 && values.every((value) => normalizedAnswer.includes(value));
 }
 
-function renderBusinessView(view, answer = "") {
+function businessSectionText(section) {
+  if (section.key === "analysis_status") {
+    return {
+      plan: "分析方案",
+      interpreted: "已完成解释",
+      insufficient_data: "数据不足",
+    }[String(section.content)] || String(section.content || "");
+  }
+  if (Array.isArray(section.content)) {
+    return section.content.map((item) => {
+      if (item && typeof item === "object") {
+        const reviewId = item.review_id || item.id || "item";
+        const question = item.question || item.label || item.title || "";
+        const status = item.status ? ` [${item.status}]` : "";
+        return `- ${reviewId}${status}：${question || JSON.stringify(item)}`;
+      }
+      return `- ${String(item)}`;
+    }).join("\n");
+  }
+  if (section.content && typeof section.content === "object") {
+    return Object.entries(section.content)
+      .map(([key, value]) => `- ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+      .join("\n");
+  }
+  return String(section.content ?? "");
+}
+
+function researchBriefView(brief = {}) {
+  if (!brief || !brief.executive_summary) return {};
+  const sections = [
+    { key: "research_summary", label: "研究摘要", content: brief.executive_summary },
+    { key: "research_findings", label: "关键发现与证据", content: (brief.key_findings || []).map((item, index) => `${index + 1}. **${item.claim}** ${(item.evidence_ids || []).map((id) => `[${id}]`).join(" ")}\n   - 意义：${item.why_it_matters || "待结合原文判断"}\n   - 置信度：${item.confidence || "medium"}`).join("\n\n") },
+    { key: "research_timeline", label: "时间线", content: (brief.timeline || []).map((item) => `- **${item.date_label}**：${item.event} ${(item.evidence_ids || []).map((id) => `[${id}]`).join(" ")}`).join("\n") },
+    { key: "research_open_questions", label: "开放问题", content: (brief.open_questions || []).map((item) => `- ${item}`).join("\n") },
+    { key: "research_next_steps", label: "延展检索建议", content: (brief.next_steps || []).map((item) => `- ${item}`).join("\n") },
+  ].filter((section) => section.content);
+  return { renderer_type: "research_brief", sections };
+}
+
+function researchAnalysisV2Summary(view) {
+  const sections = Object.fromEntries((view.sections || []).map((section) => [section.key, section.content]));
+  const plan = sections.plan && typeof sections.plan === "object" ? sections.plan : {};
+  const quality = sections.data_quality && typeof sections.data_quality === "object" ? sections.data_quality : {};
+  const review = sections.review_checklist && typeof sections.review_checklist === "object" ? sections.review_checklist : {};
+  const statusLabels = {
+    planning: "计划中",
+    quality_blocked: "质量门禁阻断",
+    ready_for_execution: "可执行待确认",
+    executed: "本地计算完成",
+    needs_review: "需要人工复核",
+    insufficient_data: "数据不足",
+    failed: "执行失败",
+  };
+  const designLabels = {
+    experimental_comparison: "两组实验比较",
+    small_sample: "小样本两组比较",
+    multigroup_comparison: "多组比较",
+    repeated_measures: "重复测量比较",
+    observational_regression: "观察性回归",
+    time_series: "时间序列",
+    prediction: "预测分析",
+    unknown: "尚未确定",
+  };
+  const qualityLabels = {
+    passed: "通过",
+    needs_review: "需要复核",
+    blocked: "未通过",
+    not_checked: "尚未检查",
+  };
+  const metric = (label, value, tone = "") => el("div", { class: `research-v2-metric ${tone}` }, [
+    el("span", { text: label }),
+    el("strong", { text: String(value || "待补") }),
+  ]);
+  return el("section", { class: "research-v2-summary", "aria-label": "科研分析 V2 摘要" }, [
+    el("div", { class: "research-v2-summary-heading" }, [
+      el("div", {}, [
+        el("strong", { text: "科研分析 V2 审查摘要" }),
+        el("small", { text: "确定性本地分析 · 不替代研究者签字" }),
+      ]),
+      el("span", { class: "status-badge status-warning", text: statusLabels[String(sections.status)] || String(sections.status || "待定") }),
+    ]),
+    el("div", { class: "research-v2-metrics" }, [
+      metric("研究设计", designLabels[plan.design] || "尚未确定"),
+      metric("质量门禁", qualityLabels[quality.status] || "尚未检查", quality.status === "blocked" ? "danger" : ""),
+      metric("诊断条目", Array.isArray(sections.diagnostics) ? sections.diagnostics.length : 0),
+      metric("稳健性条目", Array.isArray(sections.robustness_findings) ? sections.robustness_findings.length : 0),
+      metric("复核状态", review.ready_for_signoff === true ? "待签字" : "未通过签字门禁", "danger"),
+    ]),
+  ]);
+}
+
+function renderBusinessView(view, answer = "", structured = {}) {
   const root = $("#business-result"); root.replaceChildren();
   if (view.banner) root.append(el("div", { class: "notice warning", text: view.banner }));
-  const sections = view.renderer_type === "lesson_prep"
-    ? (view.sections || []).filter((section, index, allSections) => {
-      if (section.key === "activities") {
-        const flow = allSections.find((candidate) => candidate.key === "lesson_flow");
-        if (flow && JSON.stringify(flow.content) === JSON.stringify(section.content)) return false;
-      }
-      return !businessSectionAlreadyInAnswer(answer, section);
-    })
-    : (view.sections || []);
+  const isResearchAnalysisV2 = structured.analysis_v2 === true
+    || (view.sections || []).some((section) => section.key === "review_checklist")
+    || (view.sections || []).some((section) => section.key === "effect_estimates" && section.content);
+  if (isResearchAnalysisV2) root.append(researchAnalysisV2Summary(view));
+  const hiddenResearchFields = new Set([
+    "analysis_steps",
+    "reproducibility_requirements",
+    "design_assessment",
+    "data_quality",
+    "status",
+    "plan",
+    "primary_result",
+    "effect_estimates",
+    "uncertainty_summary",
+    "diagnostics",
+    "robustness_findings",
+    "interpretation",
+    "limitations",
+    "provenance",
+    "artifacts",
+    "review_checklist",
+    "evidence_ids",
+    "evidence_references",
+  ]);
+  const sections = (view.sections || []).filter((section, index, allSections) => {
+    if (isResearchAnalysisV2 && hiddenResearchFields.has(section.key)) {
+      return false;
+    }
+    if (view.renderer_type === "lesson_prep" && section.key === "activities") {
+      const flow = allSections.find((candidate) => candidate.key === "lesson_flow");
+      if (flow && JSON.stringify(flow.content) === JSON.stringify(section.content)) return false;
+    }
+    // Some local agents intentionally return both a readable Markdown answer
+    // and a structured business view. Keep one representation in the UI.
+    return !businessSectionAlreadyInAnswer(answer, section);
+  });
   sections.forEach((section) => {
     const card = el("section", { class: `business-section business-${section.key}` });
     card.append(el("h3", { text: section.label }));
-    const content = typeof section.content === "string" ? section.content : JSON.stringify(section.content, null, 2);
+    const content = businessSectionText(section);
     card.append(el("div", { class: "markdown-view" })); renderMarkdown(card.lastElementChild, content);
     root.append(card);
   });
@@ -1201,10 +1575,10 @@ function selectedMaterialFiles() {
 }
 
 function validateMaterialFiles(files) {
-  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "application/json", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "text/tab-separated-values", "application/json", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.apache.parquet"];
   if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 个材料`);
   files.forEach((file) => {
-    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf|doc|docx)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
+    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf|doc|docx|xlsx|parquet)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
     if (file.size > 20 * 1024 * 1024) throw new Error(`材料不能超过 20MB：${file.name}`);
   });
 }
@@ -1229,13 +1603,14 @@ async function uploadMaterials() {
     const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
     const uploaded = await api("/api/v1/files", { method: "POST", body: form });
     if (["failed", "processing", "pending"].includes(uploaded.ingestion_status)) throw new Error(uploaded.extraction_error || `材料解析失败：${file.name}`);
-    materials.push({ uploaded, extractedText: "", originalType: file.type });
+    materials.push({ uploaded, extractedText: uploaded.extracted_text || "", originalType: file.type });
   }
   return materials;
 }
 function attachmentRef(file) { return { file_id: file.id, filename: file.filename, content_type: file.content_type, size_bytes: file.size_bytes, storage_key: file.storage_key, checksum_sha256: file.checksum_sha256 }; }
 
 async function waitForTask(id, runSequence) {
+  state.liveProcessSteps.clear();
   return new Promise((resolve, reject) => {
     let settled = false; let pollTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
     const cleanup = () => {
@@ -1247,8 +1622,37 @@ async function waitForTask(id, runSequence) {
     state.activeTaskWait = { runSequence, cancel };
     const finish = async () => { if (settled) return; try { const task = await api(ownedTaskUrl(id)); if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); } } catch (error) { settled = true; cleanup(); reject(error); } };
     ["task.completed", "task.failed", "task.cancelled"].forEach((name) => events.addEventListener(name, finish));
+    events.addEventListener("intent.recognized", () => addMessage("已识别用户意图，正在选择能力与执行方式…", "system"));
+    events.addEventListener("plan.created", () => { addMessage("已生成执行计划，按依赖关系调度本地 Agent 与检索能力…", "system"); selectContextTab("process"); });
     events.addEventListener("agent.started", () => addMessage("已完成能力编排，内部 Agent 正在协作处理…", "system"));
     events.addEventListener("knowledge.retrieved", () => { addMessage("已完成课程资料检索，正在整理本次证据…", "system"); selectContextTab("process"); });
+    const progressEventLabels = {
+      "plan.node_started": "\u6b63\u5728\u6267\u884c\u8ba1\u5212\u8282\u70b9",
+      "plan.node_completed": "\u8ba1\u5212\u8282\u70b9\u5df2\u5b8c\u6210",
+      "knowledge.query_normalized": "\u5df2\u5b8c\u6210\u77e5\u8bc6\u68c0\u7d22\u5b9a\u4f4d",
+      "knowledge.context_built": "\u5df2\u7ec4\u88c5\u8bfe\u7a0b\u8bc1\u636e",
+      "knowledge.insufficient": "\u8bfe\u7a0b\u8bc1\u636e\u4e0d\u8db3\uff0c\u8fdb\u5165\u4fdd\u5b88\u56de\u7b54",
+      "external_retrieval.started": "\u6b63\u5728\u68c0\u7d22\u5916\u90e8\u8bc1\u636e",
+      "external_retrieval.completed": "\u5916\u90e8\u8bc1\u636e\u68c0\u7d22\u5b8c\u6210",
+      "external_retrieval.failed": "\u5916\u90e8\u8bc1\u636e\u68c0\u7d22\u672a\u5b8c\u6210",
+    };
+    Object.entries(progressEventLabels).forEach(([name, label]) => {
+      events.addEventListener(name, (event) => {
+        const data = liveProgressData(event);
+        const terminal = name.endsWith(".completed") || name.endsWith(".failed")
+          || name === "knowledge.context_built" || name === "knowledge.insufficient";
+        updateLiveProgress(data, {
+          stage_id: String(data.stage_id || data.node_id || name),
+          status: terminal
+            ? (name.endsWith(".failed") || name === "knowledge.insufficient" ? "failed" : "completed")
+            : "running",
+          label,
+        });
+      });
+    });
+    events.addEventListener("agent.progress", (event) => {
+      updateLiveProgress(liveProgressData(event));
+    });
     events.onerror = () => {
       if (settled) return;
       events.close();
@@ -1272,8 +1676,31 @@ function setBusy(busy) {
   $("#switch-direct-answer").disabled = busy;
 }
 
+function markAnswerPending() {
+  $("#context-task-title").textContent = "正在处理当前任务";
+  if ($("#answer-panel").hidden) return;
+  $("#answer-status").textContent = "\u6b63\u5728\u6267\u884c";
+  $("#answer-title").textContent = "\u6b63\u5728\u7ec4\u7ec7\u56de\u7b54";
+  $("#answer-source-chip").textContent = "\u7b49\u5f85\u672c\u8f6e\u7ed3\u679c";
+}
+
+function markAnswerCancelled() {
+  $("#answer-panel").hidden = false;
+  $("#answer-status").textContent = "\u5df2\u505c\u6b62";
+  $("#answer-title").textContent = "\u4efb\u52a1\u5df2\u505c\u6b62";
+  $("#answer-source-chip").textContent = "\u672a\u751f\u6210\u65b0\u7ed3\u679c";
+  $("#context-task-title").textContent = "\u4efb\u52a1\u5df2\u505c\u6b62";
+  renderMarkdown($("#answer-text"), "");
+  $("#answer-notices").replaceChildren(el("div", {
+    class: "notice warning",
+    text: "\u672c\u6b21\u4efb\u52a1\u5df2\u505c\u6b62\uff0c\u672a\u751f\u6210\u65b0\u56de\u7b54\u3002",
+  }));
+  renderProcess([{ label: "\u672c\u6b21\u4efb\u52a1\u5df2\u505c\u6b62", status: "skipped" }]);
+}
+
 async function submit(event) {
   event.preventDefault(); if (state.taskId) return;
+  await identityReady;
   const runSequence = state.runSequence + 1;
   state.runSequence = runSequence;
   state.cancelRequested = false;
@@ -1283,11 +1710,12 @@ async function submit(event) {
   const studentAttempt = $("#student-attempt-input").value.trim();
   const learningFollowUp = pendingLearningFollowUp;
   const requestedCourse = learningFollowUp?.course_id || course;
-  const requestedIntent = learningFollowUp?.intent || "unknown";
+  const requestedIntent = learningFollowUp?.intent || state.intentOverride || "unknown";
   const selectedFiles = selectedMaterialFiles();
   if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
   if (teachingMode === "check_my_work" && !studentAttempt) { $("#form-error").textContent = "请填写你的解题过程或答案"; return; }
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
+  markAnswerPending();
   renderProcess([{ label: "正在理解你的需求", status: "running" }]);
   $("#context-usage").replaceChildren(el("div", { class: "context-empty" }, [
     el("strong", { text: "正在组装本次上下文" }),
@@ -1299,8 +1727,17 @@ async function submit(event) {
     const canonical = { text: question };
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
     if (uploadedText) canonical.uploaded_text = uploadedText;
-    if (materials.length === 1 && materials[0].originalType === "text/csv") canonical.data_description = uploadedText;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" } };
+    const tabularMaterials = materials.filter((item) => researchTabularFormat(item));
+    if (tabularMaterials.length === 1) {
+      canonical.data_description = [
+        question ? `用户分析说明：${question}` : "",
+        uploadedText || `已上传结构化数据文件：${tabularMaterials[0].uploaded.filename}`,
+      ].filter(Boolean).join("\n\n");
+    }
+    const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
+    const researchAnalysis = buildResearchAnalysisV2(question, materials);
+    if (researchAnalysis) options.research_analysis_v2 = researchAnalysis;
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
     state.taskId = task.id; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
@@ -1445,7 +1882,7 @@ function initializeResizablePanels() {
     });
   });
 }
-function applyParams() { if (params.get("course")) $("#course-select").value = params.get("course"); if (params.get("prompt")) $("#question-input").value = params.get("prompt"); }
+function applyParams() { if (params.get("course")) $("#course-select").value = params.get("course"); if (params.get("prompt")) $("#question-input").value = params.get("prompt"); updateResearchAnalysisPanel(); }
 
 async function learningAction(action, payload = {}) {
   if (!state.currentTask?.id) { toast("请先完成一道题或一次知识问答"); return; }
@@ -1526,21 +1963,32 @@ async function loadCapabilities() {
   }
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  const identity = await initIdentityGate({ next: `${location.pathname}${location.search}` });
-  if (identity?.user_id || identity?.id) {
-    const identityId = identity.user_id || identity.id;
-    if (state.userId !== identityId) {
-      state.sessionId = "";
-      localStorage.removeItem("xinzhi_student_session");
-    }
-    state.userId = identityId;
-    localStorage.setItem("xinzhi_student_user", state.userId);
-  }
+window.addEventListener("DOMContentLoaded", () => {
   initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: "student" });
-  applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels(); loadCapabilities(); loadSessionHistory(); loadSessionList(); void loadFeedbackFeatureStatus();
+  applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels();
+  identityReady = initIdentityGate({ next: `${location.pathname}${location.search}` }).then((identity) => {
+    if (identity?.user_id || identity?.id) {
+      const identityId = identity.user_id || identity.id;
+      if (state.userId !== identityId) {
+        state.sessionId = "";
+        localStorage.removeItem("xinzhi_student_session");
+      }
+      state.userId = identityId;
+      localStorage.setItem("xinzhi_student_user", state.userId);
+    }
+    const schedule = window.requestIdleCallback
+      ? (callback) => window.requestIdleCallback(callback, { timeout: 1200 })
+      : (callback) => window.setTimeout(callback, 80);
+    schedule(() => {
+      void loadCapabilities();
+      void loadSessionHistory();
+      void loadSessionList();
+      void loadFeedbackFeatureStatus();
+    });
+    return identity;
+  });
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
-  all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; updateShell(); autoGrow(); $("#question-input").focus(); }));
+  all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; state.intentOverride = button.dataset.intent || ""; updateResearchAnalysisPanel(); updateShell(); autoGrow(); $("#question-input").focus(); }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));
   $("#student-form").addEventListener("submit", submit);
   $("#submit-task-feedback").addEventListener("click", () => submitTaskFeedback());
@@ -1566,6 +2014,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     state.activeTaskWait = null;
     state.taskId = "";
     setBusy(false);
+    markAnswerCancelled();
     $("#form-error").textContent = "已立即停止当前等待，正在后台提交取消请求…";
     void api(`/api/v1/tasks/${taskId}/cancel`, { method: "POST" })
       .then(() => { if (state.runSequence === stopSequence) $("#form-error").textContent = "停止请求已提交，任务不会继续刷新结果。"; })

@@ -24,6 +24,7 @@ from app.contracts import (
 from app.multimodal.file_parser import detect_input_type
 from app.observability import TraceStore
 from app.orchestrator.state import XZDGraphState, new_graph_state
+from app.services.intent_recognition import IntentRecognitionService
 from app.services.model_service import ModelService
 
 COURSE_KEYWORDS: tuple[tuple[CourseCode, tuple[str, ...]], ...] = (
@@ -164,6 +165,26 @@ class XZDSupervisor:
             payload.files, has_text=bool(payload.message)
         )
         legacy_intent = self._legacy_intent(intent)
+        context = session_context or {}
+        continuity_options = {
+            key: context.get(key, "")
+            for key in (
+                "previous_course",
+                "previous_agent",
+                "previous_intent",
+                "previous_task_id",
+                "previous_task_family",
+                "previous_answer_summary",
+                "previous_external_query",
+                "previous_external_retrieval",
+                "continuity_state",
+            )
+            if context.get(key) not in (None, "", {})
+        }
+        if "previous_course" not in continuity_options:
+            active_course = context.get("active_course", "")
+            if active_course not in (None, "", {}):
+                continuity_options["previous_course"] = active_course
         legacy = AgentRequest(
             session_id=session_id,
             user_id=user_id,
@@ -179,12 +200,20 @@ class XZDSupervisor:
             attachments=attachments or [],
             options={
                 **payload.metadata,
+                **continuity_options,
                 "request_id": payload.request_id,
                 "trace_id": state["trace_id"],
                 "run_id": state["run_id"],
                 "input_type": effective_input_type.value,
                 "debug": payload.debug,
-                "previous_answer_summary": payload.previous_answer_summary or "",
+                "previous_answer_summary": (
+                    str(
+                        context.get(
+                            "previous_answer_summary",
+                            payload.previous_answer_summary or "",
+                        )
+                    )
+                ),
             },
         )
         state["normalized_input"] = {
@@ -204,6 +233,7 @@ class XZDSupervisor:
         route_started = perf_counter()
         route = self.router.route(legacy)
         settings = self.router.settings
+        structured_intent = str(route.intent_recognition.get("intent", ""))
         if (
             settings.enable_local_knowledge_qa
             and course
@@ -223,6 +253,11 @@ class XZDSupervisor:
                 OrchestrationIntent.LEARNING_ADVICE,
                 OrchestrationIntent.GENERAL_QA,
                 OrchestrationIntent.UNKNOWN,
+            }
+            and structured_intent not in {
+                OrchestrationIntent.ACADEMIC_SEARCH.value,
+                OrchestrationIntent.ACADEMIC_WRITING.value,
+                OrchestrationIntent.DATA_ANALYSIS.value,
             }
         ):
             route = self._local_knowledge_primary(legacy, route)
@@ -273,6 +308,8 @@ class XZDSupervisor:
 
     @staticmethod
     def _course(payload: AgentRequestV2, context: dict[str, Any]) -> CourseCode:
+        if IntentRecognitionService.is_cross_domain_topic(payload.message):
+            return CourseCode.UNKNOWN
         if payload.course_hint is not None:
             return payload.course_hint
         text = payload.message.casefold().replace(" ", "")
@@ -284,7 +321,9 @@ class XZDSupervisor:
             for marker in ("ω", "欧姆", "电阻", "电压源", "电流源", "基尔霍夫")
         ):
             return CourseCode.CT
-        previous = str(context.get("course_id", "")).upper()
+        previous = str(
+            context.get("active_course", context.get("course_id", ""))
+        ).upper()
         if any(
             marker in text
             for marker in (*FOLLOW_UP_MARKERS, *KNOWLEDGE_REQUEST_MARKERS)
@@ -358,6 +397,7 @@ class XZDSupervisor:
             OrchestrationIntent.ASSIGNMENT_REVIEW: TaskFamily.ASSIGNMENT_REVIEW,
             OrchestrationIntent.ACADEMIC_WRITING: TaskFamily.ACADEMIC_WRITING,
             OrchestrationIntent.DATA_ANALYSIS: TaskFamily.DATA_ANALYSIS,
+            OrchestrationIntent.ACADEMIC_SEARCH: TaskFamily.RESEARCH,
             OrchestrationIntent.EXPLAIN_CONCEPT: TaskFamily.KNOWLEDGE_QA,
             OrchestrationIntent.GENERAL_QA: TaskFamily.KNOWLEDGE_QA,
             OrchestrationIntent.SUMMARIZE_KNOWLEDGE: TaskFamily.KNOWLEDGE_QA,
@@ -369,7 +409,11 @@ class XZDSupervisor:
     def _scene(intent: Intent) -> Scene:
         if intent in {Intent.LESSON_PREP, Intent.ASSIGNMENT_REVIEW}:
             return Scene.TEACHING
-        if intent in {Intent.ACADEMIC_WRITING, Intent.DATA_ANALYSIS}:
+        if intent in {
+            Intent.ACADEMIC_WRITING,
+            Intent.DATA_ANALYSIS,
+            Intent.ACADEMIC_SEARCH,
+        }:
             return Scene.RESEARCH
         return Scene.LEARNING
 
@@ -394,7 +438,7 @@ class XZDSupervisor:
             agent_id=fallback_id,
             scene=definition.scene,
             course_id=request.course_id,
-            intent=request.intent.value,
+            intent=original.intent or request.intent.value,
             route_status=RouteStatus.SELECTED,
             reason="规则无法确定专用 Agent，使用本地检索型安全回退",
             retrieval_required=True,
@@ -405,18 +449,46 @@ class XZDSupervisor:
             original_agent_id=original.agent_id or None,
             reason_codes=["unresolved_route", "local_safe_fallback"],
             local_confidence=0.25,
+            intent_recognition=dict(original.intent_recognition),
+            capabilities=list(original.capabilities),
+            selected_tools=list(original.selected_tools),
+            selected_skills=list(original.selected_skills),
+            route_mode=original.route_mode,
+            complexity=original.complexity,
+            needs_subagents=original.needs_subagents,
+            parallelizable=original.parallelizable,
+            route_revision=original.route_revision + 1,
+            route_trace=[
+                *original.route_trace,
+                {
+                    "stage": "supervisor_safe_fallback",
+                    "source": "supervisor_local_fallback",
+                    "from_agent_id": original.agent_id,
+                    "to_agent_id": fallback_id,
+                    "intent": original.intent or request.intent.value,
+                },
+            ],
         )
 
     def _local_knowledge_primary(
         self, request: AgentRequest, original: RouteDecision
     ) -> RouteDecision:
+        # Teaching workflows have their own local internal agents.  Do not
+        # replace them with the generic knowledge RAG route when the optional
+        # cloud/model path is unavailable; doing so loses lesson-specific
+        # structure and makes a valid teaching request look like a concept QA.
+        if original.intent in {
+            Intent.LESSON_PREP.value,
+            Intent.ASSIGNMENT_REVIEW.value,
+        } or original.intent_recognition.get("task_family") == "teaching":
+            return original
         agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
         definition = self.registry.get(agent_id)
         return RouteDecision(
             agent_id=agent_id,
             scene=definition.scene,
             course_id=request.course_id,
-            intent=request.intent.value,
+            intent=original.intent or request.intent.value,
             route_status=RouteStatus.SELECTED,
             reason="新版对话入口优先使用本地 RAG，并在已配置时由星火生成",
             retrieval_required=True,
@@ -427,6 +499,25 @@ class XZDSupervisor:
             original_agent_id=original.agent_id or None,
             reason_codes=["local_rag_primary", "spark_generation_when_available"],
             local_confidence=0.9,
+            intent_recognition=dict(original.intent_recognition),
+            capabilities=list(original.capabilities),
+            selected_tools=list(original.selected_tools),
+            selected_skills=list(original.selected_skills),
+            route_mode=original.route_mode,
+            complexity=original.complexity,
+            needs_subagents=original.needs_subagents,
+            parallelizable=original.parallelizable,
+            route_revision=original.route_revision + 1,
+            route_trace=[
+                *original.route_trace,
+                {
+                    "stage": "supervisor_local_rag_primary",
+                    "source": "supervisor_local_rag_primary",
+                    "from_agent_id": original.agent_id,
+                    "to_agent_id": agent_id,
+                    "intent": original.intent or request.intent.value,
+                },
+            ],
         )
 
     @staticmethod

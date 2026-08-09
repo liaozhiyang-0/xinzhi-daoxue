@@ -545,6 +545,16 @@ class AgentRunModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
     agent_id: Mapped[str] = mapped_column(String(64))
+    run_kind: Mapped[str] = mapped_column(String(32), default="agent")
+    parent_run_id: Mapped[str] = mapped_column(
+        String(64), default="", index=True
+    )
+    parent_node_id: Mapped[str] = mapped_column(String(100), default="")
+    plan_id: Mapped[str] = mapped_column(String(120), default="")
+    plan_version: Mapped[str] = mapped_column(String(32), default="1")
+    iteration: Mapped[int] = mapped_column(Integer, default=0)
+    budget_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    state_version: Mapped[int] = mapped_column(Integer, default=1)
     agent_version: Mapped[str] = mapped_column(String(32), default="1.0.0")
     provider: Mapped[str] = mapped_column(String(32))
     workflow_version: Mapped[str] = mapped_column(String(32), default="1.0.0")
@@ -555,11 +565,127 @@ class AgentRunModel(Base):
     retrieval_calls: Mapped[int] = mapped_column(Integer, default=0)
     trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     metrics_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    terminal_reason: Mapped[str] = mapped_column(String(256), default="")
+    control_request: Mapped[str] = mapped_column(String(32), default="")
+    control_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AgentRunNodeModel(Base):
+    """Durable node execution state for the incremental Agent Runtime."""
+
+    __tablename__ = "agent_run_nodes"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "node_id", name="uq_agent_run_nodes_run_node"
+        ),
+        Index("ix_agent_run_nodes_run_status", "run_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    node_id: Mapped[str] = mapped_column(String(100))
+    node_type: Mapped[str] = mapped_column(String(32))
+    handler_id: Mapped[str] = mapped_column(String(160))
+    target_id: Mapped[str] = mapped_column(String(160), default="")
+    execution_key: Mapped[str] = mapped_column(String(240), default="")
+    effect_status: Mapped[str] = mapped_column(
+        String(32), default="not_started", index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0)
+    dependencies: Mapped[list[str]] = mapped_column(JSON, default=list)
+    input_artifact_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    output_artifact_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    observation_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str] = mapped_column(String(128), default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class AgentCheckpointModel(Base):
+    """Append-only durable snapshots used for replay and restart recovery."""
+
+    __tablename__ = "agent_checkpoints"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "sequence", name="uq_agent_checkpoints_run_sequence"
+        ),
+        Index("ix_agent_checkpoints_run_created", "run_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    state_version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32))
+    state_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
+class AgentPlanProposalModel(Base):
+    """Durable, reviewable replacement plan for one Runtime Run."""
+
+    __tablename__ = "agent_plan_proposals"
+    __table_args__ = (
+        Index(
+            "ix_agent_plan_proposals_run_status",
+            "run_id",
+            "status",
+        ),
+        Index(
+            "ix_agent_plan_proposals_task_created",
+            "task_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    base_iteration: Mapped[int] = mapped_column(Integer)
+    target_iteration: Mapped[int] = mapped_column(Integer)
+    base_state_version: Mapped[int] = mapped_column(Integer)
+    state_version: Mapped[int] = mapped_column(Integer)
+    base_plan_id: Mapped[str] = mapped_column(String(120))
+    base_plan_version: Mapped[str] = mapped_column(String(32))
+    proposed_plan_data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    reason_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    rationale: Mapped[str] = mapped_column(Text)
+    affected_node_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    budget_impact_data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    approval_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    decision_reason: Mapped[str] = mapped_column(String(2_000), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class TaskEventModel(Base):
@@ -612,6 +738,54 @@ class TaskFeedbackModel(Base):
     citation_coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+
+class ResearchEvidenceModel(Base):
+    """Durable metadata for the dedicated research evidence vector index."""
+
+    __tablename__ = "research_evidence"
+    __table_args__ = (
+        UniqueConstraint("evidence_id", name="uq_research_evidence_id"),
+        Index("ix_research_evidence_topic_seen", "topic", "last_seen_at"),
+        Index("ix_research_evidence_status_updated", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=db_id)
+    evidence_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    topic: Mapped[str] = mapped_column(String(500), default="", index=True)
+    source_type: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True)
+    source_ref: Mapped[str] = mapped_column(String(512), default="")
+    canonical_url: Mapped[str] = mapped_column(String(1000))
+    title: Mapped[str] = mapped_column(String(1000))
+    content_excerpt: Mapped[str] = mapped_column(Text, default="")
+    authors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    venue: Mapped[str] = mapped_column(String(500), default="")
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    doi: Mapped[str] = mapped_column(String(256), default="")
+    arxiv_id: Mapped[str] = mapped_column(String(128), default="")
+    citation_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(128), default="")
+    relevance_score: Mapped[float] = mapped_column(Float, default=0.0)
+    trust_level: Mapped[str] = mapped_column(String(32), default="unknown")
+    source_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata_json", JSON, default=dict
+    )
+    vector_indexed: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )

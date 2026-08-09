@@ -1,0 +1,34 @@
+name: xzd-searxng
+
+services:
+  core:
+    container_name: xzd-searxng
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${SEARXNG_HOST:-127.0.0.1}:${SEARXNG_PORT:-8080}:8080"
+    env_file:
+      - ./.env
+    volumes:
+      - ./core-config:/etc/searxng
+      - core-data:/var/cache/searxng
+    depends_on:
+      valkey:
+        condition: service_healthy
+
+  valkey:
+    container_name: xzd-searxng-valkey
+    image: docker.io/valkey/valkey:9-alpine
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: unless-stopped
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  core-data:
+  valkey-data:

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from time import perf_counter
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import SolutionPacketV1
+from app.contracts import AgentEventType, SolutionPacketV1
 from app.contracts.learning import (
     FeedbackUptakeV1,
     HintDecisionV1,
@@ -21,7 +21,7 @@ from app.contracts.learning import (
     TeachingMode,
     VerificationReportV1,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError
 from app.models.entities import (
     LearnerKnowledgeStateModel,
     LearningInteractionModel,
@@ -29,10 +29,15 @@ from app.models.entities import (
     TaskModel,
     WrongAnswerRecordModel,
 )
+from app.repositories import AgentRunRepository
 from app.repositories.learning import LearningRecordRepository
 from app.services.answer_disclosure import INTERNAL_TEACHING_KEY
+from app.services.event_service import append_task_event
 from app.services.feedback_uptake import FeedbackUptakeService
 from app.services.learning_outcome import LearningOutcomeService
+from app.services.learning_progress_runtime import (
+    LearningProgressRuntimeService,
+)
 from app.services.practice_generation import PracticeGenerationService
 from app.services.retest_plans import RetestPlanService
 from app.services.session_working_state import SessionWorkingStateService
@@ -42,6 +47,9 @@ from app.services.student_verification import StudentVerificationService
 from app.services.teaching_interaction import (
     PHASE2_ACTIONS,
     TeachingInteractionService,
+)
+from app.services.teaching_interaction_runtime import (
+    TeachingInteractionRuntimeService,
 )
 
 DEFAULT_CONFIG = (
@@ -62,6 +70,8 @@ class LearningLoopService:
         self,
         config_path: Path = DEFAULT_CONFIG,
         teaching_interactions: TeachingInteractionService | None = None,
+        teaching_interaction_runtime: TeachingInteractionRuntimeService | None = None,
+        learning_progress_runtime: LearningProgressRuntimeService | None = None,
         learning_outcome: LearningOutcomeService | None = None,
     ) -> None:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
@@ -69,6 +79,8 @@ class LearningLoopService:
         self.reviewer = StudentAnswerReviewService()
         self.practice = PracticeGenerationService()
         self.teaching_interactions = teaching_interactions
+        self.teaching_interaction_runtime = teaching_interaction_runtime
+        self.learning_progress_runtime = learning_progress_runtime
         self.attempts = StudentAttemptService()
         self.feedback_uptake = FeedbackUptakeService()
         self.verifier = StudentVerificationService()
@@ -90,8 +102,76 @@ class LearningLoopService:
         task = await session.get(TaskModel, request.source_task_id)
         if task is None or task.user_id != request.user_id:
             raise NotFoundError("未找到可访问的来源任务")
+        interaction_id = uuid4().hex
         if request.action in PHASE3_ACTIONS:
-            return await self._act_phase3(session, task, request)
+            if (
+                self.learning_progress_runtime is not None
+                and self.learning_progress_runtime.supports(request)
+            ):
+                progress_outcome = await self.learning_progress_runtime.execute(
+                    session,
+                    task,
+                    request,
+                    interaction_id=interaction_id,
+                )
+                response = progress_outcome.response.model_copy(
+                    update={
+                        "status": (
+                            "accepted"
+                            if progress_outcome.status == "waiting_approval"
+                            else progress_outcome.response.status
+                        ),
+                        "runtime_run_id": progress_outcome.run_id,
+                        "runtime_status": progress_outcome.status,
+                        "approval_required": progress_outcome.approval_required,
+                    }
+                )
+                await self._persist_interaction(
+                    session, task, request, response
+                )
+                return response
+            return await self._act_phase3(session, task, request, interaction_id)
+        if (
+            request.action in PHASE2_ACTIONS
+            and self.teaching_interaction_runtime is not None
+            and self.teaching_interaction_runtime.supports(request)
+        ):
+            teaching_outcome = await self.teaching_interaction_runtime.execute(
+                session,
+                task,
+                request,
+                interaction_id=interaction_id,
+            )
+            response = LearningActionResponse(
+                interaction_id=interaction_id,
+                action=request.action,
+                status=(
+                    "accepted"
+                    if teaching_outcome.status == "waiting_approval"
+                    else "completed"
+                ),
+                message=teaching_outcome.message,
+                teaching=teaching_outcome.teaching,
+                runtime_run_id=teaching_outcome.run_id,
+                runtime_status=teaching_outcome.status,
+                approval_required=teaching_outcome.approval_required,
+            )
+            session.add(
+                LearningInteractionModel(
+                    id=interaction_id,
+                    source_task_id=task.id,
+                    user_id=request.user_id,
+                    action=request.action,
+                    idempotency_key=request.idempotency_key,
+                    payload={
+                        **request.payload,
+                        "student_answer": request.student_answer,
+                    },
+                    result=response.model_dump(mode="json"),
+                )
+            )
+            await session.commit()
+            return response
         if request.action in PHASE2_ACTIONS and self.teaching_interactions is not None:
             message, teaching = await self.teaching_interactions.act(
                 session,
@@ -99,7 +179,7 @@ class LearningLoopService:
                 request,
             )
             response = LearningActionResponse(
-                interaction_id=uuid4().hex,
+                interaction_id=interaction_id,
                 action=request.action,
                 status="completed",
                 message=message,
@@ -310,13 +390,172 @@ class LearningLoopService:
         await session.commit()
         return response
 
+    async def _persist_interaction(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        request: LearningActionRequest,
+        response: LearningActionResponse,
+    ) -> None:
+        session.add(
+            LearningInteractionModel(
+                id=response.interaction_id,
+                source_task_id=task.id,
+                user_id=request.user_id,
+                action=request.action,
+                idempotency_key=request.idempotency_key,
+                payload={
+                    **request.payload,
+                    "student_answer": request.student_answer,
+                },
+                result=response.model_dump(mode="json"),
+            )
+        )
+        await session.commit()
+
+    async def approve_runtime_interaction(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        *,
+        user_id: str,
+        expected_state_version: int | None = None,
+    ) -> LearningActionResponse:
+        model = await AgentRunRepository(session).get(run_id, for_update=True)
+        if model is None:
+            raise NotFoundError("teaching interaction Runtime run not found")
+        task = await session.get(TaskModel, model.task_id)
+        if task is None or (user_id and task.user_id != user_id):
+            raise NotFoundError("teaching interaction Runtime run not found")
+        runtime: (
+            TeachingInteractionRuntimeService | LearningProgressRuntimeService
+        )
+        if (
+            self.teaching_interaction_runtime is not None
+            and model.run_kind == self.teaching_interaction_runtime.run_kind
+        ):
+            runtime = self.teaching_interaction_runtime
+        elif (
+            self.learning_progress_runtime is not None
+            and model.run_kind == self.learning_progress_runtime.run_kind
+        ):
+            runtime = self.learning_progress_runtime
+        else:
+            raise NotFoundError("learning Runtime run not found")
+        try:
+            outcome: Any = await runtime.approve(
+                session,
+                run_id,
+                user_id=task.user_id,
+                expected_state_version=expected_state_version,
+            )
+        except ValueError as exc:
+            raise ConflictError(str(exc)) from exc
+        interaction = await session.get(
+            LearningInteractionModel, outcome.interaction_id
+        )
+        if interaction is None:
+            candidates = await session.scalars(
+                select(LearningInteractionModel).where(
+                    LearningInteractionModel.source_task_id == task.id,
+                    LearningInteractionModel.user_id == task.user_id,
+                )
+            )
+            interaction = next(
+                (
+                    item
+                    for item in candidates
+                    if item.result.get("runtime_run_id") == run_id
+                ),
+                None,
+            )
+        if interaction is None or (user_id and interaction.user_id != user_id):
+            raise ConflictError("teaching interaction result is missing")
+        response = LearningActionResponse.model_validate(interaction.result)
+        runtime_response = getattr(outcome, "response", None)
+        response = response.model_copy(
+            update={
+                "status": "completed",
+                "runtime_status": outcome.status,
+                "approval_required": False,
+                "message": (
+                    getattr(outcome, "message", "") or response.message
+                ),
+                "teaching": (
+                    getattr(outcome, "teaching", {}) or response.teaching
+                ),
+                "attempt": (
+                    runtime_response.attempt
+                    if runtime_response is not None and runtime_response.attempt
+                    else response.attempt
+                ),
+                "feedback_uptake": (
+                    runtime_response.feedback_uptake
+                    if runtime_response is not None
+                    and runtime_response.feedback_uptake is not None
+                    else response.feedback_uptake
+                ),
+                "mastery": (
+                    runtime_response.mastery
+                    if runtime_response is not None and runtime_response.mastery
+                    else response.mastery
+                ),
+                "mastery_evidence": (
+                    runtime_response.mastery_evidence
+                    if runtime_response is not None
+                    and runtime_response.mastery_evidence
+                    else response.mastery_evidence
+                ),
+                "retest_plans": (
+                    runtime_response.retest_plans
+                    if runtime_response is not None
+                    and runtime_response.retest_plans
+                    else response.retest_plans
+                ),
+            }
+        )
+        interaction.result = response.model_dump(mode="json")
+        await append_task_event(
+            session,
+            task.id,
+            AgentEventType.AGENT_PROGRESS,
+            agent_id=runtime.agent_id,
+            data={
+                "stage_id": "teaching_runtime_control",
+                "status": "approval_granted",
+                "runtime_run_id": run_id,
+                "state_version": model.state_version,
+            },
+        )
+        await session.commit()
+        return response
+
+    async def execute_phase3_action(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        request: LearningActionRequest,
+        interaction_id: str,
+    ) -> LearningActionResponse:
+        """Execute the legacy phase-3 policy inside a Runtime apply node."""
+
+        return await self._act_phase3(
+            session,
+            task,
+            request,
+            interaction_id,
+            persist_interaction=False,
+        )
+
     async def _act_phase3(
         self,
         session: AsyncSession,
         task: TaskModel,
         request: LearningActionRequest,
+        interaction_id: str,
+        *,
+        persist_interaction: bool = True,
     ) -> LearningActionResponse:
-        interaction_id = uuid4().hex
         response: LearningActionResponse
         if request.action == "submit_attempt_revision":
             response = await self._submit_attempt_revision(
@@ -369,21 +608,22 @@ class LearningLoopService:
             response = await self._complete_retest(
                 session, task, request, interaction_id
             )
-        session.add(
-            LearningInteractionModel(
-                id=interaction_id,
-                source_task_id=task.id,
-                user_id=request.user_id,
-                action=request.action,
-                idempotency_key=request.idempotency_key,
-                payload={
-                    **request.payload,
-                    "student_answer": request.student_answer,
-                },
-                result=response.model_dump(mode="json"),
+        if persist_interaction:
+            session.add(
+                LearningInteractionModel(
+                    id=interaction_id,
+                    source_task_id=task.id,
+                    user_id=request.user_id,
+                    action=request.action,
+                    idempotency_key=request.idempotency_key,
+                    payload={
+                        **request.payload,
+                        "student_answer": request.student_answer,
+                    },
+                    result=response.model_dump(mode="json"),
+                )
             )
-        )
-        await session.commit()
+            await session.commit()
         return response
 
     async def _submit_attempt_revision(

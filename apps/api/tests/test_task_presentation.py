@@ -300,3 +300,64 @@ def test_lesson_fallback_returns_an_actual_editable_structure() -> None:
     assert data["lesson_flow"]
     assert data["activities"]
     assert data["formative_assessment"]
+
+
+def test_research_presentation_distinguishes_failed_external_search() -> None:
+    definition = AgentRegistry().get("RESEARCH_01_ACADEMIC_SEARCH_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="CT",
+        intent="general_qa",
+        answer="当前没有获得可核验的外部科研证据。",
+        structured_result={
+            "external_retrieval": {
+                "status": "failed",
+                "provider_status": {"arxiv": "completed"},
+                "warnings": ["paper review timed out"],
+            }
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.source_summary == "外部检索未形成可展示证据"
+    assert "已执行论文、报道等外部检索" in presentation.evidence_message
+
+
+def test_research_presentation_keeps_local_answer_when_external_evidence_is_empty(
+) -> None:
+    definition = AgentRegistry().get("RESEARCH_01_ACADEMIC_SEARCH_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="CT",
+        intent="general_qa",
+        answer="科研前沿本地知识初步回答",
+        structured_result={
+            "answer_mode": "local_knowledge_fallback",
+            "external_retrieval": {
+                "status": "failed",
+                "warnings": ["provider unavailable"],
+            },
+            "model_execution": {"status": "fallback", "model_calls": 0},
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.source_summary == "本地知识初步回答"
+    assert presentation.answer_quality_status == "provisional"
+    assert "科研子问题" in presentation.evidence_message

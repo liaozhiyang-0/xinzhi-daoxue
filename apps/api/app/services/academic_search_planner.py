@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import UTC, datetime, timedelta
 
 from app.agents.internal.contracts import AcademicSearchPlan
 from app.agents.internal.hub import InternalAgentHub
 from app.contracts.external_retrieval import ExternalRetrievalResult
 from app.core.config import Settings
+from app.services.external_research_answer import normalize_academic_search_query
 
 
 class AcademicSearchPlannerService:
@@ -25,6 +27,7 @@ class AcademicSearchPlannerService:
         *,
         request_id: str = "",
         feedback: dict[str, object] | None = None,
+        research_intent: dict[str, object] | None = None,
     ) -> tuple[AcademicSearchPlan | None, str | None]:
         if not query.strip():
             return None, "academic search planning skipped: empty query"
@@ -41,6 +44,8 @@ class AcademicSearchPlannerService:
                 "the user makes it mandatory. Preserve the requested minimum count."
             ),
         }
+        if research_intent:
+            payload["research_intent"] = research_intent
         if feedback:
             payload["feedback"] = feedback
         try:
@@ -56,14 +61,16 @@ class AcademicSearchPlannerService:
                 )
             plan = AcademicSearchPlan.model_validate(result.structured_result)
         except TimeoutError:
+            fallback = _deterministic_search_plan(query)
             return (
-                None,
-                "academic search planning timed out; using the original query",
+                fallback,
+                "academic search planning timed out; using deterministic variants",
             )
         except Exception:
+            fallback = _deterministic_search_plan(query)
             return (
-                None,
-                "academic search planning unavailable; using the original query",
+                fallback,
+                "academic search planning unavailable; using deterministic variants",
             )
 
         queries = list(
@@ -72,17 +79,47 @@ class AcademicSearchPlannerService:
             )
         )
         if not queries:
+            fallback = _deterministic_search_plan(query)
             return (
-                None,
+                fallback,
                 "academic search planning returned no queries; "
-                "using the original query",
+                "using deterministic variants",
             )
+        research_questions = (
+            research_intent.get("research_questions")
+            if research_intent
+            else None
+        )
+        if isinstance(research_questions, list):
+            queries.extend(
+                item.strip()
+                for item in research_questions
+                if isinstance(item, str) and item.strip()
+            )
+            queries = list(dict.fromkeys(queries))
+        queries = _stabilize_queries(query, queries)
         updates: dict[str, object] = {"search_queries": queries[:6]}
+        if _has_relative_time_request(query):
+            freshness_days = 1095
+            if research_intent:
+                raw_freshness_days = research_intent.get("freshness_days")
+                if isinstance(raw_freshness_days, int):
+                    freshness_days = raw_freshness_days
+            updates["search_queries"] = _repair_relative_time_ranges(
+                queries[:6],
+                freshness_days=freshness_days,
+            )
         requested_minimum = _requested_minimum(query)
         if requested_minimum is not None:
             updates["minimum_results"] = max(
                 plan.minimum_results, min(requested_minimum, 20)
             )
+        else:
+            # A planner model may over-specify a count even when the user did
+            # not ask for one. Keep the default retrieval target small so a
+            # broad question does not trigger extra provider rounds. Only an
+            # explicit "at least N" request may raise it.
+            updates["minimum_results"] = 2
         if (
             plan.citation_preference == "not_requested"
             and _requests_high_citation(query)
@@ -125,6 +162,31 @@ def requested_minimum(query: str) -> int | None:
     return _requested_minimum(query)
 
 
+def _deterministic_search_plan(query: str) -> AcademicSearchPlan:
+    """Build a bounded high-recall plan when the planner model is unavailable.
+
+    The retrieval path must not collapse to the user's full natural-language
+    sentence: broad frontier questions commonly contain several independent
+    concepts (for example, multimodality and agents) that academic indexes
+    rank poorly when sent as one unexpanded string.
+    """
+
+    normalized = normalize_academic_search_query(query)
+    queries = _stabilize_queries(query, [normalized])[:2]
+    years = sorted(set(re.findall(r"20\d{2}", query)))
+    if len(years) >= 2:
+        year_filter = "(" + " OR ".join(years) + ")"
+        queries = [f"{item} {year_filter}" for item in queries]
+    return AcademicSearchPlan(
+        topic_summary=query[:300],
+        search_queries=queries[:6],
+        minimum_results=max(2, min(20, _requested_minimum(query) or 2)),
+        citation_preference=(
+            "prefer_high" if _requests_high_citation(query) else "not_requested"
+        ),
+    )
+
+
 _MINIMUM_PATTERNS = (
     re.compile(r"(?:至少|不少于|最少)\s*(\d+)\s*(?:篇|个|項|项)?"),
     re.compile(r"(?:at\s+least|minimum\s+of)\s*(\d+)\b", re.IGNORECASE),
@@ -152,3 +214,134 @@ def _requests_high_citation(query: str) -> bool:
             "most cited",
         )
     )
+
+
+def _stabilize_queries(query: str, queries: list[str]) -> list[str]:
+    """Remove planner noise and add bounded variants for broad AI searches."""
+
+    normalized = " ".join(query.casefold().split())
+    explicit_sources = any(
+        term in normalized for term in ("conference", "workshop", "symposium", "会议")
+    )
+    cleaned: list[str] = []
+    for value in queries:
+        candidate = " ".join(value.split())
+        if not explicit_sources:
+            candidate = re.sub(
+                r"\b(?:conference|workshop|symposium)\b", " ", candidate, flags=re.I
+            )
+        candidate = re.sub(r"\s+", " ", candidate).strip(" ,;()")
+        if candidate and candidate.casefold() not in {
+            item.casefold() for item in cleaned
+        }:
+            cleaned.append(candidate)
+
+    ai_topic = any(
+        term in normalized
+        for term in (
+            "人工智能",
+            "机器学习",
+            "深度学习",
+            "生成式人工智能",
+            "大模型",
+            "artificial intelligence",
+            "machine learning",
+            "deep learning",
+            "generative ai",
+            "large language model",
+        )
+    )
+    frontier_request = any(
+        term in normalized
+        for term in (
+            "代表性进展",
+            "关键进展",
+            "发展趋势",
+            "研究现状",
+            "frontier",
+            "advances",
+        )
+    )
+    if (ai_topic and frontier_request) or _is_broad_ai_frontier_query(normalized):
+        deterministic = [
+            "generative AI multimodal models vision-language models",
+            "AI agents agentic systems large language models tool use",
+            "multimodal large language models visual grounding",
+            "agentic AI autonomous agents planning reasoning tool use",
+        ]
+        # Do not append model-produced Boolean syntax here. It is often
+        # malformed (for example, an unmatched parenthesis) and causes
+        # Crossref/OpenAlex to search a different topic than the user asked.
+        cleaned = deterministic
+    return list(dict.fromkeys(cleaned)) or [query.strip()]
+
+
+def _is_broad_ai_frontier_query(normalized: str) -> bool:
+    """Recognize broad Chinese/English AI frontier questions deterministically."""
+
+    ai_terms = (
+        "\u4eba\u5de5\u667a\u80fd",
+        "\u673a\u5668\u5b66\u4e60",
+        "\u6df1\u5ea6\u5b66\u4e60",
+        "\u751f\u6210\u5f0f\u4eba\u5de5\u667a\u80fd",
+        "generative ai",
+        "artificial intelligence",
+        "large language model",
+    )
+    multimodal_terms = ("\u591a\u6a21\u6001", "multimodal", "vision-language")
+    agent_terms = ("\u667a\u80fd\u4f53", "\u667a\u80fd\u4ee3\u7406", "agent", "agentic")
+    frontier_terms = (
+        "\u4ee3\u8868\u6027\u8fdb\u5c55",
+        "\u5173\u952e\u8fdb\u5c55",
+        "\u53d1\u5c55\u8d8b\u52bf",
+        "\u7814\u7a76\u73b0\u72b6",
+        "frontier",
+        "advances",
+        "progress",
+    )
+    return (
+        any(term in normalized for term in ai_terms)
+        and any(term in normalized for term in multimodal_terms)
+        and any(term in normalized for term in agent_terms)
+        and any(term in normalized for term in frontier_terms)
+    )
+
+
+_RELATIVE_TIME_TERMS = (
+    "近三年",
+    "近两年",
+    "近一年",
+    "近几年",
+    "近年",
+    "最近",
+    "近期",
+    "最近几年",
+    "last year",
+    "last two years",
+    "last three years",
+    "recent years",
+)
+_YEAR_RANGE_PATTERN = re.compile(r"20\d{2}\s*(?:\.\.|-|~|至)\s*20\d{2}")
+
+
+def _has_relative_time_request(query: str) -> bool:
+    normalized = query.casefold()
+    return any(term in normalized for term in _RELATIVE_TIME_TERMS) and not re.search(
+        r"20\d{2}", normalized
+    )
+
+
+def _repair_relative_time_ranges(
+    queries: list[str], *, freshness_days: int
+) -> list[str]:
+    today = datetime.now(UTC).date()
+    start_year = (today - timedelta(days=max(1, freshness_days))).year
+    year_range = f"{start_year}..{today.year}"
+    repaired: list[str] = []
+    for query in queries:
+        if _YEAR_RANGE_PATTERN.search(query):
+            query = _YEAR_RANGE_PATTERN.sub(year_range, query, count=1)
+        elif str(today.year) not in query:
+            query = f"{query} AND ({year_range})"
+        repaired.append(query)
+    return repaired

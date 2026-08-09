@@ -143,13 +143,13 @@ def test_low_confidence_text_routes_to_general_question_without_cloud() -> None:
     assert "general_question_fallback" in decision.reason_codes
 
 
-def test_general_question_model_route_prefers_spark() -> None:
+def test_general_question_model_route_prefers_fast_text_model() -> None:
     registry = ModelRegistry(Settings(_env_file=None))
     route = registry.get_route("general_question_answer")
     direct_route = registry.get_route("academic_direct_answer")
 
-    assert route.primary == "spark_reasoner"
-    assert route.fallback == "qwen_text_fast"
+    assert route.primary == "qwen_text_fast"
+    assert route.fallback == "qwen_vision_primary"
     assert direct_route.primary == "qwen_text_fast"
     assert direct_route.fallback == "qwen_vision_primary"
 

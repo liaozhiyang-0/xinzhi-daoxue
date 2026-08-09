@@ -28,6 +28,14 @@ jobs:
         run: mypy apps/api/app
       - name: Pytest
         run: pytest
+      - name: Solver parity canary gate (synthetic)
+        run: |
+          python scripts/create_synthetic_solver_parity_fixture.py "$RUNNER_TEMP/solver-parity.json"
+          python scripts/evaluate_solver_parity.py "$RUNNER_TEMP/solver-parity.json" --require-canary-eligible
+      - name: Runtime plan proposal canary gate (synthetic)
+        run: |
+          python scripts/create_synthetic_runtime_plan_proposal_fixture.py "$RUNNER_TEMP/runtime-plan-proposals.json"
+          python scripts/evaluate_runtime_plan_proposals.py "$RUNNER_TEMP/runtime-plan-proposals.json" --require-canary-eligible
       - name: Export OpenAPI
         run: python scripts/export_openapi.py
       - name: Validate configuration

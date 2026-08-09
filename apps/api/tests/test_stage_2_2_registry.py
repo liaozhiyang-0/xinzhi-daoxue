@@ -50,7 +50,7 @@ def test_multi_image_input_routes_to_local_academic_solver() -> None:
     request = AgentRequest(
         session_id="session",
         user_id="user",
-        course_id="AUTO",
+        course_id="CT",
         intent="unknown",
         canonical_input={"text": ""},
         attachments=[
@@ -89,6 +89,40 @@ def test_cloud_router_rejects_unknown_and_self_targets() -> None:
         router.route_cloud_response(
             json.dumps({"target_agent_id": "ROUTER_01_FALLBACK_V1"}), request
         )
+
+
+def test_cloud_router_aligns_structured_intent_with_validated_target() -> None:
+    router = TaskRouter(AgentRegistry(), Settings(_env_file=None))
+    request = AgentRequest(
+        session_id="session",
+        user_id="user",
+        course_id="CT",
+        intent="general_qa",
+        canonical_input={"text": "research"},
+        options={
+            "_routing": {
+                "intent_recognition": {
+                    "intent": "general_qa",
+                    "task_family": "learning",
+                }
+            }
+        },
+    )
+
+    decision = router.route_cloud_response(
+        json.dumps(
+            {
+                "target_agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                "confidence": 0.91,
+            }
+        ),
+        request,
+    )
+
+    assert decision.intent == "academic_search"
+    assert decision.intent_recognition["task_family"] == "research"
+    assert decision.route_mode == "workflow"
+    assert decision.route_trace[0]["intent"] == "academic_search"
 
 
 async def test_provider_reports_missing_enabled_agent_configuration() -> None:

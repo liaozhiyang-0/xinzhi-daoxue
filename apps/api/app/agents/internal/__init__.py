@@ -1,4 +1,4 @@
-from app.agents.internal.contracts import InternalAgentResult
+from app.agents.internal.contracts import DataAnalysisExplanation, InternalAgentResult
 from app.agents.internal.hub import (
     INTERNAL_AGENT_DEFINITIONS,
     InternalAgentDefinition,
@@ -10,4 +10,5 @@ __all__ = [
     "InternalAgentDefinition",
     "InternalAgentHub",
     "InternalAgentResult",
+    "DataAnalysisExplanation",
 ]

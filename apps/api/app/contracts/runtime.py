@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +18,43 @@ class RAGInteractionMode(StrEnum):
     USER_SOURCES_ONLY = "user_sources_only"
     DATA_CONTEXT_ONLY = "data_context_only"
     NO_RAG = "no_rag"
+
+
+class RuntimeInputSubmission(BaseModel):
+    """User data submitted to a Runtime run waiting for input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    data: dict[str, Any] = Field(min_length=1, max_length=64)
+    expected_state_version: int | None = Field(default=None, ge=1)
+
+
+class RuntimeReconciliationSubmission(BaseModel):
+    """Human acknowledgement for a non-replay-safe in-flight node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    runtime_run_id: str | None = Field(default=None, max_length=120)
+    node_id: str = Field(min_length=1, max_length=100)
+    reconciliation_id: str | None = Field(default=None, max_length=240)
+    outcome: Literal["succeeded", "failed"]
+    facts: dict[str, Any] = Field(default_factory=dict, max_length=64)
+    artifact_ids: list[str] = Field(default_factory=list, max_length=100)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=100)
+    warnings: list[str] = Field(default_factory=list, max_length=32)
+    errors: list[str] = Field(default_factory=list, max_length=32)
+    error_code: str = Field(default="", max_length=160)
+    expected_state_version: int | None = Field(default=None, ge=1)
+
+
+class RuntimePlanProposalDecisionSubmission(BaseModel):
+    """Explicit approval or rejection of a persisted plan proposal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    reason: str = Field(default="", max_length=2_000)
+    expected_state_version: int | None = Field(default=None, ge=1)
 
 
 class WorkflowContextBundle(BaseModel):

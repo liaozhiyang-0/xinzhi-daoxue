@@ -1,0 +1,72 @@
+{
+  "suite_version": "1",
+  "suite_id": "academic_solver_parity_v1",
+  "purpose": "Legacy/Runtime paired evaluation before solver canary",
+  "thresholds": {
+    "min_pairs": 6,
+    "max_status_mismatch_rate": 0.0,
+    "max_answer_presence_mismatch_rate": 0.0,
+    "max_trace_invalid_rate": 0.0,
+    "max_handler_mismatch_rate": 0.0,
+    "max_latency_regression_ratio": 0.5,
+    "max_model_call_regression_ratio": 0.5
+  },
+  "case_profiles": [
+    {
+      "case_id": "solver_ct_text_basic",
+      "profile": "text_basic",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    },
+    {
+      "case_id": "solver_ct_text_retrieval",
+      "profile": "text_with_retrieval",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.retrieve",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    },
+    {
+      "case_id": "solver_ct_image",
+      "profile": "image_input",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    },
+    {
+      "case_id": "solver_ct_review",
+      "profile": "student_answer_review",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    },
+    {
+      "case_id": "solver_ct_verify",
+      "profile": "student_answer_verify",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    },
+    {
+      "case_id": "solver_ct_high_risk",
+      "profile": "high_risk_validation",
+      "required_handlers": [
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify"
+      ]
+    }
+  ],
+  "data_policy": "Store paired outputs and traces outside the public repository; synthetic fixtures only in CI."
+}

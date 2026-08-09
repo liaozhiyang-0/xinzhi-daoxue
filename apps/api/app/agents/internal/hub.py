@@ -22,6 +22,7 @@ from app.agents.internal.contracts import (
     VisionExtraction,
 )
 from app.contracts import ImageInput, ModelResponse, ModelUsage
+from app.contracts.research import ResearchBriefDraft, ResearchIntentDecision
 from app.core.errors import InvalidModelRequestError, ModelProviderError
 from app.services.model_service import ModelService
 
@@ -77,6 +78,8 @@ INTERNAL_AGENT_DEFINITIONS = (
         (
             "你是学术论文检索规划器，不直接回答问题。根据用户原始输入提取研究主题、"
             "领域、方法、应用场景、时间和数量要求，生成最多4组适合学术数据库的检索词。"
+            "如果research_intent要求报道或会议，检索词应额外覆盖news、industry report、"
+            "conference、workshop、symposium等来源线索，但不能把报道当成论文。"
             "必须同时生成中文和英文表达；详细主题要拆成核心概念组合，例如医学影像要考虑"
             "medical imaging、radiology、medical image analysis、radiomics、"
             "computer vision、"
@@ -84,6 +87,45 @@ INTERNAL_AGENT_DEFINITIONS = (
             "minimum_results必须识别用户的‘至少N篇’要求，未明确时默认为4。只输出JSON。"
         ),
         AcademicSearchPlan,
+    ),
+    InternalAgentDefinition(
+        "RESEARCH_INTENT_CLASSIFIER_LOCAL_V1",
+        "research_intent_classification",
+        "科研检索目标与来源类型识别Agent",
+        (
+            "你是科研情报检索意图识别器。根据用户原始问题判断其真正目标，区分前沿综述、"
+            "论文检索、新闻/产业报道、会议雷达、技术对比、解释和追问。判断是否必须联网；"
+            "涉及近况、最新、研究进展、报道、会议或要求来源时必须 requires_web=true。"
+            "source_kinds只能从 academic_paper、web_report、conference 中选择；"
+            "不得编造主题。"
+            "只输出JSON。"
+        ),
+        ResearchIntentDecision,
+    ),
+    InternalAgentDefinition(
+        "RESEARCH_FRONTIER_BRIEF_LOCAL_V1",
+        "research_frontier_brief",
+        "科研前沿证据简报生成Agent",
+        (
+            "你是科研前沿证据简报生成器。只能根据输入的已检索证据作出归纳，不能补造论文、"
+            "会议、报道、日期、数据或结论。每个关键判断必须引用一个或多个输入 "
+            "evidence_id；"
+            "如果证据不足，明确写入limitations或open_questions。区分论文、报道和会议来源，"
+            "给出研究意义、时间线、证据缺口和下一步检索建议。只输出JSON。"
+        ),
+        ResearchBriefDraft,
+    ),
+    InternalAgentDefinition(
+        "RESEARCH_FRONTIER_KNOWLEDGE_LOCAL_V1",
+        "research_frontier_brief",
+        "无外部证据时生成带边界声明的本地科研知识初步回答Agent",
+        (
+            "你是科研前沿知识初步回答Agent。外部证据不可用时，根据稳定的基础科研知识回答用户问题，"
+            "但不得编造论文、作者、日期、数值或实验结果。必须明确这是本地知识初步回答，"
+            "把无法由当前输入核验的内容放入limitations或open_questions；key_findings至少覆盖"
+            "输入中的多个research_questions，并且所有evidence_ids必须为空。只输出JSON。"
+        ),
+        ResearchBriefDraft,
     ),
     InternalAgentDefinition(
         "COURSE_CLASSIFIER_LOCAL_V1",
@@ -173,10 +215,16 @@ INTERNAL_AGENT_DEFINITIONS = (
     InternalAgentDefinition(
         "DATA_ANALYSIS_LOCAL_V1",
         "data_analysis_explanation",
-        "本地数据分析解释Agent",
+        "模型主导的数据分析Agent",
         (
-            "根据用户已提供的数据或统计结果解释分析。没有真实数据时只给"
-            "分析计划，analysis_status必须是plan或insufficient_data。"
+            "你负责直接分析用户提供的数据，不要把任务退化为泛泛的规律总结。"
+            "必须先理解研究问题、研究设计、变量角色、数据质量和分析目标，再选择适合的分析方法；"
+            "可以使用数据中的原始数值进行计算和比较，但不得伪造缺失数据、样本量、p值、区间或技术指标。"
+            "如果数据、变量角色或研究设计不足以支持结论，analysis_status只能是plan或insufficient_data，"
+            "并明确指出还缺什么。结果必须区分描述性发现、关联、预测和因果解释；随机实验也要说明随机分配和目标人群边界。"
+            "summary、findings、effect_estimates、uncertainty、diagnostics、robustness和conclusion_boundary"
+            "必须围绕用户问题填写；steps只用于系统内部，不直接展示给用户。除变量名、公式和原始数据值外，"
+            "所有输出字段使用简体中文，只输出JSON。"
         ),
         DataAnalysisExplanation,
     ),

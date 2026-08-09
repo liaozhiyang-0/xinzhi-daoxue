@@ -27,13 +27,23 @@ logger = logging.getLogger(__name__)
 class ConversationMemoryExtraction(BaseModel):
     """Strict, bounded output for the post-answer memory model call."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
-    summary: str = Field(min_length=1, max_length=1600)
+    summary: str = Field(default="", max_length=1600)
     current_goal: str = Field(default="", max_length=300)
     key_facts: list[str] = Field(default_factory=list, max_length=12)
     explicit_user_preferences: list[str] = Field(default_factory=list, max_length=8)
     unresolved_items: list[str] = Field(default_factory=list, max_length=8)
+    # Compatibility fields emitted by older memory prompts/models. They are
+    # normalized into the canonical fields before persistence.
+    topic: str = Field(default="", max_length=300)
+    # Older/local memory prompts sometimes return a mapping for entities or
+    # facts. Accept it here so compatibility normalization can run instead of
+    # degrading the whole memory update before normalization is reached.
+    key_entities: list[str] | dict[str, object] = Field(default_factory=list)
+    goals_and_questions: list[str] = Field(default_factory=list, max_length=8)
+    unfinished_business: list[str] = Field(default_factory=list, max_length=8)
+    follow_up_hints: list[str] = Field(default_factory=list, max_length=8)
 
 
 class SessionCompactionService:
@@ -195,6 +205,7 @@ class SessionCompactionService:
                 extraction = ConversationMemoryExtraction.model_validate_json(
                     response.content
                 )
+                extraction = self._normalize_compatibility_fields(extraction)
                 return self._sanitize_extraction(extraction), response.model, "model"
             except Exception:
                 logger.warning(
@@ -252,10 +263,46 @@ class SessionCompactionService:
         )
 
     @staticmethod
+    def _normalize_compatibility_fields(
+        extraction: ConversationMemoryExtraction,
+    ) -> ConversationMemoryExtraction:
+        """Accept older field names without leaking them into session state."""
+
+        summary = extraction.summary or extraction.topic
+        facts = extraction.key_facts or SessionCompactionService._coerce_items(
+            extraction.key_entities
+        )
+        unresolved = (
+            extraction.unresolved_items
+            or extraction.unfinished_business
+            or extraction.goals_and_questions
+            or extraction.follow_up_hints
+        )
+        return ConversationMemoryExtraction(
+            summary=summary,
+            current_goal=extraction.current_goal or extraction.topic,
+            key_facts=facts,
+            explicit_user_preferences=extraction.explicit_user_preferences,
+            unresolved_items=unresolved,
+        )
+
+    @staticmethod
+    def _coerce_items(value: list[str] | dict[str, object]) -> list[str]:
+        if isinstance(value, dict):
+            return [f"{key}: {item}" for key, item in value.items()][:12]
+        return value[:12]
+
+    @staticmethod
     def _structured(
         extraction: ConversationMemoryExtraction,
     ) -> dict[str, object]:
-        return extraction.model_dump(mode="json")
+        return {
+            "summary": extraction.summary,
+            "current_goal": extraction.current_goal,
+            "key_facts": extraction.key_facts,
+            "explicit_user_preferences": extraction.explicit_user_preferences,
+            "unresolved_items": extraction.unresolved_items,
+        }
 
     @staticmethod
     def _summary_text(extraction: ConversationMemoryExtraction) -> str:

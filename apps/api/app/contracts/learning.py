@@ -381,6 +381,14 @@ class LearningActionRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class LearningRuntimeApprovalRequest(BaseModel):
+    """Approve a teaching interaction Runtime waiting for teacher review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_state_version: int | None = Field(default=None, ge=1)
+
+
 class LearningFollowUpContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -407,3 +415,6 @@ class LearningActionResponse(BaseModel):
     feedback_uptake: FeedbackUptakeV1 | None = None
     mastery_evidence: list[MasteryEvidenceV1] = Field(default_factory=list)
     retest_plans: list[RetestPlanV1] = Field(default_factory=list)
+    runtime_run_id: str | None = None
+    runtime_status: str = ""
+    approval_required: bool = False

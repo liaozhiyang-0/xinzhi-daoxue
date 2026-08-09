@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402, I001
+
 import json
 import sys
 from pathlib import Path
@@ -7,8 +9,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.evaluation.loader import EvaluationCaseLoader  # noqa: E402
-from app.services.scenario_catalog import ScenarioCatalog  # noqa: E402
+# ruff: noqa: E402
+from app.evaluation.loader import EvaluationCaseLoader
+from app.services.scenario_catalog import ScenarioCatalog
+
+
+CASE_DOCS = {
+    "faculty_course_copilot_v1": "faculty_course_copilot_v1.md",
+    "assessment_diagnosis_v1": "assessment_diagnosis_v1.md",
+    "student_learning_path_v1": "student_learning_path_v1.md",
+    "research_data_workbench_v1": "research_data_workbench_v1.md",
+    "department_knowledge_governance_v1": "department_knowledge_governance_v1.md",
+}
 
 
 def validate() -> dict[str, object]:
@@ -37,6 +49,8 @@ def validate() -> dict[str, object]:
             raise ValueError(f"{case.case_id}: standard answer sections missing")
         if not case.evidence_requirements:
             raise ValueError(f"{case.case_id}: evidence requirements missing")
+        if len(scenario.demo_steps) < 6:
+            raise ValueError(f"{case.case_id}: six executable demo steps are required")
         commercialization = scenario.commercialization
         if not all(
             (
@@ -52,6 +66,14 @@ def validate() -> dict[str, object]:
             f"commercial scenario coverage mismatch: expected={sorted(expected_ids)} "
             f"actual={sorted(actual_ids)}"
         )
+    docs_root = ROOT / "docs" / "commercial_cases"
+    missing_docs = sorted(
+        filename
+        for scenario_id, filename in CASE_DOCS.items()
+        if scenario_id in expected_ids and not (docs_root / filename).is_file()
+    )
+    if missing_docs:
+        raise ValueError(f"commercial case documents missing: {missing_docs}")
     return {
         "valid": True,
         "case_count": len(cases),

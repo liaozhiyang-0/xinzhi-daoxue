@@ -228,6 +228,16 @@ class AgentResultValidatorRegistry:
         issues: list[str] = []
         corrected: list[str] = []
         data = result.business_data or result.structured_result.get("business_data", {})
+        if result.structured_result.get("analysis_v2") is True:
+            if not result.answer.strip():
+                issues.append("科研数据分析 V2 未生成可展示结果")
+            if data.get("human_review_required") is not True:
+                issues.append("科研数据分析 V2 缺少人工复核标记")
+            return (
+                issues,
+                corrected,
+                bool(result.answer.strip()) and not issues,
+            )
         materials = request.options.get("_material_extraction", {}).get("materials", {})
         provided = (
             materials.get("provided_results") if isinstance(materials, dict) else None
@@ -295,13 +305,25 @@ class BusinessResultRendererRegistry:
             ("unsupported_claims", "无依据声明"),
         ),
         "data_analysis": (
+            ("status", "分析状态"),
+            ("design_assessment", "设计评估"),
+            ("plan", "冻结分析计划"),
             ("data_quality", "数据质量"),
             ("method_selection", "方法选择"),
-            ("analysis_steps", "分析步骤"),
             ("metrics", "指标"),
             ("result_interpretation", "结果解释"),
+            ("primary_result", "主要结果"),
+            ("effect_estimates", "效应量与指标"),
+            ("uncertainty_summary", "不确定性"),
+            ("diagnostics", "诊断"),
+            ("robustness_findings", "稳健性与敏感性"),
+            ("interpretation", "科学解释边界"),
+            ("evidence_ids", "方法证据 ID"),
+            ("evidence_references", "方法证据来源"),
+            ("provenance", "数据版本与复现元数据"),
+            ("artifacts", "可复现 Artifact"),
+            ("review_checklist", "人工复核清单"),
             ("limitations", "限制"),
-            ("reproducibility_requirements", "复现要求"),
         ),
     }
 
@@ -341,6 +363,26 @@ class BusinessResultRendererRegistry:
             and data.get("analysis_status") == "plan"
         ):
             banner = "当前为分析方案，未实际运行计算"
+        elif (
+            definition.renderer_type == "data_analysis"
+            and result.structured_result.get("analysis_v2") is True
+        ):
+            model_assistance = result.structured_result.get("model_assistance", {})
+            if (
+                result.structured_result.get("analysis_execution_source")
+                == "model_direct"
+            ):
+                banner = (
+                    "科研数据分析 V2 已由 Qwen/Spark 直接分析；"
+                    "模型生成的统计结果必须独立复核"
+                )
+            elif model_assistance.get("status") == "used":
+                banner = (
+                    "科研数据分析 V2 已完成本地计算，并由模型辅助解释；"
+                    "数值与结论边界仍需人工复核"
+                )
+            else:
+                banner = "科研数据分析 V2 已按本地确定性流程生成，结论必须人工复核"
         return {
             "renderer_type": definition.renderer_type,
             "banner": banner,

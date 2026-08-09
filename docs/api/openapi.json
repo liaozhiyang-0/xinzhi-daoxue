@@ -214,6 +214,83 @@
         }
       }
     },
+    "/api/v1/admin/settings/features": {
+      "get": {
+        "tags": [
+          "management"
+        ],
+        "summary": "List Feature Settings",
+        "operationId": "list_feature_settings_api_v1_admin_settings_features_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminFeatureSettingRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Feature Settings Api V1 Admin Settings Features Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/features/{key}": {
+      "patch": {
+        "tags": [
+          "management"
+        ],
+        "summary": "Update Feature Setting",
+        "operationId": "update_feature_setting_api_v1_admin_settings_features__key__patch",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminFeatureSettingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFeatureSettingRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/task-summary": {
       "get": {
         "tags": [
@@ -1976,6 +2053,238 @@
         }
       }
     },
+    "/api/v1/scenarios": {
+      "get": {
+        "tags": [
+          "scenarios"
+        ],
+        "summary": "List Scenarios",
+        "operationId": "list_scenarios_api_v1_scenarios_get",
+        "parameters": [
+          {
+            "name": "course",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioDefinition"
+                  },
+                  "title": "Response List Scenarios Api V1 Scenarios Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scenarios/readiness": {
+      "get": {
+        "tags": [
+          "scenarios"
+        ],
+        "summary": "List Scenario Readiness",
+        "operationId": "list_scenario_readiness_api_v1_scenarios_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioPreflightResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Scenario Readiness Api V1 Scenarios Readiness Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}": {
+      "get": {
+        "tags": [
+          "scenarios"
+        ],
+        "summary": "Get Scenario",
+        "operationId": "get_scenario_api_v1_scenarios__scenario_id__get",
+        "parameters": [
+          {
+            "name": "scenario_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scenario Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioDefinition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/preflight": {
+      "get": {
+        "tags": [
+          "scenarios"
+        ],
+        "summary": "Preflight Scenario",
+        "operationId": "preflight_scenario_api_v1_scenarios__scenario_id__preflight_get",
+        "parameters": [
+          {
+            "name": "scenario_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scenario Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioPreflightResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/evidence-review": {
+      "post": {
+        "tags": [
+          "scenarios"
+        ],
+        "summary": "Review Scenario Evidence",
+        "operationId": "review_scenario_evidence_api_v1_scenarios__scenario_id__evidence_review_post",
+        "parameters": [
+          {
+            "name": "scenario_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scenario Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioEvidenceReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioEvidenceReviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks": {
       "post": {
         "tags": [
@@ -2060,6 +2369,98 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/research-review": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "提交科研分析人工复核签字",
+        "operationId": "submit_research_review_api_v1_tasks__task_id__research_review_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchReviewSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchReviewDecision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "读取科研分析人工复核签字",
+        "operationId": "get_research_review_api_v1_tasks__task_id__research_review_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchReviewDecision"
                 }
               }
             }
@@ -4572,6 +4973,95 @@
         }
       }
     },
+    "/api/v1/research/knowledge/status": {
+      "get": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Research Knowledge Status",
+        "operationId": "research_knowledge_status_api_v1_research_knowledge_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Research Knowledge Status Api V1 Research Knowledge Status Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/research/knowledge/search": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Research Knowledge Search",
+        "operationId": "research_knowledge_search_api_v1_research_knowledge_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResearchKnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Research Knowledge Search Api V1 Research Knowledge Search Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/research/knowledge/maintain": {
+      "post": {
+        "tags": [
+          "research"
+        ],
+        "summary": "Maintain Research Knowledge",
+        "operationId": "maintain_research_knowledge_api_v1_research_knowledge_maintain_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Maintain Research Knowledge Api V1 Research Knowledge Maintain Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/debug/rag/status": {
       "get": {
         "tags": [
@@ -5284,6 +5774,27 @@
         }
       }
     },
+    "/api/v1/feedback/status": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Feedback Status",
+        "operationId": "feedback_status_api_v1_feedback_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackFeatureStatusRead"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feedback": {
       "post": {
         "tags": [
@@ -5961,6 +6472,72 @@
         ],
         "title": "AdminEvaluationAttachmentResidueRead"
       },
+      "AdminFeatureSettingRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "description",
+          "enabled",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "AdminFeatureSettingRead"
+      },
+      "AdminFeatureSettingUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "AdminFeatureSettingUpdate"
+      },
       "AdminFileSummaryRead": {
         "properties": {
           "total": {
@@ -6526,6 +7103,18 @@
             "$ref": "#/components/schemas/Intent",
             "default": "solve_problem"
           },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
           "canonical_input": {
             "additionalProperties": true,
             "type": "object",
@@ -6623,6 +7212,18 @@
                 "type": "null"
               }
             ]
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
           },
           "previous_answer_summary": {
             "anyOf": [
@@ -7201,6 +7802,17 @@
             "type": "string",
             "title": "Trace Id"
           },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
           "status": {
             "type": "string",
             "title": "Status",
@@ -7289,6 +7901,43 @@
           "source_ref"
         ],
         "title": "Citation"
+      },
+      "CommercializationPlan": {
+        "properties": {
+          "buyer": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Buyer"
+          },
+          "delivery_unit": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Delivery Unit"
+          },
+          "value_capture": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Value Capture"
+          },
+          "expansion_path": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Expansion Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "buyer",
+          "delivery_unit",
+          "value_capture",
+          "expansion_path"
+        ],
+        "title": "CommercializationPlan"
       },
       "CompareRequest": {
         "properties": {
@@ -8904,6 +9553,24 @@
         ],
         "title": "FeedbackCreate"
       },
+      "FeedbackFeatureStatusRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "default": "feedback_loop"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "FeedbackFeatureStatusRead"
+      },
       "FeedbackMetricsRead": {
         "properties": {
           "version": {
@@ -9972,7 +10639,8 @@
           "lesson_prep",
           "assignment_review",
           "academic_writing",
-          "data_analysis"
+          "data_analysis",
+          "academic_search"
         ],
         "title": "Intent"
       },
@@ -10074,6 +10742,61 @@
         ],
         "title": "KnowledgeDocumentPage",
         "description": "A bounded page from a local source document with anchor metadata."
+      },
+      "KnowledgeEvidencePolicy": {
+        "properties": {
+          "authoritative_source_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Authoritative Source Types"
+          },
+          "supplemental_source_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Supplemental Source Types"
+          },
+          "citation_required": {
+            "type": "boolean",
+            "title": "Citation Required",
+            "default": true
+          },
+          "manual_review_required": {
+            "type": "boolean",
+            "title": "Manual Review Required",
+            "default": true
+          },
+          "allow_synthetic": {
+            "type": "boolean",
+            "title": "Allow Synthetic",
+            "default": false
+          },
+          "freshness_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authoritative_source_types"
+        ],
+        "title": "KnowledgeEvidencePolicy"
       },
       "KnowledgeHit": {
         "properties": {
@@ -12039,6 +12762,7 @@
           "assignment_review",
           "academic_writing",
           "data_analysis",
+          "academic_search",
           "fallback",
           "unknown"
         ],
@@ -12311,6 +13035,194 @@
         ],
         "title": "RelatedImage"
       },
+      "ResearchKnowledgeSearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 8
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "ResearchKnowledgeSearchRequest"
+      },
+      "ResearchReviewChecklist": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchReviewItem"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Items"
+          },
+          "reviewer_id": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Reviewer Id",
+            "default": ""
+          },
+          "signed_off": {
+            "type": "boolean",
+            "title": "Signed Off",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ResearchReviewChecklist"
+      },
+      "ResearchReviewDecision": {
+        "properties": {
+          "reviewer_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer Id"
+          },
+          "reviewer_role": {
+            "type": "string",
+            "enum": [
+              "researcher",
+              "statistician",
+              "pi",
+              "admin"
+            ],
+            "title": "Reviewer Role"
+          },
+          "checklist": {
+            "$ref": "#/components/schemas/ResearchReviewChecklist"
+          },
+          "signed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Signed At"
+          },
+          "decision_hash": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 64,
+            "title": "Decision Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reviewer_id",
+          "reviewer_role",
+          "checklist",
+          "signed_at",
+          "decision_hash"
+        ],
+        "title": "ResearchReviewDecision",
+        "description": "A durable, auditable reviewer decision for one analysis task."
+      },
+      "ResearchReviewItem": {
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Review Id"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "data",
+              "design",
+              "method",
+              "interpretation",
+              "artifact"
+            ],
+            "title": "Category"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "needs_change",
+              "not_applicable"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "review_id",
+          "category",
+          "question"
+        ],
+        "title": "ResearchReviewItem"
+      },
+      "ResearchReviewSubmission": {
+        "properties": {
+          "reviewer_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer Id"
+          },
+          "reviewer_role": {
+            "type": "string",
+            "enum": [
+              "researcher",
+              "statistician",
+              "pi",
+              "admin"
+            ],
+            "title": "Reviewer Role"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchReviewItem"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "signed_off": {
+            "type": "boolean",
+            "title": "Signed Off",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reviewer_id",
+          "reviewer_role",
+          "items"
+        ],
+        "title": "ResearchReviewSubmission",
+        "description": "Request body for the dedicated reviewer operation."
+      },
       "RetestPlanStatus": {
         "type": "string",
         "enum": [
@@ -12579,6 +13491,371 @@
           "segment_type"
         ],
         "title": "RichTextSegment"
+      },
+      "ScenarioDefinition": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$",
+            "title": "Id"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "customer_segment": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Customer Segment"
+          },
+          "commercialization": {
+            "$ref": "#/components/schemas/CommercializationPlan"
+          },
+          "evidence_policy": {
+            "$ref": "#/components/schemas/KnowledgeEvidencePolicy"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Roles"
+          },
+          "courses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Courses"
+          },
+          "agent_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Agent Id"
+          },
+          "intents": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Intents"
+          },
+          "input_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Input Modes"
+          },
+          "retrieval_profile": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Retrieval Profile"
+          },
+          "primary_value_metric": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Primary Value Metric"
+          },
+          "evidence_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Evidence Requirements"
+          },
+          "demo_steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Demo Steps"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "name",
+          "summary",
+          "customer_segment",
+          "commercialization",
+          "evidence_policy",
+          "roles",
+          "courses",
+          "agent_id",
+          "intents",
+          "input_modes",
+          "retrieval_profile",
+          "primary_value_metric",
+          "evidence_requirements",
+          "demo_steps"
+        ],
+        "title": "ScenarioDefinition"
+      },
+      "ScenarioEvidenceReviewRequest": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioEvidenceSource"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Sources"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sources"
+        ],
+        "title": "ScenarioEvidenceReviewRequest"
+      },
+      "ScenarioEvidenceReviewResponse": {
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "needs_manual_review",
+              "rejected"
+            ],
+            "title": "Status"
+          },
+          "checked_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Checked Count"
+          },
+          "cited_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cited Count"
+          },
+          "accepted_source_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Accepted Source Refs"
+          },
+          "rejected_source_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rejected Source Refs"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "status",
+          "checked_count",
+          "cited_count"
+        ],
+        "title": "ScenarioEvidenceReviewResponse"
+      },
+      "ScenarioEvidenceSource": {
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Source Type"
+          },
+          "source_ref": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Source Ref"
+          },
+          "cited": {
+            "type": "boolean",
+            "title": "Cited",
+            "default": false
+          },
+          "synthetic": {
+            "type": "boolean",
+            "title": "Synthetic",
+            "default": false
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_type",
+          "source_ref"
+        ],
+        "title": "ScenarioEvidenceSource"
+      },
+      "ScenarioPreflightResponse": {
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "title": "Scenario Id"
+          },
+          "scenario_version": {
+            "type": "string",
+            "title": "Scenario Version"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "agent_status": {
+            "type": "string",
+            "enum": [
+              "runtime_available",
+              "fallback_only",
+              "mock_only",
+              "configured_unavailable",
+              "unavailable"
+            ],
+            "title": "Agent Status"
+          },
+          "fallback_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Agent Id"
+          },
+          "fallback_available": {
+            "type": "boolean",
+            "title": "Fallback Available",
+            "default": false
+          },
+          "runtime_available": {
+            "type": "boolean",
+            "title": "Runtime Available"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "mock_available": {
+            "type": "boolean",
+            "title": "Mock Available"
+          },
+          "demo_ready": {
+            "type": "boolean",
+            "title": "Demo Ready"
+          },
+          "production_ready": {
+            "type": "boolean",
+            "title": "Production Ready"
+          },
+          "commercialization_complete": {
+            "type": "boolean",
+            "title": "Commercialization Complete"
+          },
+          "evidence_review_required": {
+            "type": "boolean",
+            "title": "Evidence Review Required"
+          },
+          "input_modes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Modes"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scenario_id",
+          "scenario_version",
+          "agent_id",
+          "agent_status",
+          "runtime_available",
+          "configured",
+          "mock_available",
+          "demo_ready",
+          "production_ready",
+          "commercialization_complete",
+          "evidence_review_required"
+        ],
+        "title": "ScenarioPreflightResponse"
       },
       "Scene": {
         "type": "string",

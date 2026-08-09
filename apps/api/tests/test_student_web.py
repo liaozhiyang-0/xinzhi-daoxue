@@ -60,9 +60,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260730-image-runtime-v7" in page.text
-    assert "workspace.js?v=20260804-history-layout-v2" in page.text
-    assert "ui-core.js?v=20260801-auth-entry-v1" in page.text
+    assert "20260808-research-analysis-v13" in page.text
+    assert "workspace.js?v=20260808-research-analysis-v13" in page.text
+    assert "ui-core.js?v=20260808-research-analysis-v13" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -83,10 +83,11 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "historyRequestSequence" in script.text
     assert "renderedAssistantTaskIds" in script.text
     assert "taskId === restoredTask?.id" in script.text
-    assert (
-        'renderBusinessView(structured.business_view || {}, state.lastAnswer)'
-        in script.text
+    business_view_call = (
+        "renderBusinessView(structured.business_view || "
+        "researchBriefView(structured.research_brief), state.lastAnswer, structured)"
     )
+    assert business_view_call in script.text
     assert "state.activeTaskWait" in script.text
     assert "已立即停止当前等待" in script.text
     assert "runSequence !== state.runSequence" in script.text
@@ -224,6 +225,45 @@ def test_student_followup_receives_short_session_context(api, client) -> None:
     assert options["previous_answer_summary"]
     assert len(options["previous_answer_summary"]) <= 600
     assert len(options["conversation_summary"]) <= 800
+
+
+def test_research_followup_is_routed_with_session_context_before_creation(
+    api, client
+) -> None:
+    session = api.create_session()
+    first_payload = api.task_payload(session["id"], intent="unknown")
+    first_payload["canonical_input"] = {
+        "text": (
+            "\u8fd1\u4e09\u5e74\u67d4\u6027\u7535\u5b50\u5668\u4ef6\u7684"
+            "\u5173\u952e\u8fdb\u5c55\u662f\u4ec0\u4e48\uff1f"
+        )
+    }
+    first_response = client.post("/api/v1/tasks", json=first_payload)
+    assert first_response.status_code == 202, first_response.text
+    first = api.wait_for_task(first_response.json()["id"])
+    assert first["agent_id"] == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+
+    second_payload = api.task_payload(session["id"], intent="unknown")
+    second_payload["canonical_input"] = {
+        "text": (
+            "\u63a5\u7740\u63d0\u4f9b\u4e00\u4e9b\u989d\u5916\u7684"
+            "\u8bba\u6587\u4fe1\u606f"
+        )
+    }
+    second_response = client.post("/api/v1/tasks", json=second_payload)
+    assert second_response.status_code == 202, second_response.text
+    second = client.get(f"/api/v1/tasks/{second_response.json()['id']}").json()
+
+    assert second["agent_id"] == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert second["input_content"]["options"]["previous_agent"] == (
+        "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    )
+    assert second["input_content"]["options"]["previous_intent"] == (
+        "academic_search"
+    )
+    assert second["input_content"]["options"]["previous_task_family"] == (
+        "research"
+    )
 
 
 def test_course_switch_clears_previous_answer_context(settings) -> None:

@@ -50,6 +50,7 @@ class Intent(StrEnum):
     ASSIGNMENT_REVIEW = "assignment_review"
     ACADEMIC_WRITING = "academic_writing"
     DATA_ANALYSIS = "data_analysis"
+    ACADEMIC_SEARCH = "academic_search"
 
 
 class AgentResultStatus(StrEnum):
@@ -64,9 +65,19 @@ class AgentEventType(StrEnum):
     TASK_RUNNING = "task.running"
     AGENT_STARTED = "agent.started"
     AGENT_PROGRESS = "agent.progress"
+    AGENT_INPUT_REQUIRED = "agent.input_required"
+    AGENT_INPUT_SUBMITTED = "agent.input_submitted"
     ROUTE_SELECTED = "route.selected"
     ROUTE_REEVALUATED = "route.reevaluated"
     ROUTE_UNSUPPORTED = "route.unsupported"
+    INTENT_RECOGNIZED = "intent.recognized"
+    PLAN_CREATED = "plan.created"
+    PLAN_NODE_STARTED = "plan.node_started"
+    PLAN_NODE_COMPLETED = "plan.node_completed"
+    PLAN_REROUTED = "plan.rerouted"
+    SKILL_SELECTED = "skill.selected"
+    TOOL_SELECTED = "tool.selected"
+    SUBAGENT_SPAWNED = "subagent.spawned"
     KNOWLEDGE_QUERY_NORMALIZED = "knowledge.query_normalized"
     KNOWLEDGE_RETRIEVED = "knowledge.retrieved"
     KNOWLEDGE_CONTEXT_BUILT = "knowledge.context_built"

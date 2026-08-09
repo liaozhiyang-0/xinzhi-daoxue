@@ -8,12 +8,31 @@ from app.providers.retrieval.academic import (
     SemanticScholarAcademicProvider,
     merge_academic_results,
 )
+from app.providers.retrieval.adapters import (
+    ArxivQueryAdapter,
+    CrossrefQueryAdapter,
+    OpenAlexQueryAdapter,
+    ProviderQuery,
+    ProviderQueryAdapter,
+    ProviderSearchContext,
+)
 from app.providers.retrieval.factory import create_external_search_service
-from app.providers.retrieval.web import JsonWebSearchProvider
+from app.providers.retrieval.web import (
+    AliyunIqsSearchProvider,
+    BochaSearchProvider,
+    BraveSearchProvider,
+    JsonWebSearchProvider,
+    NewsRssSearchProvider,
+    SearxngSearchProvider,
+    SerpApiSearchProvider,
+    TavilySearchProvider,
+)
 
 __all__ = [
     "AcademicSearchProvider",
     "AcademicSearchService",
+    "ArxivQueryAdapter",
+    "CrossrefQueryAdapter",
     "ArxivAcademicProvider",
     "CnkiAcademicProvider",
     "CrossrefAcademicProvider",
@@ -21,5 +40,16 @@ __all__ = [
     "SemanticScholarAcademicProvider",
     "merge_academic_results",
     "JsonWebSearchProvider",
+    "TavilySearchProvider",
+    "BraveSearchProvider",
+    "SerpApiSearchProvider",
+    "AliyunIqsSearchProvider",
+    "BochaSearchProvider",
+    "SearxngSearchProvider",
+    "NewsRssSearchProvider",
     "create_external_search_service",
+    "OpenAlexQueryAdapter",
+    "ProviderQuery",
+    "ProviderQueryAdapter",
+    "ProviderSearchContext",
 ]

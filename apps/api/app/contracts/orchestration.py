@@ -40,6 +40,7 @@ class TaskFamily(StrEnum):
     ASSIGNMENT_REVIEW = "ASSIGNMENT_REVIEW"
     ACADEMIC_WRITING = "ACADEMIC_WRITING"
     DATA_ANALYSIS = "DATA_ANALYSIS"
+    RESEARCH = "RESEARCH"
     LEARNING_SUPPORT = "LEARNING_SUPPORT"
     TEACHING_ANALYTICS = "TEACHING_ANALYTICS"
     FALLBACK = "FALLBACK"
@@ -72,6 +73,7 @@ class OrchestrationIntent(StrEnum):
     ASSIGNMENT_REVIEW = "assignment_review"
     ACADEMIC_WRITING = "academic_writing"
     DATA_ANALYSIS = "data_analysis"
+    ACADEMIC_SEARCH = "academic_search"
     FALLBACK = "fallback"
     UNKNOWN = "unknown"
 

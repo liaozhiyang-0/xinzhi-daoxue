@@ -31,6 +31,11 @@ from app.providers.development_mock import DevelopmentMockProvider
 from app.providers.factory import get_agent_provider
 from app.providers.llm import DashScopeQwenProvider, IflytekSparkProvider
 from app.providers.retrieval import create_external_search_service
+from app.runtime import (
+    RuntimeSubagentDefinition,
+    RuntimeSubagentRegistry,
+    build_runtime_handler_registry,
+)
 from app.services.academic_paper_review import AcademicPaperReviewService
 from app.services.academic_search_planner import AcademicSearchPlannerService
 from app.services.academic_solver_service import AcademicProblemSolverService
@@ -50,6 +55,9 @@ from app.services.knowledge_ocr_review_cache import KnowledgeOCRReviewSnapshotCa
 from app.services.knowledge_qa_service import KnowledgeQAService
 from app.services.learning_loop import LearningLoopService
 from app.services.learning_outcome import LearningOutcomeService
+from app.services.learning_progress_runtime import (
+    LearningProgressRuntimeService,
+)
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from app.services.next_check_question import NextCheckQuestionService
@@ -62,10 +70,13 @@ from app.services.rag_runtime import (
     create_text_embedding_provider,
     create_vector_store,
 )
+from app.services.research_frontier_service import ResearchFrontierService
+from app.services.research_knowledge import ResearchKnowledgeService
 from app.services.retrieval_context import (
     EvidenceQualityEvaluator,
     RetrievalContextService,
 )
+from app.services.runtime_agent_readiness import RuntimeAgentReadinessService
 from app.services.scenario_catalog import ScenarioCatalog
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
@@ -78,10 +89,26 @@ from app.services.task_runner import TaskRunner
 from app.services.teaching_execution_planner import TeachingExecutionPlanner
 from app.services.teaching_foundation import TeachingFoundationService
 from app.services.teaching_interaction import TeachingInteractionService
+from app.services.teaching_interaction_runtime import (
+    TeachingInteractionRuntimeService,
+)
 from app.tools import default_tool_registry
 
 logger = logging.getLogger(__name__)
 DEBUG_ROOT = Path(__file__).resolve().parent / "static" / "debug"
+
+
+async def _research_maintenance_loop(
+    research_knowledge: ResearchKnowledgeService, interval_seconds: int
+) -> None:
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await research_knowledge.maintain()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("research_knowledge_maintenance_failed")
 
 
 def error_payload(code: str, message: str, details: Any = None) -> dict[str, Any]:
@@ -157,6 +184,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         next_checks,
         answer_disclosure,
     )
+    teaching_interaction_runtime = TeachingInteractionRuntimeService(
+        teaching_interactions,
+        enabled=app_settings.agent_runtime_teaching_interaction_enabled,
+    )
     tool_registry = default_tool_registry()
     graph_checkpointer = _create_graph_checkpointer(app_settings)
     graph_factory = GraphFactory(
@@ -183,14 +214,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task_router,
         app_settings,
     )
-    internal_agent_execution = InternalAgentExecutionService(
-        internal_agent_hub, academic_solver, general_question
-    )
     knowledge_base = KnowledgeBaseService(app_settings)
     text_embedding = create_text_embedding_provider(app_settings)
     image_embedding = create_image_embedding_provider(app_settings)
     reranker = create_reranker_provider(app_settings)
     vector_store = create_vector_store(app_settings)
+    research_knowledge = ResearchKnowledgeService(
+        app_settings,
+        session_factory,
+        text_embedding,
+        vector_store,
+    )
+    research_frontier = ResearchFrontierService(
+        internal_agent_hub,
+        research_knowledge=research_knowledge,
+    )
+    internal_agent_execution = InternalAgentExecutionService(
+        internal_agent_hub,
+        academic_solver,
+        general_question,
+        research_frontier,
+        settings=app_settings,
+        storage=storage,
+    )
+    runtime_subagent_registry = RuntimeSubagentRegistry()
+    for definition in agent_registry.list_agents():
+        if not definition.enabled or definition.provider != "local":
+            continue
+        runtime_subagent_registry.register(
+            RuntimeSubagentDefinition(
+                subagent_id=definition.agent_id,
+                target_agent_id=definition.agent_id,
+                version=definition.version,
+                max_timeout_ms=max(
+                    100,
+                    min(900_000, int(definition.timeout_seconds * 1000)),
+                ),
+            )
+        )
+    runtime_handler_registry = build_runtime_handler_registry(
+        tool_registry,
+        provider,
+        internal_agent_execution,
+        subagent_registry=runtime_subagent_registry,
+    )
     rag_retrieval = RAGRetrievalService(
         app_settings,
         knowledge_base,
@@ -254,13 +321,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         external_fetcher=external_fetcher,
         external_paper_reviewer=academic_paper_review,
         external_search_planner=academic_search_planner,
+        research_frontier=research_frontier,
+        research_knowledge=research_knowledge,
         overall_router=overall_router,
         scenario_evidence_review=scenario_evidence_review,
+        tool_registry=tool_registry,
+        runtime_subagent_registry=runtime_subagent_registry,
+        runtime_handler_registry=runtime_handler_registry,
+    )
+    runtime_agent_readiness = RuntimeAgentReadinessService(
+        agent_registry,
+        task_runner.runtime_boundary.business_registry,
+        task_runner.runtime_launch_policy,
+        lifecycle_enabled=task_runner.runtime_lifecycle.enabled,
+        release_registry=task_runner.runtime_canary_release,
+        handler_registry=runtime_handler_registry,
     )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,
+        teaching_interaction_runtime=teaching_interaction_runtime,
         learning_outcome=learning_outcome,
     )
+    learning_progress_runtime = LearningProgressRuntimeService(
+        learning_loop.execute_phase3_action,
+        enabled=app_settings.agent_runtime_learning_progress_enabled,
+    )
+    learning_loop.learning_progress_runtime = learning_progress_runtime
     task_executor = LocalTaskExecutor(task_runner)
     rag_debug = RAGDebugService(
         app_settings,
@@ -302,19 +388,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.next_checks = next_checks
         app.state.answer_disclosure = answer_disclosure
         app.state.teaching_interactions = teaching_interactions
+        app.state.teaching_interaction_runtime = teaching_interaction_runtime
+        app.state.learning_progress_runtime = learning_progress_runtime
         app.state.tool_registry = tool_registry
+        app.state.runtime_subagent_registry = runtime_subagent_registry
+        app.state.runtime_handler_registry = runtime_handler_registry
+        app.state.runtime_agent_readiness = runtime_agent_readiness
         app.state.graph_factory = graph_factory
         app.state.graph_checkpointer = graph_checkpointer
         app.state.academic_solver = academic_solver
         app.state.storage = storage
         app.state.internal_agent_hub = internal_agent_hub
         app.state.general_question = general_question
+        app.state.research_frontier = research_frontier
         app.state.internal_agent_execution = internal_agent_execution
         app.state.supervisor = supervisor
         app.state.knowledge_base = knowledge_base
         app.state.rag_retrieval = rag_retrieval
         app.state.external_search = external_search
         app.state.external_fetcher = external_fetcher
+        app.state.research_knowledge = research_knowledge
         app.state.context_service = context_service
         app.state.knowledge_qa = knowledge_qa
         app.state.rag_debug = rag_debug
@@ -329,32 +422,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.knowledge_ocr_review_cache = knowledge_ocr_review_cache
         app.state.context_assembly = context_assembly
         app.state.session_compaction = session_compaction
+        research_maintenance_task: asyncio.Task[None] | None = None
+        deferred_startup_task: asyncio.Task[None] | None = None
         if app_settings.app_env == "test":
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
-        if (
-            app_settings.app_env != "test"
-            and app_settings.rag_enabled
-            and app_settings.rag_warmup_on_startup
-        ):
-            logger.info("rag_model_warmup_started")
-            warmup = await asyncio.to_thread(rag_retrieval.warmup)
-            app.state.rag_warmup = warmup
-            logger.info(
-                "rag_model_warmup_completed status=%s elapsed_ms=%s failed=%s",
-                warmup["status"],
-                warmup["elapsed_ms"],
-                warmup["failed_components"],
-            )
-        else:
             app.state.rag_warmup = {
                 "status": "skipped",
                 "reason": "test_environment_or_disabled",
             }
-        recovered_tasks = await task_executor.recover()
-        if recovered_tasks:
-            logger.info("task_recovery_requeued count=%s", recovered_tasks)
+            try:
+                recovered_tasks = await task_executor.recover()
+            except Exception:
+                logger.exception("task_recovery_startup_failed")
+                recovered_tasks = 0
+            if recovered_tasks:
+                logger.info("task_recovery_requeued count=%s", recovered_tasks)
+        else:
+            # Do not hold the listening socket on optional maintenance, model
+            # loading, or recovery.  The UI can render and health checks can
+            # pass while these best-effort jobs continue in the background.
+            app.state.rag_warmup = {
+                "status": "deferred",
+                "reason": "fast_startup",
+            }
+
+            async def deferred_startup() -> None:
+                nonlocal research_maintenance_task
+                await asyncio.sleep(0)
+                if app_settings.research_knowledge_maintenance_enabled:
+                    try:
+                        await research_knowledge.maintain()
+                    except Exception:
+                        logger.exception("research_knowledge_initial_maintenance_failed")
+                    research_maintenance_task = asyncio.create_task(
+                        _research_maintenance_loop(
+                            research_knowledge,
+                            app_settings.research_knowledge_maintenance_interval_seconds,
+                        ),
+                        name="xzd-research-knowledge-maintenance",
+                    )
+                if app_settings.rag_enabled and app_settings.rag_warmup_on_startup:
+                    logger.info("rag_model_warmup_started_deferred")
+                    try:
+                        warmup = await asyncio.to_thread(rag_retrieval.warmup)
+                        app.state.rag_warmup = warmup
+                        logger.info(
+                            "rag_model_warmup_completed status=%s elapsed_ms=%s "
+                            "failed=%s",
+                            warmup["status"],
+                            warmup["elapsed_ms"],
+                            warmup["failed_components"],
+                        )
+                    except Exception:
+                        logger.exception("rag_model_warmup_failed_deferred")
+                        app.state.rag_warmup = {
+                            "status": "failed",
+                            "reason": "deferred_warmup_error",
+                        }
+                try:
+                    recovered_tasks = await task_executor.recover()
+                except Exception:
+                    logger.exception("task_recovery_startup_failed")
+                    recovered_tasks = 0
+                if recovered_tasks:
+                    logger.info("task_recovery_requeued count=%s", recovered_tasks)
+
+            deferred_startup_task = asyncio.create_task(
+                deferred_startup(), name="xzd-deferred-startup"
+            )
         yield
+        if deferred_startup_task is not None:
+            deferred_startup_task.cancel()
+            await asyncio.gather(deferred_startup_task, return_exceptions=True)
+        if research_maintenance_task is not None:
+            research_maintenance_task.cancel()
+            await asyncio.gather(research_maintenance_task, return_exceptions=True)
         await task_executor.shutdown()
         await context_cache.close()
         await external_search.close()

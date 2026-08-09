@@ -3,7 +3,7 @@
   "input": {"message": "已知复杂电路全部参数，请用节点电压法列方程并求各支路电流。"},
   "expected_course": "CT",
   "expected_intent": "solve_problem",
-  "expected_agent": "SOLVER_CT_V1",
+  "expected_agent": "ACADEMIC_PROBLEM_SOLVER",
   "expected_status": "success",
   "required_keywords": ["节点电压"],
   "forbidden_claims": ["只需阅读教材"],

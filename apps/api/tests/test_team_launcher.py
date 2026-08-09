@@ -120,6 +120,8 @@ def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> 
     launcher = load_launcher()
     opened: list[str] = []
     monkeypatch.setattr(launcher, "api_ready", lambda _base_url: True)
+    monkeypatch.setattr(launcher, "frontend_build_ready", lambda _base_url: True)
+    monkeypatch.setattr(launcher, "owned_api_pids", lambda _port: [1234])
     monkeypatch.setattr(
         launcher, "open_workspace", lambda base_url: opened.append(base_url) or True
     )
@@ -138,6 +140,56 @@ def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> 
 
     assert launcher.command_start(args) == 0
     assert opened == ["http://127.0.0.1:8000"]
+
+
+def test_start_restarts_duplicate_owned_api_processes(monkeypatch) -> None:
+    launcher = load_launcher()
+    stopped: list[int] = []
+    monkeypatch.setattr(launcher, "api_ready", lambda _base_url: True)
+    monkeypatch.setattr(launcher, "frontend_build_ready", lambda _base_url: True)
+    monkeypatch.setattr(launcher, "owned_api_pids", lambda _port: [1234, 5678])
+    monkeypatch.setattr(
+        launcher, "stop_stale_api", lambda port: stopped.append(port)
+    )
+    args = SimpleNamespace(
+        port=8000,
+        open_browser=False,
+        refresh_deps=False,
+        reload=False,
+        with_cloud=False,
+    )
+
+    assert launcher.command_start(args) == 0
+    assert stopped == [8000]
+
+
+def test_force_reload_restarts_one_owned_api_process(monkeypatch) -> None:
+    launcher = load_launcher()
+    stopped: list[int] = []
+    readiness = iter([True, False, False])
+    monkeypatch.setattr(launcher, "api_ready", lambda _base_url: next(readiness))
+    monkeypatch.setattr(launcher, "owned_api_pids", lambda _port: [1234])
+    monkeypatch.setattr(
+        launcher, "stop_stale_api", lambda port: stopped.append(port)
+    )
+    monkeypatch.setattr(launcher, "ensure_env_file", lambda: Path("missing.env"))
+    monkeypatch.setattr(launcher, "ensure_python_environment", lambda **_kwargs: None)
+    monkeypatch.setattr(launcher, "start_dependencies", lambda _environment: None)
+    monkeypatch.setattr(launcher, "migrate_database", lambda _environment: None)
+    monkeypatch.setattr(
+        launcher, "start_api", lambda _args, _environment: 0
+    )
+    args = SimpleNamespace(
+        port=8000,
+        open_browser=False,
+        refresh_deps=False,
+        reload=False,
+        force_reload=True,
+        with_cloud=False,
+    )
+
+    assert launcher.command_start(args) == 0
+    assert stopped == [8000]
 
 
 def test_double_click_launcher_uses_unified_local_startup() -> None:

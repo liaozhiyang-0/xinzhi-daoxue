@@ -1,0 +1,69 @@
+"""Runtime adapter for the frozen academic solver baseline.
+
+The adapter owns durable observe/retrieve/act/verify control while delegating
+the actual solver graph to ``InternalAgentExecutionService``. It deliberately
+does not modify the SOLVER_CT v1.0 implementation or its source YAML.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from app.contracts import AgentRequest
+from app.services.general_question_runtime import GeneralQuestionRuntimeService
+
+
+class AcademicSolverRuntimeService(GeneralQuestionRuntimeService):
+    """Expose the existing solver as an explicit Runtime action boundary."""
+
+    agent_id = "ACADEMIC_PROBLEM_SOLVER"
+    observe_node_id = "solver.observe"
+    retrieve_node_id = "solver.retrieve"
+    tool_node_id = "solver.tool"
+    execute_node_id = "solver.execute"
+    verify_node_id = "solver.verify"
+    runtime_option_key = "academic_solver_runtime"
+    runtime_plan_prefix = "academic-solver-runtime"
+    runtime_plan_version = "solver-runtime-v1"
+    runtime_name = "academic_solver"
+    observe_handler_id = "academic.solver.observe"
+    retrieve_handler_id = "academic.solver.retrieve"
+    tool_handler_prefix = "academic.solver.tool"
+    execute_handler_id = "academic.solver.execute"
+    verify_handler_id = "academic.solver.verify"
+    # Keep the frozen solver action on its existing Provider-style adapter
+    # until its real paired parity corpus is approved for migration.
+    use_typed_subagent = False
+
+    @staticmethod
+    def _question(request: AgentRequest) -> str:
+        return next(
+            (
+                str(request.canonical_input[key]).strip()
+                for key in (
+                    "text",
+                    "question",
+                    "problem",
+                    "query",
+                    "prompt",
+                )
+                if request.canonical_input.get(key)
+            ),
+            "academic problem",
+        )
+
+    @classmethod
+    def _retrieval_requested(cls, request: AgentRequest) -> bool:
+        runtime_options = request.options.get(cls.runtime_option_key)
+        if isinstance(runtime_options, Mapping) and "retrieve" in runtime_options:
+            return runtime_options.get("retrieve") is True
+        execution_plan = request.options.get("_execution_plan")
+        return isinstance(execution_plan, Mapping) and bool(
+            execution_plan.get("use_rag", False)
+        )
+
+    def _provider_context(
+        self, context: Any, retrieved_context: Any = None
+    ) -> Any:
+        return retrieved_context if retrieved_context is not None else context

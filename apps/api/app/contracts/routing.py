@@ -49,3 +49,17 @@ class RouteDecision(BaseModel):
     inferred_user_role: str = ""
     visited_agents: list[str] = Field(default_factory=list)
     reroute_count: int = 0
+    # Codex-like structured intent context. These fields are additive so the
+    # legacy route contract and persisted task payloads remain compatible.
+    intent_recognition: dict[str, Any] = Field(default_factory=dict)
+    capabilities: list[str] = Field(default_factory=list)
+    selected_tools: list[str] = Field(default_factory=list)
+    selected_skills: list[str] = Field(default_factory=list)
+    route_mode: str = "single_agent"
+    complexity: str = "medium"
+    needs_subagents: bool = False
+    parallelizable: bool = False
+    # Routing lineage is kept with the task payload so refinements and
+    # reroutes remain auditable without a second persistence model.
+    route_revision: int = Field(default=0, ge=0)
+    route_trace: list[dict[str, Any]] = Field(default_factory=list)

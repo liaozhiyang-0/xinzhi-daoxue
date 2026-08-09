@@ -11,6 +11,7 @@ from app.contracts import (
     UserRole,
 )
 from app.contracts.conversation import MessageStatus
+from app.contracts.intent import IntentExecutionPlan
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
@@ -20,6 +21,7 @@ from app.services.evaluation_attachment_cleanup import (
     cleanup_evaluation_attachments,
 )
 from app.services.event_service import append_task_event
+from app.services.intent_plan import IntentPlanCompiler
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
 from app.services.teaching_input import normalize_teaching_options
@@ -33,6 +35,7 @@ class TaskCreationService:
         self.provider_name = provider_name
         self.settings = settings or Settings()
         self.repository = TaskRepository(db)
+        self.plan_compiler = IntentPlanCompiler()
 
     async def create_queued(
         self,
@@ -46,6 +49,8 @@ class TaskCreationService:
         teaching_options, _, _ = normalize_teaching_options(request.options)
         request = request.model_copy(update={"options": teaching_options})
         request = self._with_route_context(request, route)
+        intent_plan = self.plan_compiler.compile(request, route)
+        request = self._with_intent_plan(request, intent_plan)
         session = await SessionRepository(self.db).get_for_user(
             request.session_id, request.user_id, for_update=True
         )
@@ -150,6 +155,36 @@ class TaskCreationService:
             agent_id=route.agent_id,
             data=route.model_dump(mode="json"),
         )
+        await append_task_event(
+            self.db,
+            task.id,
+            AgentEventType.INTENT_RECOGNIZED,
+            agent_id=route.agent_id,
+            data=route.intent_recognition,
+        )
+        await append_task_event(
+            self.db,
+            task.id,
+            AgentEventType.PLAN_CREATED,
+            agent_id=route.agent_id,
+            data=intent_plan.model_dump(mode="json"),
+        )
+        if intent_plan.selected_skills:
+            await append_task_event(
+                self.db,
+                task.id,
+                AgentEventType.SKILL_SELECTED,
+                agent_id=route.agent_id,
+                data={"skills": intent_plan.selected_skills},
+            )
+        if intent_plan.selected_tools:
+            await append_task_event(
+                self.db,
+                task.id,
+                AgentEventType.TOOL_SELECTED,
+                agent_id=route.agent_id,
+                data={"tools": intent_plan.selected_tools},
+            )
         if route.route_status != RouteStatus.SELECTED:
             task.status = TaskStatus.FAILED
             task.error_message = route.reason
@@ -224,6 +259,17 @@ class TaskCreationService:
         if route.inferred_user_role:
             updates["user_role"] = UserRole(route.inferred_user_role)
         return request.model_copy(update=updates)
+
+    @staticmethod
+    def _with_intent_plan(
+        request: AgentRequest, plan: IntentExecutionPlan
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options["_intent_plan"] = plan.model_dump(mode="json")
+        options["intent_capabilities"] = list(plan.capabilities)
+        options["selected_tools"] = list(plan.selected_tools)
+        options["selected_skills"] = list(plan.selected_skills)
+        return request.model_copy(update={"options": options})
 
     @staticmethod
     def _without_transient_context(request: AgentRequest) -> AgentRequest:

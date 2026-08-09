@@ -51,6 +51,10 @@ class ModelRoute(BaseModel):
     primary: str
     fallback: str | None = None
     verifier: str | None = None
+    # Route-level budgets let short interactive paths avoid inheriting the
+    # global retry policy used by long-running solver workflows.
+    max_retries: int | None = Field(default=None, ge=0, le=1)
+    fallback_on_timeout: bool = True
     options: dict[str, Any] = Field(default_factory=dict)
 
 

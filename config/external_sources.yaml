@@ -10,6 +10,9 @@ sources:
     credential_mode: none
     metadata_only_by_default: true
     manual_review_required: true
+    query_adapter: arxiv_default_v1
+    query_capabilities: [boolean_query, bounded_candidates, min_delay]
+    rate_limit_policy: three_second_min_delay_with_cache
 
   - id: crossref
     provider: crossref
@@ -21,6 +24,9 @@ sources:
     credential_mode: none
     metadata_only_by_default: true
     manual_review_required: true
+    query_adapter: crossref_default_v1
+    query_capabilities: [bibliographic_query, date_filter, local_rerank]
+    rate_limit_policy: polite_pool_with_min_delay
 
   - id: openalex
     provider: openalex
@@ -33,3 +39,120 @@ sources:
     official_docs_url: https://developers.openalex.org/
     metadata_only_by_default: true
     manual_review_required: true
+    query_adapter: openalex_v1
+    query_capabilities: [keyword_translation, date_filter, local_rerank]
+    rate_limit_policy: retry_after_with_min_delay
+
+  - id: semantic_scholar
+    provider: semantic_scholar
+    source_type: academic_paper
+    scope: academic
+    default_base_url: https://api.semanticscholar.org/graph/v1
+    base_url_env: EXTERNAL_SEMANTIC_SCHOLAR_BASE_URL
+    credential_env: EXTERNAL_SEMANTIC_SCHOLAR_API_KEY
+    official_docs_url: https://www.semanticscholar.org/product/api
+    credential_mode: optional_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: semantic_scholar_default_v1
+
+  - id: news_rss
+    provider: news_rss
+    source_type: web_page
+    scope: web
+    default_base_url: https://news.google.com/rss/search
+    base_url_env: EXTERNAL_NEWS_RSS_BASE_URL
+    official_docs_url: https://support.google.com/news/publisher-center/answer/9546403
+    credential_mode: none
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: news_rss_default_v1
+
+  - id: searxng
+    provider: searxng
+    source_type: web_page
+    scope: web
+    default_base_url: http://127.0.0.1:8080/search
+    base_url_env: EXTERNAL_SEARXNG_BASE_URL
+    official_docs_url: https://docs.searxng.org/dev/search_api.html
+    credential_mode: none
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: searxng_json_v1
+    query_capabilities: [json_results, local_instance, min_delay]
+    rate_limit_policy: local_limiter_with_min_delay
+
+  - id: aliyun_iqs
+    provider: aliyun_iqs
+    source_type: web_page
+    scope: web
+    default_base_url: https://cloud-iqs.aliyuncs.com/search/unified
+    base_url_env: EXTERNAL_ALIYUN_IQS_BASE_URL
+    credential_env: EXTERNAL_ALIYUN_IQS_API_KEY
+    official_docs_url: https://help.aliyun.com/zh/document_detail/2963346.html
+    credential_mode: required_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: aliyun_iqs_unified_search_v1
+    query_capabilities: [json_results, time_range, local_rerank]
+    rate_limit_policy: provider_limit_with_min_delay
+
+  - id: bocha
+    provider: bocha
+    source_type: web_page
+    scope: web
+    default_base_url: https://api.bochaai.com/v1/web-search
+    base_url_env: EXTERNAL_BOCHA_BASE_URL
+    credential_env: EXTERNAL_BOCHA_API_KEY
+    official_docs_url: https://open.bochaai.com/
+    credential_mode: required_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: bocha_web_search_v1
+    query_capabilities: [json_results, freshness, summary]
+    rate_limit_policy: provider_limit_with_min_delay
+
+  - id: tavily
+    provider: tavily
+    source_type: web_page
+    scope: web
+    default_base_url: https://api.tavily.com/search
+    base_url_env: EXTERNAL_TAVILY_BASE_URL
+    credential_env: EXTERNAL_TAVILY_API_KEY
+    official_docs_url: https://docs.tavily.com/documentation/api-reference/endpoint/search
+    credential_mode: required_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: tavily_search_v1
+    query_capabilities: [json_results, search_depth, topic]
+    rate_limit_policy: provider_limit_with_min_delay
+
+  - id: brave
+    provider: brave
+    source_type: web_page
+    scope: web
+    default_base_url: https://api.search.brave.com/res/v1/web/search
+    base_url_env: EXTERNAL_BRAVE_BASE_URL
+    credential_env: EXTERNAL_BRAVE_API_KEY
+    official_docs_url: https://api-dashboard.search.brave.com/api-reference/web/search/get
+    credential_mode: required_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: brave_web_search_v1
+    query_capabilities: [json_results, country, language]
+    rate_limit_policy: provider_limit_with_min_delay
+
+  - id: serpapi
+    provider: serpapi
+    source_type: web_page
+    scope: web
+    default_base_url: https://serpapi.com/search.json
+    base_url_env: EXTERNAL_SERPAPI_BASE_URL
+    credential_env: EXTERNAL_SERPAPI_API_KEY
+    official_docs_url: https://serpapi.com/search-api
+    credential_mode: required_api_key
+    metadata_only_by_default: true
+    manual_review_required: true
+    query_adapter: serpapi_search_v1
+    query_capabilities: [json_results, engine, language]
+    rate_limit_policy: provider_limit_with_min_delay

@@ -8,9 +8,19 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.contracts import AgentRequest, UserRole
+from app.contracts import (
+    AgentRequest,
+    RuntimeInputSubmission,
+    RuntimePlanProposalDecisionSubmission,
+    RuntimeReconciliationSubmission,
+    UserRole,
+)
 from app.contracts.api import EventRead, TaskRead
 from app.contracts.conversation import ConversationContextBundle
+from app.contracts.research_analysis import (
+    ResearchReviewDecision,
+    ResearchReviewSubmission,
+)
 from app.core.errors import NotFoundError
 from app.dependencies import (
     effective_user_id,
@@ -22,8 +32,11 @@ from app.models import TaskModel, TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import FileRepository, TaskRepository
 from app.repositories.sessions import SessionRepository
+from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
+from app.services.research_analysis_review import ResearchAnalysisReviewService
+from app.services.runtime_plan_proposals import RuntimePlanProposalService
 from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import TaskControlService
@@ -55,6 +68,15 @@ def task_read(
         "working_state",
     ):
         options.pop(key, None)
+    v2_options = options.get("research_analysis_v2")
+    if isinstance(v2_options, dict):
+        v2_request = v2_options.get("request")
+        design = v2_request.get("design") if isinstance(v2_request, dict) else ""
+        options["research_analysis_v2"] = {
+            "enabled": True,
+            "execute": bool(v2_options.get("execute", False)),
+            "design": str(design or ""),
+        }
     payload["options"] = options
     model.input_content = payload
     model.result_content = public_teaching_result(
@@ -91,8 +113,12 @@ async def create_task(
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
     data = await _hydrate_document_attachments(data, principal, db, request)
-    session = await SessionRepository(db).get(data.session_id)
+    session = await SessionRepository(db).get_for_user(data.session_id, data.user_id)
     if session is not None:
+        # Routing must see the durable session continuity state.  Previously
+        # this projection happened only inside TaskCreationService, after the
+        # route had already been selected, so short follow-ups lost the prior
+        # agent and external-evidence context.
         data = SessionContextService(request.app.state.settings).apply(session, data)
         bundle = await request.app.state.context_assembly.assemble(
             db,
@@ -216,6 +242,87 @@ async def get_task(
     )
 
 
+@router.post(
+    "/{task_id}/research-review",
+    response_model=ResearchReviewDecision,
+    summary="提交科研分析人工复核签字",
+)
+async def submit_research_review(
+    task_id: str,
+    submission: ResearchReviewSubmission,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> ResearchReviewDecision:
+    if principal.has_identity and principal.role not in {"teacher", "admin"}:
+        raise HTTPException(status_code=403, detail="只有教师或管理员可以提交科研复核")
+    if principal.has_identity and submission.reviewer_id != principal.user_id:
+        raise HTTPException(status_code=403, detail="复核人必须与当前认证身份一致")
+    if request.app.state.settings.auth_required and not principal.has_identity:
+        raise HTTPException(status_code=403, detail="科研复核需要已认证身份")
+    task = await _get_owned_task(db, task_id, principal)
+    if task.agent_id != "RESEARCH_03_DATA_ANALYSIS_V1":
+        raise HTTPException(status_code=422, detail="任务不是科研数据分析任务")
+    payload = dict(task.result_content or {})
+    structured = payload.get("structured_result")
+    if not isinstance(structured, dict) or not structured.get("analysis_v2"):
+        raise HTTPException(status_code=422, detail="任务没有可复核的科研分析 V2 结果")
+    business_data = payload.get("business_data")
+    if not isinstance(business_data, dict) or business_data.get("status") != "executed":
+        raise HTTPException(status_code=422, detail="只有已执行的科研分析结果可以签字")
+    existing_checklist = business_data.get("review_checklist")
+    if not isinstance(existing_checklist, dict):
+        raise HTTPException(status_code=422, detail="科研分析结果缺少复核清单")
+    expected_items = existing_checklist.get("items")
+    if not isinstance(expected_items, list):
+        raise HTTPException(status_code=422, detail="科研分析复核清单格式无效")
+    expected_by_id = {
+        str(item.get("review_id")): item
+        for item in expected_items
+        if isinstance(item, dict)
+    }
+    submitted_by_id = {item.review_id: item for item in submission.items}
+    if set(expected_by_id) != set(submitted_by_id):
+        raise HTTPException(status_code=422, detail="提交的复核项必须完整匹配任务清单")
+    for review_id, expected in expected_by_id.items():
+        submitted = submitted_by_id[review_id]
+        if (
+            submitted.category != expected.get("category")
+            or submitted.question != expected.get("question")
+        ):
+            raise HTTPException(status_code=422, detail="复核项内容不能脱离原始清单")
+    decision = ResearchAnalysisReviewService().persist_submission(
+        request.app.state.settings.research_analysis_artifact_root,
+        task_id,
+        submission,
+    )
+    payload["research_review_decision"] = decision.model_dump(mode="json")
+    task.result_content = payload
+    await db.commit()
+    return decision
+
+
+@router.get(
+    "/{task_id}/research-review",
+    response_model=ResearchReviewDecision,
+    summary="读取科研分析人工复核签字",
+)
+async def get_research_review(
+    task_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> ResearchReviewDecision:
+    await _get_owned_task(db, task_id, principal)
+    decision = ResearchAnalysisReviewService.load_decision(
+        request.app.state.settings.research_analysis_artifact_root,
+        task_id,
+    )
+    if decision is None:
+        raise HTTPException(status_code=404, detail="科研复核签字尚未提交")
+    return decision
+
+
 @router.get("/{task_id}/events", response_model=list[EventRead])
 async def get_task_events(
     task_id: str,
@@ -263,6 +370,130 @@ async def cancel_task(
             task_id
         )
     )
+
+
+@router.post("/{task_id}/pause", response_model=TaskRead)
+async def pause_task(
+    task_id: str,
+    request: Request,
+    runtime_run_id: str | None = Query(default=None, max_length=64),
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    provider: AgentProvider = Depends(get_provider),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    return task_read(
+        await TaskControlService(db, provider, request.app.state.settings).pause(
+            task_id,
+            runtime_run_id=runtime_run_id,
+        )
+    )
+
+
+@router.post("/{task_id}/resume", response_model=TaskRead)
+async def resume_task(
+    task_id: str,
+    request: Request,
+    runtime_run_id: str | None = Query(default=None, max_length=64),
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    provider: AgentProvider = Depends(get_provider),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    task = await TaskControlService(
+        db, provider, request.app.state.settings
+    ).resume(task_id, runtime_run_id=runtime_run_id)
+    request.app.state.task_runner.submit(task.id)
+    return task_read(task)
+
+
+@router.post("/{task_id}/approve", response_model=TaskRead)
+async def approve_task(
+    task_id: str,
+    request: Request,
+    runtime_run_id: str | None = Query(default=None, max_length=64),
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    provider: AgentProvider = Depends(get_provider),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    task = await TaskControlService(
+        db, provider, request.app.state.settings
+    ).approve(task_id, runtime_run_id=runtime_run_id)
+    request.app.state.task_runner.submit(task.id)
+    return task_read(task)
+
+
+@router.post("/{task_id}/input", response_model=TaskRead)
+async def submit_runtime_input(
+    task_id: str,
+    submission: RuntimeInputSubmission,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    provider: AgentProvider = Depends(get_provider),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    task = await TaskControlService(
+        db, provider, request.app.state.settings
+    ).submit_input(task_id, submission)
+    request.app.state.task_runner.submit(task.id)
+    return task_read(task)
+
+
+@router.post("/{task_id}/reconcile", response_model=TaskRead)
+async def reconcile_runtime_node(
+    task_id: str,
+    submission: RuntimeReconciliationSubmission,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+    provider: AgentProvider = Depends(get_provider),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    task = await TaskControlService(
+        db, provider, request.app.state.settings
+    ).reconcile(task_id, submission)
+    request.app.state.task_runner.submit(task.id)
+    return task_read(task)
+
+
+@router.get(
+    "/{task_id}/runtime-plan-proposals",
+    response_model=list[RuntimePlanProposal],
+)
+async def list_runtime_plan_proposals(
+    task_id: str,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[RuntimePlanProposal]:
+    await _get_owned_task(db, task_id, principal)
+    return await RuntimePlanProposalService(db).list(task_id)
+
+
+@router.post(
+    "/{task_id}/runtime-plan-proposals/{proposal_id}/decision",
+    response_model=TaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def decide_runtime_plan_proposal(
+    task_id: str,
+    proposal_id: str,
+    submission: RuntimePlanProposalDecisionSubmission,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TaskRead:
+    await _get_owned_task(db, task_id, principal)
+    task = await RuntimePlanProposalService(db).decide(
+        task_id,
+        proposal_id,
+        approved=submission.decision == "approved",
+        reason=submission.reason,
+        expected_state_version=submission.expected_state_version,
+    )
+    request.app.state.task_runner.submit(task.id)
+    return task_read(task)
 
 
 async def _get_owned_task(

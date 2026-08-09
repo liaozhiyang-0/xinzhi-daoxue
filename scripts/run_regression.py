@@ -35,8 +35,8 @@ def main() -> int:
             session_context=case.get("session_context", {}),
         )
         actual = {
-            "course": prepared.state.course.value,
-            "intent": prepared.state.intent.value,
+            "course": str(prepared.state["course"]),
+            "intent": str(prepared.state["intent"]),
             "agent": prepared.route.agent_id,
         }
         for key, expected_key in (

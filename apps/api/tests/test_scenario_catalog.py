@@ -95,6 +95,30 @@ def test_legacy_task_request_is_bound_to_scenario_policy() -> None:
     assert enriched.intent.value == "lesson_prep"
 
 
+def test_research_analysis_v2_options_survive_scenario_binding() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    request = AgentRequest(
+        session_id="session-research-v2",
+        user_id="user-research-v2",
+        course_id="CT",
+        intent="data_analysis",
+        scenario_id="research_data_workbench_v1",
+        canonical_input={"text": "冻结两组比较研究设计"},
+        options={
+            "research_analysis_v2": {
+                "execute": False,
+                "request": {"research_question": "两组是否存在差异"},
+            }
+        },
+    )
+
+    enriched = catalog.enrich_legacy_request(request)
+
+    assert enriched.intent.value == "data_analysis"
+    assert enriched.options["research_analysis_v2"]["execute"] is False
+    assert enriched.options["scenario_id"] == "research_data_workbench_v1"
+
+
 def test_legacy_task_request_rejects_unadvertised_attachment_mode() -> None:
     catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
     request = AgentRequest(

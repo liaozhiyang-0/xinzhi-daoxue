@@ -88,6 +88,9 @@ async def list_agent_status(request: Request) -> dict[str, Any]:
                 "recent_contract_test": request.app.state.agent_contract_results.get(
                     definition.agent_id, {"status": "not_run"}
                 ),
+                "runtime_readiness": request.app.state.runtime_agent_readiness.inspect(
+                    definition.agent_id
+                ).to_dict(),
             }
         )
     provider_status = getattr(request.app.state.provider, "runtime_status", None)
@@ -100,6 +103,25 @@ async def list_agent_status(request: Request) -> dict[str, Any]:
         "debug_actions_enabled": bool(
             settings.app_env != "production" and settings.rag_debug_enabled
         ),
+    }
+
+
+@router.get(
+    "/runtime-readiness",
+    summary="查看每个 Agent 的 Runtime 迁移就绪度与阻塞原因",
+)
+async def list_runtime_readiness(request: Request) -> dict[str, Any]:
+    readiness = request.app.state.runtime_agent_readiness
+    items = readiness.as_dicts()
+    counts: dict[str, int] = {}
+    for item in items:
+        status = str(item["status"])
+        counts[status] = counts.get(status, 0) + 1
+    return {
+        "provider_called": False,
+        "release_gate_required": readiness.launch_policy.release_gate_required,
+        "counts": counts,
+        "agents": items,
     }
 
 

@@ -11,6 +11,7 @@ from app.contracts.learning import (
     LearningActionRequest,
     LearningActionResponse,
     LearningMetricsRead,
+    LearningRuntimeApprovalRequest,
     RetestPlanV1,
     StudentAttemptV2,
 )
@@ -41,6 +42,28 @@ async def learning_action(
     )
     service = cast(LearningLoopService, request.app.state.learning_loop)
     return await service.act(db, data)
+
+
+@router.post(
+    "/runtime/{run_id}/approve",
+    response_model=LearningActionResponse,
+    summary="Approve a teaching interaction Runtime run",
+)
+async def approve_learning_runtime(
+    run_id: str,
+    data: LearningRuntimeApprovalRequest,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> LearningActionResponse:
+    user_id = effective_user_id(principal, None)
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    return await service.approve_runtime_interaction(
+        db,
+        run_id,
+        user_id=user_id,
+        expected_state_version=data.expected_state_version,
+    )
 
 
 @router.get("/states", response_model=list[LearnerKnowledgeState])

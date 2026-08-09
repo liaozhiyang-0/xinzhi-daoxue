@@ -267,7 +267,7 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [arxiv, crossref, semantic_scholar, web_json]
+        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily]
         max_results: 6
         max_fetches: 0
         max_iterations: 2
@@ -327,7 +327,7 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [arxiv, crossref, semantic_scholar, web_json]
+        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily]
         max_results: 6
         max_fetches: 0
         max_iterations: 2
@@ -386,7 +386,7 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [arxiv, crossref, semantic_scholar, web_json]
+        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily]
         max_results: 6
         max_fetches: 0
         max_iterations: 2
@@ -544,7 +544,7 @@ agents:
       mock_profile: teach_assignment_review_v1
       mock_latency_ms: 25
   RESEARCH_01_ACADEMIC_SEARCH_V1:
-    display_name: 学术论文检索
+    display_name: 科研前沿检索与证据简报
     version: "1.0"
     schema_version: "1"
     scene: research
@@ -553,7 +553,7 @@ agents:
       timeout_seconds: 30
       max_retries: 0
       parser_type: plain_text
-      output_schema: external_academic_search_v1
+      output_schema: research_frontier_brief_v1
     enabled: true
     publication_status: local
     mode: local_model
@@ -562,7 +562,7 @@ agents:
     capabilities:
       user_roles: [student, teacher, researcher, admin]
       courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
-      intents: [unknown, general_qa]
+      intents: [unknown, general_qa, academic_search]
       input_modes: [text]
       supports_session_context: true
       supports_images: false
@@ -584,17 +584,17 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [arxiv, crossref, openalex, semantic_scholar, cnki, web_json]
+        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily, news_rss]
         max_results: 8
-        max_fetches: 0
-        max_iterations: 3
+        max_fetches: 4
+        max_iterations: 2
         freshness_days: 1095
         allow_full_text: false
         require_citations: true
-        generation_injection: false
+        generation_injection: true
         intent_gate_mode: signals_or_intent
         intent_score_threshold: 2
-        timeout_seconds: 60
+        timeout_seconds: 120
     fallback:
       type: none
       handler: no_fallback
@@ -656,7 +656,7 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [arxiv, crossref, semantic_scholar, web_json]
+        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily]
         max_results: 8
         max_fetches: 4
         max_iterations: 2
@@ -713,9 +713,9 @@ agents:
       user_roles: [researcher, teacher, student]
       courses: [CT, AE, DE]
       intents: [data_analysis]
-      input_modes: [text]
+      input_modes: [text, mixed, text_and_data_file, data_file, image, pdf, text_and_single_image, single_image, text_and_multi_image, multi_image]
       supports_session_context: true
-      supports_images: false
+      supports_images: true
     input_contract:
       required: [workflow_prompt]
       optional: [research_question, study_design, data_description, variable_definitions, sample_size, missing_data_summary, provided_results, analysis_goal, constraints, software_environment, trusted_context, request_id]
@@ -758,4 +758,16 @@ routing:
     agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
     scene: learning
     retrieval_required: true
+    provider_required: false
+  - course_ids: [CT, AE, DE]
+    intents: [academic_writing]
+    agent_id: RESEARCH_02_ACADEMIC_WRITING_V1
+    scene: research
+    retrieval_required: false
+    provider_required: false
+  - course_ids: [CT, AE, DE]
+    intents: [data_analysis]
+    agent_id: RESEARCH_03_DATA_ANALYSIS_V1
+    scene: research
+    retrieval_required: false
     provider_required: false

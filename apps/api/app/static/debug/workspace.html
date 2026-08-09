@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260730-image-runtime-v7">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260808-research-analysis-v13">
 </head>
 <body class="workspace-page">
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -50,7 +50,7 @@
             <button type="button" data-capability="lesson_prep" data-prompt="请为电容电压连续性设计一份45分钟课堂教案，包含目标、流程和形成性评价。" data-course="CT"><span class="capability-state">内部 Agent</span><strong>教案设计</strong><small>结合课程资料生成可复核草稿</small></button>
             <button type="button" data-capability="assignment_review" data-prompt="请初审这份作业：题目为10V电源串联5Ω电阻求电流，学生回答I=10/5=2A。指出正确部分、风险和反馈。" data-course="CT"><span class="capability-state">教师复核</span><strong>作业初审</strong><small>不自动给出正式成绩</small></button>
             <button type="button" data-capability="academic_writing" data-prompt="请将“实验说明滤波器效果很好”改写为严谨学术表达；没有提供实验数据或文献，不得补充数值和引用。" data-course="AUTO"><span class="capability-state">事实约束</span><strong>学术写作</strong><small>改写并标出待核验声明</small></button>
-            <button type="button" data-capability="data_analysis" data-prompt="我想分析不同教学方法对成绩的影响，但还没有提供数据。请给出可复现的分析计划和限制。" data-course="AUTO"><span class="capability-state">数据边界</span><strong>数据分析</strong><small>无真实数据时只生成分析计划</small></button>
+            <button type="button" data-capability="data_analysis" data-intent="data_analysis" data-prompt="我想分析不同教学方法对成绩的影响，但还没有提供数据。请给出可复现的分析计划和限制。" data-course="AUTO"><span class="capability-state">数据边界</span><strong>数据分析</strong><small>先冻结研究设计，再进入质量门禁与执行</small></button>
           </div>
         </div>
         <div id="messages" class="message-list" aria-live="polite"></div>
@@ -173,6 +173,59 @@
           <label class="compact-control"><span>学习方式</span><select id="teaching-mode"><option value="direct_answer" selected>直接解答</option><option value="guided_learning">分步辅导</option><option value="check_my_work">检查我的步骤</option></select></label>
           <span id="teaching-mode-boundary">直接给出完整思路与结论。</span>
         </div>
+        <section id="research-analysis-v2-panel" class="research-analysis-v2-panel" hidden>
+          <div class="section-heading">
+            <div>
+              <h3>科研分析 V2：先冻结研究设计</h3>
+              <p>这里生成计划与质量门禁，不把论文检索结果当作数据，也不替你编造数据、指标或结论。</p>
+            </div>
+            <span class="status-badge status-planned">本地计划预检</span>
+          </div>
+          <div class="field-row">
+            <label>研究设计<select id="research-analysis-design">
+              <option value="experimental_comparison">两组实验比较</option>
+              <option value="multigroup_comparison">多组实验比较</option>
+              <option value="repeated_measures">重复测量/配对设计</option>
+              <option value="observational_regression">观察数据回归</option>
+              <option value="time_series">时间序列预测</option>
+              <option value="small_sample">小样本实验</option>
+            </select></label>
+            <label>分析目标<select id="research-analysis-goal">
+              <option value="describe">描述</option>
+              <option value="compare">比较</option>
+              <option value="estimate_effect">估计效应</option>
+              <option value="explain">解释</option>
+              <option value="predict">预测</option>
+              <option value="explore">探索</option>
+            </select></label>
+          </div>
+          <div class="field-row">
+            <label>估计量（估计效应时必填）<input id="research-analysis-estimand" type="text" maxlength="500" placeholder="例如：处理组与对照组结果指标的平均差异"></label>
+            <label>分析单位<input id="research-analysis-unit" type="text" maxlength="200" placeholder="例如：每位受试者一行，或每个时间点一行"></label>
+            <label>分析类型<select id="research-analysis-exploratory">
+              <option value="true">探索性分析</option>
+              <option value="false">验证性分析（必须有预先假设）</option>
+            </select></label>
+          </div>
+          <div class="field-row">
+            <label>稳健性重采样<select id="research-analysis-resampling">
+              <option value="none">不启用</option>
+              <option value="bootstrap">Bootstrap 置信区间</option>
+            </select></label>
+            <label>Bootstrap 次数<input id="research-analysis-bootstrap-replicates" type="number" min="0" max="10000" step="100" value="0"></label>
+            <label>多重比较<select id="research-analysis-multiple-comparison">
+              <option value="none">不调整（需复核）</option>
+              <option value="holm">Holm 调整</option>
+            </select></label>
+          </div>
+          <label>研究假设（没有验证性假设时可留空）<input id="research-analysis-hypothesis" type="text" maxlength="2000" placeholder="例如：处理组的预先声明结果指标高于对照组。"></label>
+          <label>变量角色（每行一个，格式：变量名 | role | 单位 | 说明）<textarea id="research-analysis-variables" class="compact-textarea" rows="3" maxlength="6000" placeholder="outcome | outcome | 分数 | 预先声明的结果指标&#10;treatment | treatment | - | 分组或处理状态"></textarea></label>
+          <label>研究协议/分配机制摘要<textarea id="research-analysis-study-design" class="compact-textarea" rows="2" maxlength="6000" placeholder="说明分配机制、测量时点、排除规则和协议版本；未知部分写待补证据。"></textarea></label>
+          <label>数据清单 JSON（可留空；必须来自已授权数据，不填写本地路径）<textarea id="research-analysis-manifest" class="compact-textarea" rows="3" maxlength="4000" placeholder='{"dataset_id":"your_dataset_id","format":"csv","checksum_sha256":"your_checksum","row_count":120,"column_count":3,"authorized":true}'></textarea></label>
+          <label>数据字典或实验协议摘要<textarea id="research-analysis-dictionary" class="compact-textarea" rows="2" maxlength="12000" placeholder="说明变量含义、单位、测量时点、分组机制和排除规则；没有材料时明确写待补证据。"></textarea></label>
+          <label>方法证据 JSON（可选数组；只填写可核验的 method_reference）<textarea id="research-analysis-evidence" class="compact-textarea" rows="2" maxlength="6000" placeholder='[{"evidence_id":"method-001","role":"method_reference","title":"方法来源","source_ref":"https://doi.org/...","cited":true}]'></textarea></label>
+          <p class="field-hint">执行原始数据前还需要服务端受控数据引用、输出目录和人工复核；本入口不会从浏览器接收或显示服务器绝对路径。</p>
+        </section>
         <textarea id="question-input" maxlength="4000" rows="1" aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
         <div id="student-attempt-panel" class="student-attempt-panel" hidden>
           <label for="student-attempt-input">请填写你的解题过程或答案</label>
@@ -182,7 +235,7 @@
         <div class="composer-controls">
           <div class="composer-left">
             <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option><option value="SS">信号与系统</option><option value="DSP">数字信号处理</option><option value="COMM">通信原理</option></select></label>
-            <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" multiple accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.md,.txt,.csv,.json,.pdf,.doc,.docx"></label>
+            <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" multiple accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,text/tab-separated-values,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.apache.parquet,.md,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xlsx,.parquet"></label>
             <details class="more-settings"><summary>高级选项</summary><div class="settings-popover"><label>回答深度<select id="depth-select"><option value="brief">简要</option><option value="standard" selected>标准</option><option value="deep">深入</option></select></label><label><input id="show-images" type="checkbox" checked> 显示教材图片</label></div></details>
           </div>
           <div class="composer-right"><span id="form-error" class="field-error" role="alert"></span><button id="stop-button" class="button secondary" type="button" disabled>停止</button><button id="send-button" class="send-button" type="submit" aria-label="发送问题">发送</button></div>
@@ -237,7 +290,7 @@
     </div>
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260801-auth-entry-v1"></script>
-<script src="/debug-assets/workspace.js?v=20260804-history-layout-v2"></script>
+  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260808-research-analysis-v13"></script>
+    <script src="/debug-assets/workspace.js?v=20260808-research-analysis-v13"></script>
 </body>
 </html>

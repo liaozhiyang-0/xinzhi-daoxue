@@ -1,0 +1,17 @@
+{
+  "case_version": "1",
+  "case_id": "general_question_runtime_v1",
+  "expected_status": "completed",
+  "required_node_statuses": {
+    "general.observe": "succeeded",
+    "general.execute": "succeeded",
+    "general.verify": "succeeded"
+  },
+  "required_handler_ids": [
+    "general.question.observe",
+    "subagent.GENERAL_QUESTION_V1",
+    "general.question.verify"
+  ],
+  "max_iterations": 3,
+  "require_checkpoint_trace": true
+}

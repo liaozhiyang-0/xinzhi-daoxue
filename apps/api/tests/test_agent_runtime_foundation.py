@@ -42,6 +42,84 @@ def test_task_persists_message_history_and_isolates_users(api) -> None:
     assert denied.status_code == 404
 
 
+def test_shadow_runtime_wraps_legacy_task_without_second_provider_call(
+    api, app
+) -> None:
+    app.state.task_runner.runtime_lifecycle.enabled = True
+    session = api.create_session()
+    task = api.create_task(session["id"])
+    completed = api.wait_for_task(task["id"])
+    assert completed["status"] == "completed"
+
+    debug = api.client.get(f"/api/v1/debug/execution/{task['id']}")
+    assert debug.status_code == 200
+    runtime = debug.json()["runtime"]
+    assert runtime["run_kind"] == "runtime"
+    assert runtime["status"] == "completed"
+    assert runtime["goal_contract"]["objective"]
+    assert runtime["goal_contract"]["source"] == "request"
+    assert len(runtime["nodes"]) == 1
+    node = runtime["nodes"][0]
+    assert node["node_id"] == "legacy.execution"
+    assert node["handler_id"].startswith("legacy.task_runner.")
+    assert node["status"] == "succeeded"
+    assert node["attempt"] == 1
+    assert node["error_code"] == ""
+    assert node["runtime_effect"]["reconciliation_id"] == (
+        f"runtime:{runtime['run_id']}:legacy.execution"
+    )
+
+
+def test_runtime_control_endpoints_reject_terminal_runs_without_mutation(
+    api, app
+) -> None:
+    app.state.task_runner.runtime_lifecycle.enabled = True
+    session = api.create_session()
+    task = api.create_task(session["id"])
+    completed = api.wait_for_task(task["id"])
+    assert completed["status"] == "completed"
+
+    for action in ("pause", "resume", "approve"):
+        response = api.client.post(f"/api/v1/tasks/{task['id']}/{action}")
+        assert response.status_code == 409
+
+
+def test_runtime_input_endpoint_rejects_terminal_runs_without_mutation(
+    api, app
+) -> None:
+    app.state.task_runner.runtime_lifecycle.enabled = True
+    session = api.create_session()
+    task = api.create_task(session["id"])
+    completed = api.wait_for_task(task["id"])
+    assert completed["status"] == "completed"
+
+    response = api.client.post(
+        f"/api/v1/tasks/{task['id']}/input",
+        json={"data": {"scope": "2026-Q1"}},
+    )
+    assert response.status_code == 409
+
+
+def test_runtime_reconciliation_endpoint_rejects_terminal_runs_without_mutation(
+    api, app
+) -> None:
+    app.state.task_runner.runtime_lifecycle.enabled = True
+    session = api.create_session()
+    task = api.create_task(session["id"])
+    completed = api.wait_for_task(task["id"])
+    assert completed["status"] == "completed"
+
+    response = api.client.post(
+        f"/api/v1/tasks/{task['id']}/reconcile",
+        json={
+            "node_id": "legacy.execution",
+            "outcome": "succeeded",
+            "facts": {"external_status": "confirmed"},
+        },
+    )
+    assert response.status_code == 409
+
+
 def test_idempotent_task_does_not_duplicate_user_message(api) -> None:
     session = api.create_session()
     options = {"idempotency_key": "runtime-message-key"}

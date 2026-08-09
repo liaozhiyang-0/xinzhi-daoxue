@@ -1,18 +1,33 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
+from time import sleep
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from app.contracts import (
+    AgentRequest,
     ExternalEvidenceItem,
+    ExternalRetrievalPolicy,
     ExternalRetrievalResult,
     ExternalSourceScope,
     ExternalSourceType,
 )
-from app.providers.retrieval.web import JsonWebSearchProvider
+from app.core.config import Settings
+from app.providers.retrieval.web import (
+    AliyunIqsSearchProvider,
+    BochaSearchProvider,
+    BraveSearchProvider,
+    JsonWebSearchProvider,
+    SearxngSearchProvider,
+    SerpApiSearchProvider,
+    TavilySearchProvider,
+)
 from app.services.external_research_answer import (
     external_search_view,
+    is_academic_search_follow_up,
     is_academic_search_request,
     is_academic_writing_source_follow_up,
     normalize_academic_search_query,
@@ -23,6 +38,70 @@ from app.services.external_retrieval import (
     ExternalContentFetcher,
     ExternalFetchError,
 )
+from app.services.task_runner import TaskRunner
+from pydantic import AnyHttpUrl
+
+
+@pytest.mark.asyncio
+async def test_external_retrieval_hard_deadline_does_not_wait_for_late_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = object.__new__(TaskRunner)
+    object.__setattr__(
+        runner,
+        "knowledge_base",
+        SimpleNamespace(
+            settings=Settings(
+                app_env="test",
+                external_retrieval_timeout_seconds=0.02,
+                _env_file=None,  # type: ignore[call-arg]
+            )
+        ),
+    )
+    object.__setattr__(runner, "_external_tasks", set())
+    request = AgentRequest(
+        task_id="task-hard-deadline",
+        session_id="session-test",
+        user_id="user-test",
+        canonical_input={"text": "slow external query"},
+        options={"external_retrieval_trace_id": "runtime:deadline:fetch"},
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+        providers=["fixture"],
+        timeout_seconds=1,
+    )
+
+    async def non_cooperative_retrieval(
+        _request: AgentRequest,
+        _policy: ExternalRetrievalPolicy,
+        *,
+        allow_degraded_review: bool = False,
+    ) -> ExternalRetrievalResult:
+        del allow_degraded_review
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            # Model/network clients occasionally acknowledge cancellation late.
+            await asyncio.sleep(0.5)
+        return ExternalRetrievalResult(
+            query="slow external query",
+            normalized_query="slow external query",
+            status="failed",
+        )
+
+    monkeypatch.setattr(runner, "_retrieve_external", non_cooperative_retrieval)
+    result = await asyncio.wait_for(
+        runner._retrieve_external_with_deadline(request, policy),
+        timeout=0.1,
+    )
+
+    assert result.status == "failed"
+    assert result.warnings == ["external retrieval timed out"]
+    assert result.retrieval_trace_id == "runtime:deadline:fetch"
+    await asyncio.sleep(0.55)
+    assert not runner._external_tasks  # type: ignore[attr-defined]
 
 
 def test_academic_writing_follow_up_reuses_a_prior_paper() -> None:
@@ -40,6 +119,14 @@ def test_academic_writing_follow_up_reuses_a_prior_paper() -> None:
     )
 
 
+def test_academic_search_follow_up_understands_short_continuation() -> None:
+    assert is_academic_search_follow_up(
+        "接着提供一些额外的论文信息",
+        previous_agent="RESEARCH_01_ACADEMIC_SEARCH_V1",
+        previous_answer_summary="上一轮已经完成科研前沿检索并返回论文证据。",
+    )
+
+
 def _item(url: str = "https://example.org/paper") -> ExternalEvidenceItem:
     return ExternalEvidenceItem(
         evidence_id="web-example",
@@ -47,7 +134,7 @@ def _item(url: str = "https://example.org/paper") -> ExternalEvidenceItem:
         provider="web_json",
         source_ref="external://web/web-example",
         title="Example",
-        canonical_url=url,
+        canonical_url=AnyHttpUrl(url),
         retrieved_at=datetime.now(UTC),
     )
 
@@ -81,6 +168,200 @@ async def test_web_json_provider_normalizes_gateway_result() -> None:
     assert result[0].source_type == ExternalSourceType.WEB_PAGE
     assert result[0].content_excerpt == "A short result."
     assert result[0].relevance_score == 0.8
+
+
+async def test_searxng_provider_maps_q_and_parses_json_results() -> None:
+    payload = {
+        "results": [
+            {
+                "title": "Flexible electronics result",
+                "url": "https://example.org/flexible",
+                "content": "A SearXNG result.",
+                "score": 0.7,
+                "engine": "wikipedia",
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["q"] == "flexible electronics"
+        assert request.url.params["format"] == "json"
+        assert request.url.params["categories"] == "general"
+        return httpx.Response(200, json=payload)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = SearxngSearchProvider(
+            base_url="http://127.0.0.1:8080/search",
+            client=client,
+            min_delay_seconds=0,
+        )
+        result = await provider.search("flexible electronics", limit=3)
+    finally:
+        await client.aclose()
+
+    assert result[0].provider == "searxng"
+    assert result[0].content_excerpt == "A SearXNG result."
+    assert result[0].metadata["engine"] == "wikipedia"
+
+
+@pytest.mark.parametrize(
+    ("provider_factory", "expected_path"),
+    [
+        (
+            lambda client: TavilySearchProvider(
+                base_url="https://api.tavily.com/search",
+                api_key="tvly-test",
+                client=client,
+                min_delay_seconds=0,
+            ),
+            "/search",
+        ),
+        (
+            lambda client: BraveSearchProvider(
+                base_url="https://api.search.brave.com/res/v1/web/search",
+                api_key="brave-test",
+                client=client,
+                min_delay_seconds=0,
+            ),
+            "/res/v1/web/search",
+        ),
+        (
+            lambda client: SerpApiSearchProvider(
+                base_url="https://serpapi.com/search.json",
+                api_key="serp-test",
+                client=client,
+                min_delay_seconds=0,
+            ),
+            "/search.json",
+        ),
+    ],
+)
+async def test_configured_web_provider_adapters_normalize_results(
+    provider_factory, expected_path
+) -> None:
+    payloads = {
+        "/search": {
+            "results": [
+                {
+                    "title": "Tavily result",
+                    "url": "https://example.org/tavily",
+                    "content": "Tavily excerpt",
+                    "score": 0.9,
+                }
+            ]
+        },
+        "/res/v1/web/search": {
+            "web": {
+                "results": [
+                    {
+                        "title": "Brave result",
+                        "url": "https://example.org/brave",
+                        "description": "Brave excerpt",
+                    }
+                ]
+            }
+        },
+        "/search.json": {
+            "organic_results": [
+                {
+                    "title": "SerpApi result",
+                    "link": "https://example.org/serpapi",
+                    "snippet": "SerpApi excerpt",
+                }
+            ]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == expected_path
+        if expected_path == "/search":
+            assert request.method == "POST"
+            assert request.headers["authorization"] == "Bearer tvly-test"
+            assert request.content
+        elif expected_path == "/res/v1/web/search":
+            assert request.method == "GET"
+            assert request.headers["x-subscription-token"] == "brave-test"
+            assert request.url.params["count"] == "5"
+        else:
+            assert request.url.params["api_key"] == "serp-test"
+            assert request.url.params["engine"] == "google"
+        return httpx.Response(200, json=payloads[expected_path])
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = provider_factory(client)
+        result = await provider.search("flexible electronics", limit=5)
+    finally:
+        await client.aclose()
+
+    assert len(result) == 1
+    assert result[0].source_type == ExternalSourceType.WEB_PAGE
+    assert result[0].canonical_url.host == "example.org"
+
+
+async def test_domestic_web_provider_adapters_map_official_response_shapes() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.host or "")
+        if request.url.host == "cloud-iqs.aliyuncs.com":
+            return httpx.Response(
+                200,
+                json={
+                    "requestId": "request-1",
+                    "pageItems": [
+                        {
+                            "title": "Alibaba result",
+                            "link": "https://example.org/aliyun",
+                            "snippet": "Alibaba excerpt",
+                            "publishedTime": "2025-01-02T00:00:00+08:00",
+                            "rerankScore": 0.88,
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "webPages": {
+                        "value": [
+                            {
+                                "name": "Bocha result",
+                                "url": "https://example.org/bocha",
+                                "snippet": "Bocha excerpt",
+                            }
+                        ]
+                    }
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        aliyun = AliyunIqsSearchProvider(
+            base_url="https://cloud-iqs.aliyuncs.com/search/unified",
+            api_key="aliyun-test",
+            client=client,
+            min_delay_seconds=0,
+        )
+        bocha = BochaSearchProvider(
+            base_url="https://api.bochaai.com/v1/web-search",
+            api_key="bocha-test",
+            client=client,
+            min_delay_seconds=0,
+        )
+        aliyun_items = await aliyun.search("柔性电子器件", limit=5)
+        bocha_items = await bocha.search("柔性电子器件", limit=5)
+    finally:
+        await client.aclose()
+
+    assert calls == ["cloud-iqs.aliyuncs.com", "api.bochaai.com"]
+    assert aliyun_items[0].title == "Alibaba result"
+    assert aliyun_items[0].relevance_score == 0.88
+    assert bocha_items[0].title == "Bocha result"
+    assert bocha_items[0].content_excerpt == "Bocha excerpt"
 
 
 async def test_fetcher_strips_markup_and_marks_untrusted_content() -> None:
@@ -164,7 +445,7 @@ def test_academic_search_answer_exposes_link_and_abstract_view() -> None:
     assert "修改说明" not in answer
     assert "引用检查" not in answer
     assert is_academic_search_request("查找最新的电子信息论文") is True
-    assert is_academic_search_request("近三年柔性电子器件的关键进展是什么？") is False
+    assert is_academic_search_request("近三年柔性电子器件的关键进展是什么？") is True
     assert is_academic_search_request("把这段内容改写成论文摘要") is False
     assert normalize_academic_search_query(
         "帮我查找最新的电子信息领域相关论文，并提供链接和摘要"
@@ -215,3 +496,54 @@ def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) 
     )
     assert "event: external_retrieval.completed" in response.text
     assert "event: external_retrieval.started" not in response.text
+
+
+def test_research_knowledge_ingest_does_not_block_task_completion(
+    api, client, app
+) -> None:
+    class FakeSearch:
+        async def search(self, query: str, **_: object) -> ExternalRetrievalResult:
+            return ExternalRetrievalResult(
+                query=query,
+                normalized_query=query,
+                source_scopes=[ExternalSourceScope.WEB],
+                items=[_item()],
+                provider_status={"fake": "completed"},
+            )
+
+    class SlowResearchKnowledge:
+        started = False
+        finished = False
+
+        async def ingest(self, result, *, query: str, task_id: str):
+            del result, query, task_id
+            self.started = True
+            # Keep the background window longer than the local task's
+            # provider/fallback path so this checks scheduling semantics,
+            # not a race between two short sleeps.
+            await asyncio.sleep(1.5)
+            self.finished = True
+            return {"stored": 1}
+
+    slow = SlowResearchKnowledge()
+    app.state.settings.external_retrieval_enabled = True
+    app.state.knowledge_base.settings.external_retrieval_enabled = True
+    app.state.task_runner.external_search = FakeSearch()
+    app.state.task_runner.external_paper_reviewer = None
+    app.state.task_runner.research_knowledge = slow
+
+    session = api.create_session()
+    payload = api.task_payload(session["id"], intent="unknown")
+    payload["canonical_input"]["text"] = (
+        "\u8fd1\u4e09\u5e74\u67d4\u6027\u7535\u5b50\u5668\u4ef6\u7684"
+        "\u5173\u952e\u8fdb\u5c55\u662f\u4ec0\u4e48\uff1f"
+    )
+    response = client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"])
+
+    assert completed["status"] == "completed"
+    assert slow.started is True
+    assert slow.finished is False
+    sleep(1.6)
+    assert slow.finished is True

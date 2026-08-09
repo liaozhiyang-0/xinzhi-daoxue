@@ -42,6 +42,8 @@ class OverallRoutingService:
         self, request: AgentRequest, current: RouteDecision
     ) -> OverallRoutingOutcome:
         started = perf_counter()
+        if self._skip_for_high_confidence(current):
+            return self._fallback(current, started, "high_confidence_local_route")
         if not self._enabled():
             return self._fallback(current, started, "disabled")
         candidates = self.task_router.overall_route_candidates(request, current)
@@ -98,6 +100,11 @@ class OverallRoutingService:
             and self.hub.list_agents()
             and self.hub_available()
         )
+
+    def _skip_for_high_confidence(self, current: RouteDecision) -> bool:
+        """Avoid paying for a second router pass when the local route is decisive."""
+
+        return not self.task_router.overall_refinement_allowed(current)
 
     def hub_available(self) -> bool:
         return any(

@@ -47,6 +47,30 @@ def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:
         )
 
 
+def test_research_analysis_model_assistance_defaults_are_bounded() -> None:
+    settings = Settings(app_env="test", _env_file=None)
+
+    assert settings.research_analysis_model_assist_enabled is True
+    assert settings.research_analysis_model_assist_max_tokens == 900
+    assert settings.research_analysis_model_direct_enabled is True
+    assert settings.research_analysis_model_direct_max_tokens == 2400
+    assert settings.research_analysis_model_input_max_chars == 80_000
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="test",
+            research_analysis_model_assist_max_tokens=128,
+            _env_file=None,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="test",
+            research_analysis_model_input_max_chars=999,
+            _env_file=None,
+        )
+
+
 def test_production_requires_server_qdrant() -> None:
     with pytest.raises(ValidationError, match="QDRANT_MODE must be server"):
         Settings(

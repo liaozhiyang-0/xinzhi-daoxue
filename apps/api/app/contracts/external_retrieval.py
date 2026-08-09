@@ -50,7 +50,7 @@ class ExternalRetrievalPolicy(BaseModel):
     allow_full_text: bool = False
     require_citations: bool = True
     generation_injection: bool = False
-    timeout_seconds: float = Field(default=20, gt=0, le=120)
+    timeout_seconds: float = Field(default=90, gt=0, le=180)
     intent_gate_mode: Literal["signals_or_intent", "signals_only", "always"] = (
         "signals_or_intent"
     )

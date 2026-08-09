@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 
-from app.models import TaskModel
+from app.models import AgentRunModel, TaskModel
+from app.repositories import AgentRunRepository
+from app.runtime import AgentRun
 from app.services.answer_disclosure import INTERNAL_TEACHING_KEY
 from app.services.session_working_state import SessionWorkingStateService
 
@@ -181,6 +183,90 @@ def test_check_more_hint_switch_direct_and_refresh_restore(api, app) -> None:
     assert teaching_events[-1]["event_data"]["data"][
         "full_solution_disclosed"
     ] is True
+
+
+def test_phase2_feedback_action_uses_durable_runtime(api, app) -> None:
+    app.state.teaching_interaction_runtime.enabled = True
+    session = api.create_session()
+    checked = submit_power(
+        api,
+        session["id"],
+        options={"teaching_mode": "check_my_work"},
+    )
+
+    response = teaching_action(api, checked["id"], "request_more_hint")
+    assert response["status"] == "completed"
+    assert response["runtime_status"] == "completed"
+    assert response["runtime_run_id"]
+    assert response["approval_required"] is False
+
+    async def load_runtime() -> tuple[AgentRunModel, AgentRun]:
+        async with app.state.session_factory() as db:
+            model = await db.get(AgentRunModel, response["runtime_run_id"])
+            assert model is not None
+            restored = await AgentRunRepository(db).restore(model.id)
+            assert restored is not None
+            return model, restored
+
+    runtime_model, restored = asyncio.run(load_runtime())
+    assert runtime_model.run_kind == "teaching_interaction"
+    assert runtime_model.status == "completed"
+    assert runtime_model.plan_version == "teaching-interaction-v1"
+    assert restored.nodes["teaching.feedback.observe"].status.value == "succeeded"
+    assert restored.nodes["teaching.feedback.apply"].status.value == "succeeded"
+    assert restored.nodes["teaching.feedback.verify"].status.value == "succeeded"
+    assert restored.nodes["teaching.feedback.approval"].status.value == "skipped"
+
+    events = api.client.get(f"/api/v1/tasks/{checked['id']}/events").json()
+    runtime_events = [
+        item
+        for item in events
+        if item["event_data"]["data"].get("runtime_run_id")
+        == response["runtime_run_id"]
+    ]
+    assert runtime_events
+    assert [item["sequence"] for item in runtime_events] == sorted(
+        item["sequence"] for item in runtime_events
+    )
+
+
+def test_teaching_runtime_waits_for_and_resumes_after_teacher_approval(
+    api, app
+) -> None:
+    app.state.teaching_interaction_runtime.enabled = True
+    session = api.create_session()
+    checked = submit_power(
+        api,
+        session["id"],
+        options={"teaching_mode": "check_my_work"},
+    )
+
+    response = api.client.post(
+        "/api/v1/learning/actions",
+        json={
+            "source_task_id": checked["id"],
+            "user_id": "user-test",
+            "action": "submit_check_response",
+            "idempotency_key": "runtime-approval-0001",
+            "student_answer": "I used another method without a numeric result.",
+            "payload": {},
+        },
+    )
+    assert response.status_code == 200, response.text
+    accepted = response.json()
+    assert accepted["status"] == "accepted", accepted
+    assert accepted["runtime_status"] == "waiting_approval"
+    assert accepted["approval_required"] is True
+
+    approved = api.client.post(
+        f"/api/v1/learning/runtime/{accepted['runtime_run_id']}/approve",
+        json={},
+    )
+    assert approved.status_code == 200, approved.text
+    completed = approved.json()
+    assert completed["status"] == "completed"
+    assert completed["runtime_status"] == "completed"
+    assert completed["approval_required"] is False
 
 
 def test_check_my_work_enrichment_error_completes_with_safe_fallback(

@@ -7,6 +7,7 @@ from typing import Any
 
 from app.agents.registry import AgentDefinition, AgentRegistry, RoutingRule
 from app.contracts.agent import AgentRequest, Intent
+from app.contracts.intent import IntentRecognition
 from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
 from app.core.config import Settings
 from app.core.errors import AgentInputNotSupportedError, RouteInvalidTargetError
@@ -15,6 +16,7 @@ from app.services.external_research_answer import (
     is_academic_search_follow_up,
     is_academic_search_request,
 )
+from app.services.intent_recognition import IntentRecognitionService
 from app.services.request_materials import RequestMaterialExtractor
 
 GENERAL_QUESTION_AGENT_ID = "GENERAL_QUESTION_V1"
@@ -46,7 +48,7 @@ AGENT_INTENT = {
     "ACADEMIC_PROBLEM_SOLVER": "solve_problem",
     "TEACH_01_LESSON_PREP_V1": "lesson_prep",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "assignment_review",
-    "RESEARCH_01_ACADEMIC_SEARCH_V1": "general_qa",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "academic_search",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "academic_writing",
     "RESEARCH_03_DATA_ANALYSIS_V1": "data_analysis",
 }
@@ -91,9 +93,9 @@ OVERALL_ROUTE_CATALOG = (
     },
     {
         "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
-        "label": "学术论文检索",
-        "description": "从外部学术来源查找论文、文献或最新研究。",
-        "selection_hint": "查找、推荐、最新、相关论文或文献。",
+        "label": "科研前沿检索与证据简报",
+        "description": "从论文、报道和会议来源整理带证据边界的科研前沿简报。",
+        "selection_hint": "研究进展、趋势、最新论文、行业报道、会议或技术对比。",
     },
     {
         "agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
@@ -128,8 +130,19 @@ class TaskRouter:
         self.registry = registry
         self.settings = settings or Settings()
         self.material_extractor = RequestMaterialExtractor()
+        self.intent_recognizer = IntentRecognitionService()
 
     def route(self, request: AgentRequest) -> RouteDecision:
+        recognition = self.intent_recognizer.recognize(request)
+        # The first rollout is additive: legacy rules remain authoritative for
+        # route compatibility, while structured recognition is available to
+        # planning and later model refinement.
+        decision = self._route_legacy(request, recognition)
+        return self._attach_intent_context(decision, recognition)
+
+    def _route_legacy(
+        self, request: AgentRequest, recognition: IntentRecognition
+    ) -> RouteDecision:
         material = self.material_extractor.extract(request)
         course_id, course_reasons = self._detect_course(request, material.raw_text)
         input_type = self._input_type(request)
@@ -172,8 +185,22 @@ class TaskRouter:
             material.raw_text,
             previous_agent=previous_agent,
             previous_answer_summary=previous_answer_summary,
+            previous_query=str(request.options.get("previous_external_query", "")),
         )
-        if is_academic_search_request(material.raw_text) or is_search_follow_up:
+        research_alias_allowed = recognition.intent not in {
+            Intent.ACADEMIC_WRITING.value,
+            Intent.DATA_ANALYSIS.value,
+        }
+        if (
+            recognition.intent == Intent.ACADEMIC_SEARCH.value
+            or (
+                research_alias_allowed
+                and (
+                    is_academic_search_request(material.raw_text)
+                    or is_search_follow_up
+                )
+            )
+        ):
             decision = self._decision_for_target(
                 "RESEARCH_01_ACADEMIC_SEARCH_V1",
                 request,
@@ -194,6 +221,59 @@ class TaskRouter:
                     "visited_agents": ["RESEARCH_01_ACADEMIC_SEARCH_V1"],
                 }
             )
+        recognized_workflow_intent = recognition.intent in {
+            Intent.ACADEMIC_WRITING.value,
+            Intent.DATA_ANALYSIS.value,
+        }
+        if (
+            recognized_workflow_intent
+            and recognition.confidence >= 0.80
+            and request.intent in {Intent.UNKNOWN, Intent.GENERAL_QA}
+        ):
+            target_agent_id = INTENT_AGENT[recognition.intent]
+            decision = self._decision_for_target(
+                target_agent_id,
+                request,
+                course_id=course_id,
+                intent=recognition.intent,
+                input_type=input_type,
+                confidence=recognition.confidence,
+            )
+            return decision.model_copy(
+                update={
+                    "reason": "本地意图识别已确认研究工作流，直接进入对应 Agent",
+                    "route_source": "local_intent_recognition",
+                    "reason_codes": course_reasons
+                    + [f"recognized_intent:{recognition.intent}"],
+                    "local_confidence": recognition.confidence,
+                    "route_confidence": recognition.confidence,
+                    "secondary_intents": scored.secondary_intents,
+                    "requires_pipeline": scored.requires_pipeline,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": AGENT_ROLE.get(
+                        target_agent_id, request.user_role.value
+                    ),
+                    "visited_agents": [target_agent_id],
+                }
+            )
+        if (
+            "topic_outside_course" in course_reasons
+            and request.intent in {Intent.UNKNOWN, Intent.GENERAL_QA}
+        ):
+            general_decision = self._general_question_decision(
+                request=request,
+                course_id="UNKNOWN",
+                input_type=input_type,
+                confidence=0.86,
+                candidates=[],
+                course_reasons=course_reasons,
+                material_extraction=material.model_dump(mode="json"),
+                reason="识别到非课程领域问题，切换通用回答能力并停止课程资料检索",
+                route_source="local_topic_boundary",
+                extra_reason_codes=["topic_outside_course"],
+            )
+            if general_decision is not None:
+                return general_decision
         general_qa_problem_override = (
             request.intent == Intent.GENERAL_QA
             and "domain_contract:academic_problem_language"
@@ -258,10 +338,7 @@ class TaskRouter:
             and best.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
             and confidence <= 0.72
             and any(code.startswith("keywords:") for code in best.reason_codes)
-            and all(
-                code.startswith("keywords:")
-                for code in best.reason_codes
-            )
+            and all(code.startswith("keywords:") for code in best.reason_codes)
         )
         if general_without_course:
             general_decision = self._general_question_decision(
@@ -279,9 +356,15 @@ class TaskRouter:
             if general_decision is not None:
                 return general_decision
         strong_conflict = runner_up.score >= 0.70 and not scored.requires_pipeline
+        research_frontier_direct = (
+            best.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1" and confidence >= 0.80
+        )
         direct = explicit_intent or (
-            not strong_conflict
-            and (confidence >= 0.85 or (confidence >= 0.60 and score_gap >= 0.10))
+            research_frontier_direct
+            or (
+                not strong_conflict
+                and (confidence >= 0.85 or (confidence >= 0.60 and score_gap >= 0.10))
+            )
         )
         if direct:
             decision = self._decision_for_target(
@@ -385,6 +468,69 @@ class TaskRouter:
             ),
             material_extraction=material.model_dump(mode="json"),
             inferred_user_role=request.user_role.value,
+        )
+
+    @staticmethod
+    def _attach_intent_context(
+        decision: RouteDecision, recognition: Any
+    ) -> RouteDecision:
+        reason_codes = list(
+            dict.fromkeys(
+                [
+                    *recognition.reason_codes,
+                    "structured_intent",
+                    *decision.reason_codes,
+                ]
+            )
+        )
+        # The selected business route remains authoritative for legacy
+        # solver/teaching semantics.  The one former alias that caused a real
+        # cross-layer conflict was research being persisted as ``general_qa``.
+        # Normalize that case while keeping a solver route from being changed
+        # to ``general_qa`` by a conservative recognizer.
+        normalized_intent = decision.intent
+        if (
+            recognition.intent == Intent.ACADEMIC_SEARCH.value
+            and decision.agent_id
+            in {"RESEARCH_01_ACADEMIC_SEARCH_V1", GENERAL_QUESTION_AGENT_ID}
+        ):
+            normalized_intent = Intent.ACADEMIC_SEARCH.value
+        recognition = IntentRecognitionService.align_to_intent(
+            recognition, normalized_intent
+        )
+        payload = recognition.model_dump(mode="json")
+        reason_codes = list(
+            dict.fromkeys(
+                [
+                    *recognition.reason_codes,
+                    "structured_intent",
+                    *decision.reason_codes,
+                ]
+            )
+        )
+        return decision.model_copy(
+            update={
+                "intent": normalized_intent,
+                "intent_recognition": payload,
+                "capabilities": list(recognition.capabilities),
+                "selected_tools": list(recognition.selected_tools),
+                "selected_skills": list(recognition.selected_skills),
+                "route_mode": recognition.route_mode,
+                "complexity": recognition.complexity,
+                "needs_subagents": recognition.needs_subagents,
+                "parallelizable": recognition.parallelizable,
+                "reason_codes": reason_codes,
+                "route_trace": decision.route_trace
+                or [
+                    {
+                        "stage": "deterministic",
+                        "source": decision.route_source,
+                        "agent_id": decision.agent_id,
+                        "intent": normalized_intent,
+                        "confidence": decision.route_confidence,
+                    }
+                ],
+            }
         )
 
     def _general_question_decision(
@@ -500,6 +646,9 @@ class TaskRouter:
     ) -> RouteDecision | None:
         """Validate and materialize a model-selected route."""
 
+        if not self.overall_refinement_allowed(current):
+            return None
+
         allowed = {str(item["agent_id"]) for item in OVERALL_ROUTE_CATALOG}
         if target_agent_id not in allowed:
             return None
@@ -532,6 +681,16 @@ class TaskRouter:
             if target_agent_id == GENERAL_QUESTION_AGENT_ID
             else AGENT_INTENT.get(target_agent_id, current.intent)
         )
+        recognized_intent = str(current.intent_recognition.get("intent", ""))
+        if target_agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1":
+            selected_intent = Intent.ACADEMIC_SEARCH.value
+        elif (
+            recognized_intent == Intent.ACADEMIC_SEARCH.value
+            and current.route_confidence >= 0.85
+        ):
+            # A bounded refiner must not turn a high-confidence research
+            # request into writing/general QA because the word "paper" occurs.
+            return None
         if selected_intent not in {item.value for item in Intent}:
             selected_intent = (
                 Intent.GENERAL_QA.value
@@ -549,6 +708,10 @@ class TaskRouter:
             )
         except (KeyError, AgentInputNotSupportedError):
             return None
+        aligned_recognition = IntentRecognitionService.align_to_intent(
+            IntentRecognition.model_validate(current.intent_recognition or {}),
+            selected_intent,
+        )
         visited = list(dict.fromkeys([*current.visited_agents, target_agent_id]))
         return decision.model_copy(
             update={
@@ -578,7 +741,65 @@ class TaskRouter:
                 ),
                 "visited_agents": visited,
                 "reroute_count": current.reroute_count + 1,
+                "intent_recognition": aligned_recognition.model_dump(mode="json"),
+                "capabilities": list(aligned_recognition.capabilities),
+                "selected_tools": list(aligned_recognition.selected_tools),
+                "selected_skills": list(aligned_recognition.selected_skills),
+                "route_mode": aligned_recognition.route_mode,
+                "complexity": aligned_recognition.complexity,
+                "needs_subagents": aligned_recognition.needs_subagents,
+                "parallelizable": aligned_recognition.parallelizable,
+                "route_revision": current.route_revision + 1,
+                "route_trace": [
+                    *current.route_trace,
+                    {
+                        "stage": "overall_refinement",
+                        "source": "overall_router",
+                        "from_agent_id": current.agent_id,
+                        "to_agent_id": target_agent_id,
+                        "from_intent": current.intent,
+                        "to_intent": selected_intent,
+                        "confidence": max(0.0, min(1.0, confidence)),
+                        "reason": reason.strip()
+                        or "overall router selected a validated path",
+                    },
+                ],
             }
+        )
+
+    def overall_refinement_allowed(self, current: RouteDecision) -> bool:
+        """Apply the single policy boundary for a second routing pass."""
+
+        if current.route_status != RouteStatus.SELECTED:
+            return True
+        if any(
+            code in {
+                "scenario_catalog_bound",
+                "admin_debug_override",
+                "session_continuity",
+            }
+            or code.startswith("explicit_intent:")
+            for code in current.reason_codes
+        ):
+            return False
+        structured_intent = str(current.intent_recognition.get("intent", ""))
+        if (
+            structured_intent == Intent.ACADEMIC_SEARCH.value
+            and current.route_confidence >= 0.80
+        ):
+            return False
+        if (
+            structured_intent
+            in {Intent.ACADEMIC_WRITING.value, Intent.DATA_ANALYSIS.value}
+            and float(current.intent_recognition.get("confidence", 0.0)) >= 0.80
+        ):
+            return False
+        threshold = self.settings.overall_routing_skip_confidence_threshold
+        return not (
+            current.local_confidence >= threshold
+            and current.route_confidence >= threshold
+            and not current.needs_subagents
+            and not current.requires_pipeline
         )
 
     def _availability(
@@ -612,6 +833,10 @@ class TaskRouter:
     @staticmethod
     def _detect_course(request: AgentRequest, text: str) -> tuple[str, list[str]]:
         explicit = request.course_id.upper().strip()
+        # A strong cross-domain signal wins over a stale UI course hint. This
+        # prevents a new AI/TCP question from inheriting the previous course.
+        if IntentRecognitionService.is_cross_domain_topic(text):
+            return "UNKNOWN", ["topic_outside_course", "course_hint_overridden"]
         if explicit in {
             "CT",
             "AE",
@@ -626,6 +851,40 @@ class TaskRouter:
             "IC",
         }:
             return explicit, ["explicit_course_hint"]
+        non_course_topic_markers = (
+            "人工智能",
+            "机器学习",
+            "深度学习",
+            "生成式人工智能",
+            "大模型",
+            "transformer",
+            "self-attention",
+            "attention mechanism",
+            "natural language processing",
+            "computer vision",
+            "large language model",
+            "tcp",
+            "tcp/ip",
+            "syn+ack",
+            "三次握手",
+            "网络协议",
+            "计算机网络",
+            "http",
+            "https",
+            "dns",
+            "websocket",
+            "操作系统",
+            "数据库",
+            "sql",
+            "linux",
+            "python",
+            "javascript",
+        )
+        if any(
+            marker.casefold() in text.casefold()
+            for marker in non_course_topic_markers
+        ):
+            return "UNKNOWN", ["topic_outside_course"]
         scores = {
             "CT": sum(
                 token in text
@@ -696,15 +955,38 @@ class TaskRouter:
         # here as a second line of defense for those callers.
         for course, keywords in {
             "CT": (
-                "电路理论", "戴维宁", "诺顿", "电感", "暂态", "稳态",
-                "基尔霍夫", "KCL", "KVL",
+                "电路理论",
+                "戴维宁",
+                "诺顿",
+                "电感",
+                "暂态",
+                "稳态",
+                "基尔霍夫",
+                "KCL",
+                "KVL",
             ),
             "AE": (
-                "模拟电路", "运算放大器", "二极管", "反馈", "振荡", "稳压",
-                "开关稳压", "线性稳压", "整流", "滤波", "晶体管", "MOS管",
+                "模拟电路",
+                "运算放大器",
+                "二极管",
+                "反馈",
+                "振荡",
+                "稳压",
+                "开关稳压",
+                "线性稳压",
+                "整流",
+                "滤波",
+                "晶体管",
+                "MOS管",
             ),
             "DE": (
-                "数字电路", "逻辑", "锁存器", "计数器", "寄存器", "时序逻辑", "组合逻辑"
+                "数字电路",
+                "逻辑",
+                "锁存器",
+                "计数器",
+                "寄存器",
+                "时序逻辑",
+                "组合逻辑",
             ),
             "SS": ("信号与系统", "卷积", "拉普拉斯变换"),
             "DSP": ("数字信号处理", "离散傅里叶", "z变换", "滤波器"),
@@ -722,6 +1004,8 @@ class TaskRouter:
         if scores[best] > 0 and list(scores.values()).count(scores[best]) == 1:
             return best, [f"detected_course:{best}"]
         previous = str(request.options.get("previous_course", "")).upper()
+        if previous == "UNKNOWN":
+            return "UNKNOWN", ["inherited_previous_course"]
         if previous in scores:
             return previous, ["inherited_previous_course"]
         return "CT", ["course_unspecified_default_context"]
@@ -781,6 +1065,31 @@ class TaskRouter:
                     "Results",
                 ),
                 0.72,
+            ),
+            (
+                "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                (
+                    "\u5173\u952e\u8fdb\u5c55",
+                    "\u8fd1\u4e09\u5e74",
+                    "\u4ea7\u4e1a\u62a5\u9053",
+                    "研究进展",
+                    "研究现状",
+                    "前沿",
+                    "趋势",
+                    "最新研究",
+                    "近期研究",
+                    "技术进展",
+                    "行业报道",
+                    "会议",
+                    "conference",
+                    "workshop",
+                    "news",
+                    "state of the art",
+                    "检索",
+                    "查找资料",
+                    "推荐文献",
+                ),
+                0.86,
             ),
             (
                 "RESEARCH_03_DATA_ANALYSIS_V1",
@@ -844,9 +1153,27 @@ class TaskRouter:
                 )
 
         knowledge_markers = (
-            "为什么", "是什么", "什么是", "解释", "讲解", "说明", "介绍",
-            "原理", "概念", "特点", "区别", "作用", "如何理解", "怎么理解",
-            "用途", "应用", "本地知识库", "本地资料", "课程资料", "知识库", "检索",
+            "为什么",
+            "是什么",
+            "什么是",
+            "解释",
+            "讲解",
+            "说明",
+            "介绍",
+            "原理",
+            "概念",
+            "特点",
+            "区别",
+            "作用",
+            "如何理解",
+            "怎么理解",
+            "用途",
+            "应用",
+            "本地知识库",
+            "本地资料",
+            "课程资料",
+            "知识库",
+            "检索",
         )
         knowledge_hits = [
             token for token in knowledge_markers if token.casefold() in text.casefold()
@@ -982,33 +1309,30 @@ class TaskRouter:
                 "contextual_keyword:statistical_variable",
             )
 
-        dynamic_circuit_problem = (
-            any(
-                token in text
-                for token in (
-                    "电路",
-                    "电容",
-                    "电感",
-                    "受控源",
-                    "节点电压",
-                    "KCL",
-                    "KVL",
-                )
+        dynamic_circuit_problem = any(
+            token in text
+            for token in (
+                "电路",
+                "电容",
+                "电感",
+                "受控源",
+                "节点电压",
+                "KCL",
+                "KVL",
             )
-            and any(
-                token in text
-                for token in (
-                    "换路初始条件",
-                    "状态方程",
-                    "微分方程",
-                    "完整响应",
-                    "自由响应",
-                    "强迫响应",
-                    "自然频率",
-                    "阻尼类型",
-                    "零点",
-                    "能量平衡",
-                )
+        ) and any(
+            token in text
+            for token in (
+                "换路初始条件",
+                "状态方程",
+                "微分方程",
+                "完整响应",
+                "自由响应",
+                "强迫响应",
+                "自然频率",
+                "阻尼类型",
+                "零点",
+                "能量平衡",
             )
         )
         if dynamic_circuit_problem:
@@ -1064,7 +1388,26 @@ class TaskRouter:
         previous_agent = str(request.options.get("previous_agent", ""))
         follow_up = any(
             token in text
-            for token in ("刚才", "上面", "之前", "这个", "压缩成", "改成")
+            for token in (
+                "刚才",
+                "上面",
+                "之前",
+                "上一轮",
+                "这个",
+                "这些",
+                "接着",
+                "继续",
+                "然后",
+                "另外",
+                "还有",
+                "额外",
+                "补充",
+                "再提供",
+                "更多",
+                "进一步",
+                "压缩成",
+                "改成",
+            )
         )
         writing_switch = any(
             token in text
@@ -1133,12 +1476,21 @@ class TaskRouter:
             for item in request.attachments
             if item.content_type.startswith("image/")
         ]
+        data_files = [
+            item
+            for item in request.attachments
+            if not item.content_type.startswith("image/")
+        ]
+        if images and data_files:
+            return "mixed"
         if len(images) > 1:
             return "text_and_multi_image" if has_text else "multi_image"
         if has_text and images:
             return "text_and_single_image"
         if images:
             return "single_image"
+        if data_files:
+            return "text_and_data_file" if has_text else "data_file"
         if has_text:
             return "text"
         if request.attachments:
@@ -1160,17 +1512,22 @@ class TaskRouter:
         fallback_used = False
         source = "local_fast"
         cloud_allowed = self._cloud_allowed(request)
+        local_analysis_v2 = (
+            primary.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+            and isinstance(request.options.get("research_analysis_v2"), dict)
+        )
         internal_available = internal_workflow_models_configured(
             self.settings, primary.agent_id
+        ) or local_analysis_v2
+        runtime_available = local_analysis_v2 or self.registry.is_runtime_available(
+            primary.agent_id, self.settings
         )
         local_only = (
             primary.provider == "xingchen"
             and not cloud_allowed
             and not internal_available
         )
-        if local_only or not self.registry.is_runtime_available(
-            primary.agent_id, self.settings
-        ):
+        if local_only or not runtime_available:
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback is not None and self.registry.is_runtime_available(
                 fallback.agent_id, self.settings
@@ -1233,14 +1590,9 @@ class TaskRouter:
             and not internal_available
         )
 
-        if (
-            local_only
-            or (
-                not primary.route_when_unconfigured
-                and not self.registry.is_runtime_available(
-                    primary.agent_id, self.settings
-                )
-            )
+        if local_only or (
+            not primary.route_when_unconfigured
+            and not self.registry.is_runtime_available(primary.agent_id, self.settings)
         ):
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback and (
@@ -1361,11 +1713,21 @@ class TaskRouter:
         confidence = payload.get("confidence", 0.5)
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
             confidence = 0.5
+        target_intent = AGENT_INTENT.get(target.agent_id, request.intent.value)
+        routing = request.options.get("_routing", {})
+        prior_recognition = (
+            routing.get("intent_recognition", {})
+            if isinstance(routing, dict)
+            else {}
+        )
+        aligned_recognition = IntentRecognitionService.align_to_intent(
+            IntentRecognition.model_validate(prior_recognition), target_intent
+        )
         return RouteDecision(
             agent_id=target.agent_id,
             scene=target.scene,
             course_id=request.course_id.upper(),
-            intent=request.intent.value,
+            intent=target_intent,
             route_status=RouteStatus.SELECTED,
             reason="validated one-pass cloud dispatch target",
             retrieval_required=target.mode != "routing_only",
@@ -1374,4 +1736,22 @@ class TaskRouter:
             route_confidence=max(0.0, min(1.0, float(confidence))),
             fallback_used=True,
             original_agent_id="ROUTER_01_FALLBACK_V1",
+            intent_recognition=aligned_recognition.model_dump(mode="json"),
+            capabilities=list(aligned_recognition.capabilities),
+            selected_tools=list(aligned_recognition.selected_tools),
+            selected_skills=list(aligned_recognition.selected_skills),
+            route_mode=aligned_recognition.route_mode,
+            complexity=aligned_recognition.complexity,
+            needs_subagents=aligned_recognition.needs_subagents,
+            parallelizable=aligned_recognition.parallelizable,
+            route_trace=[
+                {
+                    "stage": "cloud_refinement",
+                    "source": "cloud_fallback",
+                    "from_agent_id": "ROUTER_01_FALLBACK_V1",
+                    "to_agent_id": target.agent_id,
+                    "intent": target_intent,
+                    "confidence": max(0.0, min(1.0, float(confidence))),
+                }
+            ],
         )

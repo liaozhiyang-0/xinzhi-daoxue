@@ -45,13 +45,20 @@ class SessionWorkingStateService:
             student_attempt_present=request.options.get("student_attempt") is not None,
             updated_at=utc_now(),
         )
+        routing = request.options.get("_routing", {})
+        routing = routing if isinstance(routing, dict) else {}
+        recognition = routing.get("intent_recognition", {})
+        recognition = recognition if isinstance(recognition, dict) else {}
+        task_family = str(
+            request.options.get("task_family")
+            or recognition.get("task_family")
+            or request.intent.value
+        )
         state = current.model_copy(
             update={
                 "current_goal": question[:300],
                 "current_course": request.course_id.upper(),
-                "current_task_family": str(
-                    request.options.get("task_family", request.intent.value)
-                ),
+                "current_task_family": task_family,
                 "user_corrections": corrections,
                 "referenced_message_ids": (
                     list(current.referenced_message_ids) + [message_id]

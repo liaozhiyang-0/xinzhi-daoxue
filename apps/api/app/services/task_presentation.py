@@ -21,7 +21,7 @@ TASK_LABELS = {
     "SOLVER_CT_V1": "电路解题",
     "TEACH_01_LESSON_PREP_V1": "教案设计",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "作业批改",
-    "RESEARCH_01_ACADEMIC_SEARCH_V1": "学术论文检索",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "科研前沿检索与证据简报",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "学术写作",
     "RESEARCH_03_DATA_ANALYSIS_V1": "数据分析",
 }
@@ -62,10 +62,22 @@ def build_task_views(
         external_retrieval if isinstance(external_retrieval, dict) else {}
     )
     external_count = len(external_retrieval.get("items", []))
+    external_attempted = bool(
+        external_retrieval.get("status")
+        or external_retrieval.get("provider_status")
+        or external_retrieval.get("warnings")
+        or external_retrieval.get("search_queries")
+    )
     course_label = COURSE_LABELS.get(result.course_id, result.course_id or "课程")
     is_solver = rag_mode == RAGInteractionMode.METHOD_REFERENCE
     is_general = definition.agent_id == "GENERAL_QUESTION_V1"
     is_local_research = definition.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    is_local_knowledge_fallback = (
+        result.structured_result.get("answer_mode") == "local_knowledge_fallback"
+    )
+    is_no_verified_evidence = (
+        result.structured_result.get("answer_mode") == "no_verified_evidence"
+    )
     is_external_search_result = bool(
         result.structured_result.get("external_search", False)
     )
@@ -85,14 +97,49 @@ def build_task_views(
     used_count = len(used_ids)
     evidence_count = len(bundle.evidence_items) if bundle else 0
     workflow_count = len(bundle.workflow_evidence_ids) if bundle else 0
+    external_items = external_retrieval.get("items", [])
+    academic_external_count = sum(
+        1
+        for item in external_items
+        if isinstance(item, dict) and item.get("source_type") == "academic_paper"
+    )
+    conference_external_count = sum(
+        1
+        for item in external_items
+        if isinstance(item, dict)
+        and isinstance(item.get("metadata"), dict)
+        and item["metadata"].get("category") == "conference"
+    )
+    web_external_count = max(
+        0, external_count - academic_external_count - conference_external_count
+    )
     if external_count:
-        source_summary = f"外部论文 {external_count} 篇"
-        evidence_message = "已完成外部学术检索；在资料依据中可查看摘要、来源和原文链接"
+        source_parts = []
+        if academic_external_count:
+            source_parts.append(f"论文 {academic_external_count}")
+        if web_external_count:
+            source_parts.append(f"报道 {web_external_count}")
+        if conference_external_count:
+            source_parts.append(f"会议 {conference_external_count}")
+        source_summary = "外部证据 · " + " / ".join(source_parts)
+        evidence_message = "已完成多源网络检索；右侧可查看来源摘要、检索时间和原文链接"
+    elif is_local_research and is_no_verified_evidence:
+        source_summary = "当前主题暂无可核验证据"
+        evidence_message = ""
+    elif is_local_research and is_local_knowledge_fallback:
+        source_summary = "本地知识初步回答"
+        evidence_message = (
+            "已按多个科研子问题组织回答；当前内容未绑定外部论文，具体文献和定量数据需后续核验"
+        )
+    elif is_local_research and external_attempted:
+        source_summary = "外部检索未形成可展示证据"
+        evidence_message = (
+            "已执行论文、报道等外部检索，但候选结果未通过摘要完整性或相关性审核；"
+            "当前回答不把未通过审核的候选当作依据。"
+        )
     elif is_local_research:
         source_summary = "本地模型知识"
-        evidence_message = (
-            "本次使用本地智能体回答，未调用外部论文检索；具体文献需人工核验"
-        )
+        evidence_message = "本次未触发外部论文检索；具体文献需人工核验"
     elif is_solver:
         source_summary = (
             f"方法参考 {evidence_count} 条" if evidence_count else "暂无方法参考"
@@ -152,6 +199,14 @@ def build_task_views(
         answer_quality_status = "checked"
         answer_quality_message = (
             "检索结果已完成来源、时间和链接字段整理；摘要内容仍建议打开原文核对。"
+        )
+    elif is_local_research and is_no_verified_evidence:
+        answer_quality_status = "insufficient"
+        answer_quality_message = ""
+    elif is_local_research and is_local_knowledge_fallback:
+        answer_quality_status = "provisional"
+        answer_quality_message = (
+            "回答已生成，但当前基于本地知识框架，未使用外部文献作为直接依据"
         )
     elif (
         (is_general or is_local_research)

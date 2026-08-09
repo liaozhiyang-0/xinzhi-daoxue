@@ -1,11 +1,30 @@
-# 03 Demo 使用说明（待项目负责人填写）
+# 03 Demo 使用说明
 
-本文件保留为空间，等待项目负责人设计三个演示案例。自动化维护不会替项目负责人决定案例主题、输入数据、账号或演示脚本。
+五个待打磨商业案例的逐案演示脚本位于 `docs/commercial_cases/`：
 
-每个案例完成后建议补充：
+- `faculty_course_copilot_v1.md`
+- `assessment_diagnosis_v1.md`
+- `student_learning_path_v1.md`
+- `research_data_workbench_v1.md`
+- `department_knowledge_governance_v1.md`
 
-- 目标用户和教学/科研问题
-- 脱敏输入与预期操作路径
-- 使用的课程资产、工具和证据引用
-- AI 生成内容、工具校验结果和教师复核点
-- 可重复启动命令、清理步骤和已知风险
+科研前沿案例为已完成基线，运行时与证据边界见 `apps/api/app/services/research_frontier_service.py` 和 `docs/implementation/p61_contest_scenario_catalog.md`。
+
+每个场景在 `config/scenarios.yaml` 中有6个独立演示步骤，前端 `/demo` 从场景目录读取步骤、买方、交付价值和运行预检；点击后进入 `/workspace?scenario_id=...`，任务创建保持 `202` 非阻塞。演示输入只使用脱敏或合成内容，Mock/本地 fallback 必须在页面状态中显式标注。
+
+## 可复现检查
+
+```powershell
+$env:PYTHONPATH = "apps/api"
+.venv\Scripts\python.exe scripts\validate_scenarios.py
+.venv\Scripts\python.exe scripts\validate_commercial_scenarios.py
+.venv\Scripts\python.exe scripts\run_commercial_scenario_preflight.py
+.venv\Scripts\python.exe -m pytest apps\api\tests\test_scenarios_api.py apps\api\tests\test_scenario_preflight.py -q --no-cov
+```
+
+## 演示边界
+
+- `production_ready=false` 只能演示本地 Agent、Mock 或声明的 fallback，不得描述为真实 Provider 结果。
+- 证据策略要求人工复核时，必须展示 `pending_manual_review`/`needs_manual_review`，不得自动发布。
+- 未提供真实数据时，数据分析案例只能展示计划或 `insufficient_data`。
+- 没有授权的学生资料、课程原始 YAML、密钥和 Flow ID 不进入提交包。

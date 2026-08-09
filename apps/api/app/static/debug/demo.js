@@ -26,7 +26,7 @@ function scenarioTheme(scenario, index) {
     number: String(index + 1).padStart(2, "0"),
     title: scenario.name,
     goal: `${scenario.summary} 客户：${scenario.commercialization.buyer}`,
-    duration: `${scenario.demo_steps?.length || 0} 个演示步骤`,
+    duration: `${scenario.demo_steps?.length || 0} 个可操作演示`,
     capability: scenario.agent_id,
     value: scenario.commercialization.value_capture,
     readiness: "预检中",
@@ -121,7 +121,7 @@ async function loadLastTrace() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "demo", title: "演示中心", description: "六个商业化场景与真实任务 Trace" });
+  initShell({ page: "demo", title: "演示中心", description: "六个商业化场景与独立演示路径" });
   if (presentation) $("#presentation-link").hidden = true;
   $("#check-last-trace").addEventListener("click", loadLastTrace);
   loadScenarios();

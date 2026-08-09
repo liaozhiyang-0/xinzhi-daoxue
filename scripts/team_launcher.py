@@ -34,6 +34,7 @@ SECRET_NAMES = (
 )
 COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
+FRONTEND_BUILD_ID = "20260808-research-analysis-v13"
 
 
 class LaunchError(RuntimeError):
@@ -228,6 +229,119 @@ def api_ready(base_url: str) -> bool:
         return False
 
 
+def frontend_build_ready(base_url: str) -> bool:
+    """Return whether the running service serves the current frontend build."""
+
+    try:
+        with urlopen(f"{base_url}/workspace", timeout=2) as response:  # noqa: S310
+            html = response.read().decode("utf-8", errors="replace")
+        return (
+            f"ui-core.js?v={FRONTEND_BUILD_ID}" in html
+            and f"workspace.js?v={FRONTEND_BUILD_ID}" in html
+        )
+    except (URLError, TimeoutError, OSError, UnicodeError):
+        return False
+
+
+def _listening_pids(port: int) -> list[int]:
+    """Find local listeners without using a broad process termination."""
+
+    if os.name == "nt":
+        result = run_command(["netstat", "-ano", "-p", "tcp"], capture=True)
+        if result.returncode != 0:
+            return []
+        pids: set[int] = set()
+        for line in result.stdout.splitlines():
+            columns = line.split()
+            if len(columns) < 5 or columns[0].upper() != "TCP":
+                continue
+            if columns[3].upper() != "LISTENING":
+                continue
+            local_port = columns[1].rsplit(":", 1)[-1]
+            if local_port == str(port) and columns[4].isdigit():
+                pids.add(int(columns[4]))
+        return sorted(pids)
+
+    result = run_command(["lsof", "-ti", f"tcp:{port}"], capture=True)
+    if result.returncode != 0:
+        return []
+    return sorted({int(value) for value in result.stdout.split() if value.isdigit()})
+
+
+def _process_command_line(pid: int) -> str:
+    if os.name == "nt":
+        result = run_command(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_Process "
+                f"-Filter 'ProcessId={pid}').CommandLine",
+            ],
+            capture=True,
+        )
+        return result.stdout.strip()
+    result = run_command(["ps", "-p", str(pid), "-o", "command="], capture=True)
+    return result.stdout.strip()
+
+
+def stop_stale_api(port: int) -> None:
+    """Stop only an old Uvicorn process belonging to this application."""
+
+    candidates = []
+    for pid in _listening_pids(port):
+        command_line = _process_command_line(pid).lower()
+        if "uvicorn" in command_line and "app.main:app" in command_line:
+            candidates.append(pid)
+    if not candidates:
+        raise LaunchError(
+            f"端口 {port} 上运行的是未知服务，未自动终止；请先手动停止后重试。"
+        )
+    for pid in candidates:
+        command = (
+            ["taskkill", "/PID", str(pid), "/T", "/F"]
+            if os.name == "nt"
+            else ["kill", str(pid)]
+        )
+        result = run_command(command, capture=True)
+        if result.returncode != 0:
+            raise LaunchError(f"旧 Web 进程 {pid} 停止失败，请手动重启。")
+    deadline = time.time() + 10
+    while time.time() < deadline and owned_api_pids(port):
+        time.sleep(0.25)
+    remaining = owned_api_pids(port)
+    if remaining and os.name == "nt":
+        for pid in remaining:
+            run_command(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-Command",
+                    f"Stop-Process -Id {pid} -Force",
+                ],
+                capture=True,
+            )
+        deadline = time.time() + 5
+        while time.time() < deadline and owned_api_pids(port):
+            time.sleep(0.25)
+    remaining = owned_api_pids(port)
+    if remaining:
+        raise LaunchError(
+            f"旧 Web 进程仍未退出（PID {','.join(map(str, remaining))}），请手动重启。"
+        )
+
+
+def owned_api_pids(port: int) -> list[int]:
+    """Return only Uvicorn processes that belong to this application."""
+
+    owned: list[int] = []
+    for pid in _listening_pids(port):
+        command_line = _process_command_line(pid).lower()
+        if "uvicorn" in command_line and "app.main:app" in command_line:
+            owned.append(pid)
+    return owned
+
+
 def open_workspace(base_url: str) -> bool:
     url = f"{base_url.rstrip('/')}/workspace"
     try:
@@ -307,6 +421,24 @@ def command_start(args: argparse.Namespace) -> int:
     if not (3, 11) <= sys.version_info[:2] < (3, 14):
         raise LaunchError("需要 Python 3.11-3.13；当前 Python 版本不受支持。")
     base_url = f"http://127.0.0.1:{args.port}"
+    running_pids = owned_api_pids(args.port)
+    if getattr(args, "force_reload", False) and api_ready(base_url):
+        if not running_pids:
+            raise LaunchError(
+                f"端口 {args.port} 上的服务不是本项目 Uvicorn，未自动终止"
+            )
+        print("[xzd] 按请求强制重载本项目 Web 服务")
+        stop_stale_api(args.port)
+        running_pids = []
+    if api_ready(base_url):
+        if len(running_pids) == 0:
+            raise LaunchError(
+                f"端口 {args.port} 上运行的是未知服务，未自动复用；请先手动停止后重试。"
+            )
+        if not frontend_build_ready(base_url) or len(running_pids) > 1:
+            reason = "重复 Web 进程" if len(running_pids) > 1 else "旧版 Web 服务"
+            print(f"[xzd] 检测到{reason}，正在重启以加载最新代码和前端。")
+            stop_stale_api(args.port)
     if api_ready(base_url):
         print(f"[xzd] 服务已经运行：{base_url}")
         if args.open_browser:
@@ -428,6 +560,11 @@ def build_parser() -> argparse.ArgumentParser:
     start = commands.add_parser("start", help="准备环境并启动完整本地应用")
     start.add_argument("--port", type=int, default=8000)
     start.add_argument("--reload", action="store_true", help="开发时启用代码热重载")
+    start.add_argument(
+        "--force-reload",
+        action="store_true",
+        help="仅重启已识别的本项目 Uvicorn 服务并加载最新代码",
+    )
     start.add_argument(
         "--refresh-deps", action="store_true", help="强制刷新 Python 依赖"
     )

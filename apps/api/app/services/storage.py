@@ -25,7 +25,10 @@ ALLOWED_EXTENSIONS = {
     ".md",
     ".txt",
     ".csv",
+    ".tsv",
     ".json",
+    ".xlsx",
+    ".parquet",
     ".doc",
     ".docx",
 }
@@ -38,7 +41,13 @@ ALLOWED_CONTENT_TYPES = {
     ".md": {"text/markdown", "text/plain"},
     ".txt": {"text/plain"},
     ".csv": {"text/csv", "text/plain"},
+    ".tsv": {"text/tab-separated-values", "text/plain", "application/octet-stream"},
     ".json": {"application/json", "text/plain"},
+    ".xlsx": {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/octet-stream",
+    },
+    ".parquet": {"application/vnd.apache.parquet", "application/octet-stream"},
     ".doc": {"application/msword", "application/octet-stream"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

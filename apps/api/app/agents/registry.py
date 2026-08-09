@@ -57,6 +57,11 @@ VALID_INPUT_MODES = {
     "text_and_single_image",
     "multi_image",
     "text_and_multi_image",
+    "mixed",
+    "data_file",
+    "text_and_data_file",
+    "image",
+    "pdf",
 }
 VALID_EXECUTION_MODES = {"local", "xingchen", "hybrid", "disabled"}
 VALID_VALIDATORS = {

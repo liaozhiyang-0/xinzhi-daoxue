@@ -1,0 +1,97 @@
+{
+  "suite_id": "runtime_plan_proposals_semantic_v2",
+  "suite_version": "2",
+  "require_semantic_alignment": true,
+  "cases": [
+    {
+      "case_id": "verification-recovery-action",
+      "base_run": {
+        "run_id": "semantic-proposal-run",
+        "task_id": "semantic-proposal-task",
+        "goal": "recover from verification failure",
+        "plan": {
+          "plan_id": "semantic-proposal-plan",
+          "version": "1",
+          "goal": "recover from verification failure",
+          "nodes": [
+            {
+              "node_id": "verify",
+              "node_type": "verification",
+              "handler_id": "runtime.verify"
+            }
+          ]
+        },
+        "nodes": {
+          "verify": {
+            "node_id": "verify",
+            "status": "partial",
+            "observation": {
+              "node_id": "verify",
+              "terminal_status": "partial",
+              "facts": {
+                "passed": false,
+                "replan_required": true
+              }
+            }
+          }
+        },
+        "observations": [
+          {
+            "node_id": "verify",
+            "terminal_status": "partial",
+            "facts": {
+              "passed": false,
+              "replan_required": true
+            }
+          }
+        ],
+        "last_decision": {
+          "action": "replan",
+          "reason_codes": ["verification_requires_recovery"]
+        }
+      },
+      "proposal": {
+        "proposal_id": "semantic-proposal-1",
+        "task_id": "semantic-proposal-task",
+        "run_id": "semantic-proposal-run",
+        "base_iteration": 0,
+        "target_iteration": 1,
+        "base_state_version": 1,
+        "state_version": 2,
+        "base_plan_id": "semantic-proposal-plan",
+        "base_plan_version": "1",
+        "proposed_plan": {
+          "plan_id": "semantic-proposal-plan",
+          "version": "2",
+          "goal": "recover from verification failure",
+          "nodes": [
+            {
+              "node_id": "verify",
+              "node_type": "verification",
+              "handler_id": "runtime.verify"
+            },
+            {
+              "node_id": "execute.recovery",
+              "node_type": "provider",
+              "handler_id": "provider.recovery",
+              "depends_on": ["verify"]
+            }
+          ]
+        },
+        "reason_codes": ["verification_requires_recovery"],
+        "rationale": "The failed verification requires a recovery action.",
+        "affected_node_ids": ["execute.recovery"],
+        "budget_impact": {
+          "model_calls": 1
+        },
+        "approval_required": true,
+        "status": "pending"
+      },
+      "semantic_expectation": {
+        "verification_node_ids": ["verify"],
+        "verification_reason_codes": ["verification_requires_recovery"],
+        "minimum_action_nodes": 1
+      }
+    }
+  ]
+}
