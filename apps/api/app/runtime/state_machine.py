@@ -168,6 +168,9 @@ class RuntimeStateMachine:
             raise ValueError(f"runtime node is not running: {node_id}")
         state.status = RuntimeNodeStatus.READY
         state.effect_status = RuntimeEffectStatus.UNKNOWN
+        # A retry is a new execution attempt. Do not carry a durable marker
+        # that only belongs to a recovered, already-charged safe replay.
+        state.budget_reservation = ""
         state.error_code = error_code
         state.completed_at = None
         run.status = RuntimeRunStatus.RUNNING

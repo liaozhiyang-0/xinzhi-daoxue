@@ -11,6 +11,7 @@ from app.runtime.contracts import (
     RuntimeDecision,
     RuntimeEffectStatus,
     RuntimeNode,
+    RuntimeNodeState,
     RuntimeNodeStatus,
     RuntimeObservation,
     RuntimeRunStatus,
@@ -26,6 +27,8 @@ from app.runtime.state_machine import RuntimeStateMachine
 CheckpointHook = Callable[[AgentRun], Any]
 RuntimeEventHook = Callable[[str, AgentRun, str], Any]
 RuntimeBatchHook = Callable[[AgentRun, Collection[str]], Any]
+
+_SAFE_REPLAY_BUDGET_RESERVATION = "replay_pending"
 
 
 class RuntimeNodeError(RuntimeError):
@@ -72,7 +75,8 @@ class PlanExecutor:
         node_ids: Collection[str] | None = None,
     ) -> AgentRun:
         selected = set(node_ids) if node_ids is not None else None
-        if not await self._recover_inflight(run, selected):
+        recovered_replays = await self._recover_inflight(run, selected)
+        if recovered_replays is None:
             return run
         RuntimeStateMachine.mark_ready(run, only_node_ids=selected)
         await self._block_unreachable(run)
@@ -127,15 +131,29 @@ class PlanExecutor:
             pre_results: dict[str, RuntimeObservation | BaseException] = {}
             for node_id in batch:
                 RuntimeStateMachine.start_node(run, node_id)
-                try:
-                    # Reserve before the durable RUNNING checkpoint. If the
-                    # process is lost after the external call, recovery still
-                    # sees the consumed budget and will not undercount it.
-                    run.budget.reserve(self._node(run, node_id).node_type)
-                except ValueError as exc:
-                    pre_results[node_id] = RuntimeNodeError(str(exc))
-                else:
+                state = self._node_state(run, node_id)
+                if (
+                    node_id in recovered_replays
+                    or state.budget_reservation
+                    == _SAFE_REPLAY_BUDGET_RESERVATION
+                ):
+                    # The original attempt reserved its budget before the
+                    # RUNNING checkpoint. Safe recovery is a replay of that
+                    # same attempt, so do not charge the node a second time.
+                    recovered_replays.discard(node_id)
+                    state.budget_reservation = ""
                     executable.append(node_id)
+                else:
+                    try:
+                        # Reserve before the durable RUNNING checkpoint. If
+                        # the process is lost after the external call,
+                        # recovery still sees the consumed budget and will
+                        # not undercount it.
+                        run.budget.reserve(self._node(run, node_id).node_type)
+                    except ValueError as exc:
+                        pre_results[node_id] = RuntimeNodeError(str(exc))
+                    else:
+                        executable.append(node_id)
                 await self._emit("node_started", run, node_id)
             await self._checkpoint(run)
 
@@ -253,7 +271,7 @@ class PlanExecutor:
 
     async def _recover_inflight(
         self, run: AgentRun, selected: set[str] | None
-    ) -> bool:
+    ) -> set[str] | None:
         """Recover a checkpointed RUNNING node without blind side effects."""
 
         inflight = [
@@ -263,7 +281,9 @@ class PlanExecutor:
             and (selected is None or node_id in selected)
         ]
         if not inflight:
-            return True
+            return set()
+        recovered_replays: set[str] = set()
+        reconciliation_required = False
         for node_id in inflight:
             node = self._node(run, node_id)
             state = run.nodes[node_id]
@@ -278,10 +298,18 @@ class PlanExecutor:
             if descriptor is not None and descriptor.replay_safe:
                 state.status = RuntimeNodeStatus.READY
                 state.effect_status = RuntimeEffectStatus.UNKNOWN
+                # Persist the reservation across a mixed-batch pause. The
+                # next worker may not be the one currently executing this
+                # method, so a local replay set alone is insufficient.
+                state.budget_reservation = _SAFE_REPLAY_BUDGET_RESERVATION
+                recovered_replays.add(node_id)
                 await self._emit("node_recovered", run, node_id)
                 continue
             state.effect_status = RuntimeEffectStatus.UNKNOWN
             state.error_code = "in_flight_execution_requires_reconciliation"
+            reconciliation_required = True
+            await self._emit("node_recovery_required", run, node_id)
+        if reconciliation_required:
             RuntimeStateMachine.apply_decision(
                 run,
                 RuntimeDecision(
@@ -289,11 +317,10 @@ class PlanExecutor:
                     reason_codes=["in_flight_execution_requires_reconciliation"],
                 ),
             )
-            await self._emit("node_recovery_required", run, node_id)
             await self._checkpoint(run)
-            return False
+            return None
         run.status = RuntimeRunStatus.RUNNING
-        return True
+        return recovered_replays
 
     def _descriptor(self, handler_id: str) -> RuntimeHandlerDescriptor | None:
         if not isinstance(self.handlers, RuntimeHandlerRegistry):
@@ -308,6 +335,13 @@ class PlanExecutor:
             if node.node_id == node_id:
                 return node
         raise RuntimeError(f"runtime node missing from plan: {node_id}")
+
+    @staticmethod
+    def _node_state(run: AgentRun, node_id: str) -> RuntimeNodeState:
+        try:
+            return run.nodes[node_id]
+        except KeyError as exc:
+            raise RuntimeError(f"runtime node state missing: {node_id}") from exc
 
     @staticmethod
     def _is_terminal(run: AgentRun) -> bool:

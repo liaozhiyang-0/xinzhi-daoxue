@@ -367,6 +367,10 @@ class RuntimeNodeState(BaseModel):
     attempt: int = Field(default=0, ge=0)
     execution_key: str = Field(default="", max_length=240)
     reconciliation_id: str = Field(default="", max_length=240)
+    # Durable reservation marker for a safe replay whose original attempt
+    # already consumed the run budget. It is intentionally separate from
+    # error_code so operator/debug surfaces only show actual failures.
+    budget_reservation: str = Field(default="", max_length=32)
     provider_trace_id: str = Field(default="", max_length=128)
     effect_status: RuntimeEffectStatus = RuntimeEffectStatus.NOT_STARTED
     observation: RuntimeObservation | None = None
