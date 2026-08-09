@@ -11,6 +11,46 @@ function readinessTextItems(value) {
     return [item.message, item.text, item.description, item.label].find((candidate) => typeof candidate === "string" && candidate.trim())?.trim() || "";
   }).filter(Boolean);
 }
+function safeRuntimeReadinessText(value, fallback = "未提供") {
+  if (typeof value !== "string" && typeof value !== "number") return fallback;
+  const text = String(value).trim().replace(/[\u0000-\u001f\u007f]/g, "");
+  if (!text || text.length > 160 || /(?:secret|token|password|credential|api[_-]?key|bearer|sk-[a-z0-9]|(?:[a-z]:\\|\\\\|\/))\S*/i.test(text)) return fallback;
+  return text;
+}
+function safeRuntimeReadinessItems(value) {
+  return readinessTextItems(value).map((item) => safeRuntimeReadinessText(item, "")).filter(Boolean);
+}
+const semanticEvidenceReasons = new Set([
+  "semantic_evidence_missing",
+  "semantic_decision_not_pass",
+  "semantic_evidence_identity_mismatch",
+  "semantic_evidence_suite_id_mismatch",
+  "semantic_evidence_case_id_mismatch",
+  "semantic_evidence_agent_version_mismatch",
+  "semantic_evidence_runtime_plan_version_mismatch",
+]);
+function runtimePublicationEvidence(readiness = {}) {
+  const blockers = safeRuntimeReadinessItems(readiness.blockers);
+  const reason = safeRuntimeReadinessText(readiness.canary_reason, "");
+  const reasons = [reason, ...blockers].filter(Boolean);
+  const semanticBlocked = reasons.some((item) => semanticEvidenceReasons.has(item) || item.startsWith("semantic_"));
+  const structuralReady = readiness.canary_release_eligible === true || semanticBlocked;
+  const explicitSemanticReady = readiness.semantic_evidence_eligible === true || readiness.semantic_release_eligible === true;
+  const semanticReady = explicitSemanticReady && !semanticBlocked;
+  return {
+    blockers,
+    reason,
+    structuralReady,
+    semanticReady,
+    semanticBlocked,
+    structuralLabel: structuralReady ? "结构证据已就绪" : "结构证据未就绪",
+    semanticLabel: semanticReady ? "语义证据已就绪" : "语义证据未就绪",
+  };
+}
+function runtimePublicationEvidenceSummary(readiness = {}) {
+  const evidence = runtimePublicationEvidence(readiness);
+  return evidence.structuralReady && evidence.semanticReady ? "发布证据已就绪" : "发布证据未就绪";
+}
 function runtimeReadinessActionHints(readiness, status) {
   const backendActions = readinessTextItems(readiness.recommended_actions ?? readiness.next_actions ?? readiness.next_action);
   const statusHint = {
@@ -126,8 +166,43 @@ function runtimeCapabilityDomainDetails(value) {
 }
 function runtimeReadinessDetails(readiness) {
   if (!readiness || !Object.keys(readiness).length) return el("p", { class: "empty-state", text: "当前 Agent 未提供 Runtime readiness 字段。" });
-  const blockers = readinessTextItems(readiness.blockers);
+  const evidence = runtimePublicationEvidence(readiness);
+  const configuredMode = safeRuntimeReadinessText(readiness.configured_launch_mode);
+  const effectiveMode = safeRuntimeReadinessText(readiness.effective_launch_mode);
+  const launchSource = safeRuntimeReadinessText(readiness.launch_source, "未知来源");
+  const launchReason = safeRuntimeReadinessText(readiness.launch_reason);
+  const canaryReason = evidence.reason || "无 Canary 原因";
   return el("div", { class: "runtime-readiness-details" }, [
+    el("section", { class: "runtime-publication-evidence", "data-evidence-state": evidence.semanticReady ? "ready" : "not_ready" }, [
+      el("div", { class: "runtime-readiness-actions-heading" }, [
+        el("h3", { text: "发布证据状态（只读）" }),
+        badge(evidence.semanticReady ? "ready" : "planned", runtimePublicationEvidenceSummary(readiness)),
+      ]),
+      el("div", { class: "definition-cards" }, [
+        el("article", { class: "metric-card runtime-publication-evidence-card" }, [
+          badge(evidence.structuralReady ? "ready" : "planned", evidence.structuralLabel),
+          el("strong", { text: evidence.structuralReady ? "结构门禁通过" : "结构证据未就绪" }),
+          el("small", { text: "来源：canary_release_eligible" }),
+        ]),
+        el("article", { class: "metric-card runtime-publication-evidence-card" }, [
+          badge(evidence.semanticReady ? "ready" : "planned", evidence.semanticLabel),
+          el("strong", { text: evidence.semanticReady ? "独立语义证据通过" : "语义证据未就绪" }),
+          el("small", { text: evidence.semanticBlocked ? canaryReason : "未提供独立语义通过字段，保持保守状态" }),
+        ]),
+        el("article", { class: "metric-card runtime-publication-evidence-card" }, [
+          badge(readiness.canary_release_eligible === true ? "ready" : "planned", readiness.canary_release_eligible === true ? "Canary 资格通过" : "Canary 资格未通过"),
+          el("strong", { text: canaryReason || "未提供" }),
+          el("small", { text: "来源：canary_reason" }),
+        ]),
+      ]),
+      el("p", { class: "runtime-readiness-note", text: `配置发布模式：${configuredMode}；生效发布模式：${effectiveMode}；来源：${launchSource}；原因：${launchReason}` }),
+      el("div", { class: "runtime-readiness-blockers" }, [
+        el("strong", { text: evidence.blockers.length ? "发布阻塞项" : "发布阻塞项：无" }),
+        evidence.blockers.length
+          ? el("ul", { class: "runtime-readiness-blocker-list" }, evidence.blockers.map((item) => el("li", { text: item })))
+          : null,
+      ].filter(Boolean)),
+    ]),
     el("div", { class: "definition-cards" }, [
       el("article", { class: "metric-card" }, [runtimeReadinessBadge(readiness), el("strong", { text: readiness.effective_launch_mode || "未声明" }), el("small", { text: `生效模式 · ${readiness.launch_source || "未知来源"}` })]),
       el("article", { class: "metric-card" }, [badge(readiness.runtime_plan_available ? "ready" : "planned", readiness.runtime_plan_available ? "Runtime Plan 可用" : "Runtime Plan 缺失"), el("strong", { text: String(readiness.runtime_services?.length || 0) }), el("small", { text: "Runtime 服务" })]),
@@ -136,7 +211,7 @@ function runtimeReadinessDetails(readiness) {
     el("p", { class: "runtime-readiness-note", text: `运行选项：${(readiness.runtime_option_keys || []).join(", ") || "未声明"}；显式 Goal Runtime：${readiness.explicit_goal_runtime_available ? "可用" : "不可用"}` }),
      runtimeCapabilityDomainDetails(state.runtimeCapabilities),
      runtimeCapabilitiesDetails(readiness.runtime_capabilities),
-     runtimeReadinessNextSteps(readiness, blockers),
+     runtimeReadinessNextSteps(readiness, evidence.blockers),
   ]);
 }
 function requestPayload(allowMock = false) { return { question: $("#agent-question").value, course_id: $("#agent-course").value, intent: $("#agent-intent").value, allow_mock: allowMock, canonical_input: {}, options: {} }; }
@@ -150,7 +225,7 @@ function renderRows() {
   const filter = $("#agent-filter").value; const agents = state.agents.filter((item) => matches(item, filter));
   $("#agent-grid").replaceChildren(...(agents.length ? agents.map((item) => {
     const row = el("tr", { tabindex: "0", "data-agent": item.agent_id });
-    row.append(el("td", {}, [el("strong", { text: item.display_name || item.agent_id }), el("small", { class: "table-subtitle", text: item.agent_id })]), el("td", {}, badge(statusOf(item))), el("td", { text: item.provider_type || item.provider || "—" }), el("td", {}, badge(item.configured ? "configured" : "not_configured")), el("td", { text: (item.courses || item.supported_courses || []).join(", ") || "—" }), el("td", { text: item.retrieval_policy || "no_rag" }), el("td", { text: item.recent_contract_test?.status || "未运行" }), el("td", {}, [runtimeReadinessBadge(item.runtime_readiness), el("small", { class: "table-subtitle", text: item.runtime_readiness?.blockers?.length ? "有阻塞" : item.runtime_readiness?.effective_launch_mode || "—" })]));
+    row.append(el("td", {}, [el("strong", { text: item.display_name || item.agent_id }), el("small", { class: "table-subtitle", text: item.agent_id })]), el("td", {}, badge(statusOf(item))), el("td", { text: item.provider_type || item.provider || "—" }), el("td", {}, badge(item.configured ? "configured" : "not_configured")), el("td", { text: (item.courses || item.supported_courses || []).join(", ") || "—" }), el("td", { text: item.retrieval_policy || "no_rag" }), el("td", { text: item.recent_contract_test?.status || "未运行" }), el("td", {}, [runtimeReadinessBadge(item.runtime_readiness), el("small", { class: "table-subtitle", text: runtimePublicationEvidenceSummary(item.runtime_readiness) }), el("small", { class: "table-subtitle", text: item.runtime_readiness?.blockers?.length ? "有阻塞" : item.runtime_readiness?.effective_launch_mode || "—" })]));
     row.addEventListener("click", () => selectAgent(item.agent_id)); row.addEventListener("keydown", (event) => { if (event.key === "Enter") selectAgent(item.agent_id); }); return row;
   }) : [el("tr", {}, el("td", { colspan: "8", class: "empty-state", text: "没有符合条件的 Agent。" }))]));
 }
