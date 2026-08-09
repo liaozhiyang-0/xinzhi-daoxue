@@ -33,6 +33,8 @@ class RuntimeTraceAudit(BaseModel):
     checkpoint_count: int = Field(default=0, ge=0)
     first_state_version: int | None = None
     last_state_version: int | None = None
+    first_event_sequence: int | None = None
+    last_event_sequence: int | None = None
     final_status: str = ""
     agent_ids: list[str] = Field(default_factory=list)
     plan_versions: list[str] = Field(default_factory=list)
@@ -587,6 +589,7 @@ def audit_checkpoint_trace(
     records.sort(key=lambda item: item.sequence)
     expected_sequence = 1
     previous_version = 0
+    previous_event_sequence = 0
     run_id = ""
     agent_ids: list[str] = []
     plan_versions: list[str] = []
@@ -600,6 +603,9 @@ def audit_checkpoint_trace(
         if record.state_version <= previous_version:
             errors.append("checkpoint_state_version_not_increasing")
         previous_version = record.state_version
+        if record.event_sequence < previous_event_sequence:
+            errors.append("checkpoint_event_sequence_regressed")
+        previous_event_sequence = record.event_sequence
         try:
             run = AgentRun.model_validate(record.state_data)
         except ValueError as exc:
@@ -621,6 +627,8 @@ def audit_checkpoint_trace(
         checkpoint_count=len(records),
         first_state_version=records[0].state_version,
         last_state_version=records[-1].state_version,
+        first_event_sequence=records[0].event_sequence,
+        last_event_sequence=records[-1].event_sequence,
         final_status=final_status,
         agent_ids=sorted(set(agent_ids)),
         plan_versions=sorted(set(plan_versions)),

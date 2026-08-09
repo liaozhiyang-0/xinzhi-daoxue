@@ -65,6 +65,8 @@ def test_runtime_checkpoint_trace_is_auditable_and_reproducible() -> None:
     assert audit.run_id == "run-replay"
     assert audit.checkpoint_count == 2
     assert audit.final_status == "completed"
+    assert audit.first_event_sequence == 0
+    assert audit.last_event_sequence == 0
 
     evaluation = evaluate_runtime_run(
         completed,
@@ -110,6 +112,49 @@ def test_runtime_checkpoint_trace_rejects_gaps_and_version_mismatch() -> None:
     assert audit.valid is False
     assert "checkpoint_sequence_gap:1->2" in audit.errors
     assert "checkpoint_state_version_mismatch" in audit.errors
+
+
+def test_runtime_checkpoint_trace_rejects_event_sequence_regression() -> None:
+    run = AgentRun(
+        run_id="run-event-order",
+        task_id="task-event-order",
+        goal="replay event order",
+        plan=AgentRunPlan(
+            plan_id="plan-event-order",
+            goal="replay event order",
+            nodes=[
+                RuntimeNode(
+                    node_id="step",
+                    node_type="tool",
+                    handler_id="tool.step",
+                )
+            ],
+        ),
+    )
+
+    audit = audit_checkpoint_trace(
+        [
+            RuntimeCheckpointRecord(
+                sequence=1,
+                state_version=1,
+                event_sequence=8,
+                state_data=run.model_dump(mode="json"),
+            ),
+            RuntimeCheckpointRecord(
+                sequence=2,
+                state_version=2,
+                event_sequence=7,
+                state_data=run.model_copy(
+                    update={"state_version": 2}
+                ).model_dump(mode="json"),
+            ),
+        ]
+    )
+
+    assert audit.valid is False
+    assert "checkpoint_event_sequence_regressed" in audit.errors
+    assert audit.first_event_sequence == 8
+    assert audit.last_event_sequence == 7
 
 
 def test_runtime_legacy_diff_reports_structural_parity_without_semantic_claims(
