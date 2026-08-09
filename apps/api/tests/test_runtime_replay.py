@@ -22,6 +22,7 @@ from app.runtime import (
     evaluate_runtime_canary_suite,
     evaluate_runtime_run,
 )
+from app.runtime.semantic_evidence import payload_sha256
 
 
 def test_runtime_checkpoint_trace_is_auditable_and_reproducible() -> None:
@@ -332,6 +333,9 @@ def test_runtime_canary_release_requires_authorized_redacted_evidence() -> None:
         pairs=[
             RuntimeCanaryPair(
                 case_id="case-authorized",
+                input_sha256=payload_sha256(
+                    {"question": "authorized canary"}
+                ),
                 legacy_payload={
                     "agent_id": "GENERAL_QUESTION_V1",
                     "status": "completed",
