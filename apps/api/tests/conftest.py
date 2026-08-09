@@ -111,6 +111,11 @@ def settings(tmp_path: Path) -> Settings:
         minio_endpoint="127.0.0.1:1",
         default_agent_provider="mock",
         allow_mock_fallback=True,
+        # Runtime integration tests are provider-free execution tests. The
+        # release gate itself is covered by explicit launch-policy tests with
+        # release_gate_required=True; do not inherit a developer machine's
+        # production gate setting into these local fixtures.
+        agent_runtime_release_gate_required=False,
         xingchen_publication_status="published",
         knowledge_ct_path=tmp_path / "knowledge" / "CT",
         knowledge_ae_path=tmp_path / "knowledge" / "AE",
