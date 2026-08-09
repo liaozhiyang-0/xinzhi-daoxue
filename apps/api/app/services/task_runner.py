@@ -3480,23 +3480,37 @@ class TaskRunner:
                     "suspended_child_run_id"
                 )
                 run.control_request = ""
-                run.control_data = (
-                    {"suspended_child_run_id": suspended_child_run_id}
-                    if isinstance(suspended_child_run_id, str)
+                # A pause is a Runtime state transition, not a replacement
+                # of the Runtime-owned checkpoint envelope.  The live Run
+                # contains the newest request/prepared payload/node inputs;
+                # the model may contain an external control submitted between
+                # checkpoints.  Merge both, retaining the child marker when
+                # either side has it.
+                merged_control_data = dict(runtime_control_data)
+                merged_control_data.update(run.control_data)
+                if (
+                    "suspended_child_run_id" not in merged_control_data
+                    and isinstance(suspended_child_run_id, str)
                     and suspended_child_run_id
-                    else {}
-                )
+                ):
+                    merged_control_data[
+                        "suspended_child_run_id"
+                    ] = suspended_child_run_id
+                run.control_data = merged_control_data
             elif (
                 run.status == RuntimeRunStatus.RUNNING
-                and not run.control_data
                 and runtime_control_data.get("approved") is True
+                and run.control_data.get("approved") is not True
             ):
                 # PlanExecutor consumed a one-shot approval before this
                 # checkpoint. Clear the durable grant so a later approval
                 # gate cannot inherit it accidentally.
                 run.control_request = ""
-                runtime_model.control_request = ""
-                runtime_model.control_data = {}
+                merged_control_data = dict(runtime_control_data)
+                merged_control_data.update(run.control_data)
+                merged_control_data.pop("approved", None)
+                merged_control_data.pop("approval_scope", None)
+                run.control_data = merged_control_data
             else:
                 # Preserve a control request that arrived between two worker
                 # checkpoints; normal state writes must not erase it. Runtime

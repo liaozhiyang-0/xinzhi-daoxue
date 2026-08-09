@@ -391,7 +391,16 @@ class TaskControlService:
         run.status = RuntimeRunStatus.PAUSED
         run.completed_at = None
         run.control_request = ""
-        run.control_data = {}
+        # Reconciliation updates node state in the checkpoint; it must not
+        # discard the Runtime-owned request, prepared payload, goal intake, or
+        # node inputs that the next execution pass needs.  Keep any external
+        # control data already persisted on the model only when the checkpoint
+        # does not contain that key, so a stale side-channel cannot overwrite
+        # newer Runtime state.
+        checkpoint_control_data = dict(run.control_data or {})
+        for key, value in (runtime_model.control_data or {}).items():
+            checkpoint_control_data.setdefault(key, value)
+        run.control_data = checkpoint_control_data
         await runtime_repository.save_checkpoint(run)
         parent_runtime_id = ""
         if runtime_model.parent_run_id:
@@ -478,11 +487,24 @@ class TaskControlService:
                 "Runtime status does not support this control",
                 details={"runtime_status": runtime.status},
             )
+        restored = await runtime_repository.restore(runtime.id)
+        checkpoint_control_data = (
+            dict(restored.control_data or {}) if restored is not None else {}
+        )
+        # A control submitted through the API is newer than the last worker
+        # checkpoint.  Let the durable control row win on key collisions while
+        # retaining Runtime-owned state that has not been replaced by the
+        # control request.
+        checkpoint_control_data.update(runtime.control_data or {})
         approval_audit: RuntimeApprovalAudit | None = None
         if approval_actor is not None:
             approval = approval_submission or RuntimeApprovalSubmission()
-            if (runtime.control_data or {}).get("approved") is True or (
-                (runtime.control_data or {}).get("approval_audit") is not None
+            existing_control_data = {
+                **checkpoint_control_data,
+                **dict(runtime.control_data or {}),
+            }
+            if existing_control_data.get("approved") is True or (
+                existing_control_data.get("approval_audit") is not None
             ):
                 raise ConflictError(
                     "Runtime approval has already been submitted",
@@ -491,7 +513,6 @@ class TaskControlService:
                         "state_version": runtime.state_version,
                     },
                 )
-            restored = await runtime_repository.restore(runtime.id)
             approval_scope = (
                 restored.last_decision.approval_scope
                 if restored is not None and restored.last_decision is not None
@@ -499,7 +520,7 @@ class TaskControlService:
             )
             if not approval_scope:
                 approval_scope = str(
-                    (runtime.control_data or {}).get("approval_scope") or ""
+                    existing_control_data.get("approval_scope") or ""
                 )
             if not approval_scope:
                 approval_scope = "runtime.side_effect"
@@ -523,12 +544,13 @@ class TaskControlService:
                 state_version=runtime.state_version,
             )
             if approval.decision == "rejected":
-                restored = await runtime_repository.restore(runtime.id)
                 if restored is None:
                     raise ConflictError("Runtime checkpoint is missing")
                 restored.status = RuntimeRunStatus.PAUSED
                 restored.control_request = ""
-                restored.control_data = {}
+                restored.control_data = dict(restored.control_data or {})
+                restored.control_data.pop("approval_scope", None)
+                restored.control_data.pop("approved", None)
                 checkpoint = await runtime_repository.save_checkpoint(
                     restored,
                     expected_state_version=runtime.state_version,
@@ -552,7 +574,12 @@ class TaskControlService:
                 )
                 await self.db.commit()
                 return task
-            control_data = {"approved": True}
+            control_data = dict(checkpoint_control_data)
+            control_data.pop("approval_scope", None)
+            control_data["approved"] = True
+        elif control_data is None:
+            control_data = dict(checkpoint_control_data)
+            control_data.pop("approval_scope", None)
         await runtime_repository.request_control(
             runtime.id,
             "",
