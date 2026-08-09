@@ -67,38 +67,44 @@ class RuntimeGoalPlanner:
 
         nodes: list[RuntimeNode] = []
         selections: list[RuntimeCapabilitySelection] = []
-        previous_node_id = ""
-        for index, capability in enumerate(goal.required_capabilities, start=1):
-            normalized = capability.strip()
-            if not normalized:
-                raise RuntimeGoalPlannerError("goal_contains_empty_capability")
-            candidate = self._candidates.get(normalized.casefold())
-            if candidate is None:
-                raise RuntimeGoalPlannerError(
-                    f"capability_not_registered:{normalized}"
-                )
-            node_id = f"goal.step.{index}.{_safe_id(normalized)}"
-            node = RuntimeNode(
-                node_id=node_id,
-                node_type=candidate.descriptor.kind,
-                handler_id=candidate.descriptor.handler_id,
-                timeout_ms=min(
-                    900_000,
-                    max(100, candidate.descriptor.max_timeout_ms),
-                ),
-                depends_on=[previous_node_id] if previous_node_id else [],
-            )
-            nodes.append(node)
-            selections.append(
-                RuntimeCapabilitySelection(
-                    capability=normalized,
+        phases = _execution_phases(goal)
+        previous_node_ids: list[str] = []
+        step = 0
+        for phase_index, phase in enumerate(phases, start=1):
+            phase_node_ids: list[str] = []
+            for capability in phase:
+                step += 1
+                candidate = self._candidates.get(capability.casefold())
+                if candidate is None:
+                    raise RuntimeGoalPlannerError(
+                        f"capability_not_registered:{capability}"
+                    )
+                node_id = f"goal.step.{step}.{_safe_id(capability)}"
+                node = RuntimeNode(
+                    node_id=node_id,
+                    node_type=candidate.descriptor.kind,
                     handler_id=candidate.descriptor.handler_id,
-                    kind=candidate.descriptor.kind,
-                    requires_approval=candidate.descriptor.requires_approval,
-                    side_effecting=candidate.descriptor.side_effecting,
+                    timeout_ms=min(
+                        900_000,
+                        max(100, candidate.descriptor.max_timeout_ms),
+                    ),
+                    depends_on=list(previous_node_ids),
+                    parallel_group=(
+                        f"goal.phase.{phase_index}" if len(phase) > 1 else ""
+                    ),
                 )
-            )
-            previous_node_id = node_id
+                nodes.append(node)
+                selections.append(
+                    RuntimeCapabilitySelection(
+                        capability=capability,
+                        handler_id=candidate.descriptor.handler_id,
+                        kind=candidate.descriptor.kind,
+                        requires_approval=candidate.descriptor.requires_approval,
+                        side_effecting=candidate.descriptor.side_effecting,
+                    )
+                )
+                phase_node_ids.append(node_id)
+            previous_node_ids.extend(phase_node_ids)
 
         plan = AgentRunPlan(
             plan_id=plan_id,
@@ -149,3 +155,48 @@ class RuntimeGoalPlanner:
 def _safe_id(value: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-")
     return normalized[:80] or "capability"
+
+
+def _execution_phases(goal: RuntimeGoal) -> list[list[str]]:
+    """Resolve explicit independent batches without guessing dependencies."""
+
+    required = [item.strip() for item in goal.required_capabilities]
+    if any(not item for item in required):
+        raise RuntimeGoalPlannerError("goal_contains_empty_capability")
+    required_keys = [item.casefold() for item in required]
+    if len(required_keys) != len(set(required_keys)):
+        raise RuntimeGoalPlannerError("goal_contains_duplicate_capability")
+    if not goal.parallel_groups:
+        return [[item] for item in required]
+
+    required_by_key = dict(zip(required_keys, required, strict=True))
+    seen: set[str] = set()
+    phases: list[list[str]] = []
+    for group in goal.parallel_groups:
+        if not group:
+            raise RuntimeGoalPlannerError("parallel_group_empty")
+        phase: list[str] = []
+        for item in group:
+            normalized = item.strip()
+            if not normalized:
+                raise RuntimeGoalPlannerError(
+                    "parallel_group_contains_empty_capability"
+                )
+            key = normalized.casefold()
+            if key not in required_by_key:
+                raise RuntimeGoalPlannerError(
+                    f"parallel_capability_not_required:{normalized}"
+                )
+            if key in seen:
+                raise RuntimeGoalPlannerError(
+                    f"parallel_capability_duplicate:{normalized}"
+                )
+            seen.add(key)
+            phase.append(required_by_key[key])
+        phases.append(phase)
+    missing = [required_by_key[key] for key in required_keys if key not in seen]
+    if missing:
+        raise RuntimeGoalPlannerError(
+            "parallel_capability_missing:" + ",".join(missing)
+        )
+    return phases

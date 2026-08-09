@@ -135,6 +135,10 @@ class RuntimeGoal(BaseModel):
     success_criteria: list[str] = Field(default_factory=list, max_length=32)
     constraints: dict[str, Any] = Field(default_factory=dict)
     required_capabilities: list[str] = Field(default_factory=list, max_length=32)
+    # Optional explicit execution phases. Each inner list is an independent
+    # batch; phases remain ordered. An empty value preserves the historical
+    # sequential plan compiler behavior.
+    parallel_groups: list[list[str]] = Field(default_factory=list, max_length=16)
     context: dict[str, Any] = Field(default_factory=dict)
     source: str = Field(default="request", max_length=64)
 
