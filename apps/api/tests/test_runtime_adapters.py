@@ -221,6 +221,85 @@ def test_runtime_handler_descriptor_defaults_remain_backward_compatible() -> Non
     assert descriptor.risk_level == "low"
 
 
+def test_runtime_tool_input_schema_rejects_missing_required_before_call() -> None:
+    calls: list[dict[str, Any]] = []
+    tools = ToolRegistry()
+
+    def handler(**payload: Any) -> dict[str, Any]:
+        calls.append(payload)
+        return payload
+
+    tools.register(
+        ToolDefinition(
+            tool_id="strict_tool",
+            name="Strict tool",
+            supported_capabilities=frozenset(),
+            input_schema={
+                "type": "object",
+                "required": ["expression"],
+                "properties": {"expression": {"type": "string"}},
+            },
+            output_schema={"type": "object"},
+        ),
+        handler,
+    )
+    registry = build_runtime_handler_registry(tools, FakeProvider())
+    run = make_run(
+        RuntimeNode(
+            node_id="strict",
+            node_type="tool",
+            handler_id="tool.strict_tool",
+            timeout_ms=10_000,
+        ),
+        control_data={"node_inputs": {"strict": {}}},
+    )
+
+    asyncio.run(PlanExecutor(registry).execute(run))
+
+    assert run.status.value == "failed"
+    assert run.nodes["strict"].error_code == "node_input_schema_required"
+    assert calls == []
+
+
+def test_runtime_tool_input_schema_rejects_wrong_property_type() -> None:
+    calls: list[dict[str, Any]] = []
+    tools = ToolRegistry()
+
+    def handler(**payload: Any) -> dict[str, Any]:
+        calls.append(payload)
+        return payload
+
+    tools.register(
+        ToolDefinition(
+            tool_id="typed_tool",
+            name="Typed tool",
+            supported_capabilities=frozenset(),
+            input_schema={
+                "type": "object",
+                "properties": {"expression": {"type": "string"}},
+            },
+            output_schema={"type": "object"},
+        ),
+        handler,
+    )
+    registry = build_runtime_handler_registry(tools, FakeProvider())
+    run = make_run(
+        RuntimeNode(
+            node_id="typed",
+            node_type="tool",
+            handler_id="tool.typed_tool",
+            timeout_ms=10_000,
+        ),
+        control_data={"node_inputs": {"typed": {"expression": 42}}},
+    )
+
+    asyncio.run(PlanExecutor(registry).execute(run))
+
+    assert run.status.value == "failed"
+    assert run.nodes["typed"].error_code == "node_input_schema_type_mismatch"
+    assert calls == []
+
+
 def test_runtime_request_adapter_propagates_resumed_user_input() -> None:
     provider = FakeProvider()
     registry = build_runtime_handler_registry(

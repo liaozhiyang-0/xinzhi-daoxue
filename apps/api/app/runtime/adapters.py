@@ -26,6 +26,7 @@ from app.runtime.executor import RuntimeNodeError
 from app.runtime.handler_registry import (
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
+    RuntimeHandlerRegistryError,
 )
 from app.runtime.subagents import (
     RuntimeSubagentDefinition,
@@ -155,8 +156,14 @@ def register_tool_handlers(
             *,
             _handler: Callable[..., Any] = handler,
             _tool_id: str = definition.tool_id,
+            _handler_id: str = handler_id,
         ) -> RuntimeObservation:
-            result = await _invoke(_handler, _node_input(run, node))
+            payload = _node_input(run, node)
+            try:
+                runtime_registry.validate_input(_handler_id, payload)
+            except RuntimeHandlerRegistryError as exc:
+                raise RuntimeNodeError(exc.error_code, str(exc)) from exc
+            result = await _invoke(_handler, payload)
             return RuntimeObservation(
                 node_id=node.node_id,
                 facts={

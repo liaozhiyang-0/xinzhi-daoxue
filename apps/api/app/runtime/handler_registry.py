@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -42,6 +42,131 @@ class RuntimeHandlerRegistryError(RuntimeError):
     def __init__(self, error_code: str, message: str = "") -> None:
         super().__init__(message or error_code)
         self.error_code = error_code
+
+
+_SUPPORTED_INPUT_SCHEMA_KEYS = frozenset(
+    {"type", "required", "properties", "additionalProperties"}
+)
+_SUPPORTED_INPUT_TYPES = frozenset(
+    {"string", "number", "integer", "boolean", "array", "null", "object"}
+)
+
+
+def _schema_error(error_code: str, path: str, message: str) -> None:
+    raise RuntimeHandlerRegistryError(error_code, f"{path}: {message}")
+
+
+def _matches_type(value: Any, schema_type: str) -> bool:
+    if schema_type == "object":
+        return isinstance(value, Mapping)
+    if schema_type == "string":
+        return isinstance(value, str)
+    if schema_type == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if schema_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema_type == "boolean":
+        return isinstance(value, bool)
+    if schema_type == "array":
+        return isinstance(value, list)
+    if schema_type == "null":
+        return value is None
+    return False
+
+
+def validate_input_schema(
+    value: Any,
+    schema: Mapping[str, Any] | None,
+    *,
+    path: str = "$",
+) -> None:
+    """Validate the provider-free input-schema subset used by Runtime tools.
+
+    The supported subset intentionally stops at object/type, required,
+    properties, additionalProperties, and the JSON primitive/container types.
+    An empty or missing schema imposes no additional restriction. Output
+    schemas are descriptive only and are deliberately not validated here.
+    """
+
+    if not schema:
+        return
+    if not isinstance(schema, Mapping):
+        _schema_error("handler_input_schema_invalid", path, "schema must be an object")
+    unsupported = set(schema) - _SUPPORTED_INPUT_SCHEMA_KEYS
+    if unsupported:
+        _schema_error(
+            "handler_input_schema_unsupported",
+            path,
+            f"unsupported keywords: {sorted(unsupported)}",
+        )
+
+    schema_type = schema.get("type")
+    if schema_type is not None:
+        if (
+            not isinstance(schema_type, str)
+            or schema_type not in _SUPPORTED_INPUT_TYPES
+        ):
+            _schema_error(
+                "handler_input_schema_invalid",
+                path,
+                f"unsupported type: {schema_type!r}",
+            )
+        if not _matches_type(value, schema_type):
+            _schema_error(
+                "node_input_schema_type_mismatch",
+                path,
+                f"expected {schema_type}",
+            )
+
+    required = schema.get("required", [])
+    if not isinstance(required, list) or not all(
+        isinstance(item, str) for item in required
+    ):
+        _schema_error(
+            "handler_input_schema_invalid",
+            path,
+            "required must be a list of strings",
+        )
+    properties = schema.get("properties", {})
+    if not isinstance(properties, Mapping) or not all(
+        isinstance(key, str) and isinstance(item, Mapping)
+        for key, item in properties.items()
+    ):
+        _schema_error(
+            "handler_input_schema_invalid",
+            path,
+            "properties must map strings to schema objects",
+        )
+    additional_properties = schema.get("additionalProperties", True)
+    if not isinstance(additional_properties, bool):
+        _schema_error(
+            "handler_input_schema_invalid",
+            path,
+            "additionalProperties must be boolean",
+        )
+
+    if not isinstance(value, Mapping):
+        return
+    missing = [key for key in required if key not in value]
+    if missing:
+        _schema_error(
+            "node_input_schema_required",
+            path,
+            f"missing required properties: {missing}",
+        )
+    if not additional_properties:
+        unexpected = sorted(set(value) - set(properties))
+        if unexpected:
+            _schema_error(
+                "node_input_schema_additional_property",
+                path,
+                f"additional properties are not allowed: {unexpected}",
+            )
+    for key, property_schema in properties.items():
+        if key in value:
+            validate_input_schema(
+                value[key], property_schema, path=f"{path}.{key}"
+            )
 
 
 @dataclass(frozen=True)
@@ -98,6 +223,12 @@ class RuntimeHandlerRegistry:
                 f"runtime handler is not registered: {handler_id}",
             )
         return registration.descriptor
+
+    def validate_input(self, handler_id: str, payload: Mapping[str, Any]) -> None:
+        """Validate a handler payload before its callable is invoked."""
+
+        descriptor = self.descriptor(handler_id)
+        validate_input_schema(payload, descriptor.input_schema)
 
     def descriptors(self) -> list[RuntimeHandlerDescriptor]:
         return [
