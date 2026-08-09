@@ -485,6 +485,10 @@ class LearningRuntimeCapabilityRead(BaseModel):
     domain: Literal["learning_loop"] = "learning_loop"
     runtime_id: str = Field(min_length=1, max_length=120)
     version: str = Field(min_length=1, max_length=120)
+    agent_version: str = Field(default="", max_length=120)
+    runtime_plan_version: str = Field(default="", max_length=120)
+    canary_release_eligible: bool = False
+    canary_reason: str = Field(default="", max_length=160)
     enabled: bool
     supported_actions: list[str] = Field(default_factory=list, max_length=64)
     supports_pause: bool = False
