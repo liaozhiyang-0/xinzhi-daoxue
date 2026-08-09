@@ -378,9 +378,12 @@ class TaskRunner:
         self._post_tasks: dict[str, asyncio.Task[None]] = {}
         self._research_tasks: dict[str, asyncio.Task[None]] = {}
         self._summary_locks: dict[str, asyncio.Lock] = {}
+        self._shutting_down = False
         self.execution_owner = f"local-{uuid4().hex[:12]}"
 
     def submit(self, task_id: str) -> bool:
+        if self._shutting_down:
+            return False
         existing = self._tasks.get(task_id)
         if existing is not None and not existing.done():
             # A control endpoint may requeue a task in the small window where
@@ -397,6 +400,9 @@ class TaskRunner:
 
     def _on_task_finished(self, task_id: str) -> None:
         self._tasks.pop(task_id, None)
+        if self._shutting_down:
+            self._deferred_submissions.discard(task_id)
+            return
         if task_id not in self._deferred_submissions:
             return
         self._deferred_submissions.remove(task_id)
@@ -447,6 +453,7 @@ class TaskRunner:
         return len(task_ids)
 
     async def shutdown(self) -> None:
+        self._shutting_down = True
         active = [
             task
             for task in [*self._tasks.values(), *self._post_tasks.values()]
@@ -2018,9 +2025,10 @@ class TaskRunner:
         except ProviderCancelledError as exc:
             await self._cancel_after_exception(task_id, exc.message)
         except asyncio.CancelledError:
-            await self._fail_after_exception(
-                task_id, "进程内任务因应用关闭而中断", "runner_shutdown"
-            )
+            if self._shutting_down:
+                await self._requeue_after_shutdown(task_id)
+            else:
+                logger.info("task_runner_cancelled task_id=%s", task_id)
             raise
         except Exception as exc:
             logger.exception(
@@ -3686,6 +3694,50 @@ class TaskRunner:
     async def _cancel_after_exception(self, task_id: str, reason: str) -> None:
         async with self.session_factory() as db:
             await self._mark_cancelled(db, task_id, reason)
+
+    async def _requeue_after_shutdown(self, task_id: str) -> None:
+        async with self.session_factory() as db:
+            task = await TaskRepository(db).get(task_id, for_update=True)
+            if task is None or task.status in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            }:
+                return
+            if task.cancellation_requested:
+                await self._mark_cancelled(
+                    db,
+                    task_id,
+                    "任务在应用关闭前已收到取消请求",
+                )
+                return
+            previous_status = task.status.value
+            now = utc_now()
+            task.status = TaskStatus.QUEUED
+            task.error_message = None
+            task.failure_category = None
+            task.completed_at = None
+            task.execution_owner = None
+            task.heartbeat_at = None
+            task.lease_expires_at = None
+            task.updated_at = now
+            await append_task_event(
+                db,
+                task.id,
+                AgentEventType.TASK_QUEUED,
+                agent_id=task.agent_id,
+                data={
+                    "reason": "application_shutdown",
+                    "recoverable": True,
+                    "previous_status": previous_status,
+                },
+            )
+            await db.commit()
+            logger.info(
+                "task_requeued_after_shutdown task_id=%s previous_status=%s",
+                task_id,
+                previous_status,
+            )
 
     async def _fail_after_exception(
         self, task_id: str, message: str, code: str

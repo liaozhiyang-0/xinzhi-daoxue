@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from time import monotonic, sleep
 
 import pytest
+from app.main import create_app
 from app.models import TaskStatus
 from app.repositories import TaskRepository
 from app.services.task_executor import LocalTaskExecutor, QueueTaskExecutor
+from fastapi.testclient import TestClient
 
 
 def test_task_creation_idempotency_reuses_same_task(api) -> None:
@@ -97,3 +100,58 @@ async def test_recovery_claims_expired_task_once(client, api, monkeypatch) -> No
     submitted.clear()
     assert await client.app.state.task_runner.recover_pending_tasks() == 0
     assert submitted == []
+
+
+def test_shutdown_requeues_task_for_next_lifespan(settings) -> None:
+    app = create_app(settings)
+    with TestClient(app) as first_client:
+        session = first_client.post(
+            "/api/v1/sessions",
+            json={"user_id": "user-test", "course_id": "CT", "title": "shutdown"},
+        ).json()
+        task = first_client.post(
+            "/api/v1/tasks",
+            json={
+                "session_id": session["id"],
+                "user_id": "user-test",
+                "user_role": "student",
+                "scene": "solving",
+                "course_id": "CT",
+                "intent": "solve_problem",
+                "canonical_input": {"text": "shutdown recovery"},
+                "attachments": [],
+                "context_refs": [],
+                "options": {"mock_delay_seconds": 10.0},
+            },
+        ).json()
+        deadline = monotonic() + 2.0
+        while monotonic() < deadline:
+            status = first_client.get(f"/api/v1/tasks/{task['id']}").json()["status"]
+            if status == TaskStatus.RUNNING.value:
+                break
+            sleep(0.02)
+        assert status == TaskStatus.RUNNING.value
+
+    with TestClient(create_app(settings)) as second_client:
+        deadline = monotonic() + 15.0
+        while monotonic() < deadline:
+            response = second_client.get(f"/api/v1/tasks/{task['id']}")
+            assert response.status_code == 200
+            recovered = response.json()
+            if recovered["status"] in {
+                TaskStatus.COMPLETED.value,
+                TaskStatus.FAILED.value,
+                TaskStatus.CANCELLED.value,
+            }:
+                break
+            sleep(0.02)
+        assert recovered["status"] == TaskStatus.COMPLETED.value
+        events_response = second_client.get(f"/api/v1/tasks/{task['id']}/events")
+        assert events_response.status_code == 200
+        events = events_response.json()
+        assert any(
+            event["event_data"]["data"].get("reason") == "application_shutdown"
+            for event in events
+            if event["event_type"] == "task.queued"
+        )
+        assert not any(event["event_type"] == "task.failed" for event in events)
