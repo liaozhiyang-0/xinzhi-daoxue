@@ -102,7 +102,10 @@ UNIFIED_RUNTIME_CONTROL_POLICY = RuntimeControlPolicy(
 
 LEARNING_LOOP_CONTROL_POLICY = RuntimeControlPolicy(
     runtime_kind="learning_loop",
+    supports_pause=True,
+    supports_resume=True,
     supports_approval=True,
+    supports_input=True,
 )
 
 _KNOWN_POLICIES: dict[str, RuntimeControlPolicy] = {

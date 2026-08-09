@@ -59,16 +59,16 @@ _LEARNING_RUNTIME_UNSUPPORTED_CONTROL_REASONS: dict[
     LearningRuntimeControlAction, tuple[str, str]
 ] = {
     "pause": (
-        "learning_runtime_pause_not_implemented",
-        "LearningLoop Runtime does not support pause control",
+        "learning_runtime_pause_not_available",
+        "LearningLoop Runtime cannot pause from the current checkpoint state",
     ),
     "resume": (
-        "learning_runtime_resume_not_implemented",
-        "LearningLoop Runtime does not support resume control",
+        "learning_runtime_resume_not_available",
+        "LearningLoop Runtime cannot resume from the current checkpoint state",
     ),
     "input": (
-        "learning_runtime_input_not_implemented",
-        "LearningLoop Runtime does not support input control",
+        "learning_runtime_input_not_available",
+        "LearningLoop Runtime is not waiting for user input",
     ),
 }
 
@@ -147,13 +147,12 @@ async def control_learning_runtime(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> LearningRuntimeControlResultRead:
-    """Apply only the currently supported LearningLoop control.
+    """Apply one durable LearningLoop control with a state-version CAS.
 
     The status projection performs ownership and checkpoint checks before any
-    action is considered.  Unsupported controls are audited and rejected
-    before the domain service is called.  ``approve`` is delegated to the
-    existing LearningLoop approval flow so its LearningAction result contract
-    remains unchanged.
+    action is considered.  ``approve`` is delegated to the existing
+    LearningLoop approval flow so its LearningAction result contract remains
+    unchanged; pause/resume/input use the durable checkpoint control method.
     """
 
     _require_learning_runtime_operator(request, principal)
@@ -177,12 +176,26 @@ async def control_learning_runtime(
         )
 
     try:
-        result = await service.approve_runtime_interaction(
-            db,
-            run_id,
-            user_id=user_id,
-            expected_state_version=data.expected_state_version,
-        )
+        result: LearningActionResponse | None
+        if data.action == "approve":
+            result = await service.approve_runtime_interaction(
+                db,
+                run_id,
+                user_id=user_id,
+                expected_state_version=data.expected_state_version,
+            )
+            control_result = None
+        else:
+            control_result = await service.control_runtime_interaction(
+                db,
+                run_id,
+                action=data.action,
+                user_id=user_id,
+                expected_state_version=data.expected_state_version,
+                data=data.data,
+                idempotency_key=data.idempotency_key,
+            )
+            result = control_result.response
     except ConflictError as exc:
         await _reject_learning_runtime_control(
             db,
@@ -190,14 +203,18 @@ async def control_learning_runtime(
             principal,
             current,
             action=data.action,
-            reason_code="learning_runtime_approval_rejected",
+            reason_code=(
+                "learning_runtime_approval_rejected"
+                if data.action == "approve"
+                else "learning_runtime_control_rejected"
+            ),
             reason=str(exc)[:500],
         )
 
     updated = await service.runtime_status(db, run_id, user_id=user_id)
     return LearningRuntimeControlResultRead(
         run_id=run_id,
-        action="approve",
+        action=data.action,
         status=updated.status,
         state_version=updated.state_version,
         result=result,

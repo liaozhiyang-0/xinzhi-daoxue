@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -57,6 +58,11 @@ class TeachingInteractionRuntimeService:
     agent_version = "learning-agent-v1"
     run_kind = "teaching_interaction"
     plan_version = "teaching-interaction-v1"
+    control_scope = "learning_loop"
+    supports_pause = True
+    supports_resume = True
+    supports_approval = True
+    supports_input = True
     observe_node_id = "teaching.feedback.observe"
     apply_node_id = "teaching.feedback.apply"
     verify_node_id = "teaching.feedback.verify"
@@ -146,6 +152,20 @@ class TeachingInteractionRuntimeService:
         run.control_data = {"approved": True}
         return await self._drive(session, task, request, run)
 
+    async def continue_run(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        run: AgentRun,
+    ) -> TeachingRuntimeOutcome:
+        """Resume a checkpoint after pause or user input was persisted."""
+
+        payload = run.request_snapshot.get("learning_action")
+        if not isinstance(payload, dict):
+            raise ValueError("teaching interaction request snapshot is missing")
+        request = LearningActionRequest.model_validate(payload)
+        return await self._drive(session, task, request, run)
+
     def build_plan(
         self, task_id: str, request: LearningActionRequest
     ) -> AgentRunPlan:
@@ -196,6 +216,7 @@ class TeachingInteractionRuntimeService:
         request: LearningActionRequest,
         run: AgentRun,
     ) -> TeachingRuntimeOutcome:
+        request = self._apply_runtime_input(request, run)
         payload = self._restore_payload(run)
         registry = RuntimeHandlerRegistry()
 
@@ -429,6 +450,17 @@ class TeachingInteractionRuntimeService:
                 verification and verification.facts.get("approval_required") is True
             ),
         )
+
+    @staticmethod
+    def _apply_runtime_input(
+        request: LearningActionRequest, run: AgentRun
+    ) -> LearningActionRequest:
+        raw_input = run.control_data.get("user_input")
+        if not isinstance(raw_input, Mapping):
+            return request
+        payload = dict(request.payload)
+        payload["runtime_user_input"] = dict(raw_input)
+        return request.model_copy(update={"payload": payload})
 
     @staticmethod
     def _restore_payload(run: AgentRun) -> dict[str, Any] | None:

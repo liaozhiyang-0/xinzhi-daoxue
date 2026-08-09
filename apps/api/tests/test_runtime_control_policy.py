@@ -22,15 +22,15 @@ def test_unified_runtime_exposes_only_state_valid_controls() -> None:
     assert policy.available_controls("completed") == ()
 
 
-def test_learning_loop_waiting_approval_only_projects_approve() -> None:
+def test_learning_loop_projects_each_durable_control_by_state() -> None:
     policy = LEARNING_LOOP_CONTROL_POLICY
 
-    assert policy.declared_controls == ("approve",)
+    assert policy.declared_controls == ("pause", "resume", "approve", "input")
     assert policy.available_controls("waiting_approval") == ("approve",)
-    assert policy.available_controls("running") == ()
-    assert policy.available_controls("waiting_input") == ()
-    assert policy.available_controls("paused") == ()
-    assert not policy.allows("pause", "running")
+    assert policy.available_controls("running") == ("pause",)
+    assert policy.available_controls("waiting_input") == ("input",)
+    assert policy.available_controls("paused") == ("resume",)
+    assert policy.allows("pause", "running")
 
 
 def test_unknown_runtime_kind_is_fail_closed() -> None:

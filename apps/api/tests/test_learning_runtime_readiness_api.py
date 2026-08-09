@@ -35,16 +35,16 @@ def test_learning_runtime_readiness_projects_only_learning_descriptors(
     }
     assert all(required <= set(item) for item in capabilities)
     assert all(item["domain"] == "learning_loop" for item in capabilities)
-    assert all(item["supports_pause"] is False for item in capabilities)
-    assert all(item["supports_resume"] is False for item in capabilities)
+    assert all(item["supports_pause"] is True for item in capabilities)
+    assert all(item["supports_resume"] is True for item in capabilities)
     assert all(item["supports_approval"] is True for item in capabilities)
-    assert all(item["supports_input"] is False for item in capabilities)
+    assert all(item["supports_input"] is True for item in capabilities)
     assert "learning_runtime_authorized_paired_evidence_missing" in payload[
         "blockers"
     ]
-    assert "learning_runtime_pause_not_implemented" in payload["blockers"]
-    assert "learning_runtime_resume_not_implemented" in payload["blockers"]
-    assert "learning_runtime_input_not_implemented" in payload["blockers"]
+    assert "learning_runtime_pause_not_implemented" not in payload["blockers"]
+    assert "learning_runtime_resume_not_implemented" not in payload["blockers"]
+    assert "learning_runtime_input_not_implemented" not in payload["blockers"]
 
 
 class _ForbiddenExecutionDescriptor:

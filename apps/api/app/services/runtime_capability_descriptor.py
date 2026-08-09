@@ -265,8 +265,9 @@ def _descriptor_from_learning_service(
         agent_version=_first_text(service, "agent_version", default=""),
         enabled=_read_bool(service, "enabled", default=False),
         supported_actions=_read_actions(service, default=default_actions),
-        # LearningLoop currently exposes approve, while pause/resume remain
-        # owned by the Task Runtime control surface.
+        # LearningLoop exposes the same durable control vocabulary as the
+        # shared Runtime policy; the status-aware API still decides which
+        # action is available for a particular checkpoint.
         supports_pause=_read_bool(
             service,
             "supports_pause",

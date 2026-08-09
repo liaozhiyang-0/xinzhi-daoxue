@@ -10,6 +10,7 @@ from app.contracts.learning import (
     LearningRuntimeStatusRead,
 )
 from app.models import AuditLogModel
+from app.services.learning_loop import LearningRuntimeControlOutcome
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -32,11 +33,14 @@ def _status(
         success_criteria=["learning_feedback_verified"],
         required_capabilities=["teaching.feedback.apply"],
         node_statuses=[],
-        available_controls=(
-            ["approve"] if status == "waiting_approval" else []
-        ),
+        available_controls={
+            "running": ["pause"],
+            "paused": ["resume"],
+            "waiting_input": ["input"],
+            "waiting_approval": ["approve"],
+        }.get(status, []),
         approval_required=status == "waiting_approval",
-        resumable=status == "waiting_approval",
+        resumable=status in {"paused", "waiting_input", "waiting_approval"},
     )
 
 
@@ -44,6 +48,7 @@ class _FakeLearningLoop:
     def __init__(self, statuses: Sequence[LearningRuntimeStatusRead]) -> None:
         self.statuses = list(statuses)
         self.approve_calls: list[dict[str, Any]] = []
+        self.control_calls: list[dict[str, Any]] = []
 
     async def runtime_status(
         self, _session: Any, _run_id: str, *, user_id: str
@@ -77,6 +82,34 @@ class _FakeLearningLoop:
             runtime_status="completed",
         )
 
+    async def control_runtime_interaction(
+        self,
+        _session: Any,
+        run_id: str,
+        *,
+        action: str,
+        user_id: str,
+        expected_state_version: int | None,
+        data: dict[str, Any],
+        idempotency_key: str,
+    ) -> LearningRuntimeControlOutcome:
+        self.control_calls.append(
+            {
+                "run_id": run_id,
+                "action": action,
+                "user_id": user_id,
+                "expected_state_version": expected_state_version,
+                "data": data,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return LearningRuntimeControlOutcome(
+            run_id=run_id,
+            action=action,  # type: ignore[arg-type]
+            status="paused" if action == "pause" else "completed",
+            state_version=8,
+        )
+
 
 def test_learning_runtime_controls_are_redacted_and_provider_free(
     app: FastAPI, client: TestClient
@@ -96,13 +129,13 @@ def test_learning_runtime_controls_are_redacted_and_provider_free(
     controls = {item["action"]: item for item in payload["controls"]}
     assert controls["approve"]["available"] is True
     assert controls["pause"]["reason_code"] == (
-        "learning_runtime_pause_not_implemented"
+        "learning_runtime_pause_not_available"
     )
     assert controls["resume"]["reason_code"] == (
-        "learning_runtime_resume_not_implemented"
+        "learning_runtime_resume_not_available"
     )
     assert controls["input"]["reason_code"] == (
-        "learning_runtime_input_not_implemented"
+        "learning_runtime_input_not_available"
     )
     assert "request_snapshot" not in str(payload)
     assert fake.approve_calls == []
@@ -111,9 +144,9 @@ def test_learning_runtime_controls_are_redacted_and_provider_free(
 @pytest.mark.parametrize(
     ("action", "reason_code"),
     [
-        ("pause", "learning_runtime_pause_not_implemented"),
-        ("resume", "learning_runtime_resume_not_implemented"),
-        ("input", "learning_runtime_input_not_implemented"),
+        ("pause", "learning_runtime_pause_not_available"),
+        ("resume", "learning_runtime_resume_not_available"),
+        ("input", "learning_runtime_input_not_available"),
     ],
 )
 def test_learning_runtime_control_rejects_unsupported_actions_and_audits_reason(
@@ -127,7 +160,11 @@ def test_learning_runtime_control_rejects_unsupported_actions_and_audits_reason(
 
     response = client.post(
         "/api/v1/learning/runtime/learning-control-run/control",
-        json={"action": action, "expected_state_version": 7},
+        json={
+            "action": action,
+            "expected_state_version": 7,
+            "data": {"answer": "more"} if action == "input" else {},
+        },
     )
 
     assert response.status_code == 409, response.text
@@ -138,6 +175,7 @@ def test_learning_runtime_control_rejects_unsupported_actions_and_audits_reason(
     assert details["state_version"] == 7
     assert details["provider_called"] is False
     assert fake.approve_calls == []
+    assert fake.control_calls == []
 
     async def read_audit() -> list[AuditLogModel]:
         async with app.state.session_factory() as db:
@@ -182,3 +220,73 @@ def test_learning_runtime_control_delegates_only_approve_and_preserves_result_co
             "expected_state_version": 7,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("action", "initial_status", "updated_status", "data"),
+    [
+        ("pause", "running", "paused", {}),
+        ("resume", "paused", "completed", {}),
+        ("input", "waiting_input", "completed", {"answer": "clarify"}),
+    ],
+)
+def test_learning_runtime_control_delegates_durable_controls(
+    app: FastAPI,
+    client: TestClient,
+    action: str,
+    initial_status: str,
+    updated_status: str,
+    data: dict[str, Any],
+) -> None:
+    fake = _FakeLearningLoop(
+        [
+            _status(status=initial_status),
+            _status(status=updated_status, state_version=8),
+        ]
+    )
+    app.state.learning_loop = fake
+
+    response = client.post(
+        "/api/v1/learning/runtime/learning-control-run/control",
+        json={
+            "action": action,
+            "expected_state_version": 7,
+            "data": data,
+            "idempotency_key": f"learning-{action}-0001",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider_called"] is False
+    assert payload["accepted"] is True
+    assert payload["action"] == action
+    assert payload["status"] == updated_status
+    assert payload["state_version"] == 8
+    assert payload["result"] is None
+    assert fake.control_calls == [
+        {
+            "run_id": "learning-control-run",
+            "action": action,
+            "user_id": "",
+            "expected_state_version": 7,
+            "data": data,
+            "idempotency_key": f"learning-{action}-0001",
+        }
+    ]
+
+
+def test_learning_runtime_control_requires_operator_when_auth_is_enabled(
+    app: FastAPI, client: TestClient
+) -> None:
+    app.state.settings.auth_required = True
+    fake = _FakeLearningLoop([_status(status="running")])
+    app.state.learning_loop = fake
+
+    response = client.post(
+        "/api/v1/learning/runtime/learning-control-run/control",
+        json={"action": "pause", "expected_state_version": 7},
+    )
+
+    assert response.status_code in {401, 403}
+    assert fake.control_calls == []

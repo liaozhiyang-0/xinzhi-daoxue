@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 LearningAction = Literal[
     "add_wrong_answer",
@@ -393,19 +393,22 @@ LearningRuntimeControlAction = Literal["approve", "pause", "resume", "input"]
 
 
 class LearningRuntimeControlRequest(BaseModel):
-    """Request an explicit operator action on a LearningLoop Runtime run.
-
-    The action vocabulary is intentionally broader than the currently
-    implemented LearningLoop surface.  Unsupported actions are rejected by
-    the API projection rather than silently ignored, which lets clients
-    discover the domain boundary without changing the LearningAction
-    contract.
-    """
+    """Request one durable, optimistic-concurrency control operation."""
 
     model_config = ConfigDict(extra="forbid")
 
     action: LearningRuntimeControlAction
     expected_state_version: int | None = Field(default=None, ge=1)
+    data: dict[str, Any] = Field(default_factory=dict, max_length=64)
+    idempotency_key: str = Field(default="", max_length=128)
+
+    @model_validator(mode="after")
+    def validate_control_data(self) -> LearningRuntimeControlRequest:
+        if self.action == "input" and not self.data:
+            raise ValueError("input control requires non-empty data")
+        if self.action != "input" and self.data:
+            raise ValueError("control data is only valid for input")
+        return self
 
 
 class LearningRuntimeControlRead(BaseModel):
@@ -471,7 +474,9 @@ class LearningRuntimeStatusRead(BaseModel):
         default_factory=list, max_length=100
     )
     control_scope: Literal["learning_loop"] = "learning_loop"
-    available_controls: list[Literal["approve"]] = Field(default_factory=list)
+    available_controls: list[LearningRuntimeControlAction] = Field(
+        default_factory=list, max_length=4
+    )
     approval_required: bool = False
     resumable: bool = False
 
@@ -552,8 +557,8 @@ class LearningRuntimeControlResultRead(BaseModel):
     version: Literal["v1"] = "v1"
     provider_called: Literal[False] = False
     run_id: str = Field(min_length=1, max_length=120)
-    action: Literal["approve"] = "approve"
+    action: LearningRuntimeControlAction
     accepted: Literal[True] = True
     status: str = Field(min_length=1, max_length=32)
     state_version: int = Field(ge=1)
-    result: LearningActionResponse
+    result: LearningActionResponse | None = None

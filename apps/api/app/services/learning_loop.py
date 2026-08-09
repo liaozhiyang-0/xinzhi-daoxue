@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -17,6 +19,7 @@ from app.contracts.learning import (
     LearningActionRequest,
     LearningActionResponse,
     LearningFollowUpContext,
+    LearningRuntimeControlAction,
     LearningRuntimeNodeStatusRead,
     LearningRuntimeStatusRead,
     StudentAttempt,
@@ -33,6 +36,7 @@ from app.models.entities import (
 )
 from app.repositories import AgentRunRepository
 from app.repositories.learning import LearningRecordRepository
+from app.runtime import RuntimeRunStatus
 from app.services.answer_disclosure import INTERNAL_TEACHING_KEY
 from app.services.event_service import append_task_event
 from app.services.feedback_uptake import FeedbackUptakeService
@@ -66,6 +70,15 @@ PHASE3_ACTIONS = frozenset(
         "dismiss_retest",
     }
 )
+
+
+@dataclass(frozen=True)
+class LearningRuntimeControlOutcome:
+    run_id: str
+    action: LearningRuntimeControlAction
+    status: str
+    state_version: int
+    response: LearningActionResponse | None = None
 
 
 class LearningLoopService:
@@ -533,6 +546,182 @@ class LearningLoopService:
         await session.commit()
         return response
 
+    async def control_runtime_interaction(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        *,
+        action: LearningRuntimeControlAction,
+        user_id: str,
+        expected_state_version: int | None = None,
+        data: Mapping[str, Any] | None = None,
+        idempotency_key: str = "",
+    ) -> LearningRuntimeControlOutcome:
+        """Apply a durable non-approval control to a LearningLoop Run.
+
+        The operation is deliberately checkpoint-first: ownership, the
+        state-version compare-and-set, status policy, and control payload are
+        validated before any resumed Runtime node can execute.  ``approve``
+        remains on ``approve_runtime_interaction`` so its existing result and
+        one-shot approval semantics are unchanged.
+        """
+
+        if action == "approve":
+            raise ConflictError(
+                "approve must use the LearningLoop approval endpoint"
+            )
+        repository = AgentRunRepository(session)
+        model = await repository.get(run_id, for_update=True)
+        if model is None or model.run_kind not in {
+            "teaching_interaction",
+            "learning_progress",
+        }:
+            raise NotFoundError("learning Runtime run not found")
+        task = await session.get(TaskModel, model.task_id)
+        if task is None or (user_id and task.user_id != user_id):
+            raise NotFoundError("learning Runtime run not found")
+
+        marker = _learning_control_marker(model.control_data)
+        if (
+            idempotency_key.strip()
+            and marker is not None
+            and marker.get("idempotency_key") == idempotency_key.strip()
+            and marker.get("action") == action
+        ):
+            return LearningRuntimeControlOutcome(
+                run_id=run_id,
+                action=action,
+                status=str(marker.get("status") or model.status),
+                state_version=int(
+                    marker.get("state_version") or model.state_version
+                ),
+            )
+
+        status = str(model.status)
+        policy = control_policy_for_runtime_kind(model.run_kind)
+        if not policy.allows(action, status):
+            raise ConflictError(
+                "LearningLoop Runtime status does not support this control",
+                details={
+                    "runtime_status": status,
+                    "action": action,
+                    "state_version": model.state_version,
+                },
+            )
+        if (
+            expected_state_version is not None
+            and model.state_version != expected_state_version
+        ):
+            raise ConflictError(
+                "LearningLoop Runtime state version has changed",
+                details={
+                    "expected_state_version": expected_state_version,
+                    "actual_state_version": model.state_version,
+                },
+            )
+
+        payload = dict(data or {})
+        if action == "input" and not payload:
+            raise ConflictError("LearningLoop Runtime input data is required")
+        if action != "input" and payload:
+            raise ConflictError("control data is only valid for input")
+        if len(payload) > 64:
+            raise ConflictError("LearningLoop Runtime input data is too large")
+
+        run = await repository.restore(run_id)
+        if run is None:
+            raise NotFoundError("learning Runtime checkpoint not found")
+        if run.state_version != model.state_version:
+            raise ConflictError(
+                "LearningLoop Runtime checkpoint is stale",
+                details={
+                    "checkpoint_state_version": run.state_version,
+                    "stored_state_version": model.state_version,
+                },
+            )
+
+        control_data = dict(run.control_data)
+        if idempotency_key.strip():
+            control_data["learning_runtime_control"] = {
+                "action": action,
+                "idempotency_key": idempotency_key.strip(),
+                "status": status,
+                "state_version": model.state_version + 1,
+            }
+        if action == "pause":
+            run.control_request = "pause"
+            run.status = RuntimeRunStatus.PAUSED
+        else:
+            if action == "input":
+                control_data["user_input"] = payload
+            run.control_request = ""
+            run.status = RuntimeRunStatus.RUNNING
+        run.control_data = control_data
+        checkpoint = await repository.save_checkpoint(
+            run,
+            expected_state_version=model.state_version,
+        )
+
+        response: LearningActionResponse | None = None
+        if action in {"resume", "input"}:
+            runtime = self._runtime_for_run_kind(model.run_kind)
+            if runtime is None:
+                raise NotFoundError("learning Runtime service is not enabled")
+            outcome = await runtime.continue_run(session, task, run)
+            response = getattr(outcome, "response", None)
+            # Keep the idempotency marker durable after the resumed drive may
+            # have advanced through several checkpoints.
+            if idempotency_key.strip():
+                final_data = dict(run.control_data)
+                final_data["learning_runtime_control"] = {
+                    "action": action,
+                    "idempotency_key": idempotency_key.strip(),
+                    "status": run.status.value,
+                    "state_version": run.state_version + 1,
+                }
+                run.control_data = final_data
+                checkpoint = await repository.save_checkpoint(
+                    run,
+                    expected_state_version=run.state_version,
+                )
+
+        await append_task_event(
+            session,
+            task.id,
+            AgentEventType.AGENT_PROGRESS,
+            agent_id=model.agent_id,
+            data={
+                "stage_id": "learning_runtime_control",
+                "status": f"{action}_applied",
+                "runtime_run_id": run_id,
+                "state_version": checkpoint.state_version,
+                "input_keys": sorted(payload) if action == "input" else [],
+            },
+        )
+        await session.commit()
+        return LearningRuntimeControlOutcome(
+            run_id=run_id,
+            action=action,
+            status=run.status.value,
+            state_version=checkpoint.state_version,
+            response=response,
+        )
+
+    def _runtime_for_run_kind(
+        self, run_kind: str
+    ) -> TeachingInteractionRuntimeService | LearningProgressRuntimeService | None:
+        if (
+            self.teaching_interaction_runtime is not None
+            and run_kind == self.teaching_interaction_runtime.run_kind
+        ):
+            return self.teaching_interaction_runtime
+        if (
+            self.learning_progress_runtime is not None
+            and run_kind == self.learning_progress_runtime.run_kind
+        ):
+            return self.learning_progress_runtime
+        return None
+
     async def runtime_status(
         self,
         session: AsyncSession,
@@ -587,9 +776,7 @@ class LearningLoopService:
             goal_source=goal.source,
             node_statuses=node_statuses,
             available_controls=(
-                ["approve"]
-                if control_policy.allows("approve", status)
-                else []
+                list(control_policy.available_controls(status))
             ),
             approval_required=status == "waiting_approval",
             resumable=status in {"paused", "waiting_input", "waiting_approval"},
@@ -1050,3 +1237,18 @@ class LearningLoopService:
             incorrect_count=item.incorrect_count,
             hint_count=item.hint_count,
         )
+
+
+def _learning_control_marker(
+    value: object,
+) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    marker = value.get("learning_runtime_control")
+    if not isinstance(marker, Mapping):
+        return None
+    action = marker.get("action")
+    key = marker.get("idempotency_key")
+    if not isinstance(action, str) or not isinstance(key, str):
+        return None
+    return dict(marker)

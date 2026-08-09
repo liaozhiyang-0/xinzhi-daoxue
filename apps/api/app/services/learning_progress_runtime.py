@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -64,6 +64,11 @@ class LearningProgressRuntimeService:
     agent_version = "learning-agent-v1"
     run_kind = "learning_progress"
     plan_version = "learning-progress-v1"
+    control_scope = "learning_loop"
+    supports_pause = True
+    supports_resume = True
+    supports_approval = True
+    supports_input = True
     observe_node_id = "learning.progress.observe"
     apply_node_id = "learning.progress.apply"
     verify_node_id = "learning.progress.verify"
@@ -153,6 +158,20 @@ class LearningProgressRuntimeService:
         run.control_data = {"approved": True}
         return await self._drive(session, task, request, run)
 
+    async def continue_run(
+        self,
+        session: AsyncSession,
+        task: TaskModel,
+        run: AgentRun,
+    ) -> LearningProgressRuntimeOutcome:
+        """Resume a checkpoint after pause or user input was persisted."""
+
+        payload = run.request_snapshot.get("learning_action")
+        if not isinstance(payload, dict):
+            raise ValueError("learning progress Runtime request snapshot is missing")
+        request = LearningActionRequest.model_validate(payload)
+        return await self._drive(session, task, request, run)
+
     def build_plan(
         self, task_id: str, request: LearningActionRequest
     ) -> AgentRunPlan:
@@ -203,6 +222,7 @@ class LearningProgressRuntimeService:
         request: LearningActionRequest,
         run: AgentRun,
     ) -> LearningProgressRuntimeOutcome:
+        request = self._apply_runtime_input(request, run)
         registry = RuntimeHandlerRegistry()
 
         def observe_handler(
@@ -440,6 +460,17 @@ class LearningProgressRuntimeService:
                 verification and verification.facts.get("approval_required") is True
             ),
         )
+
+    @staticmethod
+    def _apply_runtime_input(
+        request: LearningActionRequest, run: AgentRun
+    ) -> LearningActionRequest:
+        raw_input = run.control_data.get("user_input")
+        if not isinstance(raw_input, Mapping):
+            return request
+        payload = dict(request.payload)
+        payload["runtime_user_input"] = dict(raw_input)
+        return request.model_copy(update={"payload": payload})
 
     @staticmethod
     def _restore_payload(run: AgentRun) -> dict[str, Any] | None:

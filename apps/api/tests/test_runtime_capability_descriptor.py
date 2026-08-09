@@ -87,10 +87,10 @@ def test_learning_descriptor_preserves_learning_boundary() -> None:
     assert descriptor.version == "teaching-interaction-v1"
     assert descriptor.agent_version == ""
     assert descriptor.supported_actions == TEACHING_INTERACTION_ACTIONS
-    assert descriptor.supports_pause is False
-    assert descriptor.supports_resume is False
+    assert descriptor.supports_pause is True
+    assert descriptor.supports_resume is True
     assert descriptor.supports_approval is True
-    assert descriptor.supports_input is False
+    assert descriptor.supports_input is True
     assert descriptor.result_contract == "learning_action_response.v1"
     assert descriptor.control_scope == "learning_loop"
 
