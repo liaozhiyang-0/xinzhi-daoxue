@@ -43,6 +43,15 @@ def _redact_dict(value: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], _redact(value))
 
 
+def _read_runtime_handoff(run: AgentRunModel | None) -> dict[str, Any]:
+    """Read the persisted Runtime ownership envelope without trusting its shape."""
+
+    if run is None or not isinstance(run.control_data, dict):
+        return {}
+    handoff = run.control_data.get("runtime_handoff")
+    return dict(handoff) if isinstance(handoff, dict) else {}
+
+
 @router.get("/metrics/summary", response_model=dict[str, Any])
 async def get_metrics_summary(
     request: Request,
@@ -251,6 +260,7 @@ async def get_execution(
             .order_by(AgentRunModel.created_at.desc())
             .limit(1)
         )
+    runtime_handoff = _read_runtime_handoff(run)
     runtime_nodes = []
     runtime_children = []
     restored_runtime: AgentRun | None = None
@@ -445,6 +455,7 @@ async def get_execution(
                 "state_version": run.state_version if run is not None else 0,
                 "launch_decision": runtime_launch_decision,
                 "compatibility_snapshot": runtime_compatibility_snapshot,
+                "handoff": runtime_handoff,
                 "budget": (
                     run.budget_data
                     if run is not None and isinstance(run.budget_data, dict)
