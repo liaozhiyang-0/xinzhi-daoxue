@@ -1034,3 +1034,30 @@ calculation, and an explicit no-evidence/safety case. It must be captured from
 the same input through Legacy and Runtime, retain only controlled external
 payloads plus hashes in the repository, and include human or approved model
 review. Synthetic fixtures remain test-only and cannot satisfy this gate.
+
+The reproducible collection entry point is now
+`scripts/collect_runtime_semantic_evidence.py`. Given an authorized
+structural suite, a private input map, and a private judgement map, it emits a
+JSON array with one hash-bound record per case:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/collect_runtime_semantic_evidence.py `
+  --suite <authorized-suite.json> `
+  --inputs <private-inputs.json> `
+  --judgements <private-judgements.json> `
+  --output <semantic-sidecar.json>
+```
+
+The release configuration then points to both artifacts without putting their
+contents in the repository:
+
+```text
+AGENT_RUNTIME_CANARY_ARTIFACTS=GENERAL_QUESTION_V1=<authorized-suite.json>
+AGENT_RUNTIME_SEMANTIC_EVIDENCE=GENERAL_QUESTION_V1=<semantic-sidecar.json>
+AGENT_RUNTIME_RELEASE_GATE_REQUIRED=true
+```
+
+The registry rejects an Agent when the sidecar is absent, stale, mismatched,
+non-redacted, non-passing, or does not cover every case in the structural
+suite. The current repository contains no authorized artifact, so no Agent is
+yet eligible for production canary/default launch.
