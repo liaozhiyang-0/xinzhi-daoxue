@@ -22,6 +22,29 @@ function runtimeStatusLabel(status) { const key = runtimeStatusKey(status); retu
 function runtimeStatusTone(status) { const key = runtimeStatusKey(status); return ["completed", "succeeded"].includes(key) ? "success" : ["failed", "cancelled", "blocked"].includes(key) ? "failed" : ["running"].includes(key) ? "running" : ["waiting_input", "waiting_approval", "paused", "partial"].includes(key) ? "partial" : ["ready"].includes(key) ? "ready" : "planned"; }
 function runtimeStatusBadge(status) { return badge(runtimeStatusTone(status), runtimeStatusLabel(status)); }
 function asRecord(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+function runtimeSafePrompt(runtime) {
+  const decision = asRecord(runtime?.last_decision);
+  const waiting = asRecord(runtime?.waiting_input);
+  const candidates = [runtime?.user_prompt, runtime?.input_prompt, waiting.prompt, decision.user_prompt];
+  const prompt = candidates.find((value) => typeof value === "string" && value.trim());
+  return typeof prompt === "string"
+    ? prompt.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 2_000)
+    : "Runtime 已暂停在输入门；请提交补充信息后继续执行。";
+}
+function runtimeWaitingInputSurface(runtime) {
+  if (runtimeStatusKey(runtime?.status) !== "waiting_input") return null;
+  const resumable = runtime.resumable === false ? "否" : "是";
+  return section(
+    "等待输入",
+    "Runtime 正在等待用户补充信息。当前只展示经过限制的用户提示，不展示原始请求快照或控制数据。",
+    kvSurface("Input checkpoint", [
+      ["用户提示", runtimeSafePrompt(runtime)],
+      ["state_version", runtime.state_version],
+      ["可恢复", resumable],
+      ["恢复边界", "提交输入后由后端校验状态版本并恢复 Runtime"],
+    ]),
+  );
+}
 function displayValue(value) {
   if (value == null || value === "") return "—";
   if (Array.isArray(value)) return value.length ? value.map((item) => displayValue(item)).join("、") : "—";
@@ -359,6 +382,7 @@ function renderRuntime(data) {
   const goalContract = runtime.goal_contract || {};
   const controlEvent = runtimeControlEvent(data);
   const handoff = runtimeHandoff(data, runtime);
+  const waitingInputSurface = runtimeWaitingInputSurface(runtime);
   renderRuntimeControls(data);
   const hasRuntime = Boolean(runtime.run_id || runtime.status || runtime.goal || nodes.length || learningReference);
   if (!hasRuntime) {
@@ -371,6 +395,7 @@ function renderRuntime(data) {
       kvSurface("运行身份", [["Run ID", runtime.run_id], ["Run kind", runtime.run_kind], ["状态", runtimeStatusLabel(runtime.status)], ["迭代", runtime.iteration], ["state_version", runtime.state_version], ["终止原因", runtime.terminal_reason]]),
       runtimeControlSurface(runtime, controlEvent),
     ])),
+    ...(waitingInputSurface ? [waitingInputSurface] : []),
     ...(learningReference ? [learningRuntimeStatusSurface(learningReference)] : []),
     section("Goal / Plan", "只展示 Runtime 已持久化的目标契约与计划身份，不推断未返回的计划节点依赖。", el("div", { class: "debug-grid" }, [
       kvSurface("Goal 契约", [["目标", runtime.goal || goalContract.objective], ["Goal 版本", runtime.goal_version || goalContract.version], ["成功标准", goalContract.success_criteria], ["所需能力", goalContract.required_capabilities], ["来源", goalContract.source]]),
