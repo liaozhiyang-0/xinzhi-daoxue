@@ -1,5 +1,5 @@
 const { $, all, api, badge, el, initShell, initTabs, renderJson, toast } = XinzhiUI;
-const state = { agents: [], actionsEnabled: false, mocksEnabled: false, selected: "" };
+const state = { agents: [], runtimeCapabilities: [], actionsEnabled: false, mocksEnabled: false, selected: "" };
 const runtimeReadinessLabels = { blocked: "已阻塞", default_ready: "默认就绪", canary_ready: "Canary 就绪", shadow_ready: "Shadow 就绪", runtime_implemented: "已实现", explicit_goal_only: "仅显式 Goal", legacy_only: "仅 Legacy" };
 function runtimeReadinessTone(status) { return status === "blocked" ? "failed" : ["default_ready", "canary_ready", "shadow_ready", "runtime_implemented"].includes(status) ? "ready" : status === "explicit_goal_only" ? "partial" : "planned"; }
 function runtimeReadinessBadge(readiness = {}) { const status = readiness.status || "unknown"; return badge(runtimeReadinessTone(status), runtimeReadinessLabels[status] || "未报告"); }
@@ -49,6 +49,32 @@ function safeRuntimeCapabilityText(value, fallback = "未提供") {
 function safeRuntimeCapabilityList(value) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === "object" && !Array.isArray(item)) : [];
 }
+const runtimeCapabilityDomains = { task_agent: "task_agent（任务 Agent）", learning_loop: "learning_loop（学习闭环）" };
+function runtimeCapabilityDomainGroups(value) {
+  const groups = { task_agent: [], learning_loop: [] };
+  safeRuntimeCapabilityList(value).forEach((capability) => {
+    const domain = typeof capability.domain === "string" ? capability.domain.trim() : "";
+    if (Object.prototype.hasOwnProperty.call(groups, domain)) groups[domain].push(capability);
+  });
+  return groups;
+}
+function runtimeCapabilityKey(capability) {
+  return [capability.domain, capability.capability_id, capability.runtime_id, capability.version].map((value) => safeRuntimeCapabilityText(value, "")).join("\u001f");
+}
+function runtimeCapabilitiesFromAgentPayload(payload, agents) {
+  const direct = [payload?.capabilities, payload?.runtime_readiness?.capabilities].find((value) => safeRuntimeCapabilityList(value).length);
+  const candidates = direct || agents.flatMap((agent) => [
+    ...safeRuntimeCapabilityList(agent?.runtime_capabilities),
+    ...safeRuntimeCapabilityList(agent?.runtime_readiness?.runtime_capabilities),
+  ]);
+  const seen = new Set();
+  return safeRuntimeCapabilityList(candidates).filter((capability) => {
+    const key = runtimeCapabilityKey(capability);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 function runtimeCapabilityActions(capability) {
   const actions = Array.isArray(capability.supported_actions) ? capability.supported_actions : [];
   return actions.map((action) => safeRuntimeCapabilityText(action, "")).filter(Boolean);
@@ -76,6 +102,28 @@ function runtimeCapabilitiesDetails(value) {
     })),
   ]);
 }
+function runtimeCapabilityDomainDetails(value) {
+  const groups = runtimeCapabilityDomainGroups(value);
+  return el("section", { class: "runtime-capabilities runtime-capabilities-by-domain" }, [
+    el("div", { class: "runtime-readiness-actions-heading" }, [el("h3", { text: "跨入口 Runtime capabilities" }), badge("ready", "按 domain")]),
+    ...Object.entries(runtimeCapabilityDomains).map(([domain, label]) => {
+      const capabilities = groups[domain];
+      return el("section", { class: "runtime-capability-domain", "data-capability-domain": domain }, [
+        el("h4", { text: label }),
+        capabilities.length
+          ? el("div", { class: "definition-cards" }, capabilities.map((capability) => {
+            const actions = runtimeCapabilityActions(capability);
+            return el("article", { class: "metric-card runtime-capability-card" }, [
+              el("strong", { text: safeRuntimeCapabilityText(capability.capability_id) }),
+              el("small", { text: `runtime / version：${safeRuntimeCapabilityText(capability.runtime_id)} / ${safeRuntimeCapabilityText(capability.version)}` }),
+              el("small", { text: `control_scope：${safeRuntimeCapabilityText(capability.control_scope)}；supported_actions：${actions.join(", ") || "未提供"}` }),
+            ]);
+          }))
+          : el("p", { class: "runtime-readiness-note", text: "未提供该 domain 的 Runtime capability 描述。" }),
+      ]);
+    }),
+  ]);
+}
 function runtimeReadinessDetails(readiness) {
   if (!readiness || !Object.keys(readiness).length) return el("p", { class: "empty-state", text: "当前 Agent 未提供 Runtime readiness 字段。" });
   const blockers = readinessTextItems(readiness.blockers);
@@ -86,6 +134,7 @@ function runtimeReadinessDetails(readiness) {
       el("article", { class: "metric-card" }, [badge(readiness.canary_release_eligible ? "ready" : "planned", readiness.canary_release_eligible ? "Canary 通过" : "Canary 未通过"), el("strong", { text: readiness.launch_reason || "未提供" }), el("small", { text: readiness.canary_reason || "无 Canary 原因" })]),
     ]),
     el("p", { class: "runtime-readiness-note", text: `运行选项：${(readiness.runtime_option_keys || []).join(", ") || "未声明"}；显式 Goal Runtime：${readiness.explicit_goal_runtime_available ? "可用" : "不可用"}` }),
+     runtimeCapabilityDomainDetails(state.runtimeCapabilities),
      runtimeCapabilitiesDetails(readiness.runtime_capabilities),
      runtimeReadinessNextSteps(readiness, blockers),
   ]);
@@ -108,7 +157,7 @@ function renderRows() {
 async function selectAgent(id) { state.selected = id; $("#agent-select").value = id; await loadDefinition(); all("[data-agent]").forEach((row) => row.classList.toggle("selected", row.dataset.agent === id)); }
 async function loadAgents() {
   try {
-    const data = await api("/api/v1/agents", {}, 5000); state.agents = data.agents || []; state.actionsEnabled = Boolean(data.debug_actions_enabled); state.mocksEnabled = Boolean(data.mock_actions_enabled);
+    const data = await api("/api/v1/agents", {}, 5000); state.agents = data.agents || []; state.runtimeCapabilities = runtimeCapabilitiesFromAgentPayload(data, state.agents); state.actionsEnabled = Boolean(data.debug_actions_enabled); state.mocksEnabled = Boolean(data.mock_actions_enabled);
     const env = badge(state.actionsEnabled ? (state.mocksEnabled ? "mock" : "ready") : "disabled", state.actionsEnabled ? (state.mocksEnabled ? "Debug · Mock 可用" : "Debug · Mock 关闭") : "只读模式"); env.id = "environment-badge"; $("#environment-badge").replaceWith(env);
     $("#agent-select").replaceChildren(...state.agents.map((item) => el("option", { value: item.agent_id, text: item.display_name || item.agent_id })));
     all("[data-action]").forEach((button) => { button.disabled = !state.actionsEnabled || (button.dataset.action === "mock" && !state.mocksEnabled); });

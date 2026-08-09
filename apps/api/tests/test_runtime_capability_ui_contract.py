@@ -25,6 +25,27 @@ def test_agents_ui_consumes_optional_runtime_capability_contract() -> None:
     assert "capabilities.length" in script
 
 
+def test_agents_ui_groups_top_level_capabilities_by_runtime_domain() -> None:
+    script = _read()
+
+    assert 'const runtimeCapabilityDomains = { task_agent:' in script
+    assert 'learning_loop:' in script
+    assert "function runtimeCapabilityDomainGroups(value)" in script
+    assert "runtimeCapabilityDomainDetails" in script
+    assert 'data-capability-domain' in script
+    assert "control_scope：" in script
+    assert "supported_actions：" in script
+    assert "runtimeCapabilitiesFromAgentPayload" in script
+
+
+def test_agents_ui_does_not_add_readiness_api_or_control_calls() -> None:
+    script = _read()
+
+    assert 'api("/api/v1/agents/runtime-readiness"' not in script
+    assert "runtimeCapabilitiesFromAgentPayload(data, state.agents)" in script
+    assert "method: \"POST\"" in script
+
+
 def test_agents_ui_handles_malformed_capabilities_without_throwing() -> None:
     script = _read()
 
