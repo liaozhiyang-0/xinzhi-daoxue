@@ -100,6 +100,25 @@ def _safe_value(value: Any, *, max_chars: int = 20_000) -> Any:
     return repr(value)[:max_chars]
 
 
+def _tool_risk_level(definition: Any) -> str:
+    """Project tool side-effect and sandbox metadata into Runtime risk tiers.
+
+    ToolDefinition intentionally keeps ``side_effect_level`` extensible. An
+    unknown non-read-only value therefore fails closed to ``high`` instead of
+    being treated as a harmless tool. Sandboxing a read-only tool still has an
+    execution-isolation risk and is represented as ``medium``.
+    """
+
+    side_effect_level = str(definition.side_effect_level).strip().lower()
+    if side_effect_level in {"delete", "destructive", "critical"}:
+        return "critical"
+    if side_effect_level not in {"none", "read_only"}:
+        return "high"
+    if definition.requires_sandbox:
+        return "medium"
+    return "low"
+
+
 async def _invoke(handler: Callable[..., Any], payload: Mapping[str, Any]) -> Any:
     args = payload.get("args", [])
     kwargs = payload.get("kwargs", payload)
@@ -152,6 +171,12 @@ def register_tool_handlers(
                 handler_id=handler_id,
                 kind="tool",
                 version="1",
+                input_schema=definition.input_schema,
+                output_schema=definition.output_schema,
+                permission_scope=handler_id,
+                side_effect_level=definition.side_effect_level,
+                requires_sandbox=definition.requires_sandbox,
+                risk_level=_tool_risk_level(definition),
                 requires_approval=requires_approval,
                 side_effecting=requires_approval,
                 replay_safe=not requires_approval,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +12,7 @@ RuntimeNodeHandler = Callable[
     [AgentRun, RuntimeNode], RuntimeObservation | Awaitable[RuntimeObservation]
 ]
 RuntimeHandlerKind = Literal["tool", "agent", "provider", "subagent", "workflow"]
+RuntimeRiskLevel = Literal["low", "medium", "high", "critical"]
 
 
 class RuntimeHandlerDescriptor(BaseModel):
@@ -21,6 +22,16 @@ class RuntimeHandlerDescriptor(BaseModel):
     kind: RuntimeHandlerKind
     version: str = Field(default="1", min_length=1, max_length=32)
     enabled: bool = True
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] = Field(default_factory=dict)
+    permission_scope: str = Field(
+        default="runtime",
+        min_length=1,
+        max_length=160,
+    )
+    side_effect_level: str = Field(default="none", min_length=1, max_length=32)
+    requires_sandbox: bool = False
+    risk_level: RuntimeRiskLevel = "low"
     requires_approval: bool = False
     side_effecting: bool = False
     replay_safe: bool = True

@@ -14,6 +14,7 @@ from app.runtime import (
     build_runtime_handler_registry,
 )
 from app.tools import default_tool_registry
+from app.tools.registry import ToolDefinition, ToolRegistry
 
 
 def make_run(
@@ -141,6 +142,83 @@ def test_runtime_adapters_register_and_execute_existing_capabilities() -> None:
     assert internal_run.nodes["internal"].observation.facts["provider"] == (
         "internal"
     )
+
+
+def test_runtime_tool_descriptors_preserve_schema_and_execution_policy() -> None:
+    tools = ToolRegistry()
+    tools.register(
+        ToolDefinition(
+            tool_id="calculator",
+            name="Calculator",
+            supported_capabilities=frozenset({"algebra"}),
+            input_schema={
+                "type": "object",
+                "properties": {"expression": {"type": "string"}},
+                "required": ["expression"],
+            },
+            output_schema={"type": "number"},
+        ),
+        lambda expression: len(expression),
+    )
+    tools.register(
+        ToolDefinition(
+            tool_id="sandbox_writer",
+            name="Sandbox writer",
+            supported_capabilities=frozenset({"code_analysis"}),
+            input_schema={"type": "object", "required": ["code"]},
+            output_schema={"type": "object"},
+            side_effect_level="write",
+            requires_sandbox=True,
+            deterministic=False,
+        ),
+        lambda code: {"length": len(code)},
+    )
+
+    runtime_registry = build_runtime_handler_registry(
+        tools,
+        FakeProvider(),
+    )
+
+    calculator = runtime_registry.descriptor("tool.calculator")
+    assert calculator.input_schema == {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"],
+    }
+    assert calculator.output_schema == {"type": "number"}
+    assert calculator.permission_scope == "tool.calculator"
+    assert calculator.side_effect_level == "none"
+    assert calculator.requires_sandbox is False
+    assert calculator.risk_level == "low"
+    assert calculator.requires_approval is False
+    assert calculator.replay_safe is True
+
+    sandbox_writer = runtime_registry.descriptor("tool.sandbox_writer")
+    assert sandbox_writer.input_schema == {
+        "type": "object",
+        "required": ["code"],
+    }
+    assert sandbox_writer.output_schema == {"type": "object"}
+    assert sandbox_writer.permission_scope == "tool.sandbox_writer"
+    assert sandbox_writer.side_effect_level == "write"
+    assert sandbox_writer.requires_sandbox is True
+    assert sandbox_writer.risk_level == "high"
+    assert sandbox_writer.requires_approval is True
+    assert sandbox_writer.side_effecting is True
+    assert sandbox_writer.replay_safe is False
+
+
+def test_runtime_handler_descriptor_defaults_remain_backward_compatible() -> None:
+    from app.runtime.handler_registry import RuntimeHandlerDescriptor
+
+    descriptor = RuntimeHandlerDescriptor(handler_id="legacy", kind="tool")
+
+    assert descriptor.input_schema == {}
+    assert descriptor.output_schema == {}
+    assert descriptor.permission_scope == "runtime"
+    assert descriptor.side_effect_level == "none"
+    assert descriptor.requires_sandbox is False
+    assert descriptor.risk_level == "low"
 
 
 def test_runtime_request_adapter_propagates_resumed_user_input() -> None:
