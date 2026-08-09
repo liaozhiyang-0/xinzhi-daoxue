@@ -10,10 +10,11 @@ authorize canary or default launch.
 | --- | --- | --- | --- |
 | `RESEARCH_02_ACADEMIC_WRITING_V1` | Commit `75f38df`; strict `citation_check` / `unsupported_claims` contract, approval gate, checkpoint result reuse, bounded replan | `apps/api/tests/test_academic_writing_runtime.py`: 4 passed; Ruff, target Mypy, diff and sensitive scan passed | Implemented + evaluable; no authorized paired trace or semantic sidecar |
 | `TEACH_02_ASSIGNMENT_REVIEW_V1` | Commit `bca235a`; review-quality approval gate, `PARTIAL` before approval, checkpoint recovery, no duplicate execution, bounded replan | `apps/api/tests/test_assignment_review_runtime.py`: 7 passed; Ruff, target Mypy, diff and sensitive scan passed | Implemented + evaluable; no authorized paired trace or semantic sidecar |
+| `TEACH_01_LESSON_PREP_V1` | Commit `9b1f1f5`; lesson-plan quality gate, approval recovery, checkpoint result reuse, bounded replan | `apps/api/tests/test_lesson_prep_runtime.py`: 7 passed; Ruff, target Mypy with limited imports, diff and sensitive scan passed | Implemented + evaluable; full non-incremental Mypy timed out in the current environment; no authorized paired trace or semantic sidecar |
 
 ## Integration evidence
 
-- The two new business suites passed 11 tests.
+- The three new business suites passed 18 tests.
 - The Runtime contract matrix passed 10 tests.
 - The existing Runtime suite passed 232 tests excluding
   `test_runtime_task_execution_path.py`, plus 10/10 tests in that file. These
