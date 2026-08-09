@@ -29,6 +29,13 @@ def _configured_or_explicit(explicit: str | None, configured: str) -> str:
     return explicit.strip() if explicit and explicit.strip() else configured.strip()
 
 
+def _normalized_expected_version(value: str | None) -> str | None:
+    """Normalize an operator-supplied version without trusting blank input."""
+
+    normalized = value.strip() if value else ""
+    return normalized or None
+
+
 def _artifact_spec(agent_id: str, path_or_spec: str) -> str:
     """Convert a single CLI path into the Registry's ``AGENT_ID=PATH`` form."""
 
@@ -101,6 +108,17 @@ def _next_steps(blocking_reasons: list[str]) -> list[str]:
             "provide a redacted semantic sidecar covering every structural "
             "case_id with matching identity and versions"
         )
+    if any(
+        reason in {
+            "release_expected_agent_version_missing",
+            "release_expected_runtime_plan_version_missing",
+        }
+        for reason in blocking_reasons
+    ):
+        steps.append(
+            "rerun preflight with explicit expected Agent and Runtime plan "
+            "versions from the release record"
+        )
     if not steps:
         steps.append(
             "inspect the blocking reason and rerun this provider-free preflight"
@@ -108,11 +126,20 @@ def _next_steps(blocking_reasons: list[str]) -> list[str]:
     return steps
 
 
-def _base_result(agent_id: str, *, suite: str, semantic_sidecar: str) -> dict[str, Any]:
+def _base_result(
+    agent_id: str,
+    *,
+    suite: str,
+    semantic_sidecar: str,
+    expected_agent_version: str | None,
+    expected_runtime_plan_version: str | None,
+) -> dict[str, Any]:
     return {
         "agent_id": agent_id,
         "suite": suite,
         "semantic_sidecar": semantic_sidecar or None,
+        "expected_agent_version": expected_agent_version,
+        "expected_runtime_plan_version": expected_runtime_plan_version,
         "provider_free": True,
         "structural_eligible": False,
         "semantic_eligible": False,
@@ -134,6 +161,10 @@ def run_preflight(
     """Evaluate a release candidate without any online execution."""
 
     effective_settings = settings or Settings()
+    expected_agent_version = _normalized_expected_version(expected_agent_version)
+    expected_runtime_plan_version = _normalized_expected_version(
+        expected_runtime_plan_version
+    )
     suite_value = _configured_or_explicit(
         suite,
         effective_settings.agent_runtime_canary_artifacts,
@@ -146,8 +177,19 @@ def run_preflight(
         agent_id,
         suite=suite_value,
         semantic_sidecar=semantic_value,
+        expected_agent_version=expected_agent_version,
+        expected_runtime_plan_version=expected_runtime_plan_version,
     )
     blockers: list[str] = []
+
+    # The artifact carries its own identity, but that is not enough to bind a
+    # release decision to the operator's intended Agent/plan.  Keep the
+    # lower-level registry backward compatible, while making this release
+    # preflight fail closed unless both expected versions are explicit.
+    if expected_agent_version is None:
+        blockers.append("release_expected_agent_version_missing")
+    if expected_runtime_plan_version is None:
+        blockers.append("release_expected_runtime_plan_version_missing")
 
     if not agent_id.strip():
         blockers.append("agent_id_missing")
@@ -217,7 +259,10 @@ def run_preflight(
 
     result["blocking_reasons"] = list(dict.fromkeys(blockers))
     result["release_eligible"] = bool(
-        result["structural_eligible"] and result["semantic_eligible"]
+        result["structural_eligible"]
+        and result["semantic_eligible"]
+        and expected_agent_version is not None
+        and expected_runtime_plan_version is not None
     )
     result["next_steps"] = _next_steps(result["blocking_reasons"])
     return result, 0 if result["release_eligible"] else 1

@@ -380,6 +380,43 @@ def test_preflight_binds_sidecar_identity_and_versions(tmp_path: Path) -> None:
     assert registry.release_eligible(AGENT_ID) is True
 
 
+def test_preflight_requires_explicit_expected_versions_for_release(
+    tmp_path: Path,
+) -> None:
+    """Self-consistent artifacts must not self-authorize a release."""
+
+    suite = _suite()
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "sidecar.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    _write_json(sidecar_path, _semantic(suite).model_dump(mode="json"))
+
+    payload, exit_code = run_preflight(
+        agent_id=AGENT_ID,
+        suite=str(suite_path),
+        semantic_sidecar=str(sidecar_path),
+    )
+
+    assert exit_code != 0
+    assert payload["provider_free"] is True
+    assert payload["structural_eligible"] is True
+    assert payload["semantic_eligible"] is True
+    assert payload["release_eligible"] is False
+    assert payload["expected_agent_version"] is None
+    assert payload["expected_runtime_plan_version"] is None
+    assert "release_expected_agent_version_missing" in payload[
+        "blocking_reasons"
+    ]
+    assert "release_expected_runtime_plan_version_missing" in payload[
+        "blocking_reasons"
+    ]
+    assert any(
+        "explicit expected Agent and Runtime plan versions"
+        in step
+        for step in payload["next_steps"]
+    )
+
+
 def test_synthetic_suite_never_becomes_release_eligible(tmp_path: Path) -> None:
     suite = _suite(kind="synthetic")
     suite_path = tmp_path / "synthetic-suite.json"

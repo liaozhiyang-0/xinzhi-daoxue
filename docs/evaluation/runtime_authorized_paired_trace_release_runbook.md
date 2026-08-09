@@ -206,6 +206,8 @@ $preflightExit = $LASTEXITCODE
 
 该命令不会执行 Provider，只读取并绑定结构 suite 和 semantic sidecar。应检查输出中的实际字段：`provider_free`、`structural_eligible`、`semantic_eligible`、`release_eligible`、`blocking_reasons` 和 `next_steps`。只有 `provider_free=true`、结构和语义均为 eligible、`release_eligible=true`、且没有 blocking reason 时，才允许把结果提交给独立发布审批。
 
+`--expected-agent-version` 和 `--expected-runtime-plan-version` 是本次 release record 的显式身份绑定，不是可选的自描述字段。即使 suite 和 sidecar 内部彼此一致，省略任一参数也必须 fail-closed；preflight 会报告 `release_expected_agent_version_missing` 或 `release_expected_runtime_plan_version_missing`，不能把 artifact 自报版本当作发布目标版本。
+
 以下情况必须视为失败并保持 Legacy：缺 suite、缺 sidecar、`synthetic`/未授权证据、Agent/版本/plan/suite/case 不匹配、checkpoint 非法、语义覆盖不完整、hash 不匹配、`decision` 不是 `pass`、脱敏失败或 preflight 退出码非 0。preflight 成功也不自动改配置、不自动发布。
 
 ## 8. canary/default 决策

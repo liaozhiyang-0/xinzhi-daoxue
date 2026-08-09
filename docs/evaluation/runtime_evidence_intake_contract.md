@@ -41,7 +41,9 @@
    不把原始输入写入 sidecar。
 5. 运行 `check_runtime_release_preflight.py --agent-id ... --suite ...
    --semantic-sidecar ... --expected-agent-version ... --expected-runtime-plan-version ...`。
-   该命令只离线读取两个 artifact，必须同时通过结构和语义门禁才返回成功。
+   两个 expected version 必须显式提供；即使 artifact 自身版本互相一致，省略任一参数
+   也必须 fail-closed。该命令只离线读取两个 artifact，必须同时通过结构、语义和显式
+   版本绑定门禁才返回成功。
 6. 将 suite、sidecar、preflight JSON、授权记录和版本信息作为同一 release record 保存到
    受控私有位置；再由独立人工发布流程决定 canary/default。preflight 成功本身不等于
    自动发布，也不替代人工审批。
