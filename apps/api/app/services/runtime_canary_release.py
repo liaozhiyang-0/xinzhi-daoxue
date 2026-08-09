@@ -100,7 +100,7 @@ class RuntimeCanaryReleaseRegistry:
         if self._semantic_evidence is None:
             return True
         evidence = self._semantic_evidence_for(agent_id)
-        return evidence is not None and all(
+        return bool(evidence) and all(
             self._semantic_reason(agent_id, report, item) is None
             and semantic_release_eligible(report.release_eligible, item)
             for item in evidence
@@ -138,7 +138,7 @@ class RuntimeCanaryReleaseRegistry:
             return "canary_provenance_incomplete"
         if self._semantic_evidence is not None:
             evidence = self._semantic_evidence_for(agent_id)
-            if evidence is None:
+            if not evidence:
                 return "semantic_evidence_missing"
             for item in evidence:
                 semantic_reason = self._semantic_reason(agent_id, report, item)

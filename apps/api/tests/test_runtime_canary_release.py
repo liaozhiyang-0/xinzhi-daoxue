@@ -177,6 +177,16 @@ def test_configured_sidecar_requires_a_passing_semantic_decision() -> None:
     assert needs_review.reason(AGENT_ID) == "semantic_decision_not_pass"
 
 
+def test_empty_semantic_evidence_fails_closed() -> None:
+    registry = RuntimeCanaryReleaseRegistry(
+        {AGENT_ID: _report()},
+        semantic_evidence={AGENT_ID: []},
+    )
+
+    assert registry.release_eligible(AGENT_ID) is False
+    assert registry.reason(AGENT_ID) == "semantic_evidence_missing"
+
+
 @pytest.mark.parametrize(
     ("field", "reason"),
     [
