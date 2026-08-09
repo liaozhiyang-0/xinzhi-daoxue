@@ -73,8 +73,10 @@ def test_runtime_resume_restores_serialized_execution_plan() -> None:
     assert restored.agent_id == plan.agent_id
     assert restored.budget.deadline == plan.budget.deadline
 
-def test_research_analysis_runtime_path_skips_legacy_generation(api, app) -> None:
-    """The opt-in business DAG executes before the legacy model branch."""
+def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generation(
+    api, app
+) -> None:
+    """A plan-only Runtime candidate cannot claim completion or use Legacy."""
 
     app.state.task_runner.runtime_lifecycle.enabled = True
     assert app.state.task_runner.research_analysis_runtime is not None
@@ -114,16 +116,19 @@ def test_research_analysis_runtime_path_skips_legacy_generation(api, app) -> Non
     assert response.status_code == 202, response.text
     completed = api.wait_for_task(response.json()["id"], timeout=15)
 
-    assert completed["status"] == "completed"
+    assert completed["status"] == "failed"
     debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
-    assert runtime["status"] == "completed"
+    assert runtime["status"] == "failed"
     assert [node["node_id"] for node in runtime["nodes"]] == [
         "analysis.execute",
         "analysis.verify",
     ]
-    assert all(node["status"] == "succeeded" for node in runtime["nodes"])
+    assert [node["status"] for node in runtime["nodes"]] == [
+        "succeeded",
+        "partial",
+    ]
     events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
     assert events.status_code == 200
     assert not any(
