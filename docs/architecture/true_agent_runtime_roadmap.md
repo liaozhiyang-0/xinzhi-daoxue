@@ -1331,3 +1331,26 @@ remaining provider-free and preserving the Legacy/Runtime boundary.
 The integrated evidence still stops before production promotion: no real
 Provider call, authorized paired trace, semantic approval, canary traffic, or
 default switch was performed in this wave.
+
+## 2026-08-09 LearningLoop identity and resume fast-path checkpoint
+
+LearningLoop's two Runtime capabilities now declare an explicit
+`agent_version=learning-agent-v1` in their services. The descriptor projects
+that identity separately from `runtime_plan_version` (`teaching-interaction-v1`
+and `learning-progress-v1`), while descriptors created by older callers remain
+compatible with an empty identity and continue to fail closed. Readiness can
+therefore bind a future release record to a declared capability version
+without changing `LearningActionRequest`/`LearningActionResponse` or treating
+readiness as authorization.
+
+The TaskRunner resume path now treats a `RUNNING` Runtime checkpoint as
+recoverable and reuses its checkpointed request, plan, launch identity, and
+compatibility envelope. It skips repeated default launch preparation and
+option injection, while new default launches and Legacy fallback retain their
+existing behavior. The invariant is covered by a real Task/Runtime approval
+resume test that counts preparation calls.
+
+These changes improve migration safety and release traceability, but neither
+changes the remaining promotion gate: LearningLoop and Task capabilities still
+need real authorized paired traces, semantic sidecars, independent approval,
+and an explicit rollback-aware canary decision.
