@@ -257,6 +257,14 @@ def test_general_question_runtime_path_uses_registry_plan(api, app) -> None:
         "general.observe",
         "general.verify",
     ]
+    observability = runtime["observability"]
+    assert observability["schema_version"] == "1"
+    assert observability["decisions"]
+    assert observability["observations"]
+    assert any(
+        item["facts"].get("phase") == "verify"
+        for item in observability["verifications"]
+    )
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])
     execute_node = next(
         node for node in runtime["nodes"] if node["node_id"] == "general.execute"
