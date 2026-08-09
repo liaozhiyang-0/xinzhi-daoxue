@@ -11,19 +11,36 @@ from app.runtime import (
     RuntimeCanarySuite,
     evaluate_runtime_canary_suite,
 )
+from app.runtime.semantic_evidence import (
+    RuntimeSemanticEvidence,
+    semantic_release_eligible,
+)
 
 
 class RuntimeCanaryReleaseRegistry:
     """Map Agent IDs to release-eligible, authorized canary reports."""
 
     def __init__(
-        self, reports: Mapping[str, RuntimeCanaryReport] | None = None
+        self,
+        reports: Mapping[str, RuntimeCanaryReport] | None = None,
+        semantic_evidence: Mapping[str, RuntimeSemanticEvidence] | None = None,
     ) -> None:
         self._reports = dict(reports or {})
+        self._semantic_evidence = (
+            None
+            if semantic_evidence is None
+            else dict(semantic_evidence)
+        )
 
     @classmethod
-    def from_paths(cls, value: str) -> RuntimeCanaryReleaseRegistry:
+    def from_paths(
+        cls,
+        value: str,
+        *,
+        semantic_paths: str | None = None,
+    ) -> RuntimeCanaryReleaseRegistry:
         reports: dict[str, RuntimeCanaryReport] = {}
+        suites: dict[str, RuntimeCanarySuite] = {}
         for raw_item in value.split(","):
             item = raw_item.strip()
             if not item:
@@ -41,8 +58,16 @@ class RuntimeCanaryReleaseRegistry:
                 raise ValueError(
                     f"Runtime canary artifact Agent mismatch for {agent_id.strip()}"
                 )
-            reports[agent_id.strip()] = report
-        return cls(reports)
+            normalized_agent_id = agent_id.strip()
+            reports[normalized_agent_id] = report
+            suites[normalized_agent_id] = suite
+
+        semantic_evidence = cls._load_semantic_evidence(
+            semantic_paths,
+            reports=reports,
+            suites=suites,
+        )
+        return cls(reports, semantic_evidence=semantic_evidence)
 
     def release_eligible(
         self,
@@ -52,11 +77,20 @@ class RuntimeCanaryReleaseRegistry:
         expected_runtime_plan_version: str | None = None,
     ) -> bool:
         report = self._reports.get(agent_id)
-        return report is not None and self._matches_expected_versions(
+        if report is None or not self._matches_expected_versions(
             report,
             expected_agent_version=expected_agent_version,
             expected_runtime_plan_version=expected_runtime_plan_version,
-        )
+        ):
+            return False
+        if self._semantic_evidence is None:
+            return True
+        evidence = self._semantic_evidence_for(agent_id)
+        return evidence is not None and self._semantic_reason(
+            agent_id,
+            report,
+            evidence,
+        ) is None and semantic_release_eligible(report.release_eligible, evidence)
 
     def report(self, agent_id: str) -> RuntimeCanaryReport | None:
         """Return the evaluated report without exposing mutable registry state."""
@@ -88,7 +122,145 @@ class RuntimeCanaryReleaseRegistry:
             return "canary_artifact_runtime_plan_version_mismatch"
         if report.release_failed_checks:
             return "canary_provenance_incomplete"
+        if self._semantic_evidence is not None:
+            evidence = self._semantic_evidence_for(agent_id)
+            if evidence is None:
+                return "semantic_evidence_missing"
+            semantic_reason = self._semantic_reason(
+                agent_id,
+                report,
+                evidence,
+            )
+            if semantic_reason is not None:
+                return semantic_reason
         return "canary_release_evidence_approved"
+
+    @classmethod
+    def _load_semantic_evidence(
+        cls,
+        value: str | None,
+        *,
+        reports: Mapping[str, RuntimeCanaryReport],
+        suites: Mapping[str, RuntimeCanarySuite],
+    ) -> dict[str, RuntimeSemanticEvidence] | None:
+        """Load and bind optional semantic sidecars to structural suites."""
+
+        if value is None or not value.strip():
+            return None
+
+        evidence_by_agent: dict[str, RuntimeSemanticEvidence] = {}
+        for raw_item in value.split(","):
+            item = raw_item.strip()
+            if not item:
+                continue
+            agent_id, separator, raw_path = item.partition("=")
+            normalized_agent_id = agent_id.strip()
+            if (
+                not separator
+                or not normalized_agent_id
+                or not raw_path.strip()
+            ):
+                raise ValueError(
+                    "AGENT_RUNTIME_SEMANTIC_EVIDENCE entries must be "
+                    "AGENT_ID=PATH"
+                )
+
+            report = reports.get(normalized_agent_id)
+            suite = suites.get(normalized_agent_id)
+            if report is None or suite is None:
+                raise ValueError(
+                    "Runtime semantic evidence Agent mismatch for "
+                    f"{normalized_agent_id}"
+                )
+
+            path = Path(raw_path.strip())
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            evidence = RuntimeSemanticEvidence.model_validate(payload)
+            cls._validate_semantic_binding(
+                normalized_agent_id,
+                evidence,
+                report=report,
+                suite=suite,
+            )
+            evidence_by_agent[normalized_agent_id] = evidence
+        return evidence_by_agent
+
+    @staticmethod
+    def _validate_semantic_binding(
+        agent_id: str,
+        evidence: RuntimeSemanticEvidence,
+        *,
+        report: RuntimeCanaryReport,
+        suite: RuntimeCanarySuite,
+    ) -> None:
+        """Reject sidecars that belong to another Agent or structural case."""
+
+        if (
+            evidence.agent_id != agent_id
+            or evidence.agent_id != report.evidence.agent_id
+        ):
+            raise ValueError(
+                "Runtime semantic evidence agent_id mismatch for "
+                f"{agent_id}"
+            )
+        if evidence.agent_version != report.evidence.agent_version:
+            raise ValueError(
+                "Runtime semantic evidence agent_version mismatch for "
+                f"{agent_id}"
+            )
+        if (
+            evidence.runtime_plan_version
+            != report.evidence.runtime_plan_version
+        ):
+            raise ValueError(
+                "Runtime semantic evidence runtime_plan_version mismatch for "
+                f"{agent_id}"
+            )
+        if (
+            evidence.suite_id != suite.suite_id
+            or evidence.suite_id != report.suite_id
+        ):
+            raise ValueError(
+                "Runtime semantic evidence suite_id mismatch for "
+                f"{agent_id}"
+            )
+        if evidence.case_id not in {pair.case_id for pair in suite.pairs}:
+            raise ValueError(
+                "Runtime semantic evidence case_id mismatch for "
+                f"{agent_id}"
+            )
+
+    def _semantic_evidence_for(
+        self,
+        agent_id: str,
+    ) -> RuntimeSemanticEvidence | None:
+        if self._semantic_evidence is None:
+            return None
+        return self._semantic_evidence.get(agent_id)
+
+    @staticmethod
+    def _semantic_reason(
+        agent_id: str,
+        report: RuntimeCanaryReport,
+        evidence: RuntimeSemanticEvidence,
+    ) -> str | None:
+        if (
+            evidence.agent_id != agent_id
+            or evidence.agent_id != report.evidence.agent_id
+        ):
+            return "semantic_evidence_identity_mismatch"
+        if evidence.suite_id != report.suite_id:
+            return "semantic_evidence_suite_id_mismatch"
+        case_ids = {result.case_id for result in report.results}
+        if case_ids and evidence.case_id not in case_ids:
+            return "semantic_evidence_case_id_mismatch"
+        if evidence.agent_version != report.evidence.agent_version:
+            return "semantic_evidence_agent_version_mismatch"
+        if evidence.runtime_plan_version != report.evidence.runtime_plan_version:
+            return "semantic_evidence_runtime_plan_version_mismatch"
+        if evidence.decision != "pass":
+            return "semantic_decision_not_pass"
+        return None
 
     @staticmethod
     def _matches_expected_versions(
