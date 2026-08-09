@@ -263,6 +263,27 @@ LearningLoop 已提供：
 `agent_version` 可被读取、共享 release registry 会被查询，以及缺失 Agent version
 不会从 artifact 推断。它们都是 contract/synthetic evidence，不是发布证据。
 
+## 11.1 能力状态投影契约
+
+能力状态投影采用“成熟度 + 发布门禁”的双轴语义，避免把 Runtime 已经有代码、
+已经可以评测和已经获得发布授权写成同一件事。当前 `LearningRuntimeCapabilityRead`
+实际包含 `canary_release_eligible`、`canary_reason` 和 `blockers`，但没有独立的
+`status` wire 字段；因此以下 `status` 是架构/评测契约和推导语义，不是对当前
+API 返回形状的虚构扩展。
+
+| 字段 | 契约语义 | 对当前实现的解释 |
+| --- | --- | --- |
+| `status` | `implemented`：代码路径、descriptor 和局部合同存在；`evaluable`：在 implemented 基础上有可重复的 provider-free、结构或离线评测；`authorized`：在 evaluable 基础上存在版本绑定的真实 `authorized_paired` Legacy/Runtime trace、独立 semantic sidecar 和发布审批。`blockers` 独立表达阻塞原因，不把阻塞另算成成熟度等级。 | `TEACHING_INTERACTION_V1` 与 `LEARNING_PROGRESS_V1` 当前应解释为 implemented + evaluable，不能解释为 authorized。 |
+| `canary_release_eligible` | 只由共享 `RuntimeCanaryReleaseRegistry` 按 capability、`agent_version` 和 `runtime_plan_version` 检查结构/语义/版本绑定证据；它是 provider-free 查询结果，不执行 Provider，也不授予 default。 | 当前两个 LearningLoop capability 均为 `false`，因为没有授权 evidence。 |
+| `canary_reason` | 稳定的原因码，用于说明 canary 门禁为何通过或失败；不是质量分数、模型输出、运行结果或默认路由决定。 | 当前真实 descriptor + 空 registry 为 `canary_release_evidence_missing`；缺失版本仍按 fail-closed 返回 `canary_artifact_version_expectation_missing`。 |
+| `blockers` | 独立、可行动的阻塞码集合，可同时包含控制能力未实现、disabled、descriptor 无效或授权 paired evidence 缺失；不能用它否定已存在的实现，也不能用 synthetic/Mock 证据清空授权阻塞。 | 当前至少有 `learning_runtime_authorized_paired_evidence_missing`，并报告 pause/resume/input 尚未实现等控制阻塞。 |
+
+因此，`implemented`、`evaluable`、`authorized` 是递进但不可互换的证据阶段：
+实现不等于评测，评测不等于授权，授权也不等于 default。当前 LearningLoop
+仍是 provider-free 的 Runtime 能力投影，已有代码和可重复合同测试，但没有真实
+授权证据；在 `canary_release_eligible=false` 的事实下，必须保持受控路径，禁止
+默认发布或把 readiness 投影写成生产迁移完成。
+
 ## 12. LearningLoop 后续迁移证据矩阵
 
 状态含义固定为：
