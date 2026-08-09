@@ -4,7 +4,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from app.runtime import (
@@ -96,7 +96,9 @@ def _payload(answer: str) -> dict[str, Any]:
     }
 
 
-def _suite(*, kind: str = "authorized_paired") -> RuntimeCanarySuite:
+def _suite(
+    *, kind: Literal["synthetic", "authorized_paired"] = "authorized_paired"
+) -> RuntimeCanarySuite:
     evidence = RuntimeCanaryEvidence(
         kind=kind,
         agent_id=AGENT_ID,
@@ -250,7 +252,7 @@ def test_manifest_intake_rejects_naive_capture_time_and_path_escape(
     _write_json(legacy_path, _payload("legacy fixture"))
     _write_json(runtime_path, _payload("runtime fixture"))
     _write_json(checkpoints_path, _checkpoints())
-    manifest = {
+    manifest: dict[str, Any] = {
         "schema_version": "runtime_canary_manifest.v1",
         "agent_id": AGENT_ID,
         "agent_version": AGENT_VERSION,
