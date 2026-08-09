@@ -6,6 +6,9 @@
 
 将项目从“根据意图选择一条固定业务链并返回答案”的编排平台，演进为一个可恢复、可观测、可评测的 Agent Runtime：
 
+并行开发与多 Agent 分工规范见
+[`docs/architecture/runtime_parallel_workflow.md`](./runtime_parallel_workflow.md)。
+
 ```mermaid
 flowchart LR
     A[结构化用户目标] --> B[目标澄清与约束]
