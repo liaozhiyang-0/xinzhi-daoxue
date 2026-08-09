@@ -18,3 +18,7 @@
 .execution-main .waterfall-row { font-size: 14px; }
 .execution-main .summary-cell strong { font-size: 17px; }
 @media (max-width: 620px) { .execution-hero { align-items: flex-start; flex-direction: column; }.trace-loader { grid-template-columns: 1fr; }.flow-row { grid-template-columns: 42px minmax(0, 1fr); }.flow-row .flow-state { grid-column: 2; }.execution-summary { grid-template-columns: 1fr 1fr; } }
+.runtime-node-list { display: grid; gap: 8px; }.runtime-node-row { padding: 12px; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--bg-elevated); }.runtime-node-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.runtime-node-heading strong { overflow-wrap: anywhere; }.runtime-node-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; color: var(--text-muted); font-size: 12px; }.runtime-node-error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }
+.execution-summary { grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(110px, 1fr)); }
+@media (max-width: 900px) { .execution-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .execution-summary { grid-template-columns: 1fr 1fr; } }

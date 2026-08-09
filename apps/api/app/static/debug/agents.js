@@ -1,5 +1,21 @@
 const { $, all, api, badge, el, initShell, initTabs, renderJson, toast } = XinzhiUI;
 const state = { agents: [], actionsEnabled: false, mocksEnabled: false, selected: "" };
+const runtimeReadinessLabels = { blocked: "已阻塞", default_ready: "默认就绪", canary_ready: "Canary 就绪", shadow_ready: "Shadow 就绪", runtime_implemented: "已实现", explicit_goal_only: "仅显式 Goal", legacy_only: "仅 Legacy" };
+function runtimeReadinessTone(status) { return status === "blocked" ? "failed" : ["default_ready", "canary_ready", "shadow_ready", "runtime_implemented"].includes(status) ? "ready" : status === "explicit_goal_only" ? "partial" : "planned"; }
+function runtimeReadinessBadge(readiness = {}) { const status = readiness.status || "unknown"; return badge(runtimeReadinessTone(status), runtimeReadinessLabels[status] || "未报告"); }
+function runtimeReadinessDetails(readiness) {
+  if (!readiness || !Object.keys(readiness).length) return el("p", { class: "empty-state", text: "当前 Agent 未提供 Runtime readiness 字段。" });
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+  return el("div", { class: "runtime-readiness-details" }, [
+    el("div", { class: "definition-cards" }, [
+      el("article", { class: "metric-card" }, [runtimeReadinessBadge(readiness), el("strong", { text: readiness.effective_launch_mode || "未声明" }), el("small", { text: `生效模式 · ${readiness.launch_source || "未知来源"}` })]),
+      el("article", { class: "metric-card" }, [badge(readiness.runtime_plan_available ? "ready" : "planned", readiness.runtime_plan_available ? "Runtime Plan 可用" : "Runtime Plan 缺失"), el("strong", { text: String(readiness.runtime_services?.length || 0) }), el("small", { text: "Runtime 服务" })]),
+      el("article", { class: "metric-card" }, [badge(readiness.canary_release_eligible ? "ready" : "planned", readiness.canary_release_eligible ? "Canary 通过" : "Canary 未通过"), el("strong", { text: readiness.launch_reason || "未提供" }), el("small", { text: readiness.canary_reason || "无 Canary 原因" })]),
+    ]),
+    el("p", { class: "runtime-readiness-note", text: `运行选项：${(readiness.runtime_option_keys || []).join(", ") || "未声明"}；显式 Goal Runtime：${readiness.explicit_goal_runtime_available ? "可用" : "不可用"}` }),
+    blockers.length ? el("p", { class: "field-error", text: `阻塞原因：${blockers.join("、")}` }) : el("p", { class: "runtime-readiness-note", text: "当前没有报告阻塞原因。" }),
+  ]);
+}
 function requestPayload(allowMock = false) { return { question: $("#agent-question").value, course_id: $("#agent-course").value, intent: $("#agent-intent").value, allow_mock: allowMock, canonical_input: {}, options: {} }; }
 function statusOf(agent) {
   if (!agent.configured) return "not_configured";
@@ -11,9 +27,9 @@ function renderRows() {
   const filter = $("#agent-filter").value; const agents = state.agents.filter((item) => matches(item, filter));
   $("#agent-grid").replaceChildren(...(agents.length ? agents.map((item) => {
     const row = el("tr", { tabindex: "0", "data-agent": item.agent_id });
-    row.append(el("td", {}, [el("strong", { text: item.display_name || item.agent_id }), el("small", { class: "table-subtitle", text: item.agent_id })]), el("td", {}, badge(statusOf(item))), el("td", { text: item.provider_type || item.provider || "—" }), el("td", {}, badge(item.configured ? "configured" : "not_configured")), el("td", { text: (item.courses || item.supported_courses || []).join(", ") || "—" }), el("td", { text: item.retrieval_policy || "no_rag" }), el("td", { text: item.recent_contract_test?.status || "未运行" }));
+    row.append(el("td", {}, [el("strong", { text: item.display_name || item.agent_id }), el("small", { class: "table-subtitle", text: item.agent_id })]), el("td", {}, badge(statusOf(item))), el("td", { text: item.provider_type || item.provider || "—" }), el("td", {}, badge(item.configured ? "configured" : "not_configured")), el("td", { text: (item.courses || item.supported_courses || []).join(", ") || "—" }), el("td", { text: item.retrieval_policy || "no_rag" }), el("td", { text: item.recent_contract_test?.status || "未运行" }), el("td", {}, [runtimeReadinessBadge(item.runtime_readiness), el("small", { class: "table-subtitle", text: item.runtime_readiness?.blockers?.length ? "有阻塞" : item.runtime_readiness?.effective_launch_mode || "—" })]));
     row.addEventListener("click", () => selectAgent(item.agent_id)); row.addEventListener("keydown", (event) => { if (event.key === "Enter") selectAgent(item.agent_id); }); return row;
-  }) : [el("tr", {}, el("td", { colspan: "7", class: "empty-state", text: "没有符合条件的 Agent。" }))]));
+  }) : [el("tr", {}, el("td", { colspan: "8", class: "empty-state", text: "没有符合条件的 Agent。" }))]));
 }
 async function selectAgent(id) { state.selected = id; $("#agent-select").value = id; await loadDefinition(); all("[data-agent]").forEach((row) => row.classList.toggle("selected", row.dataset.agent === id)); }
 async function loadAgents() {
@@ -23,23 +39,24 @@ async function loadAgents() {
     $("#agent-select").replaceChildren(...state.agents.map((item) => el("option", { value: item.agent_id, text: item.display_name || item.agent_id })));
     all("[data-action]").forEach((button) => { button.disabled = !state.actionsEnabled || (button.dataset.action === "mock" && !state.mocksEnabled); });
     renderRows(); if (state.agents.length) await selectAgent(state.selected || state.agents[0].agent_id);
-  } catch (error) { $("#agent-grid").replaceChildren(el("tr", {}, el("td", { colspan: "7", class: "field-error", text: `${error.message}。请检查本地 API。` }))); }
+  } catch (error) { $("#agent-grid").replaceChildren(el("tr", {}, el("td", { colspan: "8", class: "field-error", text: `${error.message}。请检查本地 API。` }))); }
 }
-function summaryNode(data) {
+function summaryNode(data, readiness) {
   const capabilities = data.capabilities || {};
   return el("div", { class: "definition-cards" }, [
     el("article", { class: "metric-card" }, [badge(data.enabled ? "ready" : "disabled"), el("strong", { text: data.display_name || data.agent_id }), el("small", { text: data.agent_id || "" })]),
     el("article", { class: "metric-card" }, [badge(data.configured ? "configured" : "not_configured"), el("strong", { text: data.provider?.type || data.provider_type || "Provider" }), el("small", { text: `Parser: ${data.provider?.parser_type || data.parser_type || "—"}` })]),
     el("article", { class: "metric-card" }, [badge(data.lifecycle_status || data.publication_status || "planned"), el("strong", { text: (capabilities.courses || data.courses || []).join(", ") || "未声明课程" }), el("small", { text: (capabilities.intents || data.intents || []).join(", ") || "未声明意图" })]),
+    el("article", { class: "metric-card" }, [runtimeReadinessBadge(readiness), el("strong", { text: readiness?.effective_launch_mode || "未报告" }), el("small", { text: "Agent Runtime" })]),
   ]);
 }
 async function loadDefinition() {
   const id = $("#agent-select").value; if (!id) return;
   try {
-    const data = await api(`/api/v1/agents/${encodeURIComponent(id)}`); renderJson($("#definition-json"), data); $("#definition-summary").replaceChildren(summaryNode(data));
+    const data = await api(`/api/v1/agents/${encodeURIComponent(id)}`); const readiness = state.agents.find((item) => item.agent_id === id)?.runtime_readiness; renderJson($("#definition-json"), data); $("#definition-summary").replaceChildren(summaryNode(data, readiness)); $("#runtime-readiness-summary").replaceChildren(runtimeReadinessDetails(readiness));
     const retrieval = data.retrieval_policy || data.retrieval || {}; const fallback = data.fallback || {};
     $("#strategy-summary").replaceChildren(el("div", { class: "definition-cards" }, [el("article", { class: "metric-card" }, [el("strong", { text: retrieval.policy_name || retrieval.name || String(retrieval) || "no_rag" }), el("span", { text: "RetrievalPolicy" })]), el("article", { class: "metric-card" }, [el("strong", { text: fallback.type || "no_fallback" }), el("span", { text: "Fallback" })])]));
-  } catch (error) { renderJson($("#definition-json"), { error: error.message }); $("#definition-summary").textContent = error.message; }
+  } catch (error) { renderJson($("#definition-json"), { error: error.message }); $("#definition-summary").textContent = error.message; $("#runtime-readiness-summary").textContent = "Runtime readiness 暂不可用"; }
 }
 async function action(name) {
   const id = $("#agent-select").value; const paths = { validate: `/api/v1/debug/agents/${id}/validate`, "dry-run": `/api/v1/agents/${id}/dry-run`, mock: `/api/v1/debug/agents/${id}/mock`, contracts: `/api/v1/debug/agents/${id}/contract-tests` };

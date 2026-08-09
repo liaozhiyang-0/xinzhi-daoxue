@@ -163,3 +163,4 @@
   .story-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .demo-preflight { align-items: flex-start; flex-direction: column; }
 }
+.runtime-readiness-summary { display: grid; gap: 10px; }.runtime-readiness-note { margin: 10px 0 0; color: var(--text-secondary); font-size: 12px; }
