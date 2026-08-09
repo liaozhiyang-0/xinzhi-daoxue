@@ -57,6 +57,28 @@ class RuntimePlanProposalDecisionSubmission(BaseModel):
     expected_state_version: int | None = Field(default=None, ge=1)
 
 
+class RuntimeApprovalSubmission(BaseModel):
+    """Explicit decision for a Runtime side-effect approval gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"] = "approved"
+    reason: str = Field(default="", max_length=2_000)
+    expected_state_version: int | None = Field(default=None, ge=1)
+
+
+class RuntimeApprovalAudit(BaseModel):
+    """Durable identity and scope attached to a high-risk Runtime decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    approver_id: str = Field(min_length=1, max_length=128)
+    approver_role: str = Field(min_length=1, max_length=32)
+    scope: str = Field(min_length=1, max_length=200)
+    state_version: int = Field(ge=1)
+
+
 class WorkflowContextBundle(BaseModel):
     """One immutable retrieval view shared by mapping, validation and UI."""
 

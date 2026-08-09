@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
-from app.contracts import RuntimeInputSubmission, RuntimeReconciliationSubmission
+import pytest
+from app.contracts import (
+    RuntimeApprovalSubmission,
+    RuntimeInputSubmission,
+    RuntimeReconciliationSubmission,
+)
 from app.core.config import Settings
+from app.core.errors import ConflictError
 from app.database.base import Base
 from app.models import SessionModel, TaskModel, TaskStatus
 from app.providers.mock import MockAgentProvider
@@ -87,10 +93,14 @@ def test_pause_resume_and_approval_are_durable_controls(tmp_path) -> None:
             assert runtime_model.control_request == ""
 
             runtime_model.status = RuntimeRunStatus.WAITING_APPROVAL.value
+            runtime_model.control_data = {"approval_scope": "runtime.test"}
             resumed_task.status = TaskStatus.WAITING_REVIEW
             await session.commit()
             approved_task = await controls.approve("task-controls")
             assert approved_task.status == TaskStatus.QUEUED
+            assert runtime_model.control_data == {"approved": True}
+            with pytest.raises(ConflictError):
+                await controls.approve("task-controls")
 
             runtime_model.status = "waiting_input"
             await session.commit()
@@ -261,6 +271,9 @@ def test_task_controls_can_target_a_child_run(tmp_path) -> None:
             assert parent_model.control_data == {}
 
             child_model.status = RuntimeRunStatus.WAITING_APPROVAL.value
+            child_model.control_data = {
+                "approval_scope": "subagent.child.invoke"
+            }
             resumed.status = TaskStatus.WAITING_REVIEW
             await session.commit()
             approved = await controls.approve(
@@ -270,7 +283,100 @@ def test_task_controls_can_target_a_child_run(tmp_path) -> None:
             assert approved.status == TaskStatus.QUEUED
             child_model = await repository.get(child.run_id)
             assert child_model is not None
-            assert child_model.control_data == {"approved": True}
+            assert child_model.control_data["approved"] is True
+
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_runtime_approval_rejection_is_durable_and_not_replayable(tmp_path) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{tmp_path / 'runtime-approval-rejection.db'}"
+        )
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = Settings(app_env="test", _env_file=None)
+
+        async with session_factory() as session:
+            session.add(
+                SessionModel(
+                    id="session-rejection",
+                    user_id="user-rejection",
+                    course_id="CT",
+                )
+            )
+            session.add(
+                TaskModel(
+                    id="task-rejection",
+                    session_id="session-rejection",
+                    user_id="user-rejection",
+                    course_id="CT",
+                    intent="general_qa",
+                    agent_id="GENERAL_QUESTION_V1",
+                    status=TaskStatus.WAITING_REVIEW,
+                    input_content={"canonical_input": {"text": "reject"}},
+                )
+            )
+            await session.flush()
+            run = AgentRun(
+                run_id="runtime-rejection",
+                task_id="task-rejection",
+                goal="reject side effect",
+                plan=AgentRunPlan(
+                    plan_id="runtime-rejection-plan",
+                    goal="reject side effect",
+                    nodes=[
+                        RuntimeNode(
+                            node_id="side-effect",
+                            node_type="tool",
+                            handler_id="tool.external_write",
+                        )
+                    ],
+                ),
+                status=RuntimeRunStatus.WAITING_APPROVAL,
+            )
+            runtime_repository = AgentRunRepository(session)
+            await runtime_repository.create(
+                run,
+                agent_id="GENERAL_QUESTION_V1",
+                provider="mock",
+            )
+            runtime_model = await runtime_repository.get(run.run_id)
+            assert runtime_model is not None
+            runtime_model.status = RuntimeRunStatus.WAITING_APPROVAL.value
+            runtime_model.control_data = {"approval_scope": "tool.external_write"}
+            await session.commit()
+
+            controls = TaskControlService(
+                session,
+                MockAgentProvider(),
+                settings,
+            )
+            rejected = await controls.approve(
+                "task-rejection",
+                submission=RuntimeApprovalSubmission(
+                    decision="rejected",
+                    reason="side effect not authorized",
+                    expected_state_version=runtime_model.state_version,
+                ),
+                approver_id="teacher-1",
+                approver_role="teacher",
+            )
+            assert rejected.status == TaskStatus.WAITING_USER
+            runtime_model = await runtime_repository.get(run.run_id)
+            assert runtime_model is not None
+            assert runtime_model.status == RuntimeRunStatus.PAUSED.value
+            assert runtime_model.control_data == {}
+            with pytest.raises(ConflictError):
+                await controls.approve(
+                    "task-rejection",
+                    submission=RuntimeApprovalSubmission(decision="rejected"),
+                    approver_id="teacher-1",
+                    approver_role="teacher",
+                )
 
         await engine.dispose()
 

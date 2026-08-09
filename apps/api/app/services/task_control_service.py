@@ -8,6 +8,8 @@ from app.contracts import (
     AgentEventType,
     AgentRequest,
     RouteDecision,
+    RuntimeApprovalAudit,
+    RuntimeApprovalSubmission,
     RuntimeInputSubmission,
     RuntimeReconciliationSubmission,
     new_id,
@@ -215,14 +217,22 @@ class TaskControlService:
         )
 
     async def approve(
-        self, task_id: str, runtime_run_id: str | None = None
+        self,
+        task_id: str,
+        runtime_run_id: str | None = None,
+        *,
+        approver_id: str = "anonymous",
+        approver_role: str = "anonymous",
+        submission: RuntimeApprovalSubmission | None = None,
     ) -> TaskModel:
+        approval = submission or RuntimeApprovalSubmission()
         return await self._resume_runtime(
             task_id,
             allowed_statuses={"waiting_approval"},
             action="approve",
-            control_data={"approved": True},
             runtime_run_id=runtime_run_id,
+            approval_actor=(approver_id, approver_role),
+            approval_submission=approval,
         )
 
     async def submit_input(
@@ -433,6 +443,8 @@ class TaskControlService:
         action: str,
         control_data: dict[str, object] | None = None,
         runtime_run_id: str | None = None,
+        approval_actor: tuple[str, str] | None = None,
+        approval_submission: RuntimeApprovalSubmission | None = None,
     ) -> TaskModel:
         task = await self.repository.get(task_id, for_update=True)
         if task is None:
@@ -466,6 +478,81 @@ class TaskControlService:
                 "Runtime status does not support this control",
                 details={"runtime_status": runtime.status},
             )
+        approval_audit: RuntimeApprovalAudit | None = None
+        if approval_actor is not None:
+            approval = approval_submission or RuntimeApprovalSubmission()
+            if (runtime.control_data or {}).get("approved") is True or (
+                (runtime.control_data or {}).get("approval_audit") is not None
+            ):
+                raise ConflictError(
+                    "Runtime approval has already been submitted",
+                    details={
+                        "runtime_run_id": runtime.id,
+                        "state_version": runtime.state_version,
+                    },
+                )
+            restored = await runtime_repository.restore(runtime.id)
+            approval_scope = (
+                restored.last_decision.approval_scope
+                if restored is not None and restored.last_decision is not None
+                else ""
+            )
+            if not approval_scope:
+                approval_scope = str(
+                    (runtime.control_data or {}).get("approval_scope") or ""
+                )
+            if not approval_scope:
+                approval_scope = "runtime.side_effect"
+            if (
+                approval.expected_state_version is not None
+                and runtime.state_version
+                != approval.expected_state_version
+            ):
+                raise ConflictError(
+                    "Runtime state version has changed",
+                    details={
+                        "expected_state_version": approval.expected_state_version,
+                        "actual_state_version": runtime.state_version,
+                    },
+                )
+            approval_audit = RuntimeApprovalAudit(
+                decision=approval.decision,
+                approver_id=approval_actor[0],
+                approver_role=approval_actor[1],
+                scope=approval_scope,
+                state_version=runtime.state_version,
+            )
+            if approval.decision == "rejected":
+                restored = await runtime_repository.restore(runtime.id)
+                if restored is None:
+                    raise ConflictError("Runtime checkpoint is missing")
+                restored.status = RuntimeRunStatus.PAUSED
+                restored.control_request = ""
+                restored.control_data = {}
+                checkpoint = await runtime_repository.save_checkpoint(
+                    restored,
+                    expected_state_version=runtime.state_version,
+                )
+                approval_audit.state_version = checkpoint.state_version
+                task.status = TaskStatus.WAITING_USER
+                task.updated_at = datetime.now(UTC)
+                await append_task_event(
+                    self.db,
+                    task.id,
+                    AgentEventType.AGENT_PROGRESS,
+                    agent_id=task.agent_id,
+                    data={
+                        "stage_id": "runtime_control",
+                        "status": "rejected",
+                        "runtime_run_id": runtime.id,
+                        **approval_audit.model_dump(mode="json"),
+                        "approval": approval_audit.model_dump(mode="json"),
+                        "reason": approval.reason,
+                    },
+                )
+                await self.db.commit()
+                return task
+            control_data = {"approved": True}
         await runtime_repository.request_control(
             runtime.id,
             "",
@@ -491,17 +578,21 @@ class TaskControlService:
             parent_runtime_id = requested_runtime.id
         task.status = TaskStatus.QUEUED
         task.updated_at = datetime.now(UTC)
+        event_data: dict[str, object] = {
+            "stage_id": "runtime_control",
+            "status": f"{action}_requested",
+            "runtime_run_id": runtime.id,
+            "parent_runtime_run_id": parent_runtime_id,
+        }
+        if approval_audit is not None:
+            event_data.update(approval_audit.model_dump(mode="json"))
+            event_data["approval"] = approval_audit.model_dump(mode="json")
         await append_task_event(
             self.db,
             task.id,
             AgentEventType.AGENT_PROGRESS,
             agent_id=task.agent_id,
-            data={
-                "stage_id": "runtime_control",
-                "status": f"{action}_requested",
-                "runtime_run_id": runtime.id,
-                "parent_runtime_run_id": parent_runtime_id,
-            },
+            data=event_data,
         )
         await self.db.commit()
         return task

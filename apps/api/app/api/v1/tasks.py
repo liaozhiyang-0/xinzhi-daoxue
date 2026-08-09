@@ -9,7 +9,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import (
+    AgentEventType,
     AgentRequest,
+    RuntimeApprovalAudit,
+    RuntimeApprovalSubmission,
     RuntimeInputSubmission,
     RuntimePlanProposalDecisionSubmission,
     RuntimeReconciliationSubmission,
@@ -21,7 +24,7 @@ from app.contracts.research_analysis import (
     ResearchReviewDecision,
     ResearchReviewSubmission,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import AuthenticationRequiredError, NotFoundError
 from app.dependencies import (
     effective_user_id,
     get_current_principal,
@@ -35,6 +38,7 @@ from app.repositories.sessions import SessionRepository
 from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
+from app.services.event_service import append_task_event
 from app.services.research_analysis_review import ResearchAnalysisReviewService
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
 from app.services.scenario_catalog import ScenarioCatalogError
@@ -411,16 +415,25 @@ async def resume_task(
 async def approve_task(
     task_id: str,
     request: Request,
+    submission: RuntimeApprovalSubmission | None = None,
     runtime_run_id: str | None = Query(default=None, max_length=64),
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    await _get_owned_task(db, task_id, principal)
+    approval_actor = _require_runtime_approval(request, principal)
+    await _get_runtime_approval_task(db, task_id, principal)
     task = await TaskControlService(
         db, provider, request.app.state.settings
-    ).approve(task_id, runtime_run_id=runtime_run_id)
-    request.app.state.task_runner.submit(task.id)
+    ).approve(
+        task_id,
+        runtime_run_id=runtime_run_id,
+        approver_id=approval_actor[0],
+        approver_role=approval_actor[1],
+        submission=submission,
+    )
+    if task.status == TaskStatus.QUEUED:
+        request.app.state.task_runner.submit(task.id)
     return task_read(task)
 
 
@@ -484,7 +497,22 @@ async def decide_runtime_plan_proposal(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> TaskRead:
-    await _get_owned_task(db, task_id, principal)
+    approval_actor = _require_runtime_approval(request, principal)
+    await _get_runtime_approval_task(db, task_id, principal)
+    proposals = await RuntimePlanProposalService(db).list(task_id)
+    proposal = next(
+        (item for item in proposals if item.proposal_id == proposal_id),
+        None,
+    )
+    if proposal is None:
+        raise NotFoundError("plan proposal not found")
+    approval_audit = RuntimeApprovalAudit(
+        decision=submission.decision,
+        approver_id=approval_actor[0],
+        approver_role=approval_actor[1],
+        scope="runtime.plan_proposal",
+        state_version=proposal.state_version,
+    )
     task = await RuntimePlanProposalService(db).decide(
         task_id,
         proposal_id,
@@ -492,6 +520,20 @@ async def decide_runtime_plan_proposal(
         reason=submission.reason,
         expected_state_version=submission.expected_state_version,
     )
+    await append_task_event(
+        db,
+        task.id,
+        AgentEventType.AGENT_PROGRESS,
+        agent_id=task.agent_id,
+        data={
+            "stage_id": "runtime_approval",
+            "status": f"{submission.decision}_submitted",
+            "proposal_id": proposal_id,
+            **approval_audit.model_dump(mode="json"),
+            "approval": approval_audit.model_dump(mode="json"),
+        },
+    )
+    await db.commit()
     request.app.state.task_runner.submit(task.id)
     return task_read(task)
 
@@ -503,6 +545,38 @@ async def _get_owned_task(
     if principal.has_identity and task.user_id != principal.user_id:
         raise NotFoundError("任务不存在")
     return task
+
+
+def _require_runtime_approval(
+    request: Request, principal: Principal
+) -> tuple[str, str]:
+    """Return the existing Principal identity allowed to approve Runtime work."""
+
+    if not principal.authenticated:
+        if request.app.state.settings.auth_required:
+            raise AuthenticationRequiredError(
+                "Runtime approval requires authentication"
+            )
+        if principal.has_identity:
+            raise HTTPException(
+                status_code=403,
+                detail="Runtime approval requires a teacher or administrator",
+            )
+        return "anonymous", "anonymous"
+    if principal.role not in {"teacher", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Runtime approval requires a teacher or administrator",
+        )
+    return principal.user_id or principal.account_id, principal.role
+
+
+async def _get_runtime_approval_task(
+    db: AsyncSession, task_id: str, principal: Principal
+) -> TaskModel:
+    if principal.authenticated and principal.role in {"teacher", "admin"}:
+        return await TaskQueryService(db).get(task_id)
+    return await _get_owned_task(db, task_id, principal)
 
 
 async def event_stream(
