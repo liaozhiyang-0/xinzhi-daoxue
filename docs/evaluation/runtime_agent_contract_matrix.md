@@ -69,14 +69,14 @@ authorized evidence，也不能把 LearningLoop 标记为已完成生产迁移�
 ## 能力状态投影契约
 
 能力状态投影必须把“能力成熟度”和“发布门禁”分成两个正交维度。当前
-`LearningRuntimeCapabilityRead` 已实际投影 `canary_release_eligible`、
-`canary_reason` 和 `blockers`；它尚未提供独立的 `status` wire 字段。因此，
-本节的 `status` 是评测和 Operator 视图应遵守的规范化语义；在代码增加该字段
-之前，不得把它描述成当前 API 已返回的字段。
+跨入口 `GET /api/v1/agents/runtime-readiness` 的 `capabilities` 已实际投影
+`status`、`canary_release_eligible`、`canary_reason` 和 `blockers`；LearningLoop
+专用的 `LearningRuntimeCapabilityRead` 仍只投影其自身的学习 readiness 字段。
+因此，`status` 的 wire 值必须按 Runtime readiness 语义解释，不能直接当作授权等级。
 
 | 字段 | 规范语义 | 当前 LearningLoop 事实 |
 | --- | --- | --- |
-| `status` | 能力成熟度标签，只允许按证据阶段解释：`implemented` 表示代码路径、descriptor 和局部合同存在；`evaluable` 表示在此基础上有可重复的 provider-free/结构或离线评测；`authorized` 表示再加上版本绑定的真实 `authorized_paired` trace、独立 semantic sidecar 和发布审批。`blockers` 不是第四种成熟度状态。 | 两个 LearningLoop Runtime 至少为 `evaluable` 的语义状态；它们没有授权证据，不能标为 `authorized`。 |
+| `status` | 跨入口投影沿用 Runtime readiness 状态，如 `blocked`、`runtime_implemented`、`canary_ready`、`shadow_ready`、`default_ready`；它描述执行/发布准备度，不是成熟度等级。`implemented`、`evaluable`、`authorized` 仍是由实现、可重复评测和授权证据推导的独立证据阶段。 | 两个 LearningLoop Runtime 当前为 `runtime_implemented`，但只有 provider-free 合同与 readiness 证据，不能解释为 `authorized`。 |
 | `canary_release_eligible` | 只表示共享 `RuntimeCanaryReleaseRegistry` 已按期望的 `agent_version` 与 `runtime_plan_version` 通过结构、语义和版本绑定门禁；查询 provider-free，不执行能力，也不等于 default 授权。 | 当前为 `false`，因为没有授权 evidence。 |
 | `canary_reason` | 稳定的门禁原因码，不是质量分数、模型判断或执行结果。当前实现可返回 `canary_release_evidence_missing`、`canary_structural_gate_failed`、`canary_authorized_evidence_missing`、版本不匹配、`semantic_evidence_missing` 或 `canary_release_evidence_approved` 等原因。 | 空 registry 的真实 descriptor 返回 `canary_release_evidence_missing`；缺失版本时 fail-closed 为 `canary_artifact_version_expectation_missing`。 |
 | `blockers` | 可行动的独立阻塞码列表，既可描述未实现控制能力，也可描述 disabled、descriptor/evidence 缺失；它不能把已有实现降写成不存在，也不能把 Mock/synthetic 证据升级成授权。 | 至少包含 `learning_runtime_authorized_paired_evidence_missing`；当前还会报告 LearningLoop 尚未实现的 pause/resume/input 控制阻塞。 |

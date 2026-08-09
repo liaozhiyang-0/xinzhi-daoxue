@@ -266,14 +266,15 @@ LearningLoop 已提供：
 ## 11.1 能力状态投影契约
 
 能力状态投影采用“成熟度 + 发布门禁”的双轴语义，避免把 Runtime 已经有代码、
-已经可以评测和已经获得发布授权写成同一件事。当前 `LearningRuntimeCapabilityRead`
-实际包含 `canary_release_eligible`、`canary_reason` 和 `blockers`，但没有独立的
-`status` wire 字段；因此以下 `status` 是架构/评测契约和推导语义，不是对当前
-API 返回形状的虚构扩展。
+已经可以评测和已经获得发布授权写成同一件事。当前跨入口
+`GET /api/v1/agents/runtime-readiness` 的 `capabilities` 已实际包含 `status`、
+`canary_release_eligible`、`canary_reason` 和 `blockers`；学习专用
+`LearningRuntimeCapabilityRead` 则保持自己的学习 readiness 契约。`status` 是
+Runtime readiness 状态，不是授权等级。
 
 | 字段 | 契约语义 | 对当前实现的解释 |
 | --- | --- | --- |
-| `status` | `implemented`：代码路径、descriptor 和局部合同存在；`evaluable`：在 implemented 基础上有可重复的 provider-free、结构或离线评测；`authorized`：在 evaluable 基础上存在版本绑定的真实 `authorized_paired` Legacy/Runtime trace、独立 semantic sidecar 和发布审批。`blockers` 独立表达阻塞原因，不把阻塞另算成成熟度等级。 | `TEACHING_INTERACTION_V1` 与 `LEARNING_PROGRESS_V1` 当前应解释为 implemented + evaluable，不能解释为 authorized。 |
+| `status` | 跨入口 descriptor 投影沿用 `blocked`、`runtime_implemented`、`canary_ready`、`shadow_ready`、`default_ready` 等 Runtime readiness 状态，表达执行/发布准备度；`implemented`、`evaluable`、`authorized` 仍是独立的证据阶段，不能互换。 | `TEACHING_INTERACTION_V1` 与 `LEARNING_PROGRESS_V1` 当前为 `runtime_implemented`；它们可解释为 implemented + evaluable，但不能解释为 authorized。 |
 | `canary_release_eligible` | 只由共享 `RuntimeCanaryReleaseRegistry` 按 capability、`agent_version` 和 `runtime_plan_version` 检查结构/语义/版本绑定证据；它是 provider-free 查询结果，不执行 Provider，也不授予 default。 | 当前两个 LearningLoop capability 均为 `false`，因为没有授权 evidence。 |
 | `canary_reason` | 稳定的原因码，用于说明 canary 门禁为何通过或失败；不是质量分数、模型输出、运行结果或默认路由决定。 | 当前真实 descriptor + 空 registry 为 `canary_release_evidence_missing`；缺失版本仍按 fail-closed 返回 `canary_artifact_version_expectation_missing`。 |
 | `blockers` | 独立、可行动的阻塞码集合，可同时包含控制能力未实现、disabled、descriptor 无效或授权 paired evidence 缺失；不能用它否定已存在的实现，也不能用 synthetic/Mock 证据清空授权阻塞。 | 当前至少有 `learning_runtime_authorized_paired_evidence_missing`，并报告 pause/resume/input 尚未实现等控制阻塞。 |
