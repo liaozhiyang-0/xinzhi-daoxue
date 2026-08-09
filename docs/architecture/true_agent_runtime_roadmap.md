@@ -1286,3 +1286,27 @@ sidecar, pass structural and semantic evaluation, and record an explicit
 canary/default decision with rollback configuration. Provider-free fixtures,
 the local `experiment_demo.csv`, and readiness projections do not satisfy
 that gate.
+
+## 2026-08-09 multi-process delivery wave
+
+To keep the long-running migration efficient without allowing silent
+cross-process conflicts, the next implementation wave is split into three
+exclusive worksets:
+
+| Workset | Owner | Allowed scope | Merge order |
+|---|---|---|---|
+| Runtime visibility | Frontend Agent | `apps/api/app/static/debug/execution.*` and its UI contract tests | after backend contract review |
+| Runtime kernel | Backend Agent | `apps/api/app/runtime/**` and targeted Runtime/API tests | first implementation merge |
+| Release evidence | Evaluation Agent | `scripts/*runtime*`, evaluation tests and `docs/evaluation/**` | after Runtime/Frontend compatibility |
+
+Each process must return an independent commit, changed-file list, exact
+verification commands, unexecuted checks, and remaining risks. The main
+integration process owns shared contracts, does not edit another process's
+workset while it is active, and merges only after `git diff --check`, local
+tests, and the cross-role matrix. Any requested API, migration, Provider, or
+frozen Solver change pauses the affected process and becomes a serialized
+contract task.
+
+This wave improves the engineering path toward a true Agent Runtime; it does
+not change the release conclusion. Real Provider execution, authorized paired
+traces, semantic evidence, and canary/default approval remain separate gates.
