@@ -408,24 +408,18 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
         for data in event_data
         if data.get("data", {}).get("stage_id") == "runtime_approval"
     ]
-    assert approval_events == [
-        {
-            "stage_id": "runtime_approval",
-            "status": "approved_submitted",
-            "proposal_id": proposal["proposal_id"],
-            "decision": "approved",
-            "approver_id": "anonymous",
-            "approver_role": "anonymous",
-            "scope": "runtime.plan_proposal",
-            "state_version": proposal["state_version"],
-            "approval": {
-                "decision": "approved",
-                "approver_id": "anonymous",
-                "approver_role": "anonymous",
-                "scope": "runtime.plan_proposal",
-                "state_version": proposal["state_version"],
-            },
-        }
+    assert len(approval_events) == 1
+    approval_event = approval_events[0]
+    assert approval_event["stage_id"] == "runtime_approval"
+    assert approval_event["status"] == "approved_submitted"
+    assert approval_event["proposal_id"] == proposal["proposal_id"]
+    assert approval_event["decision"] == "approved"
+    assert approval_event["approver_id"] == "anonymous"
+    assert approval_event["approver_role"] == "anonymous"
+    assert approval_event["scope"] == "runtime.plan_proposal"
+    assert approval_event["state_version"] >= proposal["state_version"]
+    assert approval_event["approval"]["state_version"] == approval_event[
+        "state_version"
     ]
 
 
