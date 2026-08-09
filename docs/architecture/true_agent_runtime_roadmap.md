@@ -1061,3 +1061,14 @@ The registry rejects an Agent when the sidecar is absent, stale, mismatched,
 non-redacted, non-passing, or does not cover every case in the structural
 suite. The current repository contains no authorized artifact, so no Agent is
 yet eligible for production canary/default launch.
+
+## 2026-08-09 Local Retrieval verification checkpoint
+
+The second canary now has a stronger Runtime verification boundary. When a
+retrieval result declares sufficient or complete evidence, the verifier
+requires a citation or evidence artifact and records evidence status, evidence
+count, and citation count. Missing citations produce a `PARTIAL` node with
+`knowledge_citations_missing`; an explicitly insufficient or empty evidence
+result is marked `passed=false` and `needs_review=true` rather than being
+reported as verified. This improves evidence safety without changing the
+legacy fallback or enabling the Agent by default.
