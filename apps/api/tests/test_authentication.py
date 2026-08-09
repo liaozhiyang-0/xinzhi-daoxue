@@ -80,6 +80,20 @@ def test_auth_required_rejects_anonymous_and_uses_authenticated_owner(
     assert [item["user_id"] for item in listed.json()] == [account_id]
 
 
+def test_runtime_approval_is_not_available_to_authenticated_students(
+    auth_client: TestClient,
+) -> None:
+    auth_client.cookies.clear()
+    assert (
+        auth_client.post("/api/v1/tasks/missing-runtime/approve").status_code
+        == 401
+    )
+
+    register(auth_client, login="student-runtime-approval@example.com")
+    denied = auth_client.post("/api/v1/tasks/missing-runtime/approve")
+    assert denied.status_code == 403, denied.text
+
+
 def test_guest_mode_creates_isolated_identity_and_logout_clears_it(
     auth_client: TestClient,
 ) -> None:

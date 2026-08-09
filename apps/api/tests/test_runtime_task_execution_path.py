@@ -366,6 +366,16 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
         },
     )
     assert approval.status_code == 202, approval.text
+    duplicate = api.client.post(
+        f"/api/v1/tasks/{task_id}/runtime-plan-proposals/"
+        f"{proposal['proposal_id']}/decision",
+        json={
+            "decision": "approved",
+            "reason": "The recovery action is authorized.",
+            "expected_state_version": proposal["state_version"],
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
     completed = api.wait_for_task(task_id, timeout=15)
     assert completed["status"] == "completed"
     assert calls == 2
@@ -393,6 +403,30 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
         and data.get("data", {}).get("status") == "applied"
         for data in event_data
     )
+    approval_events = [
+        data["data"]
+        for data in event_data
+        if data.get("data", {}).get("stage_id") == "runtime_approval"
+    ]
+    assert approval_events == [
+        {
+            "stage_id": "runtime_approval",
+            "status": "approved_submitted",
+            "proposal_id": proposal["proposal_id"],
+            "decision": "approved",
+            "approver_id": "anonymous",
+            "approver_role": "anonymous",
+            "scope": "runtime.plan_proposal",
+            "state_version": proposal["state_version"],
+            "approval": {
+                "decision": "approved",
+                "approver_id": "anonymous",
+                "approver_role": "anonymous",
+                "scope": "runtime.plan_proposal",
+                "state_version": proposal["state_version"],
+            },
+        }
+    ]
 
 
 def test_academic_solver_runtime_path_keeps_solver_graph_behind_runtime(
