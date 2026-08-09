@@ -389,6 +389,57 @@ class LearningRuntimeApprovalRequest(BaseModel):
     expected_state_version: int | None = Field(default=None, ge=1)
 
 
+LearningRuntimeControlAction = Literal["approve", "pause", "resume", "input"]
+
+
+class LearningRuntimeControlRequest(BaseModel):
+    """Request an explicit operator action on a LearningLoop Runtime run.
+
+    The action vocabulary is intentionally broader than the currently
+    implemented LearningLoop surface.  Unsupported actions are rejected by
+    the API projection rather than silently ignored, which lets clients
+    discover the domain boundary without changing the LearningAction
+    contract.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: LearningRuntimeControlAction
+    expected_state_version: int | None = Field(default=None, ge=1)
+
+
+class LearningRuntimeControlRead(BaseModel):
+    """One state-aware, provider-free LearningLoop operator control."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: LearningRuntimeControlAction
+    available: bool
+    reason_code: str = Field(default="", max_length=160)
+    reason: str = Field(default="", max_length=500)
+
+
+class LearningRuntimeControlProjectionRead(BaseModel):
+    """Redacted control projection for one owned LearningLoop Runtime run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    provider_called: Literal[False] = False
+    run_id: str = Field(min_length=1, max_length=120)
+    runtime_id: str = Field(min_length=1, max_length=120)
+    run_kind: Literal["teaching_interaction", "learning_progress"]
+    status: str = Field(min_length=1, max_length=32)
+    state_version: int = Field(ge=1)
+    control_scope: Literal["learning_loop"] = "learning_loop"
+    controls: list[LearningRuntimeControlRead] = Field(
+        default_factory=list, max_length=4
+    )
+    available_controls: list[LearningRuntimeControlAction] = Field(
+        default_factory=list, max_length=4
+    )
+
+
 class LearningRuntimeNodeStatusRead(BaseModel):
     """Redacted node state for the LearningLoop Runtime status projection."""
 
@@ -487,3 +538,18 @@ class LearningActionResponse(BaseModel):
     runtime_run_id: str | None = None
     runtime_status: str = ""
     approval_required: bool = False
+
+
+class LearningRuntimeControlResultRead(BaseModel):
+    """Result envelope for an accepted LearningLoop operator action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["v1"] = "v1"
+    provider_called: Literal[False] = False
+    run_id: str = Field(min_length=1, max_length=120)
+    action: Literal["approve"] = "approve"
+    accepted: Literal[True] = True
+    status: str = Field(min_length=1, max_length=32)
+    state_version: int = Field(ge=1)
+    result: LearningActionResponse

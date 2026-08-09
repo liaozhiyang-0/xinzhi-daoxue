@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import NoReturn, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +14,19 @@ from app.contracts.learning import (
     LearningMetricsRead,
     LearningRuntimeApprovalRequest,
     LearningRuntimeCapabilityRead,
+    LearningRuntimeControlAction,
+    LearningRuntimeControlProjectionRead,
+    LearningRuntimeControlRead,
+    LearningRuntimeControlRequest,
+    LearningRuntimeControlResultRead,
     LearningRuntimeReadinessRead,
     LearningRuntimeStatusRead,
     RetestPlanV1,
     StudentAttemptV2,
 )
+from app.core.errors import ConflictError
 from app.dependencies import effective_user_id, get_current_principal, get_db
+from app.services.audit_service import record_audit
 from app.services.auth_service import Principal
 from app.services.learning_loop import LearningLoopService
 from app.services.learning_metrics import LearningMetricsService
@@ -41,6 +48,28 @@ _LEARNING_RUNTIME_EVIDENCE_BLOCKER = (
 _LEARNING_RUNTIME_DISABLED_BLOCKER = "learning_runtime_disabled"
 _LEARNING_RUNTIME_DESCRIPTOR_MISSING_BLOCKER = "learning_runtime_descriptor_missing"
 _LEARNING_RUNTIME_DESCRIPTOR_INVALID_BLOCKER = "learning_runtime_descriptor_invalid"
+_LEARNING_RUNTIME_CONTROL_ACTIONS: tuple[LearningRuntimeControlAction, ...] = (
+    "approve",
+    "pause",
+    "resume",
+    "input",
+)
+_LEARNING_RUNTIME_UNSUPPORTED_CONTROL_REASONS: dict[
+    LearningRuntimeControlAction, tuple[str, str]
+] = {
+    "pause": (
+        "learning_runtime_pause_not_implemented",
+        "LearningLoop Runtime does not support pause control",
+    ),
+    "resume": (
+        "learning_runtime_resume_not_implemented",
+        "LearningLoop Runtime does not support resume control",
+    ),
+    "input": (
+        "learning_runtime_input_not_implemented",
+        "LearningLoop Runtime does not support input control",
+    ),
+}
 
 
 def _require_metrics_manager(request: Request, principal: Principal) -> None:
@@ -83,6 +112,94 @@ async def approve_learning_runtime(
         run_id,
         user_id=user_id,
         expected_state_version=data.expected_state_version,
+    )
+
+
+@router.get(
+    "/runtime/{run_id}/controls",
+    response_model=LearningRuntimeControlProjectionRead,
+    summary="Read LearningLoop Runtime operator controls",
+)
+async def learning_runtime_controls(
+    run_id: str,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> LearningRuntimeControlProjectionRead:
+    """Project the domain control boundary without advancing the Run."""
+
+    user_id = effective_user_id(principal, None)
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    status = await service.runtime_status(db, run_id, user_id=user_id)
+    return _project_learning_runtime_controls(status)
+
+
+@router.post(
+    "/runtime/{run_id}/control",
+    response_model=LearningRuntimeControlResultRead,
+    summary="Apply an explicit LearningLoop Runtime operator control",
+)
+async def control_learning_runtime(
+    run_id: str,
+    data: LearningRuntimeControlRequest,
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> LearningRuntimeControlResultRead:
+    """Apply only the currently supported LearningLoop control.
+
+    The status projection performs ownership and checkpoint checks before any
+    action is considered.  Unsupported controls are audited and rejected
+    before the domain service is called.  ``approve`` is delegated to the
+    existing LearningLoop approval flow so its LearningAction result contract
+    remains unchanged.
+    """
+
+    _require_learning_runtime_operator(request, principal)
+    user_id = effective_user_id(principal, None)
+    service = cast(LearningLoopService, request.app.state.learning_loop)
+    current = await service.runtime_status(db, run_id, user_id=user_id)
+    control = next(
+        item
+        for item in _project_learning_runtime_controls(current).controls
+        if item.action == data.action
+    )
+    if not control.available:
+        await _reject_learning_runtime_control(
+            db,
+            request,
+            principal,
+            current,
+            action=data.action,
+            reason_code=control.reason_code,
+            reason=control.reason,
+        )
+
+    try:
+        result = await service.approve_runtime_interaction(
+            db,
+            run_id,
+            user_id=user_id,
+            expected_state_version=data.expected_state_version,
+        )
+    except ConflictError as exc:
+        await _reject_learning_runtime_control(
+            db,
+            request,
+            principal,
+            current,
+            action=data.action,
+            reason_code="learning_runtime_approval_rejected",
+            reason=str(exc)[:500],
+        )
+
+    updated = await service.runtime_status(db, run_id, user_id=user_id)
+    return LearningRuntimeControlResultRead(
+        run_id=run_id,
+        action="approve",
+        status=updated.status,
+        state_version=updated.state_version,
+        result=result,
     )
 
 
@@ -147,6 +264,97 @@ async def learning_runtime_readiness(
         capabilities=capabilities,
         blockers=blockers,
     )
+
+
+def _require_learning_runtime_operator(
+    request: Request, principal: Principal
+) -> None:
+    if not request.app.state.settings.auth_required:
+        return
+    if not principal.authenticated or principal.role not in {"teacher", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "LearningLoop Runtime operator control requires teacher or "
+                "admin role"
+            ),
+        )
+
+
+def _project_learning_runtime_controls(
+    status: LearningRuntimeStatusRead,
+) -> LearningRuntimeControlProjectionRead:
+    available = set(status.available_controls)
+    controls: list[LearningRuntimeControlRead] = []
+    for action in _LEARNING_RUNTIME_CONTROL_ACTIONS:
+        if action in available:
+            controls.append(
+                LearningRuntimeControlRead(action=action, available=True)
+            )
+            continue
+        if action in _LEARNING_RUNTIME_UNSUPPORTED_CONTROL_REASONS:
+            reason_code, reason = _LEARNING_RUNTIME_UNSUPPORTED_CONTROL_REASONS[
+                action
+            ]
+        else:
+            reason_code = "learning_runtime_approval_not_available"
+            reason = (
+                "LearningLoop Runtime approval is available only while the "
+                "checkpoint is waiting for approval"
+            )
+        controls.append(
+            LearningRuntimeControlRead(
+                action=action,
+                available=False,
+                reason_code=reason_code,
+                reason=reason,
+            )
+        )
+    return LearningRuntimeControlProjectionRead(
+        run_id=status.run_id,
+        runtime_id=status.runtime_id,
+        run_kind=status.run_kind,
+        status=status.status,
+        state_version=status.state_version,
+        controls=controls,
+        available_controls=list(status.available_controls),
+    )
+
+
+async def _reject_learning_runtime_control(
+    db: AsyncSession,
+    request: Request,
+    principal: Principal,
+    status: LearningRuntimeStatusRead,
+    *,
+    action: LearningRuntimeControlAction,
+    reason_code: str,
+    reason: str,
+) -> NoReturn:
+    safe_reason = reason.strip()[:500] or "LearningLoop Runtime control was rejected"
+    details = {
+        "run_id": status.run_id,
+        "runtime_id": status.runtime_id,
+        "run_kind": status.run_kind,
+        "control_scope": status.control_scope,
+        "action": action,
+        "reason_code": reason_code,
+        "reason": safe_reason,
+        "status": status.status,
+        "state_version": status.state_version,
+        "provider_called": False,
+    }
+    record_audit(
+        db,
+        request,
+        action="learning_runtime.control_rejected",
+        actor_account_id=principal.account_id or None,
+        target_type="agent_run",
+        target_id=status.run_id,
+        details=details,
+    )
+    await db.commit()
+    raise ConflictError("LearningLoop Runtime control rejected", details=details)
 
 
 def _is_descriptor_collection(value: object) -> bool:
