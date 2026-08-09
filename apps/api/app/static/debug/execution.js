@@ -1,5 +1,10 @@
 const { $, all, api, badge, el, initShell, renderJson, renderMarkdown, toast } = XinzhiUI;
 let execution = null;
+let runtimePollTimer = null;
+let runtimePollToken = 0;
+let runtimePollAttempts = 0;
+const runtimePollStatuses = new Set(["running", "queued", "waiting_input", "waiting_approval", "paused"]);
+const runtimePollDelaysMs = [1000, 2000, 4000, 8000, 16000];
 const runtimeStatusLabels = { created: "已创建", queued: "排队中", running: "运行中", waiting_input: "等待输入", waiting_approval: "等待审批", paused: "已暂停", completed: "已完成", succeeded: "成功", failed: "失败", cancelled: "已取消", pending: "待执行", ready: "就绪", partial: "部分完成", skipped: "已跳过", blocked: "已阻塞" };
 const runtimeEffectLabels = { not_started: "未开始", in_progress: "进行中", completed: "已完成", unknown: "未知" };
 function runtimeStatusKey(status) { return String(status || "").trim().toLowerCase(); }
@@ -174,6 +179,36 @@ function renderPerformance(data) { const perf = data.performance || {}; const co
 
 function renderAll(data) { execution = data; renderSummary(data); renderOverview(data); renderRuntime(data); renderRoute(data); renderRetrieval(data); renderWorkflow(data); renderCitation(data); renderPerformance(data); $("#execution-console").hidden = false; }
 
+function stopRuntimePolling() {
+  runtimePollToken += 1;
+  if (runtimePollTimer) window.clearTimeout(runtimePollTimer);
+  runtimePollTimer = null;
+  runtimePollAttempts = 0;
+}
+
+function runtimeNeedsPolling(data) {
+  return runtimePollStatuses.has(runtimeStatusKey(data?.runtime?.status));
+}
+
+function scheduleRuntimePolling(id, data, token) {
+  if (token !== runtimePollToken || !runtimeNeedsPolling(data) || runtimePollAttempts >= runtimePollDelaysMs.length) return;
+  const delay = runtimePollDelaysMs[runtimePollAttempts];
+  runtimePollTimer = window.setTimeout(async () => {
+    runtimePollTimer = null;
+    if (token !== runtimePollToken) return;
+    runtimePollAttempts += 1;
+    try {
+      const latest = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`);
+      if (token !== runtimePollToken) return;
+      renderAll(latest);
+      if (runtimeNeedsPolling(latest)) scheduleRuntimePolling(id, latest, token);
+      else stopRuntimePolling();
+    } catch (error) {
+      if (token === runtimePollToken) scheduleRuntimePolling(id, data, token);
+    }
+  }, delay);
+}
+
 async function loadMetrics() {
   try {
     const data = await api("/api/v1/debug/execution/metrics/summary?limit=100");
@@ -187,9 +222,11 @@ async function loadMetrics() {
 }
 
 async function loadExecution() {
+  stopRuntimePolling();
+  const requestToken = runtimePollToken;
   const id = $("#task-id").value.trim(); if (!id) { $("#execution-notice").replaceChildren(el("div", { class: "notice warning", text: "请先输入一个真实任务 ID。" })); return; }
   $("#load-execution").disabled = true; $("#execution-notice").replaceChildren(el("div", { class: "loading-state", text: "正在载入统一执行链…" }));
-  try { const data = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`); renderAll(data); $("#execution-notice").replaceChildren(); localStorage.setItem("xinzhi_last_task", id); }
+  try { const data = await api(`/api/v1/debug/execution/${encodeURIComponent(id)}`); if (requestToken !== runtimePollToken) return; renderAll(data); $("#execution-notice").replaceChildren(); localStorage.setItem("xinzhi_last_task", id); scheduleRuntimePolling(id, data, requestToken); }
   catch (error) { $("#execution-notice").replaceChildren(el("div", { class: "error-state", text: error.message })); }
   finally { $("#load-execution").disabled = false; }
 }
