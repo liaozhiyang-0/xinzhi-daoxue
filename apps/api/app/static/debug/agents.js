@@ -39,6 +39,43 @@ function runtimeReadinessNextSteps(readiness, blockers) {
     el("div", { class: "runtime-readiness-recommendations" }, [el("strong", { text: "操作提示" }), actionList]),
   ].filter(Boolean));
 }
+const runtimeCapabilityFields = ["capability_id", "domain", "runtime_id", "version", "status"];
+function safeRuntimeCapabilityText(value, fallback = "未提供") {
+  if (typeof value !== "string" && typeof value !== "number") return fallback;
+  const text = String(value).trim().replace(/[\u0000-\u001f\u007f]/g, "");
+  if (!text || text.length > 160 || /(?:secret|token|password|credential|api[_-]?key|bearer|sk-[a-z0-9]|(?:[a-z]:\\|\\\\|\/))\S*/i.test(text)) return fallback;
+  return text;
+}
+function safeRuntimeCapabilityList(value) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object" && !Array.isArray(item)) : [];
+}
+function runtimeCapabilityActions(capability) {
+  const actions = Array.isArray(capability.supported_actions) ? capability.supported_actions : [];
+  return actions.map((action) => safeRuntimeCapabilityText(action, "")).filter(Boolean);
+}
+function runtimeCapabilityControl(capability) {
+  const controls = [["暂停", capability.supports_pause], ["恢复", capability.supports_resume], ["审批", capability.supports_approval], ["输入", capability.supports_input]];
+  return controls.filter(([, enabled]) => enabled === true).map(([label]) => label);
+}
+function runtimeCapabilitiesDetails(value) {
+  const capabilities = safeRuntimeCapabilityList(value);
+  if (!capabilities.length) return el("p", { class: "runtime-readiness-note", text: "未提供 Runtime capability 描述。" });
+  return el("section", { class: "runtime-capabilities" }, [
+    el("div", { class: "runtime-readiness-actions-heading" }, [el("h3", { text: `Runtime capabilities（${capabilities.length}）` }), badge("ready", "能力清单")]),
+    el("div", { class: "definition-cards" }, capabilities.map((capability) => {
+      const actions = runtimeCapabilityActions(capability);
+      const controls = runtimeCapabilityControl(capability);
+      const contract = safeRuntimeCapabilityText(capability.result_contract, "已提供");
+      const scope = safeRuntimeCapabilityText(capability.control_scope, "未提供");
+      return el("article", { class: "metric-card runtime-capability-card" }, [
+        el("strong", { text: safeRuntimeCapabilityText(capability.capability_id) }),
+        el("small", { text: `domain / runtime / version：${runtimeCapabilityFields.slice(1, 4).map((field) => safeRuntimeCapabilityText(capability[field])).join(" / ")}` }),
+        el("small", { text: `启用：${capability.enabled === true ? "是" : "否/未提供"}；状态：${safeRuntimeCapabilityText(capability.status)}；动作：${actions.join(", ") || "未提供"}` }),
+        el("small", { text: `控制：${controls.join("、") || "无"}；结果契约：${contract}；控制范围：${scope}` }),
+      ]);
+    })),
+  ]);
+}
 function runtimeReadinessDetails(readiness) {
   if (!readiness || !Object.keys(readiness).length) return el("p", { class: "empty-state", text: "当前 Agent 未提供 Runtime readiness 字段。" });
   const blockers = readinessTextItems(readiness.blockers);
@@ -49,7 +86,8 @@ function runtimeReadinessDetails(readiness) {
       el("article", { class: "metric-card" }, [badge(readiness.canary_release_eligible ? "ready" : "planned", readiness.canary_release_eligible ? "Canary 通过" : "Canary 未通过"), el("strong", { text: readiness.launch_reason || "未提供" }), el("small", { text: readiness.canary_reason || "无 Canary 原因" })]),
     ]),
     el("p", { class: "runtime-readiness-note", text: `运行选项：${(readiness.runtime_option_keys || []).join(", ") || "未声明"}；显式 Goal Runtime：${readiness.explicit_goal_runtime_available ? "可用" : "不可用"}` }),
-    runtimeReadinessNextSteps(readiness, blockers),
+     runtimeCapabilitiesDetails(readiness.runtime_capabilities),
+     runtimeReadinessNextSteps(readiness, blockers),
   ]);
 }
 function requestPayload(allowMock = false) { return { question: $("#agent-question").value, course_id: $("#agent-course").value, intent: $("#agent-intent").value, allow_mock: allowMock, canonical_input: {}, options: {} }; }
