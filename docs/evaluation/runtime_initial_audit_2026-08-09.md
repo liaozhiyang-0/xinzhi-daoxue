@@ -51,3 +51,18 @@ The next release action is to collect a redacted, authorized Legacy/Runtime
 pair for each intended Agent/version/plan combination, validate it with the
 offline canary packager, collect a separately reviewed semantic sidecar, and
 obtain explicit promotion approval before changing launch mode.
+
+## Code-layer conclusion (2026-08-10)
+
+The final targeted core matrix passed `107` tests after the canary v2 protocol
+upgrade. Current source and provider-free evidence directly cover structured
+goals, executable DAG plans, tool and typed-subagent nodes, the bounded
+observe/decide/act/verify/replan loop, durable checkpoints, pause/resume/input,
+approval and reconciliation, Task/SSE ordering and reconnect, and offline
+evaluation with fail-closed release gates. The frozen SOLVER_CT implementation
+was not changed, and the sensitive-file scan passed.
+
+This completes the initial code-layer audit, not the production migration.
+The overall objective remains incomplete until authorized real-Provider paired
+execution, independent semantic review, canary observation, and an explicit
+default-or-rollback decision are available as auditable evidence.
