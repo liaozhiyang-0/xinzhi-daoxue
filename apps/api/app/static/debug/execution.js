@@ -163,6 +163,7 @@ function handleExecutionEvent(taskId, eventName, event, token) {
   if (["task.completed", "task.failed", "task.cancelled"].includes(eventName)) {
     closeExecutionEventStream();
     setExecutionLiveState("closed", "任务已进入终态", `最后事件 ${eventName}；保留 sequence ${executionEventStreamCursor}，不再自动重连。`);
+    refreshExecutionOnce(taskId);
   }
 }
 function connectExecutionEventStream(taskId, { preserveCursor = false, token = null, autoRetry = false } = {}) {
