@@ -1118,3 +1118,21 @@ refreshes for active Runs and stops at terminal or unknown status. The complete
 isolated Runtime gate now passes 150 tests. The remaining promotion step is
 still the authorized paired trace and semantic review for
 `GENERAL_QUESTION_V1`; no synthetic result has been promoted.
+
+## 2026-08-09 multi-case evidence and Runtime control checkpoint
+
+The offline canary collector now accepts a versioned multi-case manifest while
+preserving the original single-case CLI and `build_suite` API. It resolves
+each case beneath the manifest directory, rejects unknown fields, duplicate
+IDs, missing files, path traversal, invalid authorization metadata, and bad
+Runtime checkpoint traces, then emits one `authorized_paired` suite only when
+every case passes the structural gate. The collector remains provider-free;
+its synthetic tests are workflow tests and are not release evidence.
+
+The execution debug page now exposes the existing Runtime control surface:
+pause, resume, and approval actions are state-aware, approval is never
+automatic, and all identity/authorization checks remain in the backend Task
+API. Actions trigger a bounded debug refresh and coexist with the finite
+active-Run polling loop. This gives operators a visible control path for the
+already-persisted pause/resume/approval protocol without adding a second
+control implementation in the browser.
