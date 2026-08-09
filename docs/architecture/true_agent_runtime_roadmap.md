@@ -1025,11 +1025,10 @@ output, and Runtime output by SHA-256, records bounded review dimensions and
 provenance, and exposes the pure decision
 `structural_release_eligible AND semantic_decision == pass`. The sidecar is
 deliberately separate from `RuntimeCanarySuite` so existing trace artifacts
-remain backwards compatible. The next implementation slice is to load this
-sidecar in the release registry and require it for `canary`/`default` launch
-modes. The configured sidecar may be one JSON object for a one-case suite or a
-JSON array for a multi-case suite; the release registry rejects missing,
-duplicate, or extra case coverage.
+remain backwards compatible. The release registry now loads this sidecar and
+requires it for `canary`/`default` launch modes. The configured sidecar may be
+one JSON object for a one-case suite or a JSON array for a multi-case suite;
+the release registry rejects missing, duplicate, or extra case coverage.
 
 The first authorized suite should contain 10--20 redacted text cases covering
 ordinary questions, clarification, format/audience constraints, deterministic
