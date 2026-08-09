@@ -38,6 +38,7 @@ def test_learning_runtime_status_is_redacted_and_provider_free(api, app) -> None
     assert payload["run_kind"] == "learning_progress"
     assert payload["status"] == "completed"
     assert payload["control_scope"] == "learning_loop"
+    assert payload["available_controls"] == []
     assert payload["resumable"] is False
     assert payload["node_statuses"]
     assert "request_snapshot" not in payload
@@ -65,6 +66,7 @@ def test_learning_runtime_status_reports_approval_wait_and_rejects_missing_run(
     assert status.status_code == 200, status.text
     assert status.json()["status"] == "waiting_approval"
     assert status.json()["approval_required"] is True
+    assert status.json()["available_controls"] == ["approve"]
     assert status.json()["resumable"] is True
 
     missing = api.client.get("/api/v1/learning/runtime/missing-run")

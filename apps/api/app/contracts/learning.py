@@ -420,6 +420,7 @@ class LearningRuntimeStatusRead(BaseModel):
         default_factory=list, max_length=100
     )
     control_scope: Literal["learning_loop"] = "learning_loop"
+    available_controls: list[Literal["approve"]] = Field(default_factory=list)
     approval_required: bool = False
     resumable: bool = False
 

@@ -580,6 +580,9 @@ class LearningLoopService:
             required_capabilities=list(goal.required_capabilities),
             goal_source=goal.source,
             node_statuses=node_statuses,
+            available_controls=(
+                ["approve"] if status == "waiting_approval" else []
+            ),
             approval_required=status == "waiting_approval",
             resumable=status in {"paused", "waiting_input", "waiting_approval"},
         )
