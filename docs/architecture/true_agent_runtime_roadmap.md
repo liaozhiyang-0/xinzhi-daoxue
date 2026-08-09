@@ -1251,3 +1251,11 @@ Operator authorization, ownership, state-version checks, and the existing
 `LearningActionResponse` result contract remain in force. This is a control
 surface alignment step, not a claim that LearningLoop has gained arbitrary
 task control or production release evidence.
+
+The Debug execution page now consumes the LearningLoop controls projection.
+It enables the approval action only when the backend reports
+`waiting_approval`, `approve` availability, and a valid `state_version`, then
+posts the unified control request and refreshes both status projections.
+Unsupported pause/resume/input actions remain visibly disabled and generate no
+request from the page. Legacy Task payloads continue to use the existing Task
+control path.
