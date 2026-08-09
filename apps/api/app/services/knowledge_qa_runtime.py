@@ -31,6 +31,7 @@ class KnowledgeQARuntimeService:
 
     agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
     runtime_option_key = "knowledge_qa_runtime"
+    runtime_plan_version = "knowledge-qa-v1"
     execute_node_id = "knowledge.execute"
     verify_node_id = "knowledge.verify"
 

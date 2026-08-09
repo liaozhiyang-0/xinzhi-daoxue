@@ -6,6 +6,7 @@ import pytest
 from app.contracts import AgentRequest, AgentResult
 from app.runtime import AgentRun, RuntimeNodeStatus
 from app.services.knowledge_qa_runtime import KnowledgeQARuntimeService
+from app.services.runtime_business_registry import RuntimeBusinessRegistry
 
 
 class FakeKnowledgeQA:
@@ -31,6 +32,16 @@ class FakeKnowledgeQA:
                 evidence=["S1"],
             ),
         )
+
+
+def test_knowledge_qa_runtime_plan_version_is_exposed_to_registry() -> None:
+    service = KnowledgeQARuntimeService(FakeKnowledgeQA(), enabled=True)  # type: ignore[arg-type]
+    registry = RuntimeBusinessRegistry([service])
+
+    assert (
+        registry.runtime_plan_version("LEARN_01_LOCAL_RETRIEVAL_V1")
+        == "knowledge-qa-v1"
+    )
 
 
 @pytest.mark.asyncio
