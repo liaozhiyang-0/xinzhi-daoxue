@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any, cast
 
+from app.services.learning_progress_runtime import LearningProgressRuntimeService
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
+from app.services.runtime_capability_descriptor import (
+    descriptors_from_learning_loop_services,
+)
+from app.services.teaching_interaction_runtime import (
+    TeachingInteractionRuntimeService,
+)
 
 
 def test_learning_readiness_reports_versions_and_fails_closed_without_evidence(
@@ -119,4 +127,36 @@ def test_learning_readiness_does_not_infer_missing_agent_version_from_artifact(
     assert capability["canary_release_eligible"] is False
     assert capability["canary_reason"] == (
         "canary_artifact_version_expectation_missing"
+    )
+
+
+def test_real_learning_descriptors_bind_identity_but_missing_evidence_stays_closed(
+    app,
+    client,
+) -> None:
+    descriptors = descriptors_from_learning_loop_services(
+        teaching_interaction=TeachingInteractionRuntimeService(
+            cast(Any, object()), enabled=True
+        ),
+        learning_progress=LearningProgressRuntimeService(
+            cast(Any, object()), enabled=True
+        ),
+    )
+    app.state.runtime_agent_readiness = SimpleNamespace(
+        capability_descriptors=descriptors,
+        release_registry=RuntimeCanaryReleaseRegistry(),
+    )
+
+    response = client.get("/api/v1/learning/runtime-readiness")
+
+    assert response.status_code == 200, response.text
+    capabilities = response.json()["capabilities"]
+    assert [item["agent_version"] for item in capabilities] == [
+        "learning-agent-v1",
+        "learning-agent-v1",
+    ]
+    assert all(item["canary_release_eligible"] is False for item in capabilities)
+    assert all(
+        item["canary_reason"] == "canary_release_evidence_missing"
+        for item in capabilities
     )

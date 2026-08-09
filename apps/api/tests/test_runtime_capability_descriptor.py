@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from typing import Any, cast
 
 import pytest
 from app.contracts import AgentRequest
 from app.contracts.learning import LearningActionRequest
+from app.services.learning_progress_runtime import LearningProgressRuntimeService
 from app.services.runtime_capability_descriptor import (
     LEARNING_PROGRESS_ACTIONS,
     TASK_RUNTIME_ACTIONS,
@@ -14,6 +16,9 @@ from app.services.runtime_capability_descriptor import (
     descriptor_from_task_runtime_service,
     descriptor_from_teaching_interaction_runtime_service,
     descriptors_from_learning_loop_services,
+)
+from app.services.teaching_interaction_runtime import (
+    TeachingInteractionRuntimeService,
 )
 
 
@@ -66,6 +71,8 @@ def test_task_descriptor_has_stable_fields_and_is_provider_free() -> None:
         control_scope="task_runtime",
     )
     assert descriptor.to_dict()["supported_actions"] == list(TASK_RUNTIME_ACTIONS)
+    assert descriptor.agent_version == ""
+    assert descriptor.to_dict()["agent_version"] == ""
     with pytest.raises(FrozenInstanceError):
         descriptor.enabled = False  # type: ignore[misc]
 
@@ -78,6 +85,7 @@ def test_learning_descriptor_preserves_learning_boundary() -> None:
     assert descriptor.domain == "learning_loop"
     assert descriptor.runtime_id == "teaching_interaction"
     assert descriptor.version == "teaching-interaction-v1"
+    assert descriptor.agent_version == ""
     assert descriptor.supported_actions == TEACHING_INTERACTION_ACTIONS
     assert descriptor.supports_pause is False
     assert descriptor.supports_resume is False
@@ -121,3 +129,24 @@ def test_declared_actions_are_deduplicated_without_calling_service_methods() -> 
     descriptor = descriptor_from_task_runtime_service(service)  # type: ignore[arg-type]
 
     assert descriptor.supported_actions == ("verify", "act")
+
+
+def test_real_learning_runtime_services_declare_agent_version() -> None:
+    teaching = TeachingInteractionRuntimeService(
+        cast(Any, object()), enabled=True
+    )
+    progress = LearningProgressRuntimeService(cast(Any, object()), enabled=True)
+
+    descriptors = descriptors_from_learning_loop_services(
+        teaching_interaction=teaching,
+        learning_progress=progress,
+    )
+
+    assert [descriptor.agent_version for descriptor in descriptors] == [
+        "learning-agent-v1",
+        "learning-agent-v1",
+    ]
+    assert [descriptor.to_dict()["agent_version"] for descriptor in descriptors] == [
+        "learning-agent-v1",
+        "learning-agent-v1",
+    ]

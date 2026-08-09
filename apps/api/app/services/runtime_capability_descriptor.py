@@ -42,6 +42,7 @@ class _LearningRuntimeService(Protocol):
     """Minimal attribute-only shape used by the learning adapters."""
 
     agent_id: str
+    agent_version: str
     run_kind: str
     plan_version: str
     enabled: bool
@@ -69,6 +70,11 @@ class RuntimeCapabilityDescriptor:
     supports_input: bool
     result_contract: str
     control_scope: str
+    # Optional for backwards-compatible construction of descriptors created
+    # before capability identity was exposed.  Learning services declare this
+    # explicitly; an empty value must remain visible so readiness can fail
+    # closed rather than infer an identity from an artifact or plan version.
+    agent_version: str = ""
 
     def __post_init__(self) -> None:
         if self.domain not in {"task_agent", "learning_loop"}:
@@ -91,6 +97,7 @@ class RuntimeCapabilityDescriptor:
         object.__setattr__(self, "capability_id", self.capability_id.strip())
         object.__setattr__(self, "runtime_id", self.runtime_id.strip())
         object.__setattr__(self, "version", self.version.strip())
+        object.__setattr__(self, "agent_version", self.agent_version.strip())
         object.__setattr__(self, "result_contract", self.result_contract.strip())
         object.__setattr__(self, "control_scope", self.control_scope.strip())
 
@@ -102,6 +109,7 @@ class RuntimeCapabilityDescriptor:
             "domain": self.domain,
             "runtime_id": self.runtime_id,
             "version": self.version,
+            "agent_version": self.agent_version,
             "enabled": self.enabled,
             "supported_actions": list(self.supported_actions),
             "supports_pause": self.supports_pause,
@@ -148,6 +156,7 @@ def descriptor_from_task_runtime_service(
         domain="task_agent",
         runtime_id=runtime_id,
         version=version,
+        agent_version=_first_text(service, "agent_version", default=""),
         enabled=_read_bool(service, "enabled", default=False),
         supported_actions=_read_actions(
             service, default=TASK_RUNTIME_ACTIONS
@@ -253,6 +262,7 @@ def _descriptor_from_learning_service(
             "version",
             default="unversioned",
         ),
+        agent_version=_first_text(service, "agent_version", default=""),
         enabled=_read_bool(service, "enabled", default=False),
         supported_actions=_read_actions(service, default=default_actions),
         # LearningLoop currently exposes approve, while pause/resume remain

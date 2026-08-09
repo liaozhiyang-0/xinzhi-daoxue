@@ -58,6 +58,10 @@ class LearningProgressRuntimeService:
     """
 
     agent_id = "LEARNING_PROGRESS_V1"
+    # Capability identity is independent from the Runtime plan version.  It
+    # is intentionally declared here so release readiness never derives it
+    # from a canary artifact or from ``plan_version``.
+    agent_version = "learning-agent-v1"
     run_kind = "learning_progress"
     plan_version = "learning-progress-v1"
     observe_node_id = "learning.progress.observe"
