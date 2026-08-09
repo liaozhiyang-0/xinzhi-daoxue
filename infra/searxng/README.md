@@ -6,6 +6,10 @@ same-machine calls; the project adapter still enforces a one-second delay. It
 provides the second-layer Web retrieval path for the local
 XZD API.
 
+Before starting the stack, copy `.env.example` to `.env` and replace
+`SEARXNG_SECRET` with a locally generated random value. The secret is injected
+at startup and is intentionally not stored in the tracked `settings.yml`.
+
 ## Start
 
 From this directory:

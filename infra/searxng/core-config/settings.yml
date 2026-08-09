@@ -17,7 +17,9 @@ search:
 
 server:
   bind_address: "0.0.0.0"
-  secret_key: "replace-with-a-random-local-secret"
+  # SearXNG replaces this value with SEARXNG_SECRET at startup. Keep the
+  # actual local secret in the ignored infra/searxng/.env file.
+  secret_key: "${SEARXNG_SECRET}"
   # This instance binds to localhost only. The project adapter still enforces
   # a one-second minimum delay; disabling the public-instance bot limiter
   # avoids false 429s when the API calls SearXNG from the same machine.
