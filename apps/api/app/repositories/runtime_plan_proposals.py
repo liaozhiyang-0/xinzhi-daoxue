@@ -6,7 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AgentPlanProposalModel
-from app.runtime import RuntimePlanProposal, RuntimePlanProposalStatus
+from app.runtime import (
+    AgentRunPlan,
+    RuntimePlanBudgetImpact,
+    RuntimePlanProposal,
+    RuntimePlanProposalStatus,
+)
 
 
 class RuntimePlanProposalRepository:
@@ -93,11 +98,13 @@ class RuntimePlanProposalRepository:
             state_version=model.state_version,
             base_plan_id=model.base_plan_id,
             base_plan_version=model.base_plan_version,
-            proposed_plan=model.proposed_plan_data,
+            proposed_plan=AgentRunPlan.model_validate(model.proposed_plan_data),
             reason_codes=list(model.reason_codes or []),
             rationale=model.rationale,
             affected_node_ids=list(model.affected_node_ids or []),
-            budget_impact=model.budget_impact_data,
+            budget_impact=RuntimePlanBudgetImpact.model_validate(
+                model.budget_impact_data
+            ),
             approval_required=model.approval_required,
             status=RuntimePlanProposalStatus(model.status),
             decision_reason=model.decision_reason,
