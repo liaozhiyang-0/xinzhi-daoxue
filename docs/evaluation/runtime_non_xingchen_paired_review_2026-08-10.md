@@ -317,16 +317,41 @@ They are ignored and must not be committed.
 ## 19. 2026-08-11 Lesson Prep Runtime-only recheck
 
 - A bounded single-instance Runtime-only recheck used the public Task API with
-  the development mock profile and `--auto-approve-dev`. The private report is
-  under `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_final/`.
+  the development mock profile and `--auto-approve-dev`. The first report is
+  under `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_final/`;
+  the follow-up after the error-boundary fix is under
+  `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_budget_code/`.
 - The run reached the first plan-proposal approval and resumed with strictly
   increasing events, but then failed closed after the resumed execution hit
   `ProviderNotConfiguredError` / `ProviderUnavailableError` in the local
   subagent path. The subsequent proposal candidate exceeded the remaining
-  subagent budget; the task ended with `conflict`, 21 checkpoints, and no
-  second pending proposal event. This is a reproducible development diagnostic,
-  not a passing E2E result.
+  subagent budget; after the fix the task ended with the stable
+  `runtime_replan_budget_exhausted` category, 21 checkpoints, and no second
+  pending proposal event. This is a reproducible development diagnostic, not a
+  passing E2E result.
 - The result confirms the approval checkpoint itself is durable and applied,
-  while the post-approval provider/budget path still needs a dedicated fix or
-  an explicitly configured provider profile before Lesson Prep can be called
-  complete. No Runtime-wide or release conclusion is drawn from this failure.
+  while the post-approval provider path still needs an explicitly configured
+  provider profile before Lesson Prep can be called complete. No Runtime-wide
+  or release conclusion is drawn from this failure.
+
+## 20. 2026-08-11 Lesson Prep real-provider paired evidence
+
+- A fresh single-instance paired run used the locally configured Spark/Qwen
+  Providers with Xingchen disabled. The private report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_real_pair/`.
+  Legacy and Runtime both completed 1/1 with matching
+  `TEACH_01_LESSON_PREP_V1`, zero timeouts or event-order failures, and 2/2
+  overall completed runs. The Runtime trace contained 26 checkpoints, three
+  nodes, 47 strictly increasing events, one applied plan-proposal approval, and
+  one quality-gate approval after a recovered `StructuredOutputError`.
+- Offline packaging produced a version-bound structural suite with
+  `structural_release_eligible=true`, `agent_version=lesson-prep-v1`, and
+  `runtime_plan_version=lesson-prep-v1`. A redacted model preliminary sidecar
+  was collected with `decision=needs_review`; the provider-free release
+  preflight intentionally returned exit code 1 with
+  `semantic_decision_not_pass`. No release, canary, or default decision was
+  created.
+- The development result is strong Runtime execution evidence, not production
+  authorization. Independent semantic review must still assess the empty
+  formative-assessment section and the Legacy/Runtime answer boundary before
+  any migration decision.

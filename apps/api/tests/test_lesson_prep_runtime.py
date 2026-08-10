@@ -251,16 +251,36 @@ def test_empty_business_section_approval_resumes_without_replanning() -> None:
     request = make_request("task-lesson-empty-section-recovery")
     run = make_run(service, request)
 
+    proposal_calls = 0
+
+    async def unexpected_proposal(*_args: object) -> object:
+        nonlocal proposal_calls
+        proposal_calls += 1
+        raise AssertionError("quality approval must not create a plan proposal")
+
     with pytest.raises(RuntimeRunSuspended):
-        asyncio.run(service.run(request, run))
+        asyncio.run(
+            service.run(
+                request,
+                run,
+                plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
+            )
+        )
     recovered = AgentRun.model_validate(run.model_dump(mode="json"))
     recovered.control_data["approved"] = True
 
-    result = asyncio.run(service.run(request, recovered))
+    result = asyncio.run(
+        service.run(
+            request,
+            recovered,
+            plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
+        )
+    )
 
     assert result.status == AgentResultStatus.COMPLETED
     assert recovered.status == RuntimeRunStatus.COMPLETED
     assert fake.calls == 1
+    assert proposal_calls == 0
     assert recovered.iteration == 0
     assert recovered.nodes[service.execute_node_id].attempt == 1
 

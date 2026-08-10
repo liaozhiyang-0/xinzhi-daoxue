@@ -93,6 +93,12 @@ class ConflictError(AppError):
     status_code = 409
 
 
+class RuntimeReplanBudgetExceededError(ConflictError):
+    """A Runtime replan cannot fit within the remaining hard budget."""
+
+    code = "runtime_replan_budget_exhausted"
+
+
 class ValidationAppError(AppError):
     code = "validation_error"
     status_code = 422

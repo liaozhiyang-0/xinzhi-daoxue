@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+from app.core.errors import RuntimeReplanBudgetExceededError
 from app.database.base import Base
 from app.models import SessionModel, TaskEventModel, TaskModel, TaskStatus
 from app.repositories import AgentRunRepository, RuntimePlanProposalRepository
@@ -10,6 +12,7 @@ from app.runtime import (
     AgentRunPlan,
     DecisionAction,
     PlanExecutor,
+    RuntimeBudget,
     RuntimeController,
     RuntimeDecision,
     RuntimeNode,
@@ -431,6 +434,49 @@ def test_plan_proposal_quality_gate_checks_budget_and_affected_nodes() -> None:
     assert "budget_impact_not_conservative" in (
         failed.results[0].failed_checks
     )
+
+
+def test_plan_proposal_budget_exhaustion_has_stable_error_code() -> None:
+    base_run = AgentRun(
+        run_id="proposal-budget-run",
+        task_id="proposal-budget-task",
+        goal="avoid an over-budget replan",
+        plan=AgentRunPlan(
+            plan_id="proposal-budget-plan",
+            version="1",
+            goal="avoid an over-budget replan",
+            nodes=[
+                RuntimeNode(
+                    node_id="verify",
+                    node_type="verification",
+                    handler_id="runtime.verify",
+                )
+            ],
+        ),
+        budget=RuntimeBudget(max_subagent_runs=0),
+    )
+    proposed = base_run.plan.model_copy(
+        update={
+            "version": "2",
+            "nodes": [
+                *base_run.plan.nodes,
+                RuntimeNode(
+                    node_id="execute",
+                    node_type="subagent",
+                    handler_id="subagent.answer",
+                    depends_on=["verify"],
+                ),
+            ],
+        }
+    )
+
+    with pytest.raises(
+        RuntimeReplanBudgetExceededError,
+        match="proposed plan exceeds remaining Runtime budget",
+    ) as error:
+        RuntimePlanProposalService._assert_budget(base_run, proposed)
+
+    assert error.value.code == "runtime_replan_budget_exhausted"
 
 
 def test_plan_proposal_semantic_gate_requires_failure_alignment() -> None:

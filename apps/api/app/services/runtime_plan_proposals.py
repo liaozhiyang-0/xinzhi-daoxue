@@ -9,7 +9,11 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentEventType
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    RuntimeReplanBudgetExceededError,
+)
 from app.models import AgentPlanProposalModel, TaskModel, TaskStatus
 from app.repositories import AgentRunRepository, RuntimePlanProposalRepository
 from app.runtime import (
@@ -66,7 +70,13 @@ class RuntimePlanProposalService:
         if next_iteration <= run.iteration:
             raise ConflictError("plan proposal target iteration is not ahead")
         if next_iteration >= run.budget.max_iterations:
-            raise ConflictError("Runtime replan budget exhausted")
+            raise RuntimeReplanBudgetExceededError(
+                "Runtime replan budget exhausted",
+                details={
+                    "iteration": run.iteration,
+                    "max_iterations": run.budget.max_iterations,
+                },
+            )
 
         reasons = _bounded_reasons(reason_codes)
         proposal = RuntimePlanProposal(
@@ -263,7 +273,13 @@ class RuntimePlanProposalService:
         self._assert_no_running_nodes(run)
         if run.iteration >= run.budget.max_iterations - 1:
             if run.iteration != proposal_model.target_iteration:
-                raise ConflictError("Runtime replan budget exhausted")
+                raise RuntimeReplanBudgetExceededError(
+                    "Runtime replan budget exhausted",
+                    details={
+                        "iteration": run.iteration,
+                        "max_iterations": run.budget.max_iterations,
+                    },
+                )
         proposed_plan = AgentRunPlan.model_validate(
             proposal_model.proposed_plan_data
         )
@@ -405,7 +421,7 @@ class RuntimePlanProposalService:
             value > limit
             for value, limit in zip(requested, remaining, strict=True)
         ):
-            raise ConflictError(
+            raise RuntimeReplanBudgetExceededError(
                 "proposed plan exceeds remaining Runtime budget",
                 details={
                     "requested": impact.model_dump(mode="json"),
