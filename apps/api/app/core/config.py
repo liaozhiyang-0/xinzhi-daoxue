@@ -554,6 +554,7 @@ class Settings(BaseSettings):
     agent_runtime_goal_capabilities: str = ""
     agent_runtime_canary_artifacts: str = ""
     agent_runtime_semantic_evidence: str = ""
+    agent_runtime_release_authorizations: str = ""
     agent_runtime_release_gate_required: bool = True
 
     @field_validator("log_level")

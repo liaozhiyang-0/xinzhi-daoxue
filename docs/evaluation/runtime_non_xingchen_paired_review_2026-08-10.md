@@ -564,3 +564,21 @@ They are ignored and must not be committed.
   it is not a semantic quality pass. The next valid step for each Agent is an
   independently reviewed, redacted sidecar bound to the same suite/case,
   followed by the separate human release decision required by the runbook.
+
+## 34. 2026-08-11 version-bound release authorization gate
+
+- Runtime launch policy now has an explicit optional release-authorization
+  registry. When a configured Agent launch mode is `canary` or `default`, the
+  registry requires a private JSON record bound to the structural suite,
+  Agent version, Runtime plan version, launch mode, authorization reference,
+  and approver reference. Missing, revoked, or mismatched records fail closed.
+- The authorization registry is injected through
+  `AGENT_RUNTIME_RELEASE_AUTHORIZATIONS=AGENT_ID=PATH`. If no launch mode is
+  configured, existing explicit development opt-in behavior remains available;
+  this is not production release authorization. The runbook and evidence
+  intake contract now document the boundary.
+- Ruff, Mypy, and the focused release-authorization/readiness/launch-policy
+  tests passed (`33 passed`). A broader selected command was not accepted as a
+  green release signal because it included an out-of-scope Research03-adjacent
+  contract failure; no protected source or test was modified. No canary/default
+  authorization record was created for the five current Agents.

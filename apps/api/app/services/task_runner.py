@@ -124,6 +124,9 @@ from app.services.runtime_launch_policy import (
     RuntimeLaunchPolicy,
 )
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorizationRegistry,
+)
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.session_compaction import SessionCompactionService
@@ -228,9 +231,22 @@ class TaskRunner:
                 knowledge_base.settings.agent_runtime_semantic_evidence
             ),
         )
+        self.runtime_release_authorizations = (
+            RuntimeReleaseAuthorizationRegistry.from_paths(
+                knowledge_base.settings.agent_runtime_release_authorizations
+            )
+        )
+        configured_release_modes = (
+            knowledge_base.settings.agent_runtime_launch_modes.strip()
+        )
         self.runtime_launch_policy = RuntimeLaunchPolicy(
-            knowledge_base.settings.agent_runtime_launch_modes,
+            configured_release_modes,
             release_registry=self.runtime_canary_release,
+            release_authorization_registry=(
+                self.runtime_release_authorizations
+                if configured_release_modes
+                else None
+            ),
             release_gate_required=(
                 knowledge_base.settings.agent_runtime_release_gate_required
             ),

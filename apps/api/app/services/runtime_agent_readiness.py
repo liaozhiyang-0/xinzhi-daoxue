@@ -275,6 +275,12 @@ class RuntimeAgentReadinessService:
             canary_reason = execution_blockers[0]
         blockers: list[str] = []
         blockers.extend(execution_blockers)
+        if (
+            configured in {RuntimeLaunchMode.CANARY, RuntimeLaunchMode.DEFAULT}
+            and decision.source == "canary_release_gate"
+            and decision.reason
+        ):
+            blockers.append(decision.reason)
         if not runtime_plan_available:
             blockers.append("runtime_service_missing")
         if direct_services and not enabled_services:
@@ -360,6 +366,8 @@ class RuntimeAgentReadinessService:
             elif blocker.startswith("semantic_"):
                 actions.append("run_provider_free_release_preflight")
                 actions.append("collect_semantic_evidence_for_authorized_trace")
+            elif blocker.startswith("release_authorization_"):
+                actions.append("obtain_version_bound_release_authorization")
             elif blocker in _RELEASE_EVIDENCE_BLOCKERS:
                 actions.append("run_provider_free_release_preflight")
                 actions.append("collect_authorized_paired_trace")

@@ -72,3 +72,13 @@ versions，不能把 readiness、Mock、synthetic artifact 或自描述版本当
 fixture 验证上述拒绝条件、hash 脱敏、checkpoint 审计、case coverage、版本绑定和缺失输入。
 这些测试不证明准确率、语义等价、Provider 行为、真实执行成功或生产 readiness；没有授权的
 真实 Legacy/Runtime 成对 trace 和离线语义评审时，发布门禁必须保持关闭。
+
+## 运行时发布授权记录
+
+结构 suite 和 semantic sidecar 通过 preflight 只说明证据满足离线发布候选条件，不能直接
+改变 TaskRunner 的 canary/default launch mode。配置了 `AGENT_RUNTIME_LAUNCH_MODES` 中的
+`canary` 或 `default` 后，还必须通过 `AGENT_RUNTIME_RELEASE_AUTHORIZATIONS=AGENT_ID=PATH`
+提供受控私有 JSON 记录。记录绑定 `suite_id`、`agent_version`、`runtime_plan_version`、
+`launch_mode`、`authorization_ref` 和 `approver_ref`；缺失、撤销、过期替代记录或任一绑定
+不一致都必须保持 fail-closed。该记录是独立发布决定的投影，不是 semantic sidecar 的替代品，
+也不应把原始输入、密钥或学生隐私写入公共仓库。

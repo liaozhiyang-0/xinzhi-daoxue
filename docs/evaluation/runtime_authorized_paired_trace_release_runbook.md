@@ -65,10 +65,13 @@ Registry 条目，也不授予真实 Provider、canary 或 default。采集前�
 AGENT_RUNTIME_LAUNCH_MODES=
 AGENT_RUNTIME_CANARY_ARTIFACTS=
 AGENT_RUNTIME_SEMANTIC_EVIDENCE=
+AGENT_RUNTIME_RELEASE_AUTHORIZATIONS=
 AGENT_RUNTIME_RELEASE_GATE_REQUIRED=true
 ~~~
 
 真实采集阶段只在受控环境按批准的 Agent/模式显式启用；采集完成后再回到 `legacy` 或经批准的 `canary`。不要用通配符或未绑定 Agent 的 artifact 路径。`AGENT_RUNTIME_CANARY_ARTIFACTS` 和 `AGENT_RUNTIME_SEMANTIC_EVIDENCE` 的值在发布配置中采用 `AGENT_ID=PATH` 形式，这是 `RuntimeCanaryReleaseRegistry` 实际解析的格式。
+
+`AGENT_RUNTIME_RELEASE_AUTHORIZATIONS` 也采用 `AGENT_ID=PATH` 形式，路径指向受控私有目录中的版本绑定 JSON 授权记录。只要配置了 `canary` 或 `default` launch mode，TaskRunner 就要求该记录同时匹配 Agent、Agent version、Runtime plan version、suite、launch mode、审批引用和审批人引用；缺失、撤销或任何绑定不一致都会 fail-closed。当前每个 Agent 只能配置一个有效授权记录，因此切换 `canary` 与 `default` 时必须重新生成并替换对应模式的授权记录。开发环境未配置 launch mode 时不会强制读取该变量，但这不构成发布授权。
 
 ### 1.3 目录隔离
 
@@ -249,9 +252,10 @@ AGENT_RUNTIME_LAUNCH_MODES=GENERAL_QUESTION_V1=canary
 AGENT_RUNTIME_RELEASE_GATE_REQUIRED=true
 AGENT_RUNTIME_CANARY_ARTIFACTS=GENERAL_QUESTION_V1=<受控私有suite路径>
 AGENT_RUNTIME_SEMANTIC_EVIDENCE=GENERAL_QUESTION_V1=<受控私有sidecar路径>
+AGENT_RUNTIME_RELEASE_AUTHORIZATIONS=GENERAL_QUESTION_V1=<受控私有release authorization路径>
 ~~~
 
-上述配置只展示真实解析格式；`<...>` 必须替换为当前已批准、与版本匹配的受控路径。修改配置后按项目部署流程重启/重新加载服务，再次读取 `/api/v1/agents/runtime-readiness` 确认 configured/effective mode 和 blocker。不能把 preflight 的 `release_eligible=true` 解读为自动 default 授权。
+上述配置只展示真实解析格式；`<...>` 必须替换为当前已批准、与版本匹配的受控路径。修改配置后按项目部署流程重启/重新加载服务，再次读取 `/api/v1/agents/runtime-readiness` 确认 configured/effective mode 和 blocker。不能把 preflight 的 `release_eligible=true` 解读为自动 default 授权；它仍需要独立的、版本绑定的 release authorization 记录。
 
 ### 8.2 观察与记录
 

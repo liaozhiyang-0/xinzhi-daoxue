@@ -8,6 +8,9 @@ from enum import StrEnum
 from app.contracts import AgentRequest
 from app.runtime import RuntimeLaunchSnapshot
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorizationRegistry,
+)
 
 
 class RuntimeLaunchMode(StrEnum):
@@ -68,10 +71,14 @@ class RuntimeLaunchPolicy:
         launch_modes: str = "",
         *,
         release_registry: RuntimeCanaryReleaseRegistry | None = None,
+        release_authorization_registry: (
+            RuntimeReleaseAuthorizationRegistry | None
+        ) = None,
         release_gate_required: bool = False,
     ) -> None:
         self._modes = self._parse_modes(launch_modes)
         self._release_registry = release_registry
+        self._release_authorization_registry = release_authorization_registry
         self._release_gate_required = release_gate_required
 
     def resolve(
@@ -115,6 +122,7 @@ class RuntimeLaunchPolicy:
                 release_reason = (
                     self._release_gate_reason(
                         agent_id,
+                        target_mode=mode,
                         expected_agent_version=expected_agent_version,
                         expected_runtime_plan_version=expected_runtime_plan_version,
                     )
@@ -151,6 +159,7 @@ class RuntimeLaunchPolicy:
                 )
             release_reason = self._release_gate_reason(
                 agent_id,
+                target_mode=configured,
                 expected_agent_version=expected_agent_version,
                 expected_runtime_plan_version=expected_runtime_plan_version,
             )
@@ -175,6 +184,7 @@ class RuntimeLaunchPolicy:
             release_reason = (
                 self._release_gate_reason(
                     agent_id,
+                    target_mode=RuntimeLaunchMode.CANARY,
                     expected_agent_version=expected_agent_version,
                     expected_runtime_plan_version=expected_runtime_plan_version,
                 )
@@ -233,6 +243,7 @@ class RuntimeLaunchPolicy:
         self,
         agent_id: str,
         *,
+        target_mode: RuntimeLaunchMode,
         expected_agent_version: str | None,
         expected_runtime_plan_version: str | None,
     ) -> str | None:
@@ -249,11 +260,26 @@ class RuntimeLaunchPolicy:
             expected_agent_version=expected_agent_version,
             expected_runtime_plan_version=expected_runtime_plan_version,
         ):
+            release_reason = None
+        else:
+            release_reason = self._release_registry.reason(
+                agent_id,
+                expected_agent_version=expected_agent_version,
+                expected_runtime_plan_version=expected_runtime_plan_version,
+            )
+        if release_reason is not None:
+            return release_reason
+        if self._release_authorization_registry is None:
             return None
-        return self._release_registry.reason(
+        report = self._release_registry.report(agent_id)
+        if report is None:
+            return "canary_release_evidence_missing"
+        return self._release_authorization_registry.reason(
             agent_id,
-            expected_agent_version=expected_agent_version,
-            expected_runtime_plan_version=expected_runtime_plan_version,
+            suite_id=report.suite_id,
+            launch_mode=target_mode.value,
+            expected_agent_version=expected_agent_version or "",
+            expected_runtime_plan_version=expected_runtime_plan_version or "",
         )
 
     @staticmethod
