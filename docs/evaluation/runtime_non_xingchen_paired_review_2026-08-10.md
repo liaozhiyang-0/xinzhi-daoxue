@@ -396,3 +396,28 @@ They are ignored and must not be committed.
   Ruff, and diff checks. A browser-backed live student approval/recovery smoke
   was not executed because the configured in-app browser transport disconnected
   during setup; no browser result is claimed from this change.
+
+## 23. 2026-08-11 student public Task API recovery evidence
+
+- Added a provider-free public-boundary regression for a student Task: the task
+  enters `waiting_input`, `GET /runtime-controls` exposes only the input action
+  with the persisted state version, and `POST /input` resumes the same Runtime
+  checkpoint to completion. The test also verifies that final controls are
+  unavailable and stored event sequences remain unique and ordered.
+- This is stronger evidence for the API/SSE contract consumed by the student
+  page, but it is not a browser-rendering result. The live browser acceptance
+  remains pending until the configured browser transport is available.
+
+## 24. 2026-08-11 General Question real-provider paired evidence
+
+- A bounded single-instance paired run used the locally configured Spark/Qwen
+  Providers with Xingchen disabled. Legacy and Runtime both completed 1/1 with
+  matching `GENERAL_QUESTION_V1`, zero timeouts or event-order failures, and
+  2/2 overall completed runs. The Runtime trace contained 12 checkpoints,
+  three nodes, 23 strictly increasing events, and no unresolved failures.
+- Offline packaging produced a version-bound structural suite with
+  `structural_release_eligible=true`, `agent_version=general-qa-v1`, and
+  `runtime_plan_version=general-qa-v1`. A redacted preliminary model sidecar
+  was collected with `decision=needs_review`; provider-free preflight returned
+  `semantic_decision_not_pass`. No release, canary, or default decision was
+  created.
