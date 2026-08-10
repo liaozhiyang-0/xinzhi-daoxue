@@ -270,3 +270,21 @@ They are ignored and must not be committed.
   `local_agent` with two model calls; the offline packager therefore blocked
   the pair for provider and model-call regression. No structural suite or
   semantic release decision was promoted from this run.
+
+## 17. 2026-08-11 General and Knowledge QA paired evidence
+
+- Two additional bounded single-instance pairs completed under the explicit
+  Runtime development profile: `GENERAL_QUESTION_V1` and
+  `LEARN_01_LOCAL_RETRIEVAL_V1`. Each Legacy/Runtime pair completed 2/2 with
+  zero Agent mismatches, zero timeouts, and strictly increasing Task events.
+  Private artifacts are under
+  `.local_outputs/runtime_authorized_evidence_20260811_general_knowledge_profile/`.
+- The offline package produced one structural suite per Agent. Both suites
+  passed structural evaluation with one of one paired cases, matching Agent
+  and plan versions, valid Runtime traces, zero provider mismatch, zero
+  status/answer/trace failures, and zero latency/model-call regression.
+  General Question had 12 Runtime checkpoints; Knowledge QA had 9.
+- Provider-free release preflight was run separately for both suites and
+  returned exit code 1 with `semantic_evidence_missing`. The generated
+  judgement templates remain incomplete and were not treated as semantic
+  review; no canary/default decision was changed.
