@@ -31,6 +31,8 @@ class SolverParityThresholds(BaseModel):
     max_handler_mismatch_rate: float = Field(default=0, ge=0, le=1)
     max_latency_regression_ratio: float = Field(default=0.5, ge=0)
     max_model_call_regression_ratio: float = Field(default=0.5, ge=0)
+    max_single_pair_latency_regression_ratio: float = Field(default=0.5, ge=0)
+    max_single_pair_model_call_regression_ratio: float = Field(default=0.5, ge=0)
 
 
 class SolverParityPair(BaseModel):
@@ -48,9 +50,7 @@ class SolverParitySuite(BaseModel):
 
     suite_version: str = "1"
     suite_id: str = Field(min_length=1, max_length=160)
-    thresholds: SolverParityThresholds = Field(
-        default_factory=SolverParityThresholds
-    )
+    thresholds: SolverParityThresholds = Field(default_factory=SolverParityThresholds)
     pairs: list[SolverParityPair] = Field(default_factory=list)
 
 
@@ -85,12 +85,16 @@ class SolverParitySuiteReport(BaseModel):
     handler_mismatch_rate: float = Field(default=0, ge=0, le=1)
     latency_regression_ratio: float = 0
     model_call_regression_ratio: float = 0
+    single_pair_latency_regression_count: int = Field(default=0, ge=0)
+    single_pair_model_call_regression_count: int = Field(default=0, ge=0)
     thresholds: SolverParityThresholds
     failed_checks: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=lambda: [
-        "semantic_equivalence_requires_human_or_model_evaluation",
-        "canary_gate_only_covers_structural_and_operational_parity",
-    ])
+    warnings: list[str] = Field(
+        default_factory=lambda: [
+            "semantic_equivalence_requires_human_or_model_evaluation",
+            "canary_gate_only_covers_structural_and_operational_parity",
+        ]
+    )
     results: list[SolverParityPairResult] = Field(default_factory=list)
 
 
@@ -144,6 +148,8 @@ def _trace_handler_ids(records: Sequence[Mapping[str, Any]]) -> set[str]:
 
 def evaluate_solver_parity_pair(
     pair: SolverParityPair,
+    *,
+    thresholds: SolverParityThresholds | None = None,
 ) -> SolverParityPairResult:
     trace_audit = audit_checkpoint_trace(pair.runtime_checkpoints)
     diff = build_runtime_legacy_diff(
@@ -168,6 +174,16 @@ def evaluate_solver_parity_pair(
         failed_checks.append("runtime_trace_invalid")
     if missing_handlers:
         failed_checks.append("runtime_handler_path_mismatch")
+    if (
+        thresholds is not None
+        and latency_ratio > thresholds.max_single_pair_latency_regression_ratio
+    ):
+        failed_checks.append("single_pair_latency_regression_above_threshold")
+    if (
+        thresholds is not None
+        and call_ratio > thresholds.max_single_pair_model_call_regression_ratio
+    ):
+        failed_checks.append("single_pair_model_call_regression_above_threshold")
     return SolverParityPairResult(
         case_id=pair.case_id,
         passed=not failed_checks,
@@ -187,15 +203,19 @@ def evaluate_solver_parity_pair(
 def evaluate_solver_parity_suite(
     suite: SolverParitySuite | Mapping[str, Any],
 ) -> SolverParitySuiteReport:
-    if not isinstance(suite, SolverParitySuite):
-        suite = SolverParitySuite.model_validate(suite)
-    results = [evaluate_solver_parity_pair(pair) for pair in suite.pairs]
+    validated = (
+        suite
+        if isinstance(suite, SolverParitySuite)
+        else SolverParitySuite.model_validate(suite)
+    )
+    results = [
+        evaluate_solver_parity_pair(pair, thresholds=validated.thresholds)
+        for pair in validated.pairs
+    ]
     pair_count = len(results)
     denominator = max(1, pair_count)
     status_mismatches = sum(not item.diff.status_match for item in results)
-    answer_mismatches = sum(
-        not item.diff.answer_presence_match for item in results
-    )
+    answer_mismatches = sum(not item.diff.answer_presence_match for item in results)
     trace_invalid = sum(not item.trace_audit.valid for item in results)
     handler_mismatches = sum(bool(item.missing_handler_ids) for item in results)
     legacy_latency = sum(item.legacy_latency_ms for item in results)
@@ -204,7 +224,17 @@ def evaluate_solver_parity_suite(
     runtime_calls = sum(item.runtime_model_calls for item in results)
     latency_ratio = _ratio(runtime_latency - legacy_latency, legacy_latency)
     call_ratio = _ratio(runtime_calls - legacy_calls, legacy_calls)
-    thresholds = suite.thresholds
+    thresholds = validated.thresholds
+    single_pair_latency_regressions = sum(
+        item.latency_regression_ratio
+        > thresholds.max_single_pair_latency_regression_ratio
+        for item in results
+    )
+    single_pair_model_call_regressions = sum(
+        item.model_call_regression_ratio
+        > thresholds.max_single_pair_model_call_regression_ratio
+        for item in results
+    )
     failed_checks: list[str] = []
     if pair_count < thresholds.min_pairs:
         failed_checks.append("minimum_pair_count_not_met")
@@ -230,9 +260,13 @@ def evaluate_solver_parity_suite(
         failed_checks.append("latency_regression_above_threshold")
     if call_ratio > thresholds.max_model_call_regression_ratio:
         failed_checks.append("model_call_regression_above_threshold")
+    if single_pair_latency_regressions:
+        failed_checks.append("single_pair_latency_regression_above_threshold")
+    if single_pair_model_call_regressions:
+        failed_checks.append("single_pair_model_call_regression_above_threshold")
     return SolverParitySuiteReport(
-        suite_id=suite.suite_id,
-        suite_version=suite.suite_version,
+        suite_id=validated.suite_id,
+        suite_version=validated.suite_version,
         canary_eligible=not failed_checks,
         pair_count=pair_count,
         passed_pair_count=sum(item.passed for item in results),
@@ -242,6 +276,8 @@ def evaluate_solver_parity_suite(
         handler_mismatch_rate=rates["handler_mismatch_rate"],
         latency_regression_ratio=latency_ratio,
         model_call_regression_ratio=call_ratio,
+        single_pair_latency_regression_count=single_pair_latency_regressions,
+        single_pair_model_call_regression_count=single_pair_model_call_regressions,
         thresholds=thresholds,
         failed_checks=failed_checks,
         results=results,

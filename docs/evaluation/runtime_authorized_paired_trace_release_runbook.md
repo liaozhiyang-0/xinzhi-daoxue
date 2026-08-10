@@ -186,6 +186,8 @@ collector 成功时会输出结构评测报告，并写出 `RuntimeCanarySuite`�
 
 这里的 `release_eligible` 是结构套件自身的授权/结构 gate 结果，不是语义等价结论；语义 sidecar 仍然必须单独采集并交给 preflight。
 
+性能门禁同时检查整套样本的聚合回归和每个 pair 的单独回归。任何一个 pair 的延迟或模型调用回归超过其阈值都会使 suite fail closed；不能用其它更快的样本抵消一个严重的单次回归。
+
 ## 6. 独立语义审查与 sidecar
 
 ### 6.1 审查输入

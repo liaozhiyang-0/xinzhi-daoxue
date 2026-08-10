@@ -106,8 +106,9 @@ def test_solver_parity_suite_allows_canary_when_pairs_meet_thresholds() -> None:
     assert report.trace_invalid_rate == 0
 
 
-def test_solver_parity_suite_blocks_canary_on_trace_and_operational_regression(
-) -> None:
+def test_solver_parity_suite_blocks_canary_on_trace_and_operational_regression() -> (
+    None
+):
     failed = _payload(status="failed", latency_ms=250, model_calls=5)
     failed_pair = _pair("ct-failure", runtime=failed).model_copy(
         update={"runtime_checkpoints": []}
@@ -129,3 +130,36 @@ def test_solver_parity_suite_blocks_canary_on_trace_and_operational_regression(
     assert "trace_invalid_rate_above_threshold" in report.failed_checks
     assert "latency_regression_above_threshold" in report.failed_checks
     assert "model_call_regression_above_threshold" in report.failed_checks
+
+
+def test_solver_parity_rejects_single_latency_outlier_hidden_by_aggregate() -> None:
+    required_handlers = {
+        "academic.solver.observe",
+        "academic.solver.execute",
+        "academic.solver.verify",
+    }
+    report = evaluate_solver_parity_suite(
+        SolverParitySuite(
+            suite_id="solver-parity-outlier",
+            thresholds=SolverParityThresholds(
+                max_latency_regression_ratio=0.5,
+                max_single_pair_latency_regression_ratio=0.5,
+            ),
+            pairs=[
+                _pair("slow-runtime", runtime=_payload(latency_ms=200)),
+                SolverParityPair(
+                    case_id="fast-runtime",
+                    legacy_payload=_payload(latency_ms=1_000),
+                    runtime_payload=_payload(latency_ms=100),
+                    runtime_checkpoints=_checkpoints(),
+                    required_handler_ids=required_handlers,
+                ),
+            ],
+        )
+    )
+
+    assert report.latency_regression_ratio == 0
+    assert report.single_pair_latency_regression_count == 1
+    assert report.canary_eligible is False
+    assert "single_pair_latency_regression_above_threshold" in report.failed_checks
+    assert report.results[0].passed is False
