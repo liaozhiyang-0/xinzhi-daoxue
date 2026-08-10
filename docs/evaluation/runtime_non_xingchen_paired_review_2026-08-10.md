@@ -355,3 +355,25 @@ They are ignored and must not be committed.
   authorization. Independent semantic review must still assess the empty
   formative-assessment section and the Legacy/Runtime answer boundary before
   any migration decision.
+
+## 21. 2026-08-11 Assignment Review real-provider paired evidence
+
+- A fresh single-instance paired run used the locally configured Spark/Qwen
+  Providers with Xingchen disabled. The private report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_assignment_runtime_real_pair/`.
+  Legacy and Runtime both completed 1/1 with matching
+  `TEACH_02_ASSIGNMENT_REVIEW_V1`, zero timeouts or event-order failures, and
+  2/2 overall completed runs. The Runtime trace contained 13 checkpoints,
+  three nodes, 27 strictly increasing events, and no unresolved failures.
+- Offline packaging produced a version-bound structural suite with
+  `structural_release_eligible=true`, `agent_version=assignment-review-v1`, and
+  `runtime_plan_version=assignment-review-v1`. A redacted preliminary model
+  sidecar was collected with `decision=needs_review`; the provider-free release
+  preflight intentionally returned exit code 1 with
+  `semantic_decision_not_pass`. No release, canary, or default decision was
+  created.
+- The Runtime output appropriately preserved the instruction not to auto-score,
+  while adding process-oriented feedback that is not present in the Legacy
+  excerpt. Independent semantic review must determine whether that difference
+  is acceptable for the Assignment Review contract before any migration
+  decision.
