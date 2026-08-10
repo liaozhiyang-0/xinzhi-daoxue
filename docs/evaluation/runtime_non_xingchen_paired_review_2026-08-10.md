@@ -193,3 +193,19 @@ They are ignored and must not be committed.
 - Static workspace contract tests and Node syntax validation passed. Visual
   browser acceptance remains unverified because the browser transport was
   unavailable during this turn.
+
+## 13. 2026-08-11 Assignment Review Runtime smoke evidence
+
+- A fresh single-instance HTTP run used the public Task API for
+  `assignment_review_runtime_handoff` with development-only approval enabled.
+  The private report is under
+  `.local_outputs/runtime_authorized_dev_e2e_20260811_assignment_runtime_followup/`.
+- The run completed with `expected_agent_matched=true`, Runtime status
+  `completed`, 13 checkpoints, 3 Runtime nodes, 27 strictly increasing Task
+  events, zero Runtime failure codes, zero plan proposals, and one ordinary
+  quality approval. The API process was stopped after the bounded run and port
+  8000 was verified free.
+- This is a current-path Runtime smoke result, not a paired Legacy/Runtime
+  release artifact. The release preflight remains fail-closed because the
+  required version-bound structural suite, semantic sidecar, and independent
+  release decision are still absent for this Agent.
