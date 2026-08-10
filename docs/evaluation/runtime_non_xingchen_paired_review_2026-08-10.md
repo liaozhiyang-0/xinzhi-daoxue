@@ -102,3 +102,33 @@
 1. 对三条路径各增加至少 3 个不同合成输入，检查连续完成率、fallback 率和审批恢复率。
 2. 对三条路径各做独立语义评审，逐对记录等价性、质量和风险。
 3. 只有在语义评审、前端显示检查和责任人发布决定均完成后，才考虑扩大灰度。
+## 9. 2026-08-11 LearningLoop public API slice
+
+This is a bounded, synthetic development verification and is not release
+evidence. The LearningLoop Runtime is selected by the API process profile;
+the public request remains `POST /api/v1/learning/actions`.
+
+- Added `scripts/run_learning_runtime_authorized_dev_e2e.py`. It captures
+  redacted action, Runtime status, approval controls, status transitions, and
+  task event ordering. `--task-id` can isolate LearningLoop API/control tests
+  from a slow Task creation/provider path.
+- Runtime process profile: `TEACHING_INTERACTION_V1` and
+  `LEARNING_PROGRESS_V1` were enabled. Teaching hint and learning-progress
+  revision both completed with `runtime_run_id`, matching route assertions,
+  and strictly increasing events.
+- Legacy process profile: the same two public actions completed without a
+  Runtime run, with matching Legacy route assertions and strictly increasing
+  events. The two profiles were started serially; no concurrent API/Worker
+  pair was used.
+- A Runtime manual-review case observed the transition
+  `waiting_approval -> completed` after one development approval control.
+- Readiness remained fail-closed: both capabilities reported
+  `canary_release_eligible=false` and
+  `learning_runtime_authorized_paired_evidence_missing`.
+- A fresh Task creation attempt exceeded the bounded 45-second observation
+  window in the local Academic Solver provider node. It is recorded as a
+  Task-path timeout and does not invalidate or replace the completed
+  LearningLoop API-only slice.
+
+Private artifacts are under `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_*`.
+They are ignored and must not be committed.
