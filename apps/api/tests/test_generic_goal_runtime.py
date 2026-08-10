@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from app.contracts import AgentRequest, AgentResultStatus
+from app.core.errors import NotConfiguredError
 from app.runtime import (
     AgentRun,
     RuntimeGoal,
@@ -128,6 +129,25 @@ async def test_explicit_goal_runtime_executes_registered_capability() -> None:
     assert checkpoints
     assert "node_started" in events
     assert "node_completed" in events
+
+
+@pytest.mark.parametrize("value", [0, 33, True, "2"])
+def test_goal_runtime_rejects_invalid_max_parallelism(value: object) -> None:
+    service = GenericGoalRuntimeService(_registry())
+    request = _request(capability="tool.declared")
+    options = dict(request.options["runtime_goal_runtime"])
+    options["max_parallelism"] = value
+    request = request.model_copy(
+        update={
+            "options": {
+                **request.options,
+                "runtime_goal_runtime": options,
+            }
+        }
+    )
+
+    with pytest.raises(NotConfiguredError, match="max_parallelism"):
+        service.build_plan(request)
 
 
 @pytest.mark.asyncio

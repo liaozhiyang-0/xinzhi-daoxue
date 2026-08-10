@@ -215,3 +215,13 @@ at the end in stable lexical order. Static console/API projection coverage
 passed `9` tests and the Generic Goal Task API end-to-end suite passed `2`
 tests. The larger SSE/observability combination exceeded the local Windows
 command window in this run and is not represented as a new passing result.
+
+## Generic goal parallelism input boundary (2026-08-10)
+
+`runtime_goal_runtime.max_parallelism` is now a strict bounded integer from 1
+through 32. Boolean, string, zero, and out-of-range values are rejected before
+plan construction, rather than being coerced by `int()` or silently clamped.
+This keeps request-controlled plan shape explicit for UI and API callers while
+preserving non-blocking Task creation. Ruff, targeted Mypy, and `23` Generic
+Goal/planner/intake tests passed for this change (two third-party deprecation
+warnings); no Provider or Docker call was made.

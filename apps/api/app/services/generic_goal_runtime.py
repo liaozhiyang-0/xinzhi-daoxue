@@ -63,7 +63,7 @@ class GenericGoalRuntimeService:
             agent_id,
             request,
             goal,
-            max_parallelism=int(options.get("max_parallelism", 1) or 1),
+            max_parallelism=self._max_parallelism(options),
         )
 
     def _build_plan_for_goal(
@@ -293,6 +293,21 @@ class GenericGoalRuntimeService:
             raise NotConfiguredError(
                 "runtime_goal_runtime requires a structured goal"
             ) from exc
+
+    @staticmethod
+    def _max_parallelism(options: Mapping[str, Any]) -> int:
+        """Validate request-controlled parallelism before plan compilation."""
+
+        value = options.get("max_parallelism", 1)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise NotConfiguredError(
+                "runtime_goal_runtime max_parallelism must be an integer"
+            )
+        if not 1 <= value <= 32:
+            raise NotConfiguredError(
+                "runtime_goal_runtime max_parallelism must be between 1 and 32"
+            )
+        return value
 
     @classmethod
     def _sync_request(cls, run: AgentRun, request: AgentRequest) -> None:
