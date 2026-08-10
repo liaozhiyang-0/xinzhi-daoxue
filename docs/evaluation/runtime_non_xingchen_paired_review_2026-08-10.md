@@ -547,3 +547,20 @@ They are ignored and must not be committed.
   configuration. It does not prove real Provider semantic quality, Runtime
   release authorization, or production browser behavior under external
   dependencies.
+
+## 33. 2026-08-11 provider-free release matrix
+
+- The latest authorized paired packages were checked independently with
+  `scripts/check_runtime_release_preflight.py`, binding both expected Agent
+  version and Runtime plan version. `GENERAL_QUESTION_V1`,
+  `TEACH_01_LESSON_PREP_V1`, `TEACH_02_ASSIGNMENT_REVIEW_V1`,
+  `RESEARCH_02_ACADEMIC_WRITING_V1`, and `ACADEMIC_PROBLEM_SOLVER` all report
+  `structural_eligible=true`.
+- All five checks intentionally returned exit code `1` with
+  `semantic_eligible=false`, `release_eligible=false`, and the sole blocker
+  `semantic_evidence_missing`. No Agent was promoted to canary or default,
+  and no release authorization was created.
+- This matrix is provider-free and proves the release gate remains fail-closed;
+  it is not a semantic quality pass. The next valid step for each Agent is an
+  independently reviewed, redacted sidecar bound to the same suite/case,
+  followed by the separate human release decision required by the runbook.
