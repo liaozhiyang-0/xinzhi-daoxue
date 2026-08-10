@@ -103,12 +103,29 @@ def _artifact_pairs(output_root: Path) -> list[PairArtifact]:
     if not artifact_root.is_dir():
         raise ValueError("E2E artifact directory is missing")
     pairs: list[PairArtifact] = []
-    for runtime_task in sorted(artifact_root.glob("*/*/runtime/task.json")):
+    for runtime_task in sorted(artifact_root.rglob("runtime/task.json")):
         runtime_task = _require_contained(output_root, runtime_task, "runtime task")
+        relative_parts = runtime_task.relative_to(artifact_root).parts
+        if len(relative_parts) == 4:
+            agent_name, base_case_id, runtime_name, task_name = relative_parts
+            sample_name = ""
+        elif len(relative_parts) == 5:
+            agent_name, base_case_id, sample_name, runtime_name, task_name = (
+                relative_parts
+            )
+        else:
+            raise ValueError(
+                "runtime task must use artifacts/<agent>/<case>/runtime or "
+                "artifacts/<agent>/<case>/<sample>/runtime layout"
+            )
+        if runtime_name != "runtime" or task_name != "task.json":
+            raise ValueError("runtime task has an invalid artifact layout")
         runtime_dir = runtime_task.parent
-        case_dir = runtime_dir.parent
-        agent_dir = case_dir.parent
-        legacy_dir = case_dir / "legacy"
+        mode_dir = runtime_dir.parent
+        case_id = (
+            f"{base_case_id}__{sample_name}" if sample_name else base_case_id
+        )
+        legacy_dir = mode_dir / "legacy"
         legacy_task = _require_contained(
             output_root, legacy_dir / "task.json", "legacy task"
         )
@@ -120,8 +137,7 @@ def _artifact_pairs(output_root: Path) -> list[PairArtifact]:
         )
         runtime_payload = _read_json_object(runtime_task, "runtime task")
         legacy_payload = _read_json_object(legacy_task, "legacy task")
-        agent_id = agent_dir.name
-        case_id = case_dir.name
+        agent_id = agent_name
         if runtime_payload.get("agent_id") != agent_id:
             raise ValueError(f"{case_id}: runtime task Agent identity mismatch")
         if legacy_payload.get("agent_id") != agent_id:

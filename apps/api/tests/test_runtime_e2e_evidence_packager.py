@@ -98,8 +98,11 @@ def _create_pair_artifacts(
     task_id: str = "runtime-task",
     legacy_latency_ms: int = 0,
     runtime_latency_ms: int = 0,
+    sample_id: str | None = None,
 ) -> None:
     base = root / "artifacts" / "GENERAL_QUESTION_V1" / "general-case"
+    if sample_id:
+        base /= sample_id
     input_payload = {"question": "controlled private input"}
     for mode in ("legacy", "runtime"):
         _write_json(base / mode / "input.json", input_payload)
@@ -213,6 +216,29 @@ def test_packager_rejects_sensitive_checkpoint_state(tmp_path: Path) -> None:
     assert agent["structural_release_eligible"] is False
     assert "sensitive keys" in agent["blocking_reasons"][0]
     assert not (output_root / "structural_suites").exists()
+
+
+def test_packager_accepts_current_runner_sample_layout(tmp_path: Path) -> None:
+    output_root = tmp_path / "e2e"
+    database = tmp_path / "isolated.db"
+    _create_pair_artifacts(output_root, sample_id="sample-001")
+    _create_runtime_run(database, task_id="runtime-task")
+
+    report = package_e2e_evidence(
+        output_root=output_root,
+        sqlite_database=database,
+        authorization_ref="authorized-dev-test-2026-08-10",
+    )
+
+    agent = report["agents"][0]
+    assert agent["structural_release_eligible"] is True
+    suite = json.loads((output_root / agent["structural_suite"]).read_text())
+    assert suite["pairs"][0]["case_id"] == "general-case__sample-001"
+    packet = json.loads((output_root / agent["semantic_review_packet"]).read_text())
+    assert packet["cases"][0]["case_id"] == "general-case__sample-001"
+    assert packet["cases"][0]["runtime_checkpoint_path"].endswith(
+        "/sample-001/runtime/checkpoints.json"
+    )
 
 
 def test_packager_rejects_sensitive_paired_output(tmp_path: Path) -> None:

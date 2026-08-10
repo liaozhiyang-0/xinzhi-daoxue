@@ -225,3 +225,30 @@ They are ignored and must not be committed.
   projection, Ruff, Mypy, and diff checks. Release preflight still requires
   independently captured authorized paired traces and semantic review; the
   new version field does not manufacture that evidence.
+
+## 15. 2026-08-11 paired evidence packaging follow-up
+
+- The offline paired-evidence packager now accepts both the original artifact
+  layout (`artifacts/<agent>/<case>/<mode>/...`) and the current authorized
+  E2E runner layout (`artifacts/<agent>/<case>/<sample>/<mode>/...`). Sample
+  directories are included in the packaged case identity, preventing case
+  collisions when one run contains multiple samples. A regression test covers
+  the `sample-001` layout.
+- A fresh isolated single-instance Assignment Review run used the explicit
+  Runtime development launch profile and completed both Legacy and Runtime
+  cases. The private report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_assignment_runtime_profile/`.
+  The Runtime case had `agent_version=assignment-review-v1`,
+  `runtime_plan_version=assignment-review-v1`, 12 top-level checkpoints, 3
+  Runtime nodes, and one subagent lineage. Structural evaluation passed with
+  one of one paired cases and no status, answer, provider, trace, latency, or
+  model-call regression failures.
+- The first direct-API attempt without the explicit Runtime launch profile was
+  rejected from evidence because it produced a compatibility `run_kind=agent`
+  trace without Runtime checkpoints. This confirms that the profile is part of
+  the reproducible evidence precondition; it was not packaged as Runtime
+  evidence.
+- Release preflight was intentionally fail-closed: the structural suite was
+  eligible, but `semantic_evidence_missing` blocked release. No semantic
+  judgement or human release decision was fabricated. The generated files are
+  development-only private artifacts and are not committed.
