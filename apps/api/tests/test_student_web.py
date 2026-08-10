@@ -41,6 +41,15 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "Qdrant" not in page.text
     assert "Flow ID" not in page.text
     assert "Xingchen" not in page.text
+    for capability_intent in (
+        'data-capability="course_qa" data-intent="general_qa"',
+        'data-capability="circuit_reasoning" data-intent="solve_problem"',
+        'data-capability="lesson_prep" data-intent="lesson_prep"',
+        'data-capability="assignment_review" data-intent="assignment_review"',
+        'data-capability="academic_writing" data-intent="academic_writing"',
+        'data-capability="data_analysis" data-intent="data_analysis"',
+    ):
+        assert capability_intent in page.text
     assert "专业工作流" not in page.text
     assert "教案设计" in page.text
     assert "作业初审" in page.text
@@ -138,7 +147,10 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "从模型摘要中自动保存明确的稳定偏好" in page.text
     assert "ownedTaskUrl(state.currentTask.id)" in script.text
     assert "audience: requestedWorkspaceRole" in script.text
-    assert 'requestedWorkspaceRole = ["student", "teacher", "researcher"]' in script.text
+    assert (
+        'requestedWorkspaceRole = ["student", "teacher", "researcher"]'
+        in script.text
+    )
     assert 'api("/api/v1/capabilities")' in script.text
     assert "/api/v1/sessions/${sessionId}/tasks?limit=50" in script.text
     assert "archiveCurrentAnswer()" in script.text

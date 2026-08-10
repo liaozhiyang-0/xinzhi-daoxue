@@ -20,11 +20,38 @@ const outputDir = path.resolve(
 );
 const providerProfile = process.env.XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE || "mock";
 const useRealLocalProviders = providerProfile === "real_local";
+const scenarioName = process.env.XINZHI_TEACHER_BROWSER_SCENARIO || "lesson_prep";
+const scenarioDefinitions = {
+  lesson_prep: {
+    capability: "lesson_prep",
+    agentId: "TEACH_01_LESSON_PREP_V1",
+    prompt: "Design a privacy-safe circuit-theory lesson on Kirchhoff laws with learning goals, formative assessment, and teacher review points.",
+  },
+  assignment_review: {
+    capability: "assignment_review",
+    agentId: "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    prompt: "Review this anonymized assignment response: a 10V source in series with a 5 ohm resistor has student answer I=10/5=2A. Identify correct parts, risks, and feedback.",
+  },
+  academic_writing: {
+    capability: "academic_writing",
+    agentId: "RESEARCH_02_ACADEMIC_WRITING_V1",
+    prompt: "Rewrite this sentence in rigorous academic language: the experiment shows that the filter works very well. Do not invent measurements or citations.",
+  },
+  course_qa: {
+    capability: "course_qa",
+    agentId: "GENERAL_QUESTION_V1",
+    prompt: "Explain why capacitor voltage cannot change instantaneously, using a concise course-grounded explanation.",
+  },
+};
+const scenario = scenarioDefinitions[scenarioName];
+if (!scenario) {
+  throw new Error(`unsupported teacher browser scenario: ${scenarioName}`);
+}
 const adminLogin = "runtime_teacher_acceptance_admin";
 const adminPassword = "RuntimeTeacherAcceptance2026!";
 
 const runtimeLaunchModes = useRealLocalProviders
-  ? "TEACH_01_LESSON_PREP_V1=default"
+  ? `${scenario.agentId}=default`
   : [
       "ACADEMIC_PROBLEM_SOLVER",
       "GENERAL_QUESTION_V1",
@@ -236,6 +263,8 @@ async function collectEvidence(page, taskId) {
   const report = {
     profile: "isolated_authenticated_teacher_browser",
     provider_profile: providerProfile,
+    scenario: scenarioName,
+    expected_agent_id: scenario.agentId,
     base_url: baseURL,
     single_api_pid: null,
     task_id: null,
@@ -271,10 +300,10 @@ async function collectEvidence(page, taskId) {
     await page.locator("#app-sidebar .brand-lockup").waitFor();
     await page.waitForFunction(() => document.body.dataset.userRole === "admin" || document.body.innerText.includes("管理员"), null, { timeout: 10_000 }).catch(() => {});
 
-    await page.locator('[data-capability="lesson_prep"]').click();
-    await page.locator("#question-input").fill(
-      "请为电路理论中的基尔霍夫定律设计一节脱敏的课堂活动，包含学习目标、形成性评价和教师复核点。",
-    );
+    const capabilityButton = page.locator(`[data-capability="${scenario.capability}"]`);
+    await capabilityButton.click();
+    const selectedCapabilityPrompt = await capabilityButton.getAttribute("data-prompt");
+    await page.locator("#question-input").fill(selectedCapabilityPrompt || scenario.prompt);
     await page.locator("#student-form").evaluate((form) => form.requestSubmit());
     await page.waitForFunction(() => Boolean(localStorage.getItem("xinzhi_last_task")), null, { timeout: 30_000 });
     report.task_id = await page.evaluate(() => localStorage.getItem("xinzhi_last_task"));
@@ -292,6 +321,7 @@ async function collectEvidence(page, taskId) {
     await page.screenshot({ path: path.join(outputDir, "teacher-completed.png"), fullPage: true });
     if (report.evidence.identity.role !== "admin") throw new Error("authenticated browser identity was not admin");
     if (report.evidence.task.status !== "completed") throw new Error(`task ended as ${report.evidence.task.status}: ${report.evidence.task.error_message || "no error message"}`);
+    if (report.evidence.task.agent_id !== scenario.agentId) throw new Error(`task routed to ${report.evidence.task.agent_id}, expected ${scenario.agentId}`);
     if (!report.evidence.event_sequences_strictly_increasing) throw new Error("task event sequence is not strictly increasing");
     report.status = "completed";
   } catch (error) {

@@ -773,3 +773,30 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The change is covered by registry and provider-free preflight tests,
   including a model-only pass regression. It does not create a release record
   or promote any Agent; current canary/default decisions remain unchanged.
+
+## 44. 2026-08-11 authenticated teacher browser Assignment Review flow
+
+- The browser acceptance harness now accepts an explicit
+  `XINZHI_TEACHER_BROWSER_SCENARIO` and verifies the selected capability's
+  expected Agent ID. The Workspace capability buttons now bind their intent
+  explicitly, so a prompt's subject matter cannot silently override the
+  teacher's selected workflow.
+- The bounded real-provider report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_real_assignment_review_20260811_final/report.json`.
+  It used one API process, authenticated as `admin`, selected Assignment
+  Review, and completed with `TEACH_02_ASSIGNMENT_REVIEW_V1` and
+  `result_provider=local_agent`.
+- The trace contained three succeeded Runtime nodes, one completed child run,
+  27 strictly increasing events, one visible approval/recovery cycle, and no
+  page errors or request failures. This is application/browser-flow evidence;
+  it does not authorize semantic release, canary promotion, or default launch.
+
+Reproducible bounded command (starts exactly one API/Worker process inside the
+script):
+
+```powershell
+$env:NODE_PATH = (Join-Path (Get-Location) '.codex-tmp\playwright-runner\node_modules')
+$env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
+$env:XINZHI_TEACHER_BROWSER_SCENARIO = 'assignment_review'
+node scripts\run_runtime_teacher_browser_acceptance.js
+```

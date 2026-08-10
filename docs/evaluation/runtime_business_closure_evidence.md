@@ -63,3 +63,11 @@ independent release review: `judge_type=model` is fail-closed with
 `semantic_judge_not_independent`, while `human` and `hybrid` pass judgements
 remain eligible subject to all structural, version, authorization, and
 preflight gates. No Agent was promoted by this change.
+
+The authenticated teacher browser harness was generalized to explicit
+capability scenarios and a real Assignment Review flow was rechecked with one
+API process. The selected workflow routed to
+`TEACH_02_ASSIGNMENT_REVIEW_V1`, completed with `provider=local_agent`, and
+produced three Runtime nodes, one child run, 27 strictly increasing events,
+and no page/request errors. This strengthens application-flow evidence only;
+it does not replace independent semantic review or human release approval.
