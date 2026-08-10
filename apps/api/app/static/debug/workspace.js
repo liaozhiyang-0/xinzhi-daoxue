@@ -1,6 +1,9 @@
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
 const scenarioId = params.get("scenario_id") || "";
+const requestedWorkspaceRole = ["student", "teacher", "researcher"].includes(params.get("role"))
+  ? params.get("role")
+  : "student";
 const courseLabels = {
   CT: "电路理论",
   AE: "模拟电子技术",
@@ -59,9 +62,40 @@ const state = {
   showArchived: false,
   liveProcessSteps: new Map(),
   intentOverride: params.get("intent") || "",
+  userRole: "student",
 };
 let identityReady = Promise.resolve();
+let scenarioRoles = null;
+let scenarioRoleRequest = Promise.resolve();
 localStorage.setItem("xinzhi_student_user", state.userId);
+
+function effectiveWorkspaceRole(identity) {
+  const role = String(identity?.role || "").trim().toLowerCase();
+  return ["student", "teacher", "researcher", "admin"].includes(role)
+    ? role
+    : "student";
+}
+
+async function loadScenarioRolePolicy() {
+  if (!scenarioId) return null;
+  try {
+    const scenario = await api(`/api/v1/scenarios/${encodeURIComponent(scenarioId)}`);
+    scenarioRoles = Array.isArray(scenario.roles) ? scenario.roles : [];
+  } catch (_error) {
+    scenarioRoles = [];
+  }
+  return scenarioRoles;
+}
+
+function scenarioRoleAllowed() {
+  return !scenarioId || scenarioRoles === null || scenarioRoles.includes(state.userRole);
+}
+
+function scenarioRoleMessage() {
+  if (scenarioRoleAllowed()) return "";
+  const roles = scenarioRoles.join("、") || requestedWorkspaceRole;
+  return `当前场景仅允许 ${roles} 角色。请使用已获授权的账号登录后继续。`;
+}
 
 function selectedCourse() {
   return $("#course-select").value;
@@ -1844,6 +1878,11 @@ function markAnswerCancelled() {
 async function submit(event) {
   event.preventDefault(); if (state.taskId) return;
   await identityReady;
+  await scenarioRoleRequest;
+  if (!scenarioRoleAllowed()) {
+    $("#form-error").textContent = scenarioRoleMessage();
+    return;
+  }
   const runSequence = state.runSequence + 1;
   state.runSequence = runSequence;
   state.cancelRequested = false;
@@ -1880,7 +1919,7 @@ async function submit(event) {
     const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
     const researchAnalysis = buildResearchAnalysisV2(question, materials);
     if (researchAnalysis) options.research_analysis_v2 = researchAnalysis;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: state.userRole, scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
     state.taskId = task.id; state.currentTask = task; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
@@ -2108,9 +2147,10 @@ async function loadCapabilities() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: "student" });
+  initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: requestedWorkspaceRole });
   applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels();
   identityReady = initIdentityGate({ next: `${location.pathname}${location.search}` }).then((identity) => {
+    state.userRole = effectiveWorkspaceRole(identity);
     if (identity?.user_id || identity?.id) {
       const identityId = identity.user_id || identity.id;
       if (state.userId !== identityId) {
@@ -2131,6 +2171,7 @@ window.addEventListener("DOMContentLoaded", () => {
     });
     return identity;
   });
+  scenarioRoleRequest = identityReady.then(loadScenarioRolePolicy);
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
   all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; state.intentOverride = button.dataset.intent || ""; updateResearchAnalysisPanel(); updateShell(); autoGrow(); $("#question-input").focus(); }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));

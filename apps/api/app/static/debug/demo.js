@@ -21,7 +21,8 @@ function formatReadinessMessage(value) {
 
 function scenarioTheme(scenario, index) {
   const prompt = scenario.demo_steps?.[0] || scenario.summary;
-  const href = `/workspace?scenario_id=${encodeURIComponent(scenario.id)}&prompt=${encodeURIComponent(prompt)}`;
+  const audience = scenario.roles?.find((role) => ["student", "teacher", "researcher"].includes(role)) || "student";
+  const href = `/workspace?scenario_id=${encodeURIComponent(scenario.id)}&role=${encodeURIComponent(audience)}&prompt=${encodeURIComponent(prompt)}`;
   return {
     number: String(index + 1).padStart(2, "0"),
     title: scenario.name,

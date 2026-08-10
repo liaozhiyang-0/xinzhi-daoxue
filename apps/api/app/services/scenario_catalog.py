@@ -167,6 +167,11 @@ class ScenarioCatalog:
             raise ScenarioCatalogError(
                 f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽緭鍏ョ被鍨?{input_type}"
             )
+        if payload.user_role.value not in scenario.roles:
+            raise ScenarioCatalogError(
+                "scenario role is not authorized: "
+                f"{payload.user_role.value} not in {', '.join(scenario.roles)}"
+            )
         options = dict(payload.options)
         options.update(
             {

@@ -75,6 +75,17 @@ def test_demo_scenarios_and_presentation_mode_are_explicit(client) -> None:
     assert "执行步骤" in script
     assert "presentation-mode" in shell
     assert "/api/v1/debug/execution/" in script
+    assert "role=${encodeURIComponent(audience)}" in script
+    assert 'scenario.roles?.find((role)' in script
+
+
+def test_workspace_uses_authenticated_role_for_scenario_tasks(client) -> None:
+    script = client.get("/debug-assets/workspace.js").text
+
+    assert "effectiveWorkspaceRole(identity)" in script
+    assert "user_role: state.userRole" in script
+    assert "loadScenarioRolePolicy" in script
+    assert "当前场景仅允许" in script
 
 
 def test_system_page_only_reads_lightweight_status_endpoints(client) -> None:

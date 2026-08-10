@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from app.contracts.agent import AgentRequest, AttachmentRef
+from app.contracts.agent import AgentRequest, AttachmentRef, UserRole
 from app.contracts.orchestration import AgentRequestV2, CourseCode, InputType
 from app.services.scenario_catalog import ScenarioCatalog, ScenarioCatalogError
 
@@ -82,6 +82,7 @@ def test_legacy_task_request_is_bound_to_scenario_policy() -> None:
     request = AgentRequest(
         session_id="session-test",
         user_id="user-test",
+        user_role=UserRole.TEACHER,
         course_id="CT",
         scenario_id="faculty_course_copilot_v1",
         options={"input_type": "text"},
@@ -100,6 +101,7 @@ def test_research_analysis_v2_options_survive_scenario_binding() -> None:
     request = AgentRequest(
         session_id="session-research-v2",
         user_id="user-research-v2",
+        user_role=UserRole.RESEARCHER,
         course_id="CT",
         intent="data_analysis",
         scenario_id="research_data_workbench_v1",
@@ -117,6 +119,44 @@ def test_research_analysis_v2_options_survive_scenario_binding() -> None:
     assert enriched.intent.value == "data_analysis"
     assert enriched.options["research_analysis_v2"]["execute"] is False
     assert enriched.options["scenario_id"] == "research_data_workbench_v1"
+
+
+def test_legacy_task_request_rejects_role_not_allowed_by_scenario() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    request = AgentRequest(
+        session_id="session-student",
+        user_id="user-student",
+        user_role=UserRole.STUDENT,
+        course_id="CT",
+        scenario_id="assessment_diagnosis_v1",
+        canonical_input={"text": "review the assignment"},
+    )
+
+    with pytest.raises(ScenarioCatalogError, match="scenario role is not authorized"):
+        catalog.enrich_legacy_request(request)
+
+
+def test_guest_task_cannot_claim_teacher_role_for_teacher_scenario(api) -> None:
+    guest = api.client.post("/api/v1/auth/guest")
+    assert guest.status_code == 200
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        intent="lesson_prep",
+        user_role="teacher",
+    )
+    payload.update(
+        {
+            "scene": "teaching",
+            "scenario_id": "faculty_course_copilot_v1",
+            "canonical_input": {"text": "prepare a lesson"},
+        }
+    )
+
+    response = api.client.post("/api/v1/tasks", json=payload)
+
+    assert response.status_code == 422
+    assert "scenario role is not authorized" in response.text
 
 
 def test_legacy_task_request_rejects_unadvertised_attachment_mode() -> None:

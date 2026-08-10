@@ -60,9 +60,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260808-research-analysis-v13" in page.text
-    assert "workspace.js?v=20260808-research-analysis-v13" in page.text
-    assert "ui-core.js?v=20260808-research-analysis-v13" in page.text
+    assert "20260810-role-aware-scenarios-v1" in page.text
+    assert "workspace.js?v=20260810-role-aware-scenarios-v1" in page.text
+    assert "ui-core.js?v=20260810-role-aware-scenarios-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -137,7 +137,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "本次已使用" in script.text
     assert "从模型摘要中自动保存明确的稳定偏好" in page.text
     assert "ownedTaskUrl(state.currentTask.id)" in script.text
-    assert 'audience: "student"' in script.text
+    assert "audience: requestedWorkspaceRole" in script.text
+    assert 'requestedWorkspaceRole = ["student", "teacher", "researcher"]' in script.text
     assert 'api("/api/v1/capabilities")' in script.text
     assert "/api/v1/sessions/${sessionId}/tasks?limit=50" in script.text
     assert "archiveCurrentAnswer()" in script.text

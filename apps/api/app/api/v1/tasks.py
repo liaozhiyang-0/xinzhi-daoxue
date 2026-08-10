@@ -112,10 +112,6 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    try:
-        data = request.app.state.scenario_catalog.enrich_legacy_request(data)
-    except ScenarioCatalogError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     updates: dict[str, object] = {"user_id": effective_user_id(principal, data.user_id)}
     if principal.has_identity:
         try:
@@ -123,6 +119,12 @@ async def create_task(
         except ValueError:
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
+    # Bind scenarios after principal attribution so a transient request role
+    # cannot affect scenario selection before the Task boundary normalizes it.
+    try:
+        data = request.app.state.scenario_catalog.enrich_legacy_request(data)
+    except ScenarioCatalogError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     data = await _hydrate_document_attachments(data, principal, db, request)
     session = await SessionRepository(db).get_for_user(data.session_id, data.user_id)
     if session is not None:

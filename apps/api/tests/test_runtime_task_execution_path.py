@@ -832,6 +832,7 @@ def test_lesson_prep_runtime_default_launch_uses_registry_plan(api, app) -> None
             "_scenario_catalog_bound": True,
         },
         intent="lesson_prep",
+        user_role="teacher",
     )
     payload.update(
         {
