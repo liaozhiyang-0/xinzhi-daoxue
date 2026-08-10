@@ -458,109 +458,12 @@ function learningRuntimeControlStateVersion(projection) {
   return Number.isSafeInteger(stateVersion) && stateVersion >= 1 ? stateVersion : null;
 }
 
-function learningRuntimeApproveAvailable(reference, projection) {
-  const entry = learningRuntimeControlEntry(projection, "approve");
-  const availableControls = Array.isArray(projection?.available_controls)
-    ? projection.available_controls
-    : [];
-  const status = runtimeStatusKey(projection?.status || reference?.status || reference?.snapshot?.status);
-  return status === "waiting_approval"
-    && entry?.available === true
-    && availableControls.includes("approve")
-    && learningRuntimeControlStateVersion(projection) != null;
-}
-
 function learningRuntimeControlFetchErrorCode(error) {
   const status = Number(error?.status);
   if (status === 401) return "learning_runtime_controls_unauthorized";
   if (status === 403) return "learning_runtime_controls_forbidden";
   if (status === 404) return "learning_runtime_controls_not_found";
   return "learning_runtime_controls_unavailable";
-}
-
-function learningRuntimeControlContractSurface(reference, projection) {
-  const status = projection?.status || reference.status || reference.snapshot.status;
-  const controls = ["approve", "pause", "resume", "input"].map((action) => {
-    const entry = learningRuntimeControlEntry(projection, action);
-    const available = entry?.available === true;
-    const reasonCode = entry?.reason_code || (projection ? "not_reported" : "learning_runtime_controls_loading");
-    const reason = entry?.reason || (projection
-      ? "后端未报告该控制动作的可用原因。"
-      : "正在读取后端控制能力；在读取完成前不会发送控制请求。");
-    const rejected = action !== "approve" ? "不会从此页面发送请求。" : "";
-    return el("div", { class: "runtime-control-row" }, [
-      el("strong", { text: learningRuntimeControlLabels[action] }),
-      badge(available ? "ready" : "blocked", available ? "后端可用" : "禁用 / rejected"),
-      el("span", { text: `reason_code: ${reasonCode}` }),
-      el("p", { text: `${reason}${rejected ? ` ${rejected}` : ""}` }),
-    ]);
-  });
-  const availableControls = Array.isArray(projection?.available_controls)
-    ? projection.available_controls
-    : [];
-  return el("div", { id: "learning-runtime-control-contract", class: "debug-surface" }, [
-    el("h3", { text: "LearningLoop 后端控制能力" }),
-    el("p", { text: "控制能力与 reason code 直接来自后端 projection；敏感请求快照不在此处展示。" }),
-    kvSurface("Control projection", [
-      ["status", status],
-      ["state_version", projection?.state_version || reference.snapshot.state_version],
-      ["available_controls", availableControls],
-      ["control_scope", projection?.control_scope || reference.snapshot.control_scope],
-      ["projection_error", projection?.fetch_error_code],
-    ]),
-    el("div", { class: "runtime-control-list" }, controls),
-    el("p", { class: "runtime-control-feedback warning", text: "pause / resume / input 当前由 LearningLoop 后端拒绝或未实现，界面保持 disabled，不会发送请求。" }),
-  ]);
-}
-
-function renderLearningRuntimeControls(reference) {
-  const panel = $("#runtime-controls");
-  if (!panel) return;
-  const projection = learningRuntimeControlProjection(reference);
-  const status = runtimeStatusKey(projection?.status || reference.status || reference.snapshot.status);
-  panel.hidden = false;
-  panel.dataset.learningRuntime = "true";
-  const title = panel.querySelector("#runtime-controls-title");
-  if (title) title.textContent = "LearningLoop Operator Control";
-  const description = panel.querySelector(".runtime-control-heading p");
-  if (description) description.textContent = "仅在后端报告 approve 可用且 Runtime 等待审批时提交审批；其他动作保持 disabled。";
-  const state = $("#runtime-control-state");
-  if (state) {
-    state.textContent = `LearningLoop 状态：${runtimeStatusLabel(status)}`;
-    state.dataset.status = status || "unknown";
-  }
-
-  const approve = $("#runtime-approve");
-  const approveAvailable = learningRuntimeApproveAvailable(reference, projection);
-  if (approve) {
-    approve.hidden = !approveAvailable;
-    approve.disabled = runtimeControlBusy || !approveAvailable;
-    approve.setAttribute("aria-disabled", String(approve.disabled));
-    approve.title = approveAvailable
-      ? `提交 approve（expected_state_version=${learningRuntimeControlStateVersion(projection)}）`
-      : "LearningLoop 后端未同时报告 waiting_approval、approve available 和有效 state_version。";
-    approve.textContent = "人工审批";
-  }
-
-  ["pause", "resume"].forEach((action) => {
-    const button = $(`#runtime-${action}`);
-    if (!button) return;
-    const entry = learningRuntimeControlEntry(projection, action);
-    const reasonCode = entry?.reason_code || "learning_runtime_control_rejected";
-    button.hidden = false;
-    button.disabled = true;
-    button.setAttribute("aria-disabled", "true");
-    button.title = `${entry?.reason || "LearningLoop 当前不支持此动作。"} reason_code: ${reasonCode}。不会发送请求。`;
-    button.textContent = `${learningRuntimeControlLabels[action]}（disabled）`;
-  });
-
-  panel.querySelector("#learning-runtime-control-contract")?.remove();
-  panel.append(learningRuntimeControlContractSurface(reference, projection));
-  const feedback = $("#runtime-control-feedback");
-  if (feedback) {
-    feedback.className = `runtime-control-feedback${runtimeControlFeedback?.tone ? ` ${runtimeControlFeedback.tone}` : ""}`;
-    feedback.textContent = runtimeControlFeedback?.message || "";
-  }
 }
 
 function renderRuntimeControls(data) {
@@ -624,8 +527,7 @@ async function refreshExecutionOnce(id) {
 
 async function executeRuntimeControl(action) {
   if (learningRuntimeReference(execution)) {
-    if (action === "approve") return executeLearningRuntimeControl();
-    return;
+    return executeLearningRuntimeControl(action);
   }
   const id = String(execution?.task?.id || $("#task-id")?.value || "").trim();
   const runtime = asRecord(execution?.runtime);
@@ -652,43 +554,6 @@ async function executeRuntimeControl(action) {
     setRuntimeControlFeedback(safeRuntimeControlError(error), "failed");
   } finally {
     await refreshExecutionOnce(id);
-    runtimeControlBusy = false;
-    if (execution) renderRuntimeControls(execution);
-  }
-}
-
-async function executeLearningRuntimeControl() {
-  const reference = learningRuntimeReference(execution);
-  const projection = learningRuntimeControlProjection(reference);
-  if (!reference || runtimeControlBusy || !learningRuntimeApproveAvailable(reference, projection)) {
-    if (reference && !runtimeControlBusy) {
-      setRuntimeControlFeedback("LearningLoop 当前不满足审批条件，未发送请求。", "warning");
-      renderLearningRuntimeControls(reference);
-    }
-    return;
-  }
-  const expectedStateVersion = learningRuntimeControlStateVersion(projection);
-  runtimeControlBusy = true;
-  setRuntimeControlFeedback("正在提交 LearningLoop 审批请求…", "pending");
-  renderLearningRuntimeControls(reference);
-  try {
-    await api(`/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/control`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "approve", expected_state_version: expectedStateVersion }),
-    });
-    const [statusRefresh, controlsRefresh] = await Promise.all([
-      loadLearningRuntimeStatus(execution, true),
-      loadLearningRuntimeControls(execution, true),
-    ]);
-    if (statusRefresh == null || controlsRefresh == null) {
-      setRuntimeControlFeedback("审批已提交，但 LearningLoop 状态刷新不完整，请重新加载。", "warning");
-    } else {
-      setRuntimeControlFeedback("LearningLoop 审批已提交，状态已刷新。", "success");
-    }
-  } catch (error) {
-    setRuntimeControlFeedback(safeRuntimeControlError(error), "failed");
-  } finally {
     runtimeControlBusy = false;
     if (execution) renderRuntimeControls(execution);
   }
@@ -739,9 +604,10 @@ function learningRuntimeReference(data) {
   const runtime = asRecord(data?.runtime);
   const inline = data?.learning_runtime;
   const learning = asRecord(inline);
+  const hasInlineLearningRuntime = Object.keys(learning).length > 0;
   const runKind = String(learning.run_kind || data?.runtime_kind || runtime.run_kind || "").trim();
   const controlScope = learning.control_scope || data?.control_scope || runtime.control_scope;
-  const isLearningLoop = inline != null || data?.runtime_run_id || controlScope === "learning_loop" || ["teaching_interaction", "learning_progress"].includes(runKind);
+  const isLearningLoop = hasInlineLearningRuntime || data?.runtime_run_id || controlScope === "learning_loop" || ["teaching_interaction", "learning_progress"].includes(runKind);
   if (!isLearningLoop) return null;
   const runId = learning.runtime_run_id || learning.run_id || data?.runtime_run_id || runtime.runtime_run_id || (runKind ? runtime.run_id : "");
   if (!runId) return null;

@@ -288,3 +288,45 @@ They are ignored and must not be committed.
   returned exit code 1 with `semantic_evidence_missing`. The generated
   judgement templates remain incomplete and were not treated as semantic
   review; no canary/default decision was changed.
+
+## 18. 2026-08-11 frontend execution and control smoke
+
+- The execution debug page had two competing LearningLoop control
+  implementations. The stale implementation disabled `pause`, `resume`, and
+  `input`, while the later implementation was capability-driven. The stale
+  block was removed, and generic Runtime dispatch now forwards all LearningLoop
+  actions through the same backend projection, state-version CAS, request data,
+  and idempotency-key boundary.
+- A normal Task debug response includes an empty `learning_runtime` object.
+  The frontend previously treated any non-null object as a LearningLoop run,
+  causing dedicated LearningLoop status/control requests to return 404 and
+  rendering the wrong control surface. The projection detector now requires a
+  non-empty inline LearningLoop contract or an explicit LearningLoop marker.
+- Focused verification passed: 11 UI/debug contract tests, Node syntax check,
+  and diff check. A bounded single-instance Edge browser smoke also passed with
+  zero page errors: workspace answer rendered, `xinzhi_last_task` persisted,
+  execution console loaded, Runtime tab opened, and the normal Runtime control
+  surface rendered without a LearningLoop misclassification. Private browser
+  artifacts are under
+  `.local_outputs/runtime_browser_acceptance_20260811_final/`.
+- This browser smoke used the development mock provider and one temporary API
+  instance; it is not a semantic release evaluation. The Lesson Prep approval
+  recovery, all Runtime paired evaluations, and release preflight remain
+  subject to the evidence and semantic-review gates recorded above.
+
+## 19. 2026-08-11 Lesson Prep Runtime-only recheck
+
+- A bounded single-instance Runtime-only recheck used the public Task API with
+  the development mock profile and `--auto-approve-dev`. The private report is
+  under `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_final/`.
+- The run reached the first plan-proposal approval and resumed with strictly
+  increasing events, but then failed closed after the resumed execution hit
+  `ProviderNotConfiguredError` / `ProviderUnavailableError` in the local
+  subagent path. The subsequent proposal candidate exceeded the remaining
+  subagent budget; the task ended with `conflict`, 21 checkpoints, and no
+  second pending proposal event. This is a reproducible development diagnostic,
+  not a passing E2E result.
+- The result confirms the approval checkpoint itself is durable and applied,
+  while the post-approval provider/budget path still needs a dedicated fix or
+  an explicitly configured provider profile before Lesson Prep can be called
+  complete. No Runtime-wide or release conclusion is drawn from this failure.

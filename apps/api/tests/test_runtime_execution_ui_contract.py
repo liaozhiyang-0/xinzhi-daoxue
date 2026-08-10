@@ -45,3 +45,34 @@ def test_existing_runtime_control_boundaries_remain_state_aware() -> None:
     assert 'const payload = { decision: "approved" }' in script
     assert "expected_state_version" in script
     assert 'method: "POST"' in script
+
+
+def test_learning_loop_controls_have_one_capability_driven_implementation() -> None:
+    script = _read_script()
+
+    assert (
+        "const hasInlineLearningRuntime = Object.keys(learning).length > 0;"
+        in script
+    )
+    assert "const isLearningLoop = hasInlineLearningRuntime" in script
+    assert script.count("function renderLearningRuntimeControls(") == 1
+    assert script.count("async function executeLearningRuntimeControl(") == 1
+    assert (
+        "function learningRuntimeControlActionAvailable(projection, action)"
+        in script
+    )
+    assert 'return executeLearningRuntimeControl(action);' in script
+    assert 'idempotency_key:' in script
+    assert "不会从此页面发送请求" not in script
+    assert "其他动作保持 disabled" not in script
+    assert "当前由 LearningLoop 后端拒绝或未实现" not in script
+
+
+def test_learning_loop_control_requests_include_version_and_input_data() -> None:
+    script = _read_script()
+
+    assert 'learningRuntimeControlActionAvailable(projection, action)' in script
+    assert 'action,' in script
+    assert 'expected_state_version: expectedStateVersion' in script
+    assert 'data,' in script
+    assert 'void executeLearningRuntimeControl("input")' in script
