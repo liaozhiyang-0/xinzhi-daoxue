@@ -209,8 +209,10 @@ function runtimeControlEvent(data) {
 function runtimeHandoff(data, runtime) {
   const final = asRecord(data.final);
   const handoff = asRecord(runtime.handoff || runtime.runtime_handoff || runtime.control_data?.runtime_handoff || data.handoff || data.runtime_handoff);
-  const fallbackUsed = handoff.fallback_used ?? handoff.used ?? (handoff.status === "legacy_fallback" ? true : undefined) ?? runtime.fallback_used ?? final.fallback_used;
-  const fallbackReason = handoff.fallback_reason || handoff.reason || runtime.fallback_reason || final.fallback_reason;
+  const fallbackUsed = handoff.fallback_used ?? handoff.used ?? (handoff.status === "legacy_fallback" ? true : undefined);
+  const fallbackReason = handoff.fallback_reason || handoff.reason;
+  const resultFallbackUsed = runtime.fallback_used ?? final.fallback_used;
+  const resultFallbackReason = runtime.fallback_reason || final.fallback_reason;
   return {
     status: handoff.status || handoff.handoff_status || runtime.handoff_status,
     mode: handoff.mode || runtime.launch_decision?.mode,
@@ -218,6 +220,8 @@ function runtimeHandoff(data, runtime) {
     bypassLegacy: handoff.bypass_legacy_execution ?? handoff.bypass_legacy,
     fallbackUsed,
     fallbackReason,
+    resultFallbackUsed,
+    resultFallbackReason,
   };
 }
 function runtimeStatusNotice(runtime, controlEvent, handoff) {
@@ -715,8 +719,10 @@ function runtimeHandoffSurface(handoff) {
     ["启动 / 兼容模式", handoff.mode],
     ["Runtime 状态", runtimeStatusLabel(handoff.runtimeStatus)],
     ["是否绕过 Legacy", handoff.bypassLegacy == null ? undefined : (handoff.bypassLegacy ? "是" : "否")],
-    ["是否发生 fallback", handoff.fallbackUsed == null ? undefined : (handoff.fallbackUsed ? "是" : "否")],
-    ["fallback 原因", handoff.fallbackReason],
+    ["是否回退 Legacy", handoff.fallbackUsed == null ? undefined : (handoff.fallbackUsed ? "是" : "否")],
+    ["Legacy 回退原因", handoff.fallbackReason],
+    ["业务结果降级", handoff.resultFallbackUsed == null ? undefined : (handoff.resultFallbackUsed ? "是" : "否")],
+    ["业务降级原因", handoff.resultFallbackReason],
   ]);
 }
 function runtimeChildrenSurface(runtime) {

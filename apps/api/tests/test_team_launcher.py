@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 
 def load_launcher() -> ModuleType:
     root = Path(__file__).resolve().parents[3]
@@ -56,6 +58,36 @@ def test_host_runtime_uses_host_endpoints(monkeypatch) -> None:
     assert environment["MINIO_ENDPOINT"] == "localhost:9000"
     assert environment["QDRANT_MODE"] == "server"
     assert environment["COMPOSE_PROJECT_NAME"] == "xinzhi-daoxue"
+
+
+def test_runtime_development_profile_enables_only_safe_local_defaults() -> None:
+    launcher = load_launcher()
+
+    profile = launcher.enable_runtime_development_profile(
+        {"APP_ENV": "development"}
+    )
+
+    assert profile["AGENT_RUNTIME_GENERAL_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_LAUNCH_MODES"] == (
+        "GENERAL_QUESTION_V1=default,LEARN_01_LOCAL_RETRIEVAL_V1=default"
+    )
+    assert profile["AGENT_RUNTIME_RELEASE_GATE_REQUIRED"] == "false"
+    assert "XINGCHEN_ENABLED" not in profile
+
+
+def test_runtime_development_profile_rejects_production_and_existing_modes() -> None:
+    launcher = load_launcher()
+
+    with pytest.raises(launcher.LaunchError, match="development or test"):
+        launcher.enable_runtime_development_profile({"APP_ENV": "production"})
+    with pytest.raises(launcher.LaunchError, match="LAUNCH_MODES"):
+        launcher.enable_runtime_development_profile(
+            {
+                "APP_ENV": "development",
+                "AGENT_RUNTIME_LAUNCH_MODES": "GENERAL_QUESTION_V1=canary",
+            }
+        )
 
 
 def test_configuration_summary_never_returns_secret_values() -> None:
@@ -140,6 +172,24 @@ def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> 
 
     assert launcher.command_start(args) == 0
     assert opened == ["http://127.0.0.1:8000"]
+
+
+def test_runtime_dev_requires_force_reload_for_an_existing_api(monkeypatch) -> None:
+    launcher = load_launcher()
+    monkeypatch.setattr(launcher, "api_ready", lambda _base_url: True)
+    monkeypatch.setattr(launcher, "owned_api_pids", lambda _port: [1234])
+    args = SimpleNamespace(
+        port=8000,
+        open_browser=False,
+        refresh_deps=False,
+        reload=False,
+        force_reload=False,
+        with_cloud=False,
+        runtime_dev=True,
+    )
+
+    with pytest.raises(launcher.LaunchError, match="force-reload"):
+        launcher.command_start(args)
 
 
 def test_start_restarts_duplicate_owned_api_processes(monkeypatch) -> None:

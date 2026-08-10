@@ -34,6 +34,18 @@ def test_runtime_control_script_keeps_actions_state_aware_and_backend_owned() ->
     assert "runtime_run_id" in script
 
 
+def test_runtime_handoff_ui_does_not_conflate_business_fallback_with_legacy() -> None:
+    script = _read("execution.js")
+
+    assert (
+        "const resultFallbackUsed = runtime.fallback_used ?? final.fallback_used"
+        in script
+    )
+    assert "const fallbackUsed = handoff.fallback_used ?? handoff.used" in script
+    assert '"是否回退 Legacy"' in script
+    assert '"业务结果降级"' in script
+
+
 def test_runtime_polling_is_finite_and_stops_at_terminal_states() -> None:
     script = _read("execution.js")
 

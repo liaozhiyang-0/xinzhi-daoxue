@@ -5,8 +5,11 @@ param(
     [string]$Command = "start",
     [int]$Port = 8000,
     [switch]$Reload,
+    [switch]$ForceReload,
     [switch]$RefreshDeps,
     [switch]$WithCloud,
+    [switch]$RuntimeDev,
+    [switch]$OpenBrowser,
     [ValidateSet("CT", "AE", "DE", "SS", "DSP", "COMM")]
     [string]$Course,
     [switch]$TextOnly
@@ -37,8 +40,11 @@ $Arguments = @($Launcher, $Command)
 if ($Command -eq "start") {
     $Arguments += @("--port", "$Port")
     if ($Reload) { $Arguments += "--reload" }
+    if ($ForceReload) { $Arguments += "--force-reload" }
     if ($RefreshDeps) { $Arguments += "--refresh-deps" }
     if ($WithCloud) { $Arguments += "--with-cloud" }
+    if ($RuntimeDev) { $Arguments += "--runtime-dev" }
+    if ($OpenBrowser) { $Arguments += "--open-browser" }
 } elseif ($Command -eq "preflight") {
     if ($WithCloud) { $Arguments += "--with-cloud" }
 } elseif ($Command -eq "index") {
