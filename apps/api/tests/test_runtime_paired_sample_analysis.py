@@ -16,8 +16,15 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
-def _result(mode: str, *, latency: int, lifecycle: int, wait: int) -> dict[str, object]:
-    return {
+def _result(
+    mode: str,
+    *,
+    latency: int,
+    lifecycle: int,
+    wait: int,
+    sample_id: str | None = None,
+) -> dict[str, object]:
+    result: dict[str, object] = {
         "case_id": "solver_case",
         "agent_id": "ACADEMIC_PROBLEM_SOLVER",
         "mode": mode,
@@ -30,6 +37,9 @@ def _result(mode: str, *, latency: int, lifecycle: int, wait: int) -> dict[str, 
             "metrics": {"latency_ms": latency},
         },
     }
+    if sample_id is not None:
+        result["sample_id"] = sample_id
+    return result
 
 
 def _write_report(root: Path, results: list[dict[str, object]]) -> Path:
@@ -108,3 +118,30 @@ def test_analysis_marks_missing_or_incomplete_pairs(tmp_path: Path) -> None:
     assert report["input_issues"] == [
         "incomplete:solver_case: incomplete Legacy/Runtime pair"
     ]
+
+
+def test_analysis_groups_repeated_pairs_from_one_report(tmp_path: Path) -> None:
+    report_path = _write_report(
+        tmp_path / "repeat-batch",
+        [
+            _result(
+                "legacy", latency=100, lifecycle=90, wait=110, sample_id="sample-001"
+            ),
+            _result(
+                "runtime", latency=120, lifecycle=100, wait=130, sample_id="sample-001"
+            ),
+            _result(
+                "runtime", latency=180, lifecycle=170, wait=190, sample_id="sample-002"
+            ),
+            _result(
+                "legacy", latency=100, lifecycle=95, wait=120, sample_id="sample-002"
+            ),
+        ],
+    )
+
+    report = MODULE.analyze_reports([report_path])
+
+    case = report["cases"][0]
+    assert case["sample_count"] == 2
+    assert case["usable_sample_count"] == 2
+    assert case["metrics"]["metrics.latency_ms"]["runtime"]["median"] == 150

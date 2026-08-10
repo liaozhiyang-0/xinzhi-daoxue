@@ -34,6 +34,7 @@ METRIC_KEYS = (
 @dataclass(frozen=True, slots=True)
 class PairedSample:
     sample_ref: str
+    sample_id: str
     agent_id: str
     case_id: str
     legacy: dict[str, Any]
@@ -84,7 +85,7 @@ def _report_pairs(path: Path) -> tuple[list[PairedSample], list[str]]:
     if not isinstance(results, list):
         raise ValueError(f"report results must be a list: {path}")
     sample_ref = path.parent.name or path.name
-    grouped: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    grouped: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = {}
     issues: list[str] = []
     for item in results:
         if not isinstance(item, dict):
@@ -99,21 +100,45 @@ def _report_pairs(path: Path) -> tuple[list[PairedSample], list[str]]:
         if mode not in {"legacy", "runtime"}:
             issues.append(f"{sample_ref}:{case_id}: unsupported run mode")
             continue
-        key = (agent_id, case_id)
+        raw_sample_id = item.get("sample_id")
+        sample_id = (
+            raw_sample_id
+            if isinstance(raw_sample_id, str) and raw_sample_id
+            else "sample-001"
+        )
+        case_reference = (
+            f"{case_id}:{sample_id}"
+            if isinstance(raw_sample_id, str) and raw_sample_id
+            else case_id
+        )
+        key = (agent_id, case_id, sample_id)
         if mode in grouped.setdefault(key, {}):
-            issues.append(f"{sample_ref}:{case_id}: duplicate {mode} result")
+            issues.append(f"{sample_ref}:{case_reference}: duplicate {mode} result")
             continue
         grouped[key][mode] = item
     pairs: list[PairedSample] = []
-    for (agent_id, case_id), modes in sorted(grouped.items()):
+    for (agent_id, case_id, sample_id), modes in sorted(grouped.items()):
         legacy = modes.get("legacy")
         runtime = modes.get("runtime")
         if legacy is None or runtime is None:
-            issues.append(f"{sample_ref}:{case_id}: incomplete Legacy/Runtime pair")
+            case_reference = (
+                f"{case_id}:{sample_id}"
+                if sample_id != "sample-001"
+                or any("sample_id" in item for item in modes.values())
+                else case_id
+            )
+            issues.append(
+                f"{sample_ref}:{case_reference}: incomplete Legacy/Runtime pair"
+            )
             continue
         pairs.append(
             PairedSample(
-                sample_ref=sample_ref,
+                sample_ref=(
+                    f"{sample_ref}/{sample_id}"
+                    if any("sample_id" in item for item in modes.values())
+                    else sample_ref
+                ),
+                sample_id=sample_id,
                 agent_id=agent_id,
                 case_id=case_id,
                 legacy=legacy,

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 RunMode = Literal["legacy", "runtime"]
+PairOrder = Literal["legacy-first", "runtime-first", "alternate"]
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 SENSITIVE_KEYS = {
     "api_key",
@@ -101,6 +102,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--poll-interval", type=float, default=0.5)
     parser.add_argument("--timeout-seconds", type=float, default=180.0)
+    parser.add_argument(
+        "--repeat-count",
+        type=int,
+        default=1,
+        help="Number of Legacy/Runtime pairs per selected case (1-20).",
+    )
+    parser.add_argument(
+        "--pair-order",
+        choices=("legacy-first", "runtime-first", "alternate"),
+        default="alternate",
+        help="Order the two modes within each pair to expose order effects.",
+    )
     return parser.parse_args()
 
 
@@ -136,19 +149,35 @@ def api_root(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def pair_modes(
+    mode: str, pair_order: PairOrder, sample_index: int
+) -> tuple[RunMode, ...]:
+    """Return one repeat's execution order without changing request content."""
+
+    if mode == "legacy":
+        return ("legacy",)
+    if mode == "runtime":
+        return ("runtime",)
+    runtime_first = pair_order == "runtime-first" or (
+        pair_order == "alternate" and sample_index % 2 == 1
+    )
+    return ("runtime", "legacy") if runtime_first else ("legacy", "runtime")
+
+
 def make_session(
     client: Any,
     base_url: str,
     user_id: str,
     case: E2ECase,
     mode: RunMode,
+    sample_id: str,
 ) -> str:
     response = client.post(
         f"{base_url}/sessions",
         json={
             "user_id": user_id,
             "course_id": case.course_id,
-            "title": f"authorized-e2e:{case.case_id}:{mode}",
+            "title": f"authorized-e2e:{case.case_id}:{sample_id}:{mode}",
         },
     )
     response.raise_for_status()
@@ -308,10 +337,13 @@ def run_one(
     user_id: str,
     case: E2ECase,
     mode: RunMode,
+    sample_id: str,
     poll_interval: float,
     timeout_seconds: float,
 ) -> dict[str, Any]:
-    session_id = make_session(client, base_url, user_id, case, mode)
+    session_id = make_session(
+        client, base_url, user_id, case, mode, sample_id
+    )
     created = create_task(client, base_url, user_id, session_id, case, mode)
     task_id = str(created["id"])
     terminal, observed_wait_ms = await_task(
@@ -329,6 +361,7 @@ def run_one(
         # permission to inspect another capability's execution.
         return {
             "case_id": case.case_id,
+            "sample_id": sample_id,
             "agent_id": case.agent_id,
             "mode": mode,
             "task_id": task_id,
@@ -340,13 +373,16 @@ def run_one(
         }
     events = task_events(client, base_url, task_id)
     execution = execution_projection(client, base_url, task_id)
-    artifact_dir = output / "artifacts" / case.agent_id / case.case_id / mode
+    artifact_dir = (
+        output / "artifacts" / case.agent_id / case.case_id / sample_id / mode
+    )
     write_json(artifact_dir / "input.json", {"question": case.question})
     write_json(artifact_dir / "task.json", terminal)
     write_json(artifact_dir / "events.json", events)
     write_json(artifact_dir / "execution.json", execution)
     return {
         "case_id": case.case_id,
+        "sample_id": sample_id,
         "agent_id": case.agent_id,
         "mode": mode,
         "task_id": task_id,
@@ -366,35 +402,39 @@ def main() -> int:
     except ImportError as exc:  # pragma: no cover - environment failure
         raise SystemExit("httpx is required; run with the repository .venv") from exc
     cases = selected_cases(args.case)
+    if not 1 <= args.repeat_count <= 20:
+        raise SystemExit("--repeat-count must be between 1 and 20")
     output = args.output.resolve()
     report: dict[str, Any] = {
-        "schema_version": "runtime_authorized_dev_e2e.v1",
+        "schema_version": "runtime_authorized_dev_e2e.v2",
         "started_at": datetime.now(UTC).isoformat(),
         "base_url": api_root(args.base_url),
         "case_ids": [case.case_id for case in cases],
+        "repeat_count": args.repeat_count,
+        "pair_order": args.pair_order,
         "results": [],
     }
-    modes: tuple[RunMode, ...] = (
-        ("legacy", "runtime") if args.mode == "both" else (args.mode,)
-    )
     # A development API on loopback must never be redirected through a
     # workstation proxy.  In particular, HTTP_PROXY can turn a healthy local
     # session request into a misleading 502 response.
     with httpx.Client(timeout=30.0, trust_env=False) as client:
         for case in cases:
-            for mode in modes:
-                report["results"].append(
-                    run_one(
-                        client,
-                        base_url=api_root(args.base_url),
-                        output=output,
-                        user_id=args.user_id,
-                        case=case,
-                        mode=mode,
-                        poll_interval=args.poll_interval,
-                        timeout_seconds=args.timeout_seconds,
+            for sample_index in range(args.repeat_count):
+                sample_id = f"sample-{sample_index + 1:03d}"
+                for mode in pair_modes(args.mode, args.pair_order, sample_index):
+                    report["results"].append(
+                        run_one(
+                            client,
+                            base_url=api_root(args.base_url),
+                            output=output,
+                            user_id=args.user_id,
+                            case=case,
+                            mode=mode,
+                            sample_id=sample_id,
+                            poll_interval=args.poll_interval,
+                            timeout_seconds=args.timeout_seconds,
+                        )
                     )
-                )
     report["completed_at"] = datetime.now(UTC).isoformat()
     report["summary"] = {
         "runs": len(report["results"]),

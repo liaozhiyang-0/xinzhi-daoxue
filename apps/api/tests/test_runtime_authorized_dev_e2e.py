@@ -42,3 +42,11 @@ def test_result_summary_projects_runtime_control_plane_timing() -> None:
         "active_node_wall_ms": 220,
         "runtime_control_overhead_ms": 130,
     }
+
+
+def test_pair_modes_rotates_pair_order_without_changing_single_mode_runs() -> None:
+    assert MODULE.pair_modes("both", "alternate", 0) == ("legacy", "runtime")
+    assert MODULE.pair_modes("both", "alternate", 1) == ("runtime", "legacy")
+    assert MODULE.pair_modes("both", "runtime-first", 0) == ("runtime", "legacy")
+    assert MODULE.pair_modes("legacy", "alternate", 5) == ("legacy",)
+    assert MODULE.pair_modes("runtime", "alternate", 5) == ("runtime",)

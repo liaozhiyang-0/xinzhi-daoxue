@@ -78,6 +78,26 @@ Provider 请求 ID、密钥、Flow ID 或私有路径。
   --timeout-seconds 210
 ```
 
+For diagnostic repeat sampling, use one controlled output directory and rotate
+the execution order so neither mode always inherits the same warm state:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_runtime_authorized_dev_e2e.py `
+  --base-url http://127.0.0.1:8031/api/v1 `
+  --case solver_series_current `
+  --repeat-count 4 `
+  --pair-order alternate `
+  --output .local_outputs\runtime_authorized_solver_repeats_YYYYMMDD `
+  --timeout-seconds 210
+```
+
+The v2 report assigns each paired run a `sample_id` and keeps its input, Task,
+SSE events, and Debug projection in a distinct private artifact directory. The
+offline analyzer groups by that sample ID. Repeats remain diagnostic-only and
+must not be passed directly to structural packaging or treated as a release
+decision; retain a separately selected, complete pair for the authorized
+structural suite.
+
 脚本通过 `POST /api/v1/sessions`、`POST /api/v1/tasks`、Task 轮询、事件读取与
 `/debug/execution/{task_id}` 采集证据。它使用仅开发环境可用的 admin debug target
 固定目标 Agent；如果实际 Agent 不匹配，会 fail closed，并且不读取或落盘意外
