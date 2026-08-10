@@ -466,3 +466,25 @@ They are ignored and must not be committed.
   `runtime_plan_version=lesson-prep-v1`. Semantic review and a human release
   decision remain required; no release, canary, or default decision was
   created.
+
+## 28. 2026-08-11 Docker-backed Runtime dependency smoke
+
+- With the existing PostgreSQL, Redis, MinIO, and Qdrant containers running, a
+  single API instance was started against the host-mapped dependencies. One
+  `GENERAL_QUESTION_V1` Runtime task completed successfully with 12
+  checkpoints, three nodes, 23 strictly increasing events, and no unresolved
+  failure codes. The API process was stopped and target ports were free after
+  the bounded run.
+- The development machine's `.env` supplied DashScope credentials, so the
+  smoke executed one real DashScope model call despite the mock provider
+  request. No credential value was recorded or exposed. This is dependency
+  chain diagnostics only—not provider-free evidence, a paired comparison, or
+  release qualification—and the test harness was not reused for another run.
+
+## 29. 2026-08-11 in-app browser transport retry
+
+- A fresh attempt to connect the configured in-app browser for the student
+  approval/recovery smoke failed during browser initialization with `Transport
+  closed`. The temporary API was healthy on port 8021 and was stopped after
+  the failed connection. No browser-rendering or visual approval result is
+  claimed; the existing public API/SSE regression evidence remains separate.
