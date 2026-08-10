@@ -577,6 +577,7 @@ class TaskControlService:
             control_data = dict(checkpoint_control_data)
             control_data.pop("approval_scope", None)
             control_data["approved"] = True
+            control_data["approved_scope"] = approval_scope
         elif control_data is None:
             control_data = dict(checkpoint_control_data)
             control_data.pop("approval_scope", None)

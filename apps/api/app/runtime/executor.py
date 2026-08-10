@@ -96,35 +96,10 @@ class PlanExecutor:
                 raise RuntimeError("runtime plan has no executable ready node")
 
             if isinstance(self.handlers, RuntimeHandlerRegistry):
-                for node_id in ready:
-                    node = self._node(run, node_id)
-                    try:
-                        descriptor = self.handlers.descriptor(node.handler_id)
-                    except RuntimeHandlerRegistryError:
-                        # Let the normal execution path report the precise
-                        # registration error for this node.
-                        continue
-                    if not descriptor.requires_approval:
-                        continue
-                    if run.control_data.get("approved") is not True:
-                        RuntimeStateMachine.apply_decision(
-                            run,
-                            RuntimeDecision(
-                                action=DecisionAction.REQUEST_APPROVAL,
-                                approval_scope=node.handler_id,
-                                reason_codes=["handler_requires_approval"],
-                            ),
-                        )
-                        await self._emit("approval_required", run, node_id)
-                        await self._checkpoint(run)
-                        return run
-                    # Approval is a one-shot control signal. Keep the
-                    # checkpointed request and node inputs available to the
-                    # approved node and any downstream nodes.
-                    control_data = dict(run.control_data)
-                    control_data.pop("approved", None)
-                    run.control_data = control_data
-                    break
+                gated_ready = await self._gate_approval(run, ready)
+                if gated_ready is None:
+                    return run
+                ready = gated_ready
 
             batch = ready[: run.plan.max_parallelism]
             executable: list[str] = []
@@ -329,6 +304,102 @@ class PlanExecutor:
             return self.handlers.descriptor(handler_id)
         except RuntimeHandlerRegistryError:
             return None
+
+    async def _gate_approval(
+        self, run: AgentRun, ready: list[str]
+    ) -> list[str] | None:
+        """Apply one explicit approval to exactly one ready capability.
+
+        A Runtime plan may intentionally schedule independent capabilities in
+        parallel.  An approval for one side-effecting handler must never also
+        authorize another ready handler in that batch.  The control service
+        stores the approved handler ID, and this executor consumes that grant
+        before dispatching the selected node.  Older checkpoints that predate
+        ``approved_scope`` recover their scope from the recorded decision.
+        """
+
+        descriptors: dict[str, RuntimeHandlerDescriptor] = {}
+        approval_node_ids: list[str] = []
+        for node_id in ready:
+            node = self._node(run, node_id)
+            descriptor = self._descriptor(node.handler_id)
+            if descriptor is None:
+                # Let the normal execution path report the precise
+                # registration error for this node.
+                continue
+            descriptors[node_id] = descriptor
+            if descriptor.requires_approval:
+                approval_node_ids.append(node_id)
+
+        if not approval_node_ids:
+            return ready
+
+        approved_scope = self._approved_scope(run)
+        approved_node_id = next(
+            (
+                node_id
+                for node_id in approval_node_ids
+                if descriptors[node_id].handler_id == approved_scope
+            ),
+            None,
+        )
+        if approved_node_id is not None:
+            # Approval is one-shot and scope-bound.  Keep unrelated read-only
+            # work eligible for this batch, but leave every other privileged
+            # node READY for its own approval round.
+            control_data = dict(run.control_data)
+            control_data.pop("approved", None)
+            control_data.pop("approved_scope", None)
+            run.control_data = control_data
+            return [
+                approved_node_id,
+                *[
+                    node_id
+                    for node_id in ready
+                    if node_id != approved_node_id
+                    and (
+                        node_id not in descriptors
+                        or not descriptors[node_id].requires_approval
+                    )
+                ],
+            ]
+
+        # A grant that no longer maps to a ready node (for example after a
+        # plan replacement) cannot be repurposed.  Replace it with a fresh,
+        # explicit request for the first deterministic ready handler.
+        if run.control_data.get("approved") is True:
+            control_data = dict(run.control_data)
+            control_data.pop("approved", None)
+            control_data.pop("approved_scope", None)
+            run.control_data = control_data
+        node_id = approval_node_ids[0]
+        RuntimeStateMachine.apply_decision(
+            run,
+            RuntimeDecision(
+                action=DecisionAction.REQUEST_APPROVAL,
+                approval_scope=descriptors[node_id].handler_id,
+                reason_codes=["handler_requires_approval"],
+            ),
+        )
+        await self._emit("approval_required", run, node_id)
+        await self._checkpoint(run)
+        return None
+
+    @staticmethod
+    def _approved_scope(run: AgentRun) -> str:
+        """Return the durable scope attached to a one-shot approval grant."""
+
+        if run.control_data.get("approved") is not True:
+            return ""
+        value = run.control_data.get("approved_scope")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        # ``approved_scope`` was added after the initial approval control
+        # contract. Existing waiting checkpoints retain the decision scope.
+        for decision in reversed(run.decision_history):
+            if decision.action == DecisionAction.REQUEST_APPROVAL:
+                return decision.approval_scope
+        return ""
 
     def _node(self, run: AgentRun, node_id: str) -> RuntimeNode:
         for node in run.plan.nodes:

@@ -3511,6 +3511,7 @@ class TaskRunner:
                 merged_control_data = dict(runtime_control_data)
                 merged_control_data.update(run.control_data)
                 merged_control_data.pop("approved", None)
+                merged_control_data.pop("approved_scope", None)
                 merged_control_data.pop("approval_scope", None)
                 run.control_data = merged_control_data
             else:

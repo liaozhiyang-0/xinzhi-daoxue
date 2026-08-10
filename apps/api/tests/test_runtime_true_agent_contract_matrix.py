@@ -425,7 +425,9 @@ def test_runtime_enforces_budget_approval_pause_and_resume() -> None:
         asyncio.run(approval_service.run(approval_request, approval_run))
     assert approval_run.status == RuntimeRunStatus.WAITING_APPROVAL
     assert approved_calls == []
-    approval_run.control_data["approved"] = True
+    approval_run.control_data.update(
+        {"approved": True, "approved_scope": "tool.approved"}
+    )
     result = asyncio.run(approval_service.run(approval_request, approval_run))
     assert result.status == AgentResultStatus.COMPLETED
     assert approved_calls == ["goal.step.1.approved"]

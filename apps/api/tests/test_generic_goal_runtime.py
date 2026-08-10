@@ -152,7 +152,9 @@ async def test_goal_runtime_pauses_for_approval_and_resumes() -> None:
         await service.run(request, run)
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
 
-    run.control_data["approved"] = True
+    run.control_data.update(
+        {"approved": True, "approved_scope": "tool.declared"}
+    )
     result = await service.run(request, run)
 
     assert result.status == AgentResultStatus.COMPLETED

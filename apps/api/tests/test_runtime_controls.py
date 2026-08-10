@@ -98,7 +98,10 @@ def test_pause_resume_and_approval_are_durable_controls(tmp_path) -> None:
             await session.commit()
             approved_task = await controls.approve("task-controls")
             assert approved_task.status == TaskStatus.QUEUED
-            assert runtime_model.control_data == {"approved": True}
+            assert runtime_model.control_data == {
+                "approved": True,
+                "approved_scope": "runtime.test",
+            }
             with pytest.raises(ConflictError):
                 await controls.approve("task-controls")
 
@@ -284,6 +287,10 @@ def test_task_controls_can_target_a_child_run(tmp_path) -> None:
             child_model = await repository.get(child.run_id)
             assert child_model is not None
             assert child_model.control_data["approved"] is True
+            assert (
+                child_model.control_data["approved_scope"]
+                == "subagent.child.invoke"
+            )
 
         await engine.dispose()
 

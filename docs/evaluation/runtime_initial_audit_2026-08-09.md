@@ -172,3 +172,16 @@ an in-memory approval-gated fixture, grants it only to
 `approval_required` event projection. This is provider-free integration
 coverage; it does not authorize a production extension or replace release
 review.
+
+## Scoped approval and deterministic node order (2026-08-10)
+
+Approval grants are now bound to the exact handler scope recorded in the
+durable approval audit. When independent nodes are ready in parallel, one
+approval can release only its matching handler; other approval-gated nodes
+remain ready until a separate approval is recorded. The executor consumes both
+the one-shot approval flag and its scope before dispatch. Checkpoints created
+before the scope field existed remain recoverable through their recorded
+approval decision, but newly submitted approvals always persist an explicit
+scope. Runtime node state construction also follows the plan's declared order
+rather than an unordered set, making readiness, approval prompts, event order,
+and replay behavior deterministic.

@@ -432,11 +432,12 @@ class AgentRun(BaseModel):
             self.goal_contract = self.goal_contract.model_copy(
                 update={"objective": self.goal}
             )
-        expected = {node.node_id for node in self.plan.nodes}
+        expected_node_ids = [node.node_id for node in self.plan.nodes]
+        expected = set(expected_node_ids)
         if not self.nodes:
             self.nodes = {
                 node_id: RuntimeNodeState(node_id=node_id)
-                for node_id in expected
+                for node_id in expected_node_ids
             }
         elif set(self.nodes) != expected:
             raise ValueError("run node state does not match its plan")

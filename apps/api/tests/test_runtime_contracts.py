@@ -302,10 +302,102 @@ def test_runtime_handler_requires_approval_before_invocation() -> None:
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
     assert run.nodes["approved"].status == RuntimeNodeStatus.READY
 
-    run.control_data = {"approved": True}
+    run.control_data = {
+        "approved": True,
+        "approved_scope": "approved.handler",
+    }
     asyncio.run(PlanExecutor(registry).execute(run))
     assert calls == ["called"]
     assert run.status == RuntimeRunStatus.COMPLETED
+
+
+def test_parallel_approval_is_scoped_and_one_shot() -> None:
+    registry = RuntimeHandlerRegistry()
+    calls: list[str] = []
+
+    def handler(_run: AgentRun, node: RuntimeNode) -> RuntimeObservation:
+        calls.append(node.handler_id)
+        return RuntimeObservation(node_id=node.node_id)
+
+    for handler_id in ("tool.first", "tool.second"):
+        registry.register(
+            RuntimeHandlerDescriptor(
+                handler_id=handler_id,
+                kind="tool",
+                requires_approval=True,
+                side_effecting=True,
+                replay_safe=False,
+            ),
+            handler,
+        )
+    run = AgentRun(
+        run_id="run-parallel-approval",
+        task_id="task-parallel-approval",
+        goal="run two explicitly approved tools",
+        plan=AgentRunPlan(
+            plan_id="plan-parallel-approval",
+            goal="run two explicitly approved tools",
+            max_parallelism=2,
+            nodes=[
+                RuntimeNode(
+                    node_id="first",
+                    node_type="tool",
+                    handler_id="tool.first",
+                ),
+                RuntimeNode(
+                    node_id="second",
+                    node_type="tool",
+                    handler_id="tool.second",
+                ),
+            ],
+        ),
+    )
+
+    executor = PlanExecutor(registry)
+    asyncio.run(executor.execute(run))
+    assert run.status == RuntimeRunStatus.WAITING_APPROVAL
+    assert run.last_decision is not None
+    assert run.last_decision.approval_scope == "tool.first"
+
+    run.control_data = {"approved": True, "approved_scope": "tool.first"}
+    asyncio.run(executor.execute(run))
+    assert calls == ["tool.first"]
+    assert run.nodes["first"].status == RuntimeNodeStatus.SUCCEEDED
+    assert run.nodes["second"].status == RuntimeNodeStatus.READY
+    assert run.status == RuntimeRunStatus.WAITING_APPROVAL
+    assert run.last_decision is not None
+    assert run.last_decision.approval_scope == "tool.second"
+
+    run.control_data = {"approved": True, "approved_scope": "tool.second"}
+    asyncio.run(executor.execute(run))
+    assert calls == ["tool.first", "tool.second"]
+    assert run.status == RuntimeRunStatus.COMPLETED
+
+
+def test_runtime_node_state_preserves_declared_plan_order() -> None:
+    run = AgentRun(
+        run_id="run-declared-order",
+        task_id="task-declared-order",
+        goal="execute in declared order",
+        plan=AgentRunPlan(
+            plan_id="plan-declared-order",
+            goal="execute in declared order",
+            nodes=[
+                RuntimeNode(
+                    node_id="first",
+                    node_type="tool",
+                    handler_id="first.handler",
+                ),
+                RuntimeNode(
+                    node_id="second",
+                    node_type="tool",
+                    handler_id="second.handler",
+                ),
+            ],
+        ),
+    )
+
+    assert list(run.nodes) == ["first", "second"]
 
 
 def test_runtime_recovery_does_not_repeat_non_replay_safe_side_effect() -> None:
