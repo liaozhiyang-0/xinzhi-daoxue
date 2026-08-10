@@ -10,6 +10,7 @@ import sys
 import time
 import webbrowser
 from pathlib import Path
+from typing import cast
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -268,7 +269,7 @@ def migrate_database(environment: dict[str, str]) -> None:
 def api_ready(base_url: str) -> bool:
     try:
         with urlopen(f"{base_url}/api/v1/health", timeout=2) as response:  # noqa: S310
-            return response.status == 200
+            return cast(int, response.getcode()) == 200
     except (URLError, TimeoutError, OSError):
         return False
 
