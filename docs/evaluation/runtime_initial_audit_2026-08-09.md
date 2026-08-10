@@ -185,3 +185,33 @@ approval decision, but newly submitted approvals always persist an explicit
 scope. Runtime node state construction also follows the plan's declared order
 rather than an unordered set, making readiness, approval prompts, event order,
 and replay behavior deterministic.
+
+### Verification for this control-plane change
+
+- Ruff passed for the changed Runtime, Task-control, and test modules.
+- Targeted Mypy passed for `contracts.py`, `executor.py`,
+  `task_control_service.py`, and `task_runner.py`.
+- The focused Runtime/Task checkpoint, recovery, generic-goal, approval, and
+  true-agent matrix suite passed: `47 passed` (two third-party deprecation
+  warnings).
+- Regression suites excluding the independently-owned RESEARCH_03 path also
+  passed: business Runtime services `26 passed`, General Question Runtime
+  `11 passed`, and Solver plus Knowledge QA Runtime `16 passed`.
+- Configuration validation, sensitive-file scanning, JavaScript syntax, and
+  Git diff checks passed. The local configuration requested the mock Provider;
+  no Provider call or Docker run occurred.
+
+The combined application-level Task execution-path suite exceeded the local
+Windows command window and was not counted as passed. Its dedicated Generic
+Goal Task API coverage is included in the focused 47-test suite above.
+
+## Debug projection plan order (2026-08-10)
+
+The execution-debug API now orders durable node rows from the restored
+immutable plan instead of the database's lexical node-ID order. This keeps the
+operator console aligned with actual planning and execution order even for
+identifiers such as `step.10` and `step.2`; unknown legacy rows remain visible
+at the end in stable lexical order. Static console/API projection coverage
+passed `9` tests and the Generic Goal Task API end-to-end suite passed `2`
+tests. The larger SSE/observability combination exceeded the local Windows
+command window in this run and is not represented as a new passing result.

@@ -43,6 +43,29 @@ def _redact_dict(value: dict[str, Any]) -> dict[str, Any]:
     return cast(dict[str, Any], _redact(value))
 
 
+def _order_runtime_nodes(
+    nodes: list[AgentRunNodeModel], restored_runtime: AgentRun | None
+) -> list[AgentRunNodeModel]:
+    """Return the debug projection in the immutable plan's node order.
+
+    Database row order is deliberately not execution order. The restored
+    Runtime plan is the durable source of truth for the operator-facing graph;
+    unknown legacy rows remain visible after all declared nodes in a stable
+    lexical order.
+    """
+
+    if restored_runtime is None:
+        return sorted(nodes, key=lambda node: node.node_id)
+    positions = {
+        node.node_id: index
+        for index, node in enumerate(restored_runtime.plan.nodes)
+    }
+    return sorted(
+        nodes,
+        key=lambda node: (positions.get(node.node_id, len(positions)), node.node_id),
+    )
+
+
 def _read_runtime_handoff(run: AgentRunModel | None) -> dict[str, Any]:
     """Read the persisted Runtime ownership envelope without trusting its shape."""
 
@@ -297,7 +320,8 @@ async def get_execution(
             runtime_goal_contract = restored_runtime.goal_contract.model_dump(
                 mode="json"
             )
-        runtime_nodes = list(
+        runtime_nodes = _order_runtime_nodes(
+            list(
             (
                 await db.scalars(
                     select(AgentRunNodeModel)
@@ -305,6 +329,8 @@ async def get_execution(
                     .order_by(AgentRunNodeModel.node_id)
                 )
             ).all()
+            ),
+            restored_runtime,
         )
         runtime_children = list(
             (
