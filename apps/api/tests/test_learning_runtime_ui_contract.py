@@ -21,7 +21,9 @@ def test_execution_debug_ui_recognizes_learning_runtime_references() -> None:
     assert "/api/v1/learning/runtime/" in script
 
 
-def test_learning_runtime_ui_renders_backend_control_contract_and_approval_action() -> None:
+def test_learning_runtime_ui_renders_backend_control_contract_and_approval_action() -> (
+    None
+):
     script = _read_script()
 
     assert '"runtime_id"' in script
@@ -32,12 +34,18 @@ def test_learning_runtime_ui_renders_backend_control_contract_and_approval_actio
     assert "entry?.reason_code" in script
     assert "function learningRuntimeControlProjection(reference)" in script
     assert "function learningRuntimeApproveAvailable(reference, projection)" in script
-    assert "status === \"waiting_approval\"" in script
+    assert 'status === "waiting_approval"' in script
     assert "entry?.available === true" in script
     assert "function learningRuntimeStatusSurface(reference)" in script
     assert "function renderLearningRuntimeControls(reference)" in script
-    assert "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/controls" in script
-    assert "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/control" in script
+    assert (
+        "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/controls"
+        in script
+    )
+    assert (
+        "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/control"
+        in script
+    )
     assert "function executeLearningRuntimeControl()" in script
     assert 'action: "approve"' in script
     assert "expected_state_version: expectedStateVersion" in script
@@ -54,12 +62,19 @@ def test_learning_runtime_ui_rejects_unsupported_controls_without_requests() -> 
     assert "不会从此页面发送请求" in script
     assert "pause / resume / input 当前由 LearningLoop 后端拒绝或未实现" in script
     assert 'if (action === "approve") return executeLearningRuntimeControl();' in script
-    assert 'if (action === "approve") return executeLearningRuntimeControl();\n    return;' in script
-    assert "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/input" not in script
+    assert (
+        'if (action === "approve") return executeLearningRuntimeControl();\n    return;'
+        in script
+    )
+    assert (
+        "/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/input"
+        not in script
+    )
 
 
-def test_learning_runtime_ui_renders_status_contract_and_redacted_node_statuses(
-) -> None:
+def test_learning_runtime_ui_renders_status_contract_and_redacted_node_statuses() -> (
+    None
+):
     script = _read_script()
 
     assert "function learningRuntimeNodeStatusSurface(nodes)" in script
@@ -78,12 +93,13 @@ def test_learning_runtime_ui_renders_status_contract_and_redacted_node_statuses(
     assert '"No LearningLoop node status reported."' in script
 
 
-def test_learning_runtime_ui_keeps_learning_controls_read_only_for_legacy_payloads(
-) -> None:
+def test_learning_runtime_ui_keeps_read_only_controls_for_legacy_payloads() -> (
+    None
+):
     script = _read_script()
 
     assert "const isLearningLoop = inline != null" in script
     assert "const learningReference = learningRuntimeReference(data)" in script
     assert "/api/v1/tasks/${encodeURIComponent(id)}/${action}${query}" in script
-    assert "panel.dataset.learningRuntime = \"false\"" in script
+    assert 'panel.dataset.learningRuntime = "false"' in script
     assert "runtimeControlAllowedStatuses[action]" in script

@@ -27,6 +27,7 @@ from app.runtime.handler_registry import (
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
     RuntimeHandlerRegistryError,
+    RuntimeRiskLevel,
 )
 from app.runtime.subagents import (
     RuntimeSubagentDefinition,
@@ -101,7 +102,7 @@ def _safe_value(value: Any, *, max_chars: int = 20_000) -> Any:
     return repr(value)[:max_chars]
 
 
-def _tool_risk_level(definition: Any) -> str:
+def _tool_risk_level(definition: Any) -> RuntimeRiskLevel:
     """Project tool side-effect and sandbox metadata into Runtime risk tiers.
 
     ToolDefinition intentionally keeps ``side_effect_level`` extensible. An
