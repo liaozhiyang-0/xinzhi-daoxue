@@ -582,3 +582,20 @@ They are ignored and must not be committed.
   green release signal because it included an out-of-scope Research03-adjacent
   contract failure; no protected source or test was modified. No canary/default
   authorization record was created for the five current Agents.
+
+## 35. 2026-08-11 role-aware Runtime controls and browser rerun
+
+- The student Runtime controls now keep pause/resume/input available according
+  to the public projection, but hide approval and plan-proposal apply/reject
+  actions because the API requires a teacher or administrator. A waiting
+  student sees an explicit checkpoint/approval status instead of a button that
+  would predictably fail with HTTP 403. The unified workspace applies the same
+  rule from the authenticated identity while preserving teacher/admin controls.
+- Static contract tests passed for the student controls (`3 passed`) and the
+  unified workspace controls (`7 passed`); both changed scripts passed Node
+  syntax checks. The existing isolated Mock browser acceptance was rerun after
+  the change: `19/19` preflight checks, 17 screenshots, zero page errors, and
+  no listener left on port 8021.
+- This is a UI authorization/state-presentation verification under the Mock
+  profile. It does not establish real-provider semantic quality or a canary/
+  default release decision; those gates remain unchanged.

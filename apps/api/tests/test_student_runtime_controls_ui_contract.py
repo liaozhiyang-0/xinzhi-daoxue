@@ -18,6 +18,8 @@ def test_student_page_exposes_runtime_control_markup_and_status_copy() -> None:
         "student-runtime-input-form",
         "student-runtime-reject-proposal",
         "/runtime-controls",
+        "function runtimeApprovalAllowed()",
+        "return false;",
         "waiting_approval: \"等待人工审批\"",
         "expected_state_version: runtimeTaskControls?.state_version",
         "state.activeTaskWait?.cancel()",

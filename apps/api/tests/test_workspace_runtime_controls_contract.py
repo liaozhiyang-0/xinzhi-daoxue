@@ -138,6 +138,8 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
     assert "/runtime-controls" in script
     assert "runtime-plan-proposals/" in script
     assert 'decision: action === "approve" ? "approved" : "rejected"' in script
+    assert "function runtimeApprovalAllowed()" in script
+    assert "return [\"teacher\", \"admin\"]" in script
     assert "/api/v1/learning/runtime/" in script
     assert 'control_scope === "learning_loop"' in script
     assert "result.runtime_run_id" in script

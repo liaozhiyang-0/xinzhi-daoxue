@@ -1043,8 +1043,13 @@ function runtimeTaskControlEntry(action) {
   return controls.find((item) => item?.action === action) || null;
 }
 
+function runtimeApprovalAllowed() {
+  return ["teacher", "admin"].includes(String(state.userRole || "").toLowerCase());
+}
+
 function runtimeTaskControlAvailable(action) {
   if (action === "approve" || action === "reject") {
+    if (!runtimeApprovalAllowed()) return false;
     return Boolean(
       runtimeTaskControls?.control_scope === "runtime_plan_proposal"
       && runtimeTaskControls?.plan_proposal?.proposal_id,
@@ -1054,6 +1059,12 @@ function runtimeTaskControlAvailable(action) {
 }
 
 function runtimeTaskControlMessage(projection) {
+  if (
+    String(projection?.status || "").toLowerCase() === "waiting_approval"
+    && !runtimeApprovalAllowed()
+  ) {
+    return "Teacher or administrator approval is required; the task will continue from its checkpoint after review.";
+  }
   if (!projection?.runtime_run_id) {
     return "当前任务尚未进入可控制的 Runtime；旧任务与未启动任务不会显示控制操作。";
   }
@@ -1095,8 +1106,8 @@ function renderRuntimeTaskControls() {
     if (!button) return;
     const entry = runtimeTaskControlEntry(action);
     const available = proposalPending && action === "approve"
-      ? true
-      : entry?.available === true;
+      ? runtimeApprovalAllowed()
+      : runtimeTaskControlAvailable(action);
     button.hidden = !available;
     button.disabled = runtimeTaskControlsBusy || !available;
     if (proposalPending && action === "approve") button.textContent = "应用恢复计划";
@@ -1104,8 +1115,8 @@ function renderRuntimeTaskControls() {
   });
   const reject = $("#runtime-task-reject-proposal");
   if (reject) {
-    reject.hidden = !proposalPending;
-    reject.disabled = runtimeTaskControlsBusy || !proposalPending;
+    reject.hidden = !proposalPending || !runtimeApprovalAllowed();
+    reject.disabled = runtimeTaskControlsBusy || !proposalPending || !runtimeApprovalAllowed();
   }
   const inputAvailable = runtimeTaskControlAvailable("input");
   $("#runtime-task-input-form").hidden = !inputAvailable;

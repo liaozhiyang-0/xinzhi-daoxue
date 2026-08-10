@@ -98,16 +98,20 @@ function runtimeTaskControlEntry(action) {
     : [];
   return controls.find((item) => item?.action === action) || null;
 }
+function runtimeApprovalAllowed() {
+  return false;
+}
+
 function runtimeTaskControlAvailable(action) {
   if (action === "approve" || action === "reject") {
-    return Boolean(
-      runtimeTaskControls?.control_scope === "runtime_plan_proposal"
-      && runtimeTaskControls?.plan_proposal?.proposal_id,
-    ) || runtimeTaskControlEntry(action)?.available === true;
+    return runtimeApprovalAllowed();
   }
   return runtimeTaskControlEntry(action)?.available === true;
 }
 function runtimeTaskControlMessage(projection) {
+  if (String(projection?.status || "").toLowerCase() === "waiting_approval") {
+    return "Teacher or administrator approval is required; the task will continue from its checkpoint after review.";
+  }
   if (!projection?.runtime_run_id) return "当前任务尚未进入可控制的 Runtime。";
   if (projection.control_scope === "runtime_plan_proposal" && projection.plan_proposal?.proposal_id) {
     return "Runtime 生成了恢复计划，需要明确应用或拒绝后才能继续。";
@@ -134,7 +138,9 @@ function renderRuntimeTaskControls() {
     const button = $(`#student-runtime-${action}`);
     if (!button) return;
     const entry = runtimeTaskControlEntry(action);
-    const available = proposalPending && action === "approve" ? true : entry?.available === true;
+    const available = proposalPending && action === "approve"
+      ? runtimeApprovalAllowed()
+      : runtimeTaskControlAvailable(action);
     button.hidden = !available;
     button.disabled = runtimeTaskControlsBusy || !available;
     if (proposalPending && action === "approve") button.textContent = "应用恢复计划";
@@ -142,8 +148,8 @@ function renderRuntimeTaskControls() {
   });
   const reject = $("#student-runtime-reject-proposal");
   if (reject) {
-    reject.hidden = !proposalPending;
-    reject.disabled = runtimeTaskControlsBusy || !proposalPending;
+    reject.hidden = !proposalPending || !runtimeApprovalAllowed();
+    reject.disabled = runtimeTaskControlsBusy || !proposalPending || !runtimeApprovalAllowed();
   }
   const inputAvailable = runtimeTaskControlAvailable("input");
   $("#student-runtime-input-form").hidden = !inputAvailable;
