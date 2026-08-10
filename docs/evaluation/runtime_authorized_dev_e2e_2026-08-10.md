@@ -83,14 +83,55 @@ Provider 请求 ID、密钥、Flow ID 或私有路径。
 固定目标 Agent；如果实际 Agent 不匹配，会 fail closed，并且不读取或落盘意外
 能力的结果、事件或调试输出。
 
+### 完整 checkpoint 与结构套件打包
+
+`/debug/execution` 故意不返回 checkpoint 的 `state_data`，因此浏览器调试投影不能
+代替可重放 trace。新增离线打包器 `scripts/package_runtime_e2e_evidence.py`：它仅读取
+同一次隔离执行使用的 SQLite 数据库和上述已捕获目录，提取唯一顶层 Runtime run 的
+原始 checkpoint，调用 `audit_checkpoint_trace`，并把每个 Agent 的成对记录交给既有
+`collect_runtime_canary.py` 生成 `authorized_paired` structural suite。
+
+它不启动 API、不调用 Provider/模型/工具、不改 launch mode；若 checkpoint 中存在
+敏感键、任务路由不一致、trace/版本不一致或输入不一致，会 fail closed，且不重写
+checkpoint state。只能对受控且 Git 忽略的本地目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\package_runtime_e2e_evidence.py `
+  --output .local_outputs\runtime_authorized_dev_e2e_YYYYMMDD `
+  --checkpoint-sqlite .local_outputs\runtime-authorized-e2e.db `
+  --authorization-ref user-dev-authorization-2026-08-10
+```
+
+输出为同一受控目录中的 `runtime_canary_manifest_*.json`、
+`structural_suites/*.json` 和 `evidence_packaging_report.json`。结构套件通过仅证明
+trace、身份、版本、输入哈希与非语义结构条件；它不生成、推断或代替独立语义审查。
+
+#### 本次已捕获工件的离线打包结果（2026-08-10）
+
+实际对 `.local_outputs/runtime_authorized_dev_e2e_20260810/` 与同次隔离 SQLite
+执行打包，未产生新的 Provider 调用。三个 Agent 已生成完整 checkpoint trace 和
+`authorized_paired` structural suite，且各自的结构 gate 为通过：
+
+| Agent | Agent / Runtime plan version | 结构结果 |
+| --- | --- | --- |
+| `GENERAL_QUESTION_V1` | `general-qa-v1` / `general-qa-v1` | 通过 |
+| `LEARN_01_LOCAL_RETRIEVAL_V1` | `knowledge-qa-v1` / `knowledge-qa-v1` | 通过 |
+| `RESEARCH_01_ACADEMIC_SEARCH_V1` | `external-research-v1` / `external-research-v1` | 通过 |
+| `ACADEMIC_PROBLEM_SOLVER` | `solver-runtime-v1` / `solver-runtime-v1` | 拒绝：延迟回归超过 50% 阈值 |
+
+学术求解这一对的 Legacy/Runtime 总延迟分别为 836ms / 1284ms，增幅约 53.6%。
+打包器没有放宽阈值、没有写出该 Agent 的 structural suite；聚合命令因此以非零退出码
+结束。这是预期的 fail-closed 结果。三个通过项也尚未具备发布资格：它们仍缺独立
+语义 sidecar 和人工发布决定；学术求解必须先定位性能回归、修复后重新以同一输入配对。
+
 ## 仍未满足的发布条件
 
 - 每个 Agent 仍需由独立评审人对脱敏 Legacy/Runtime 输出给出语义 judgement；
   不能由本次自动化结果代替。
-- 需按
+- 三个结构通过项仍需按
   [授权成对 trace Runbook](runtime_authorized_paired_trace_release_runbook.md)
-  生成 v2 structural suite、semantic sidecar，并使 release preflight 返回
-  `release_eligible=true`。
+  收集 semantic sidecar，并使 release preflight 返回 `release_eligible=true`；学术求解
+  需先修复性能回归并重新生成 structural suite。
 - 需由发布责任人明确决定 canary 观察范围、通过阈值、观察期与是否切换 default。
 - Spark-X 回包/提示词合同需要单独修复或重新验证，才可将“主模型完成”作为通过项。
 - Docker、生产数据库/Redis/MinIO 与真实生产配置均未执行，不应从本次隔离验证
