@@ -120,6 +120,8 @@ class RuntimeCanaryThresholds(BaseModel):
     max_trace_invalid_rate: float = Field(default=0, ge=0, le=1)
     max_latency_regression_ratio: float = Field(default=0.5, ge=0)
     max_model_call_regression_ratio: float = Field(default=0.5, ge=0)
+    max_single_pair_latency_regression_ratio: float = Field(default=0.5, ge=0)
+    max_single_pair_model_call_regression_ratio: float = Field(default=0.5, ge=0)
     max_unreconciled_recovery_rate: float = Field(default=0, ge=0, le=1)
 
 
@@ -212,6 +214,8 @@ class RuntimeCanaryReport(BaseModel):
     trace_invalid_rate: float = Field(default=0, ge=0, le=1)
     latency_regression_ratio: float = 0
     model_call_regression_ratio: float = 0
+    single_pair_latency_regression_count: int = Field(default=0, ge=0)
+    single_pair_model_call_regression_count: int = Field(default=0, ge=0)
     recovery_required_count: int = Field(default=0, ge=0)
     reconciled_count: int = Field(default=0, ge=0)
     unreconciled_recovery_count: int = Field(default=0, ge=0)
@@ -344,6 +348,8 @@ def _release_provenance_failures(
 
 def evaluate_runtime_canary_pair(
     pair: RuntimeCanaryPair,
+    *,
+    thresholds: RuntimeCanaryThresholds | None = None,
 ) -> RuntimeCanaryPairResult:
     trace_audit = audit_checkpoint_trace(pair.runtime_checkpoints)
     diff = build_runtime_legacy_diff(
@@ -355,6 +361,8 @@ def evaluate_runtime_canary_pair(
     runtime_latency = _payload_metric_int(pair.runtime_payload, "latency_ms")
     legacy_calls = _payload_metric_int(pair.legacy_payload, "model_calls")
     runtime_calls = _payload_metric_int(pair.runtime_payload, "model_calls")
+    latency_ratio = _positive_ratio(runtime_latency - legacy_latency, legacy_latency)
+    call_ratio = _positive_ratio(runtime_calls - legacy_calls, legacy_calls)
     recovery_required, reconciled = _recovery_evidence(pair.runtime_payload)
     failed_checks: list[str] = []
     if not diff.status_match:
@@ -367,6 +375,16 @@ def evaluate_runtime_canary_pair(
         failed_checks.append("runtime_trace_invalid")
     if recovery_required and not reconciled:
         failed_checks.append("recovery_unreconciled")
+    if (
+        thresholds is not None
+        and latency_ratio > thresholds.max_single_pair_latency_regression_ratio
+    ):
+        failed_checks.append("single_pair_latency_regression_above_threshold")
+    if (
+        thresholds is not None
+        and call_ratio > thresholds.max_single_pair_model_call_regression_ratio
+    ):
+        failed_checks.append("single_pair_model_call_regression_above_threshold")
     return RuntimeCanaryPairResult(
         case_id=pair.case_id,
         passed=not failed_checks,
@@ -374,14 +392,10 @@ def evaluate_runtime_canary_pair(
         trace_audit=trace_audit,
         legacy_latency_ms=legacy_latency,
         runtime_latency_ms=runtime_latency,
-        latency_regression_ratio=_positive_ratio(
-            runtime_latency - legacy_latency, legacy_latency
-        ),
+        latency_regression_ratio=latency_ratio,
         legacy_model_calls=legacy_calls,
         runtime_model_calls=runtime_calls,
-        model_call_regression_ratio=_positive_ratio(
-            runtime_calls - legacy_calls, legacy_calls
-        ),
+        model_call_regression_ratio=call_ratio,
         recovery_required=recovery_required,
         reconciled=reconciled,
         failed_checks=failed_checks,
@@ -396,7 +410,10 @@ def evaluate_runtime_canary_suite(
         if isinstance(suite, RuntimeCanarySuite)
         else RuntimeCanarySuite.model_validate(suite)
     )
-    results = [evaluate_runtime_canary_pair(pair) for pair in validated.pairs]
+    results = [
+        evaluate_runtime_canary_pair(pair, thresholds=validated.thresholds)
+        for pair in validated.pairs
+    ]
     pair_count = len(results)
     denominator = max(1, pair_count)
     status_mismatches = sum(not item.diff.status_match for item in results)
@@ -415,6 +432,16 @@ def evaluate_runtime_canary_suite(
         item.recovery_required and not item.reconciled for item in results
     )
     thresholds = validated.thresholds
+    single_pair_latency_regressions = sum(
+        item.latency_regression_ratio
+        > thresholds.max_single_pair_latency_regression_ratio
+        for item in results
+    )
+    single_pair_model_call_regressions = sum(
+        item.model_call_regression_ratio
+        > thresholds.max_single_pair_model_call_regression_ratio
+        for item in results
+    )
     rates = {
         "status_mismatch_rate": status_mismatches / denominator,
         "answer_presence_mismatch_rate": answer_mismatches / denominator,
@@ -446,6 +473,10 @@ def evaluate_runtime_canary_suite(
         failed_checks.append("latency_regression_above_threshold")
     if call_ratio > thresholds.max_model_call_regression_ratio:
         failed_checks.append("model_call_regression_above_threshold")
+    if single_pair_latency_regressions:
+        failed_checks.append("single_pair_latency_regression_above_threshold")
+    if single_pair_model_call_regressions:
+        failed_checks.append("single_pair_model_call_regression_above_threshold")
     release_failed_checks: list[str] = []
     if validated.evidence.kind == "authorized_paired":
         for pair, result in zip(validated.pairs, results, strict=True):
@@ -474,6 +505,8 @@ def evaluate_runtime_canary_suite(
         trace_invalid_rate=rates["trace_invalid_rate"],
         latency_regression_ratio=latency_ratio,
         model_call_regression_ratio=call_ratio,
+        single_pair_latency_regression_count=single_pair_latency_regressions,
+        single_pair_model_call_regression_count=single_pair_model_call_regressions,
         recovery_required_count=recovery_required,
         reconciled_count=reconciled,
         unreconciled_recovery_count=unreconciled,

@@ -145,9 +145,9 @@ def test_runtime_checkpoint_trace_rejects_event_sequence_regression() -> None:
                 sequence=2,
                 state_version=2,
                 event_sequence=7,
-                state_data=run.model_copy(
-                    update={"state_version": 2}
-                ).model_dump(mode="json"),
+                state_data=run.model_copy(update={"state_version": 2}).model_dump(
+                    mode="json"
+                ),
             ),
         ]
     )
@@ -158,8 +158,9 @@ def test_runtime_checkpoint_trace_rejects_event_sequence_regression() -> None:
     assert audit.last_event_sequence == 7
 
 
-def test_runtime_legacy_diff_reports_structural_parity_without_semantic_claims(
-) -> None:
+def test_runtime_legacy_diff_reports_structural_parity_without_semantic_claims() -> (
+    None
+):
     legacy = {
         "status": "completed",
         "provider": "local_agent",
@@ -187,9 +188,7 @@ def test_runtime_legacy_diff_reports_structural_parity_without_semantic_claims(
     report = build_runtime_legacy_diff(legacy, runtime)
 
     assert snapshot.runtime_run_id == "run-parity"
-    assert snapshot.runtime_node_statuses == {
-        "general.execute": "succeeded"
-    }
+    assert snapshot.runtime_node_statuses == {"general.execute": "succeeded"}
     assert report.status_match is True
     assert report.answer_presence_match is True
     assert report.provider_match is True
@@ -255,11 +254,7 @@ def test_runtime_canary_aggregate_reports_operational_and_recovery_metrics() -> 
         "answer": "same shape",
         "metrics_data": {"latency_ms": 120, "model_calls": 2},
         "runtime": {
-            "nodes": [
-                {
-                    "error_code": "in_flight_execution_requires_reconciliation"
-                }
-            ]
+            "nodes": [{"error_code": "in_flight_execution_requires_reconciliation"}]
         },
         "events": [
             {
@@ -293,6 +288,74 @@ def test_runtime_canary_aggregate_reports_operational_and_recovery_metrics() -> 
     assert report.reconciled_count == 1
     assert report.unreconciled_recovery_count == 0
     assert report.release_eligible is False
+
+
+def test_runtime_canary_rejects_a_single_latency_outlier_hidden_by_aggregate() -> None:
+    run = AgentRun(
+        run_id="run-outlier",
+        task_id="task-outlier",
+        goal="outlier gate",
+        plan=AgentRunPlan(
+            plan_id="plan-outlier",
+            goal="outlier gate",
+            nodes=[
+                RuntimeNode(
+                    node_id="final",
+                    node_type="terminal",
+                    handler_id="runtime.final",
+                )
+            ],
+        ),
+    )
+    trace = [
+        RuntimeCheckpointRecord(
+            sequence=1,
+            state_version=1,
+            state_data=run.model_dump(mode="json"),
+        ).model_dump(mode="json")
+    ]
+
+    def payload(latency_ms: int) -> dict[str, object]:
+        return {
+            "status": "completed",
+            "provider": "local_agent",
+            "answer": "same shape",
+            "metrics_data": {"latency_ms": latency_ms, "model_calls": 1},
+        }
+
+    suite = RuntimeCanarySuite(
+        suite_id="runtime-canary-outlier",
+        thresholds=RuntimeCanaryThresholds(
+            max_latency_regression_ratio=0.5,
+            max_single_pair_latency_regression_ratio=0.5,
+        ),
+        pairs=[
+            RuntimeCanaryPair(
+                case_id="slow-runtime",
+                legacy_payload=payload(100),
+                runtime_payload=payload(200),
+                runtime_checkpoints=trace,
+            ),
+            RuntimeCanaryPair(
+                case_id="fast-runtime",
+                legacy_payload=payload(1_000),
+                runtime_payload=payload(100),
+                runtime_checkpoints=trace,
+            ),
+        ],
+    )
+
+    report = evaluate_runtime_canary_suite(suite)
+
+    assert report.latency_regression_ratio == 0
+    assert report.single_pair_latency_regression_count == 1
+    assert report.canary_eligible is False
+    assert "single_pair_latency_regression_above_threshold" in report.failed_checks
+    assert report.results[0].passed is False
+    assert (
+        "single_pair_latency_regression_above_threshold"
+        in report.results[0].failed_checks
+    )
 
 
 def test_runtime_canary_release_requires_authorized_redacted_evidence() -> None:
@@ -333,9 +396,7 @@ def test_runtime_canary_release_requires_authorized_redacted_evidence() -> None:
         pairs=[
             RuntimeCanaryPair(
                 case_id="case-authorized",
-                input_sha256=payload_sha256(
-                    {"question": "authorized canary"}
-                ),
+                input_sha256=payload_sha256({"question": "authorized canary"}),
                 legacy_payload={
                     "agent_id": "GENERAL_QUESTION_V1",
                     "status": "completed",
