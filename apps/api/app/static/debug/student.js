@@ -6,8 +6,37 @@ const state = {
   userId: localStorage.getItem("xinzhi_student_user") || `student_${crypto.randomUUID()}`,
   taskId: "", activeCourse: params.get("course") || localStorage.getItem("xinzhi_student_course") || "CT",
   lastQuestion: "", lastAnswer: "",
+  activeTaskWait: null,
+  runSequence: 0,
+};
+let runtimeTaskControls = null;
+let runtimeTaskControlsRequest = 0;
+let runtimeTaskControlsBusy = false;
+const runtimeTaskStatusLabels = {
+  created: "已创建",
+  queued: "等待执行",
+  running: "正在执行",
+  paused: "已暂停",
+  waiting_input: "等待补充信息",
+  waiting_approval: "等待人工审批",
+  completed: "已完成",
+  failed: "执行失败",
+  cancelled: "已取消",
 };
 localStorage.setItem("xinzhi_student_user", state.userId);
+
+function ensureRuntimeTaskControlsMarkup() {
+  if (document.querySelector("#student-runtime-controls")) return;
+  const sourceDetails = document.querySelector("#source-details");
+  if (!sourceDetails) return;
+  const panel = document.createElement("section");
+  panel.id = "student-runtime-controls";
+  panel.className = "student-runtime-controls";
+  panel.hidden = true;
+  panel.setAttribute("aria-labelledby", "student-runtime-controls-title");
+  panel.innerHTML = `<header><div><span class="eyebrow">Agent Runtime</span><h3 id="student-runtime-controls-title">任务需要继续操作</h3></div><span id="student-runtime-status" class="runtime-task-status" role="status">正在读取状态</span></header><p id="student-runtime-controls-message">控制能力由服务端 Runtime checkpoint 决定。</p><div class="student-runtime-actions"><button id="student-runtime-pause" class="button secondary" type="button" hidden>暂停</button><button id="student-runtime-resume" class="button secondary" type="button" hidden>恢复</button><button id="student-runtime-approve" class="button" type="button" hidden>提交审批</button><button id="student-runtime-reject-proposal" class="text-button" type="button" hidden>拒绝恢复计划</button></div><form id="student-runtime-input-form" class="student-runtime-input" hidden><label for="student-runtime-input">请补充必要信息</label><textarea id="student-runtime-input" maxlength="4000" rows="3" placeholder="请勿填写密码、密钥或其他敏感信息。"></textarea><div><button id="student-runtime-submit-input" class="button" type="submit">提交并继续</button></div></form>`;
+  sourceDetails.before(panel);
+}
 
 function selectedCourse() { const value = $("#course-select").value; return value === "AUTO" ? state.activeCourse : value; }
 async function ensureSession(force = false) {
@@ -63,6 +92,138 @@ function renderResult(task) {
   $("#related-images").replaceChildren(...images.map((item) => { const src = imageUrl(item.resource_uri); return src ? el("figure", { class: "image-thumbnail" }, [el("img", { src, alt: item.caption || "相关教材图片", loading: "lazy" }), el("figcaption", { text: item.caption || "相关教材图片" })]) : null; }).filter(Boolean));
   $("#answer-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+function runtimeTaskControlEntry(action) {
+  const controls = Array.isArray(runtimeTaskControls?.controls)
+    ? runtimeTaskControls.controls
+    : [];
+  return controls.find((item) => item?.action === action) || null;
+}
+function runtimeTaskControlAvailable(action) {
+  if (action === "approve" || action === "reject") {
+    return Boolean(
+      runtimeTaskControls?.control_scope === "runtime_plan_proposal"
+      && runtimeTaskControls?.plan_proposal?.proposal_id,
+    ) || runtimeTaskControlEntry(action)?.available === true;
+  }
+  return runtimeTaskControlEntry(action)?.available === true;
+}
+function runtimeTaskControlMessage(projection) {
+  if (!projection?.runtime_run_id) return "当前任务尚未进入可控制的 Runtime。";
+  if (projection.control_scope === "runtime_plan_proposal" && projection.plan_proposal?.proposal_id) {
+    return "Runtime 生成了恢复计划，需要明确应用或拒绝后才能继续。";
+  }
+  const available = ["pause", "resume", "approve", "input"].filter(runtimeTaskControlAvailable);
+  if (available.length) return "可用操作由服务端 checkpoint 和任务状态决定；提交后会从同一运行断点继续。";
+  const blocked = ["pause", "resume", "approve", "input"].map(runtimeTaskControlEntry).find((item) => item?.reason);
+  return blocked?.reason || "当前 Runtime 状态没有可执行的人工控制操作。";
+}
+function renderRuntimeTaskControls() {
+  const panel = $("#student-runtime-controls");
+  if (!panel) return;
+  const projection = runtimeTaskControls;
+  const hasRuntime = Boolean(projection?.runtime_run_id);
+  panel.hidden = !hasRuntime;
+  if (!hasRuntime) return;
+  $("#answer-panel").hidden = false;
+  $("#answer-agent").textContent = projection.agent_id || "统一运行框架";
+  $("#answer-status").textContent = runtimeTaskStatusLabels[String(projection.status || "").toLowerCase()] || "状态待确认";
+  $("#student-runtime-status").textContent = runtimeTaskStatusLabels[String(projection.status || "").toLowerCase()] || "状态待确认";
+  $("#student-runtime-controls-message").textContent = runtimeTaskControlMessage(projection);
+  const proposalPending = Boolean(projection.control_scope === "runtime_plan_proposal" && projection.plan_proposal?.proposal_id);
+  ["pause", "resume", "approve"].forEach((action) => {
+    const button = $(`#student-runtime-${action}`);
+    if (!button) return;
+    const entry = runtimeTaskControlEntry(action);
+    const available = proposalPending && action === "approve" ? true : entry?.available === true;
+    button.hidden = !available;
+    button.disabled = runtimeTaskControlsBusy || !available;
+    if (proposalPending && action === "approve") button.textContent = "应用恢复计划";
+    button.title = available ? "" : `${entry?.reason_code || "runtime_control_unavailable"}: ${entry?.reason || "当前状态不可用"}`;
+  });
+  const reject = $("#student-runtime-reject-proposal");
+  if (reject) {
+    reject.hidden = !proposalPending;
+    reject.disabled = runtimeTaskControlsBusy || !proposalPending;
+  }
+  const inputAvailable = runtimeTaskControlAvailable("input");
+  $("#student-runtime-input-form").hidden = !inputAvailable;
+  $("#student-runtime-submit-input").disabled = runtimeTaskControlsBusy || !inputAvailable;
+}
+async function refreshRuntimeTaskControls(taskId = state.taskId) {
+  if (!taskId) {
+    runtimeTaskControls = null;
+    renderRuntimeTaskControls();
+    return null;
+  }
+  const requestSequence = runtimeTaskControlsRequest + 1;
+  runtimeTaskControlsRequest = requestSequence;
+  try {
+    const projection = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`);
+    if (requestSequence !== runtimeTaskControlsRequest) return null;
+    runtimeTaskControls = projection;
+    renderRuntimeTaskControls();
+    return projection;
+  } catch (_error) {
+    if (requestSequence !== runtimeTaskControlsRequest) return null;
+    runtimeTaskControls = null;
+    renderRuntimeTaskControls();
+    return null;
+  }
+}
+function runtimeTaskControlUrl(action) {
+  const taskId = encodeURIComponent(state.taskId || "");
+  const runId = String(runtimeTaskControls?.runtime_run_id || "").trim();
+  if (runtimeTaskControls?.control_scope === "runtime_plan_proposal" && runtimeTaskControls?.plan_proposal?.proposal_id) {
+    return `/api/v1/tasks/${taskId}/runtime-plan-proposals/${encodeURIComponent(runtimeTaskControls.plan_proposal.proposal_id)}/decision`;
+  }
+  return `/api/v1/tasks/${taskId}/${action}${runId ? `?runtime_run_id=${encodeURIComponent(runId)}` : ""}`;
+}
+async function submitRuntimeTaskControl(action, payload = null) {
+  if (!state.taskId || !runtimeTaskControlAvailable(action)) return;
+  runtimeTaskControlsBusy = true;
+  renderRuntimeTaskControls();
+  try {
+    const planProposalControl = runtimeTaskControls?.control_scope === "runtime_plan_proposal";
+    const options = { method: "POST", headers: { "Content-Type": "application/json" } };
+    if (planProposalControl) {
+      options.body = JSON.stringify({
+        decision: action === "approve" ? "approved" : "rejected",
+        reason: payload?.reason || "",
+        expected_state_version: runtimeTaskControls?.plan_proposal?.state_version,
+      });
+    } else if (action === "input") {
+      options.body = JSON.stringify({
+        expected_state_version: runtimeTaskControls?.state_version,
+        data: payload || {},
+      });
+    } else if (payload) {
+      options.body = JSON.stringify(payload);
+    }
+    await api(runtimeTaskControlUrl(action), options);
+    if (action === "input") $("#student-runtime-input").value = "";
+    await refreshRuntimeTaskControls(state.taskId);
+  } catch (error) {
+    $("#student-runtime-controls-message").textContent = Number(error?.status) === 403
+      ? "当前身份无权执行此审批操作，请交由教师或责任人处理。"
+      : Number(error?.status) === 409
+        ? "Runtime 状态已变化，正在重新读取最新状态。"
+        : error?.message || "Runtime 控制操作未完成。";
+    await refreshRuntimeTaskControls(state.taskId);
+  } finally {
+    runtimeTaskControlsBusy = false;
+    renderRuntimeTaskControls();
+  }
+}
+async function submitRuntimeTaskInput(event) {
+  event.preventDefault();
+  const text = $("#student-runtime-input").value.trim();
+  if (!text) {
+    $("#student-runtime-input").focus();
+    return;
+  }
+  await submitRuntimeTaskControl("input", { text });
+}
+
 async function uploadImage() {
   const file = $("#image-input").files[0]; if (!file) return null;
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("仅支持 JPG、PNG 或 WebP 图片");
@@ -73,15 +234,43 @@ async function uploadImage() {
 function attachmentRef(file) { return { file_id: file.id, filename: file.filename, content_type: file.content_type, size_bytes: file.size_bytes, storage_key: file.storage_key, checksum_sha256: file.checksum_sha256 }; }
 async function waitForTask(id) {
   return new Promise((resolve, reject) => {
-    let settled = false; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
-    const finish = async () => { if (settled) return; try { const task = await api(`/api/v1/tasks/${id}`); if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; events.close(); resolve(task); } } catch (error) { settled = true; events.close(); reject(error); } };
+    let settled = false; let pollTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
+    let waitHandle = null;
+    const cleanup = () => {
+      events.close();
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (state.activeTaskWait === waitHandle) state.activeTaskWait = null;
+    };
+    const cancel = () => { if (settled) return; settled = true; cleanup(); resolve(null); };
+    waitHandle = { cancel };
+    state.activeTaskWait = waitHandle;
+    const finish = async () => {
+      if (settled) return;
+      try {
+        const task = await api(`/api/v1/tasks/${id}`);
+        void refreshRuntimeTaskControls(id);
+        if (["completed", "failed", "cancelled"].includes(task.status)) {
+          settled = true; cleanup(); resolve(task);
+        }
+      } catch (error) { settled = true; cleanup(); reject(error); }
+    };
+    void refreshRuntimeTaskControls(id);
     ["task.completed", "task.failed", "task.cancelled"].forEach((name) => events.addEventListener(name, finish));
-    events.addEventListener("agent.started", () => addMessage("已完成路由，正在生成回答…", "system"));
-    events.onerror = () => { events.close(); const timer = setInterval(async () => { try { const task = await api(`/api/v1/tasks/${id}`); if (["completed", "failed", "cancelled"].includes(task.status)) { clearInterval(timer); if (!settled) { settled = true; resolve(task); } } } catch (error) { clearInterval(timer); if (!settled) { settled = true; reject(error); } } }, 900); };
+    events.addEventListener("agent.started", () => { addMessage("已完成路由，正在生成回答…", "system"); void refreshRuntimeTaskControls(id); });
+    events.addEventListener("agent.progress", () => { void refreshRuntimeTaskControls(id); });
+    events.onerror = () => {
+      if (settled || pollTimer) return;
+      // Keep EventSource open so the browser retries and sends Last-Event-ID;
+      // polling reconciles the public Runtime controls while reconnecting.
+      void refreshRuntimeTaskControls(id);
+      pollTimer = setInterval(finish, 900);
+    };
   });
 }
 async function submit(event) {
   event.preventDefault(); $("#form-error").textContent = "";
+  const requestSequence = state.runSequence + 1;
+  state.runSequence = requestSequence;
   const question = $("#question-input").value.trim(); const course = selectedCourse();
   if (state.mode === "solve" && course !== "CT") { $("#form-error").textContent = "该课程完整解题工作流尚未开放"; return; }
   if (!question && !$("#image-input").files[0]) { $("#form-error").textContent = "请输入题目或上传图片"; return; }
@@ -91,10 +280,10 @@ async function submit(event) {
     const file = state.mode === "solve" ? await uploadImage() : null;
     const payload = { session_id: state.sessionId, user_id: state.userId, user_role: "student", scene: state.mode === "solve" ? "solving" : "learning", course_id: course, intent: state.mode === "solve" ? "solve_problem" : "general_qa", canonical_input: { text: question }, attachments: file ? [attachmentRef(file)] : [], context_refs: [], options: { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value } };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    state.taskId = task.id; addMessage("请求已提交，本地检索与专业工作流正在处理…", "system"); renderResult(await waitForTask(task.id));
+    state.taskId = task.id; addMessage("请求已提交，本地检索与专业工作流正在处理…", "system"); const finishedTask = await waitForTask(task.id); if (state.runSequence !== requestSequence) return; if (finishedTask) renderResult(finishedTask);
     $("#question-input").value = ""; clearImage();
-  } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
-  finally { state.taskId = ""; $("#send-button").disabled = false; $("#stop-button").disabled = true; }
+  } catch (error) { if (state.runSequence === requestSequence) $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
+  finally { if (state.runSequence === requestSequence) { state.taskId = ""; $("#send-button").disabled = false; $("#stop-button").disabled = true; } }
 }
 function clearImage() { $("#image-input").value = ""; $("#image-preview").hidden = true; $("#preview-image").removeAttribute("src"); $("#image-name").textContent = ""; }
 function applyParams() {
@@ -103,6 +292,7 @@ function applyParams() {
   if (params.get("image") === "1") setMode("solve");
 }
 window.addEventListener("DOMContentLoaded", () => {
+  ensureRuntimeTaskControlsMarkup();
   initShell({ page: "student", title: "智能学习", description: "课程问答与电路理论解题", context: "知识问答 · 电路理论" }); applyParams(); setMode(state.mode);
   all("[data-mode]").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
   all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course; state.activeCourse = button.dataset.course; if (button.dataset.promptMode) setMode(button.dataset.promptMode); updateShell(); $("#question-input").focus(); }));
@@ -112,7 +302,14 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#image-input").addEventListener("change", (event) => { const file = event.target.files[0]; if (!file) return clearImage(); $("#image-name").textContent = file.name; $("#preview-image").src = URL.createObjectURL(file); $("#image-preview").hidden = false; });
   $("#remove-image").addEventListener("click", clearImage);
   $("#stop-button").addEventListener("click", async () => { if (state.taskId) await api(`/api/v1/tasks/${state.taskId}/cancel`, { method: "POST" }); });
-  $("#new-session").addEventListener("click", () => { state.sessionId = ""; localStorage.removeItem("xinzhi_student_session"); $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false; toast("已新建本地会话"); });
+  $("#student-runtime-pause").addEventListener("click", () => submitRuntimeTaskControl("pause"));
+  $("#student-runtime-resume").addEventListener("click", () => submitRuntimeTaskControl("resume"));
+  $("#student-runtime-approve").addEventListener("click", () => submitRuntimeTaskControl("approve", {
+    expected_state_version: runtimeTaskControls?.state_version,
+  }));
+  $("#student-runtime-reject-proposal").addEventListener("click", () => submitRuntimeTaskControl("reject", { reason: "student_rejected_runtime_plan_proposal" }));
+  $("#student-runtime-input-form").addEventListener("submit", submitRuntimeTaskInput);
+  $("#new-session").addEventListener("click", () => { state.activeTaskWait?.cancel(); state.runSequence += 1; state.sessionId = ""; state.taskId = ""; runtimeTaskControlsRequest += 1; runtimeTaskControls = null; renderRuntimeTaskControls(); localStorage.removeItem("xinzhi_student_session"); $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false; toast("已新建本地会话"); });
   $("#toggle-sources").addEventListener("click", () => { $("#source-details").open = !$("#source-details").open; });
   $("#copy-answer").addEventListener("click", async () => { await navigator.clipboard.writeText(state.lastAnswer); toast("回答已复制"); });
   $("#follow-up").addEventListener("click", () => { $("#question-input").focus(); $("#question-input").placeholder = "继续追问这一回答…"; });

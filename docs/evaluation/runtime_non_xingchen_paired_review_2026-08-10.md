@@ -377,3 +377,22 @@ They are ignored and must not be committed.
   excerpt. Independent semantic review must determine whether that difference
   is acceptable for the Assignment Review contract before any migration
   decision.
+
+## 22. 2026-08-11 student frontend Runtime control hardening
+
+- The student workspace now consumes the public
+  `GET /tasks/{task_id}/runtime-controls` projection while a task is active.
+  It exposes state-gated pause, resume, approval, plan-proposal decision, and
+  bounded user-input controls without reading debug checkpoints or invoking a
+  Provider from the browser.
+- Student Task waiting states no longer leave the composer in an opaque
+  indefinite wait: the page renders the Runtime checkpoint status, keeps the
+  task wait alive until a terminal Task state, and reconciles controls after
+  control submissions, `agent.progress`, and SSE reconnects. EventSource is
+  kept open so the browser can send `Last-Event-ID`; a bounded poll reconciles
+  public status while reconnecting. Session changes cancel the old wait and
+  protect the new session from stale completion updates.
+- Focused verification passed: 12 Runtime/SSE/non-blocking tests, Node syntax,
+  Ruff, and diff checks. A browser-backed live student approval/recovery smoke
+  was not executed because the configured in-app browser transport disconnected
+  during setup; no browser result is claimed from this change.
