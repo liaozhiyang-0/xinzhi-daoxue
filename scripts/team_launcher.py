@@ -40,6 +40,8 @@ RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
     "ACADEMIC_PROBLEM_SOLVER": "default",
     "GENERAL_QUESTION_V1": "default",
     "LEARN_01_LOCAL_RETRIEVAL_V1": "default",
+    "TEACH_01_LESSON_PREP_V1": "default",
+    "TEACH_02_ASSIGNMENT_REVIEW_V1": "default",
 }
 
 
@@ -121,6 +123,7 @@ def enable_runtime_development_profile(
             "AGENT_RUNTIME_SOLVER_ENABLED": "true",
             "AGENT_RUNTIME_GENERAL_ENABLED": "true",
             "AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED": "true",
+            "AGENT_RUNTIME_TEACHING_ENABLED": "true",
             "AGENT_RUNTIME_LAUNCH_MODES": ",".join(
                 f"{agent_id}={mode}"
                 for agent_id, mode in RUNTIME_DEVELOPMENT_LAUNCH_MODES.items()

@@ -50,6 +50,28 @@ class FakeLessonRuntimeAgents:
         )
 
 
+class FakeAssignmentRuntimeAgents:
+    async def run(
+        self,
+        agent_id: str,
+        request: object,
+        context: object = None,
+    ) -> AgentResult:
+        del request, context
+        return AgentResult(
+            agent_id=agent_id,
+            provider="local_agent",
+            answer="## Assignment review",
+            business_data={
+                "correctness": "mostly_correct",
+                "correct_parts": ["The circuit current is correct."],
+                "errors": [],
+                "teacher_feedback": "The review is ready for the teacher.",
+                "review_required": False,
+            },
+        )
+
+
 def _passing_runtime_release_registry(
     *,
     agent_id: str,
@@ -779,18 +801,33 @@ def test_local_retrieval_runtime_default_launch_owns_learning_task(
     )
 
 
-def test_lesson_prep_runtime_path_uses_registry_plan(api, app) -> None:
-    app.state.task_runner.runtime_lifecycle.enabled = True
-    assert app.state.task_runner.lesson_prep_runtime is not None
-    app.state.task_runner.lesson_prep_runtime.enabled = True
-    app.state.task_runner.lesson_prep_runtime.internal_agents = (
+def test_lesson_prep_runtime_default_launch_uses_registry_plan(api, app) -> None:
+    runner = app.state.task_runner
+    definition = runner.agent_registry.get("TEACH_01_LESSON_PREP_V1")
+    runtime_plan_version = runner.runtime_boundary.runtime_plan_version(
+        definition.agent_id
+    )
+    assert runtime_plan_version is not None
+    runner.runtime_canary_release = _passing_runtime_release_registry(
+        agent_id=definition.agent_id,
+        agent_version=definition.version,
+        runtime_plan_version=runtime_plan_version,
+    )
+    runner.runtime_launch_policy = RuntimeLaunchPolicy(
+        "TEACH_01_LESSON_PREP_V1=default",
+        release_registry=runner.runtime_canary_release,
+        release_gate_required=True,
+    )
+    runner.runtime_lifecycle.enabled = True
+    assert runner.lesson_prep_runtime is not None
+    runner.lesson_prep_runtime.enabled = True
+    runner.lesson_prep_runtime.internal_agents = (
         FakeLessonRuntimeAgents()
     )
     session = api.create_session()
     payload = api.task_payload(
         session["id"],
         options={
-            "lesson_prep_runtime": {"execute": True},
             "scenario_agent_id": "TEACH_01_LESSON_PREP_V1",
             "_scenario_catalog_bound": True,
         },
@@ -812,9 +849,72 @@ def test_lesson_prep_runtime_path_uses_registry_plan(api, app) -> None:
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
     assert runtime["status"] == "completed"
+    assert runtime["launch_decision"]["mode"] == "default"
+    assert runtime["launch_decision"]["source"] == "configured_launch_mode"
     assert [node["node_id"] for node in runtime["nodes"]] == [
-        "lesson.execute",
         "lesson.observe",
+        "lesson.execute",
         "lesson.verify",
+    ]
+    assert all(node["status"] == "succeeded" for node in runtime["nodes"])
+
+
+def test_assignment_review_runtime_default_launch_uses_registry_plan(
+    api, app
+) -> None:
+    runner = app.state.task_runner
+    definition = runner.agent_registry.get("TEACH_02_ASSIGNMENT_REVIEW_V1")
+    runtime_plan_version = runner.runtime_boundary.runtime_plan_version(
+        definition.agent_id
+    )
+    assert runtime_plan_version is not None
+    runner.runtime_canary_release = _passing_runtime_release_registry(
+        agent_id=definition.agent_id,
+        agent_version=definition.version,
+        runtime_plan_version=runtime_plan_version,
+    )
+    runner.runtime_launch_policy = RuntimeLaunchPolicy(
+        "TEACH_02_ASSIGNMENT_REVIEW_V1=default",
+        release_registry=runner.runtime_canary_release,
+        release_gate_required=True,
+    )
+    runner.runtime_lifecycle.enabled = True
+    assert runner.assignment_review_runtime is not None
+    runner.assignment_review_runtime.enabled = True
+    runner.assignment_review_runtime.internal_agents = FakeAssignmentRuntimeAgents()
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        options={
+            "scenario_agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+            "_scenario_catalog_bound": True,
+        },
+        intent="assignment_review",
+        user_role="teacher",
+    )
+    payload.update(
+        {
+            "scene": "teaching",
+            "scenario_id": "assessment_diagnosis_v1",
+            "canonical_input": {
+                "text": "Review this circuit assignment using the rubric."
+            },
+        }
+    )
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"], timeout=15)
+
+    assert completed["status"] == "completed"
+    debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
+    assert debug.status_code == 200
+    runtime = debug.json()["runtime"]
+    assert runtime["status"] == "completed"
+    assert runtime["launch_decision"]["mode"] == "default"
+    assert runtime["launch_decision"]["source"] == "configured_launch_mode"
+    assert [node["node_id"] for node in runtime["nodes"]] == [
+        "assignment.observe",
+        "assignment.execute",
+        "assignment.verify",
     ]
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])
