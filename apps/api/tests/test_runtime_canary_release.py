@@ -156,15 +156,15 @@ def _write_json(path: Path, payload: object) -> None:
     )
 
 
-def test_registry_without_sidecar_preserves_structural_gate() -> None:
+def test_registry_without_sidecar_is_not_release_eligible() -> None:
     registry = RuntimeCanaryReleaseRegistry({AGENT_ID: _report()})
 
     assert registry.release_eligible(
         AGENT_ID,
         expected_agent_version=AGENT_VERSION,
         expected_runtime_plan_version=PLAN_VERSION,
-    ) is True
-    assert registry.reason(AGENT_ID) == "canary_release_evidence_approved"
+    ) is False
+    assert registry.reason(AGENT_ID) == "semantic_evidence_missing"
 
 
 def test_configured_sidecar_requires_a_passing_semantic_decision() -> None:
@@ -249,7 +249,7 @@ def test_from_paths_loads_and_binds_optional_semantic_sidecar(
     ) is True
 
 
-def test_from_paths_empty_semantic_config_keeps_legacy_compatibility(
+def test_from_paths_empty_semantic_config_is_structural_only(
     tmp_path: Path,
 ) -> None:
     suite_path = tmp_path / "suite.json"
@@ -260,7 +260,8 @@ def test_from_paths_empty_semantic_config_keeps_legacy_compatibility(
         semantic_paths="",
     )
 
-    assert registry.release_eligible(AGENT_ID) is True
+    assert registry.release_eligible(AGENT_ID) is False
+    assert registry.reason(AGENT_ID) == "semantic_evidence_missing"
 
 
 def test_from_paths_requires_semantic_coverage_for_every_case(

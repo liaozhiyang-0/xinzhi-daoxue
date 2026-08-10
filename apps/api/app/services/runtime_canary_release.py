@@ -91,15 +91,13 @@ class RuntimeCanaryReleaseRegistry:
         expected_agent_version: str | None = None,
         expected_runtime_plan_version: str | None = None,
     ) -> bool:
-        report = self._reports.get(agent_id)
-        if report is None or not self._matches_expected_versions(
-            report,
+        if not self.structural_eligible(
+            agent_id,
             expected_agent_version=expected_agent_version,
             expected_runtime_plan_version=expected_runtime_plan_version,
         ):
             return False
-        if self._semantic_evidence is None:
-            return True
+        report = self._reports[agent_id]
         evidence = self._semantic_evidence_for(agent_id)
         if evidence is None:
             return False
@@ -107,6 +105,22 @@ class RuntimeCanaryReleaseRegistry:
             self._semantic_reason(agent_id, report, item) is None
             and semantic_release_eligible(report.release_eligible, item)
             for item in evidence
+        )
+
+    def structural_eligible(
+        self,
+        agent_id: str,
+        *,
+        expected_agent_version: str | None = None,
+        expected_runtime_plan_version: str | None = None,
+    ) -> bool:
+        """Return structural/provenance eligibility without semantic promotion."""
+
+        report = self._reports.get(agent_id)
+        return report is not None and self._matches_expected_versions(
+            report,
+            expected_agent_version=expected_agent_version,
+            expected_runtime_plan_version=expected_runtime_plan_version,
         )
 
     def report(self, agent_id: str) -> RuntimeCanaryReport | None:
@@ -121,6 +135,32 @@ class RuntimeCanaryReleaseRegistry:
         expected_agent_version: str | None = None,
         expected_runtime_plan_version: str | None = None,
     ) -> str:
+        structural_reason = self.structural_reason(
+            agent_id,
+            expected_agent_version=expected_agent_version,
+            expected_runtime_plan_version=expected_runtime_plan_version,
+        )
+        if structural_reason is not None:
+            return structural_reason
+        report = self._reports[agent_id]
+        evidence = self._semantic_evidence_for(agent_id)
+        if not evidence:
+            return "semantic_evidence_missing"
+        for item in evidence:
+            semantic_reason = self._semantic_reason(agent_id, report, item)
+            if semantic_reason is not None:
+                return semantic_reason
+        return "canary_release_evidence_approved"
+
+    def structural_reason(
+        self,
+        agent_id: str,
+        *,
+        expected_agent_version: str | None = None,
+        expected_runtime_plan_version: str | None = None,
+    ) -> str | None:
+        """Explain a structural eligibility failure without considering semantics."""
+
         report = self._reports.get(agent_id)
         if report is None:
             return "canary_release_evidence_missing"
@@ -139,15 +179,7 @@ class RuntimeCanaryReleaseRegistry:
             return "canary_artifact_runtime_plan_version_mismatch"
         if report.release_failed_checks:
             return "canary_provenance_incomplete"
-        if self._semantic_evidence is not None:
-            evidence = self._semantic_evidence_for(agent_id)
-            if not evidence:
-                return "semantic_evidence_missing"
-            for item in evidence:
-                semantic_reason = self._semantic_reason(agent_id, report, item)
-                if semantic_reason is not None:
-                    return semantic_reason
-        return "canary_release_evidence_approved"
+        return None
 
     @classmethod
     def _load_semantic_evidence(
@@ -157,7 +189,13 @@ class RuntimeCanaryReleaseRegistry:
         reports: Mapping[str, RuntimeCanaryReport],
         suites: Mapping[str, RuntimeCanarySuite],
     ) -> dict[str, tuple[RuntimeSemanticEvidence, ...]] | None:
-        """Load and bind optional semantic sidecars to structural suites."""
+        """Load and bind semantic sidecars to structural suites when supplied.
+
+        A caller may omit the sidecar for structural diagnostics, but the
+        resulting registry is intentionally never release eligible.  This
+        preserves a clear distinction between an operational canary report
+        and a promotion decision.
+        """
 
         if value is None or not value.strip():
             return None

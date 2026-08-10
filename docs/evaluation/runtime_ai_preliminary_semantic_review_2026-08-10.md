@@ -4,6 +4,8 @@
 
 本记录是基于已授权开发环境配对产物生成的模型初审，不能替代独立人工语义评审，也不是发布决定。三个案例均为 `needs_review`，因此不会解除任何 Runtime 发布门禁。
 
+自 2026-08-10 起，Runtime 发布门禁不再允许仅凭结构性配对证据进入 `canary` 或 `default`：必须同时有覆盖全部案例、哈希绑定且结论为 `pass` 的语义 sidecar。模型初审中的 `needs_review` 会保持阻断；该规则已由 Task API 默认接管路径回归测试覆盖。
+
 | Agent / case | 初审分数（完成度 / 事实 / 证据 / 安全） | 初审结论 | 原因 |
 | --- | --- | --- | --- |
 | `GENERAL_QUESTION_V1` / `general_stack_explanation` | 1.0 / 1.0 / N/A / 1.0 | `needs_review` | 两条路径均满足“两句话解释栈”的要求，定义正确；无外部证据要求。 |

@@ -14,6 +14,16 @@ from app.contracts import (
     ExternalSourceType,
 )
 from app.contracts.external_retrieval import ExternalEvidenceSupport
+from app.runtime import (
+    RuntimeCanaryEvidence,
+    RuntimeCanaryReport,
+    RuntimeCanaryThresholds,
+)
+from app.runtime.semantic_evidence import (
+    RuntimeSemanticDimensions,
+    RuntimeSemanticEvidence,
+)
+from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
 from app.services.task_runner import TaskRunner
 from pydantic import AnyHttpUrl, TypeAdapter
@@ -38,6 +48,60 @@ class FakeLessonRuntimeAgents:
                 "formative_assessment": ["Exit ticket"],
             },
         )
+
+
+def _passing_general_runtime_release_registry(
+    *,
+    agent_version: str,
+    runtime_plan_version: str,
+) -> RuntimeCanaryReleaseRegistry:
+    """Provide a fully bound release fixture for the Task API handoff test."""
+
+    agent_id = "GENERAL_QUESTION_V1"
+    suite_id = "general-runtime-task-api-release"
+    captured_at = datetime(2026, 8, 10, tzinfo=UTC)
+    report = RuntimeCanaryReport(
+        suite_id=suite_id,
+        suite_version="1",
+        canary_eligible=True,
+        release_eligible=True,
+        thresholds=RuntimeCanaryThresholds(),
+        evidence=RuntimeCanaryEvidence(
+            kind="authorized_paired",
+            agent_id=agent_id,
+            agent_version=agent_version,
+            runtime_plan_version=runtime_plan_version,
+            authorization_ref="task-api-release-fixture",
+            captured_at=captured_at,
+            redaction_status="redacted",
+        ),
+    )
+    semantic = RuntimeSemanticEvidence(
+        suite_id=suite_id,
+        case_id="general-runtime-task-api-case",
+        agent_id=agent_id,
+        agent_version=agent_version,
+        runtime_plan_version=runtime_plan_version,
+        input_sha256="0" * 64,
+        legacy_output_sha256="1" * 64,
+        runtime_output_sha256="2" * 64,
+        dimensions=RuntimeSemanticDimensions(
+            task_fulfillment=1.0,
+            factual_correctness=1.0,
+            safety=1.0,
+        ),
+        decision="pass",
+        judge_type="human",
+        rubric_version="general-question-v1",
+        reviewer_ref="task-api-review-fixture",
+        reviewed_at=captured_at,
+        redaction_status="redacted",
+        authorization_ref="task-api-release-fixture",
+    )
+    return RuntimeCanaryReleaseRegistry(
+        {agent_id: report},
+        semantic_evidence={agent_id: semantic},
+    )
 
 
 def test_runtime_resume_restores_serialized_execution_plan() -> None:
@@ -557,8 +621,19 @@ def test_general_question_runtime_default_launch_mode_requires_no_runtime_option
     api, app
 ) -> None:
     runner = app.state.task_runner
+    definition = runner.agent_registry.get("GENERAL_QUESTION_V1")
+    runtime_plan_version = runner.runtime_boundary.runtime_plan_version(
+        definition.agent_id
+    )
+    assert runtime_plan_version is not None
+    runner.runtime_canary_release = _passing_general_runtime_release_registry(
+        agent_version=definition.version,
+        runtime_plan_version=runtime_plan_version,
+    )
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
-        "GENERAL_QUESTION_V1=default"
+        "GENERAL_QUESTION_V1=default",
+        release_registry=runner.runtime_canary_release,
+        release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True
     assert runner.general_question_runtime is not None

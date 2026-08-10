@@ -216,19 +216,20 @@ def run_preflight(
                 result["pair_count"] = report.pair_count
                 result["agent_version"] = report.evidence.agent_version
                 result["runtime_plan_version"] = report.evidence.runtime_plan_version
-                structural_eligible = structural_registry.release_eligible(
+                structural_eligible = structural_registry.structural_eligible(
                     agent_id,
                     expected_agent_version=expected_agent_version,
                     expected_runtime_plan_version=expected_runtime_plan_version,
                 )
                 result["structural_eligible"] = structural_eligible
                 if not structural_eligible:
+                    structural_reason = structural_registry.structural_reason(
+                        agent_id,
+                        expected_agent_version=expected_agent_version,
+                        expected_runtime_plan_version=expected_runtime_plan_version,
+                    )
                     blockers.append(
-                        structural_registry.reason(
-                            agent_id,
-                            expected_agent_version=expected_agent_version,
-                            expected_runtime_plan_version=expected_runtime_plan_version,
-                        )
+                        structural_reason or "canary_provenance_incomplete"
                     )
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             blockers.append(_error_code(exc, semantic=False))

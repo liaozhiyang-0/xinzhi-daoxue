@@ -15,6 +15,10 @@ from app.runtime import (
     RuntimeNode,
     RuntimeObservation,
 )
+from app.runtime.semantic_evidence import (
+    RuntimeSemanticDimensions,
+    RuntimeSemanticEvidence,
+)
 from app.services.runtime_agent_readiness import RuntimeAgentReadinessService
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
@@ -85,25 +89,47 @@ def _readiness(
 def _release_registry(
     *, agent_version: str = "1.0", plan_version: str = "general-qa-v1"
 ) -> RuntimeCanaryReleaseRegistry:
+    report = RuntimeCanaryReport(
+        suite_id="general-canary",
+        suite_version="1",
+        canary_eligible=True,
+        release_eligible=True,
+        thresholds=RuntimeCanaryThresholds(),
+        evidence=RuntimeCanaryEvidence(
+            kind="authorized_paired",
+            agent_id="GENERAL_QUESTION_V1",
+            agent_version=agent_version,
+            runtime_plan_version=plan_version,
+            authorization_ref="change-123",
+            captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+            redaction_status="redacted",
+        ),
+    )
+    evidence = RuntimeSemanticEvidence(
+        suite_id="general-canary",
+        case_id="general-case",
+        agent_id="GENERAL_QUESTION_V1",
+        agent_version=agent_version,
+        runtime_plan_version=plan_version,
+        input_sha256="0" * 64,
+        legacy_output_sha256="1" * 64,
+        runtime_output_sha256="2" * 64,
+        dimensions=RuntimeSemanticDimensions(
+            task_fulfillment=1.0,
+            factual_correctness=1.0,
+            safety=1.0,
+        ),
+        decision="pass",
+        judge_type="human",
+        rubric_version="general-question-v1",
+        reviewer_ref="review-123",
+        reviewed_at=datetime(2026, 8, 9, tzinfo=UTC),
+        redaction_status="redacted",
+        authorization_ref="change-123",
+    )
     return RuntimeCanaryReleaseRegistry(
-        {
-            "GENERAL_QUESTION_V1": RuntimeCanaryReport(
-                suite_id="general-canary",
-                suite_version="1",
-                canary_eligible=True,
-                release_eligible=True,
-                thresholds=RuntimeCanaryThresholds(),
-                evidence=RuntimeCanaryEvidence(
-                    kind="authorized_paired",
-                    agent_id="GENERAL_QUESTION_V1",
-                    agent_version=agent_version,
-                    runtime_plan_version=plan_version,
-                    authorization_ref="change-123",
-                    captured_at=datetime(2026, 8, 9, tzinfo=UTC),
-                    redaction_status="redacted",
-                ),
-            )
-        }
+        {"GENERAL_QUESTION_V1": report},
+        semantic_evidence={"GENERAL_QUESTION_V1": evidence},
     )
 
 

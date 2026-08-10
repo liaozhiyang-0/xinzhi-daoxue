@@ -9,6 +9,10 @@ from app.runtime import (
     RuntimeCanaryReport,
     RuntimeCanaryThresholds,
 )
+from app.runtime.semantic_evidence import (
+    RuntimeSemanticDimensions,
+    RuntimeSemanticEvidence,
+)
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 from app.services.runtime_launch_policy import (
     RuntimeLaunchMode,
@@ -17,6 +21,31 @@ from app.services.runtime_launch_policy import (
 
 AGENT_VERSION = "1.0"
 RUNTIME_PLAN_VERSION = "general-qa-v1"
+
+
+def _passing_semantic_evidence() -> RuntimeSemanticEvidence:
+    return RuntimeSemanticEvidence(
+        suite_id="general-canary",
+        case_id="general-case",
+        agent_id="GENERAL_QUESTION_V1",
+        agent_version=AGENT_VERSION,
+        runtime_plan_version=RUNTIME_PLAN_VERSION,
+        input_sha256="0" * 64,
+        legacy_output_sha256="1" * 64,
+        runtime_output_sha256="2" * 64,
+        dimensions=RuntimeSemanticDimensions(
+            task_fulfillment=1.0,
+            factual_correctness=1.0,
+            safety=1.0,
+        ),
+        decision="pass",
+        judge_type="human",
+        rubric_version="general-question-v1",
+        reviewer_ref="review-123",
+        reviewed_at=datetime(2026, 8, 9, tzinfo=UTC),
+        redaction_status="redacted",
+        authorization_ref="change-123",
+    )
 
 
 def _request(options: dict[str, object] | None = None) -> AgentRequest:
@@ -158,7 +187,8 @@ def test_configured_runtime_mode_accepts_matching_release_artifact(
                     redaction_status="redacted",
                 ),
             )
-        }
+        },
+        semantic_evidence={"GENERAL_QUESTION_V1": _passing_semantic_evidence()},
     )
     policy = RuntimeLaunchPolicy(
         f"GENERAL_QUESTION_V1={launch_mode}",
