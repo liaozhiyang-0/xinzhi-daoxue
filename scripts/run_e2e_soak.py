@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -136,7 +136,7 @@ async def _wait_task(
     while time.monotonic() < deadline:
         response = await client.get(f"/api/v1/tasks/{task_id}")
         response.raise_for_status()
-        task = response.json()
+        task = cast(dict[str, Any], response.json())
         if task.get("status") in TERMINAL_STATUSES:
             return task
         await asyncio.sleep(1)
@@ -219,8 +219,8 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
     workspace.raise_for_status()
     html = workspace.text
     asset_paths = (
-        "/debug-assets/ui-core.js?v=20260808-research-analysis-v13",
-        "/debug-assets/workspace.js?v=20260808-research-analysis-v13",
+        "/debug-assets/ui-core.js?v=20260810-runtime-controls-v1",
+        "/debug-assets/workspace.js?v=20260810-runtime-controls-v1",
     )
     asset_statuses: dict[str, int] = {}
     for path in asset_paths:
@@ -232,8 +232,8 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
         "workspace_status": workspace.status_code,
         "frontend_asset_statuses": asset_statuses,
         "frontend_build_ready": (
-            "ui-core.js?v=20260808-research-analysis-v13" in html
-            and "workspace.js?v=20260808-research-analysis-v13" in html
+            "ui-core.js?v=20260810-runtime-controls-v1" in html
+            and "workspace.js?v=20260810-runtime-controls-v1" in html
             and all(status == 200 for status in asset_statuses.values())
         ),
     }

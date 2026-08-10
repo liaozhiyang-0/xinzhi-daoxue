@@ -18,7 +18,12 @@ from app.contracts import (
     RuntimeReconciliationSubmission,
     UserRole,
 )
-from app.contracts.api import EventRead, TaskRead
+from app.contracts.api import (
+    EventRead,
+    TaskRead,
+    TaskRuntimeControlProjectionRead,
+    TaskRuntimeControlRead,
+)
 from app.contracts.conversation import ConversationContextBundle
 from app.contracts.research_analysis import (
     ResearchReviewDecision,
@@ -31,15 +36,16 @@ from app.dependencies import (
     get_db,
     get_provider,
 )
-from app.models import TaskModel, TaskStatus
+from app.models import AgentRunModel, TaskModel, TaskStatus
 from app.providers.base import AgentProvider
-from app.repositories import FileRepository, TaskRepository
+from app.repositories import AgentRunRepository, FileRepository, TaskRepository
 from app.repositories.sessions import SessionRepository
 from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
 from app.services.event_service import append_task_event
 from app.services.research_analysis_review import ResearchAnalysisReviewService
+from app.services.runtime_control_policy import control_policy_for_runtime_kind
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
 from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
@@ -53,6 +59,7 @@ TERMINAL_STATUSES = {
     TaskStatus.FAILED,
     TaskStatus.CANCELLED,
 }
+_TASK_RUNTIME_CONTROL_ACTIONS = ("pause", "resume", "approve", "input")
 
 
 def task_read(
@@ -340,6 +347,28 @@ async def get_task_events(
     return [EventRead.model_validate(event) for event in events]
 
 
+@router.get(
+    "/{task_id}/runtime-controls",
+    response_model=TaskRuntimeControlProjectionRead,
+    summary="Read redacted Runtime controls for a task",
+)
+async def task_runtime_controls(
+    task_id: str,
+    principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TaskRuntimeControlProjectionRead:
+    """Return only the state-aware task controls available to its owner.
+
+    The normal workspace must not scrape the debug execution endpoint for
+    checkpoint details. This projection is intentionally small and performs
+    no Runtime mutation or Provider call.
+    """
+
+    task = await _get_owned_task(db, task_id, principal)
+    runtime = await AgentRunRepository(db).get_for_task(task.id)
+    return _project_task_runtime_controls(task.id, runtime)
+
+
 @router.post(
     "/{task_id}/retry",
     response_model=TaskRead,
@@ -536,6 +565,108 @@ async def decide_runtime_plan_proposal(
     await db.commit()
     request.app.state.task_runner.submit(task.id)
     return task_read(task)
+
+
+def _project_task_runtime_controls(
+    task_id: str, runtime: AgentRunModel | None
+) -> TaskRuntimeControlProjectionRead:
+    """Return a fail-closed, checkpoint-free task control projection."""
+
+    if runtime is None:
+        return TaskRuntimeControlProjectionRead(
+            task_id=task_id,
+            controls=[
+                TaskRuntimeControlRead(
+                    action=action,
+                    available=False,
+                    reason_code="runtime_not_started",
+                    reason="This task has no controllable Runtime run.",
+                )
+                for action in _TASK_RUNTIME_CONTROL_ACTIONS
+            ],
+        )
+
+    policy = control_policy_for_runtime_kind(runtime.run_kind)
+    available = set(policy.available_controls(runtime.status))
+    if runtime.control_request:
+        available.discard("pause")
+
+    controls = [
+        TaskRuntimeControlRead(
+            action=action,
+            available=action in available,
+            reason_code=(
+                ""
+                if action in available
+                else _task_runtime_control_reason_code(
+                    action,
+                    runtime_status=runtime.status,
+                    control_request=runtime.control_request,
+                    declared_controls=policy.declared_controls,
+                )
+            ),
+            reason=(
+                ""
+                if action in available
+                else _task_runtime_control_reason(
+                    action,
+                    runtime_status=runtime.status,
+                    control_request=runtime.control_request,
+                    declared_controls=policy.declared_controls,
+                )
+            ),
+        )
+        for action in _TASK_RUNTIME_CONTROL_ACTIONS
+    ]
+    return TaskRuntimeControlProjectionRead(
+        task_id=task_id,
+        runtime_run_id=runtime.id,
+        run_kind=runtime.run_kind,
+        status=runtime.status,
+        state_version=runtime.state_version,
+        control_request=runtime.control_request,
+        controls=controls,
+    )
+
+
+def _task_runtime_control_reason_code(
+    action: str,
+    *,
+    runtime_status: str,
+    control_request: str,
+    declared_controls: tuple[str, ...],
+) -> str:
+    if action not in declared_controls:
+        return "runtime_control_not_supported"
+    if action == "pause" and control_request:
+        return "runtime_control_pending"
+    if runtime_status in {"completed", "failed", "cancelled"}:
+        return "runtime_terminal"
+    return "runtime_control_not_available_for_status"
+
+
+def _task_runtime_control_reason(
+    action: str,
+    *,
+    runtime_status: str,
+    control_request: str,
+    declared_controls: tuple[str, ...],
+) -> str:
+    code = _task_runtime_control_reason_code(
+        action,
+        runtime_status=runtime_status,
+        control_request=control_request,
+        declared_controls=declared_controls,
+    )
+    messages = {
+        "runtime_control_not_supported": "This Runtime does not declare this control.",
+        "runtime_control_pending": "A Runtime control request is already pending.",
+        "runtime_terminal": "Terminal Runtime runs cannot be controlled.",
+        "runtime_control_not_available_for_status": (
+            "This action is not available for the current Runtime status."
+        ),
+    }
+    return messages[code]
 
 
 async def _get_owned_task(

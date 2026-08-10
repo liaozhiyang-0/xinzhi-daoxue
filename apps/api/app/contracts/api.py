@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -93,6 +93,32 @@ class TaskRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     artifact_ids: list[str] = Field(default_factory=list)
+
+
+class TaskRuntimeControlRead(BaseModel):
+    """One state-aware Runtime action safe for the task owner to inspect."""
+
+    action: Literal["pause", "resume", "approve", "input"]
+    available: bool
+    reason_code: str = ""
+    reason: str = ""
+
+
+class TaskRuntimeControlProjectionRead(BaseModel):
+    """Redacted Runtime control state for the student-facing task workspace.
+
+    This deliberately excludes checkpoint state, request snapshots, Provider
+    identifiers and raw control data. Mutations remain on the existing Task
+    control endpoints, which enforce ownership and state transitions.
+    """
+
+    task_id: str
+    runtime_run_id: str = ""
+    run_kind: str = ""
+    status: str = ""
+    state_version: int = 0
+    control_request: str = ""
+    controls: list[TaskRuntimeControlRead] = Field(default_factory=list)
 
 
 class EventRead(BaseModel):

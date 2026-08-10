@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260808-research-analysis-v13">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260810-runtime-controls-v1">
 </head>
 <body class="workspace-page">
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -128,6 +128,26 @@
           <div id="answer-text" class="markdown-view markdown-document"></div>
           <div id="business-result" class="business-result"></div>
           <div id="answer-notices" class="notice-stack"></div>
+          <section id="runtime-task-controls" class="runtime-task-controls" hidden aria-labelledby="runtime-task-controls-title">
+            <header>
+              <div>
+                <span class="eyebrow">Agent Runtime</span>
+                <h3 id="runtime-task-controls-title">执行控制</h3>
+              </div>
+              <span id="runtime-task-status" class="runtime-task-status" role="status">正在读取状态</span>
+            </header>
+            <p id="runtime-task-controls-message">控制能力由后端 Runtime checkpoint 决定；页面不会读取调试信息或内部提示词。</p>
+            <div class="runtime-task-actions">
+              <button id="runtime-task-pause" class="button secondary" type="button" hidden>暂停</button>
+              <button id="runtime-task-resume" class="button secondary" type="button" hidden>恢复</button>
+              <button id="runtime-task-approve" class="button" type="button" hidden>提交审批</button>
+            </div>
+            <form id="runtime-task-input-form" class="runtime-task-input" hidden>
+              <label for="runtime-task-input">Runtime 正在等待补充信息</label>
+              <textarea id="runtime-task-input" maxlength="4000" rows="3" placeholder="补充必要信息；请勿填写密码、密钥或其他敏感信息。"></textarea>
+              <div><button id="runtime-task-submit-input" class="button" type="submit">提交并继续</button></div>
+            </form>
+          </section>
           <div class="answer-actions">
             <button id="copy-answer" type="button" class="text-button">复制回答</button>
             <button id="toggle-sources" type="button" class="text-button">查看资料依据</button>
@@ -290,7 +310,7 @@
     </div>
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260808-research-analysis-v13"></script>
-    <script src="/debug-assets/workspace.js?v=20260808-research-analysis-v13"></script>
+  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260810-runtime-controls-v1"></script>
+    <script src="/debug-assets/workspace.js?v=20260810-runtime-controls-v1"></script>
 </body>
 </html>
