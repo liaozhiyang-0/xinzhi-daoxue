@@ -60,7 +60,7 @@ def test_host_runtime_uses_host_endpoints(monkeypatch) -> None:
     assert environment["COMPOSE_PROJECT_NAME"] == "xinzhi-daoxue"
 
 
-def test_runtime_development_profile_enables_only_safe_local_defaults() -> None:
+def test_runtime_development_profile_enables_non_xingchen_defaults() -> None:
     launcher = load_launcher()
 
     profile = launcher.enable_runtime_development_profile(
@@ -71,10 +71,14 @@ def test_runtime_development_profile_enables_only_safe_local_defaults() -> None:
     assert profile["AGENT_RUNTIME_GENERAL_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_TEACHING_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_LAUNCH_MODES"] == (
         "ACADEMIC_PROBLEM_SOLVER=default,GENERAL_QUESTION_V1=default,"
         "LEARN_01_LOCAL_RETRIEVAL_V1=default,TEACH_01_LESSON_PREP_V1=default,"
-        "TEACH_02_ASSIGNMENT_REVIEW_V1=default"
+        "TEACH_02_ASSIGNMENT_REVIEW_V1=default,"
+        "RESEARCH_01_ACADEMIC_SEARCH_V1=default,"
+        "RESEARCH_02_ACADEMIC_WRITING_V1=default"
     )
     assert profile["AGENT_RUNTIME_RELEASE_GATE_REQUIRED"] == "false"
     assert "XINGCHEN_ENABLED" not in profile

@@ -42,6 +42,8 @@ RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
     "LEARN_01_LOCAL_RETRIEVAL_V1": "default",
     "TEACH_01_LESSON_PREP_V1": "default",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "default",
+    "RESEARCH_01_ACADEMIC_SEARCH_V1": "default",
+    "RESEARCH_02_ACADEMIC_WRITING_V1": "default",
 }
 
 
@@ -102,8 +104,8 @@ def enable_runtime_development_profile(
 ) -> dict[str, str]:
     """Return an explicit local Runtime profile for the student entry paths.
 
-    The profile is intentionally limited to local task families that have
-    durable Runtime plans and no Xingchen dependency. It is a local
+    The profile enables every non-Xingchen business Runtime with a durable
+    plan, including bounded external-research retrieval. It is a local
     development execution aid, not a production promotion: production keeps
     the normal semantic-evidence release gate.
     """
@@ -124,6 +126,8 @@ def enable_runtime_development_profile(
             "AGENT_RUNTIME_GENERAL_ENABLED": "true",
             "AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED": "true",
             "AGENT_RUNTIME_TEACHING_ENABLED": "true",
+            "AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED": "true",
+            "AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED": "true",
             "AGENT_RUNTIME_LAUNCH_MODES": ",".join(
                 f"{agent_id}={mode}"
                 for agent_id, mode in RUNTIME_DEVELOPMENT_LAUNCH_MODES.items()

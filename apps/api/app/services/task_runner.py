@@ -333,7 +333,10 @@ class TaskRunner:
         self.academic_writing_runtime = (
             AcademicWritingRuntimeService(
                 internal_agents,
-                enabled=knowledge_base.settings.agent_runtime_research_enabled,
+                enabled=(
+                    knowledge_base.settings.agent_runtime_research_enabled
+                    or knowledge_base.settings.agent_runtime_academic_writing_enabled
+                ),
                 tool_registry=tool_registry,
                 rag_retrieval=rag_retrieval,
                 retrieval_context=knowledge_qa.context_service,

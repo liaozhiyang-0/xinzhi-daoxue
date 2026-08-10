@@ -538,6 +538,9 @@ class Settings(BaseSettings):
     agent_runtime_shadow_enabled: bool = False
     agent_runtime_launch_modes: str = ""
     agent_runtime_research_enabled: bool = False
+    # Academic writing has its own Runtime gate so enabling it does not
+    # implicitly enable the isolated research-analysis adapter.
+    agent_runtime_academic_writing_enabled: bool = False
     agent_runtime_solver_enabled: bool = False
     agent_runtime_general_enabled: bool = False
     agent_runtime_general_auto_enabled: bool = False
