@@ -346,6 +346,8 @@ class GenericGoalRuntimeService:
                 value = facts.get(key)
                 if isinstance(value, str) and value.strip():
                     return value
+                if isinstance(value, (int, float, bool)):
+                    return str(value)
                 if isinstance(value, (dict, list)):
                     return json.dumps(value, ensure_ascii=False)
         return f"Runtime completed {len(run.nodes)} declared capabilities."

@@ -68,6 +68,7 @@ def test_task_api_executes_explicit_generic_goal_with_read_only_tool(settings) -
         assert task["status"] == "completed"
         assert task["agent_id"] == "GENERAL_QUESTION_V1"
         assert task["result_content"]["provider"] == "runtime"
+        assert task["result_content"]["answer"] == "5"
         assert task["result_content"]["structured_result"]["node_statuses"] == {
             "goal.step.1.tool-calculator": "succeeded"
         }

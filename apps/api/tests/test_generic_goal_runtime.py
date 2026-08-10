@@ -209,3 +209,21 @@ def test_registry_passes_actual_agent_to_goal_intake() -> None:
     assert plan.goal_contract is not None
     intake = plan.goal_contract.context["intake"]
     assert intake["agent_id"] == "ACTUAL_AGENT"
+
+
+def test_goal_runtime_renders_scalar_tool_output_as_answer() -> None:
+    run = AgentRun(
+        run_id="runtime-generic-scalar-output",
+        task_id="task-generic-scalar-output",
+        goal="render scalar output",
+        plan=GenericGoalRuntimeService(_registry()).build_plan(
+            _request(capability="tool.declared")
+        ),
+    )
+    node_id = next(iter(run.nodes))
+    run.nodes[node_id].observation = RuntimeObservation(
+        node_id=node_id,
+        facts={"output": 5},
+    )
+
+    assert GenericGoalRuntimeService._answer(run) == "5"
