@@ -520,6 +520,15 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
     assert calls == 2
     assert launch_preparation_calls == initial_launch_preparation_calls
 
+    proposals_after = api.client.get(
+        f"/api/v1/tasks/{task_id}/runtime-plan-proposals"
+    )
+    assert proposals_after.status_code == 200, proposals_after.text
+    persisted_proposals = proposals_after.json()
+    assert len(persisted_proposals) == 1
+    assert persisted_proposals[0]["proposal_id"] == proposal["proposal_id"]
+    assert persisted_proposals[0]["status"] == "applied"
+
     debug = api.client.get(f"/api/v1/debug/execution/{task_id}")
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
@@ -543,6 +552,15 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
         and data.get("data", {}).get("status") == "applied"
         for data in event_data
     )
+    proposal_events = [
+        data["data"]
+        for data in event_data
+        if data.get("data", {}).get("stage_id") == "runtime_plan_proposal"
+    ]
+    assert [item["status"] for item in proposal_events] == [
+        "approval_required",
+        "applied",
+    ]
     approval_events = [
         data["data"]
         for data in event_data

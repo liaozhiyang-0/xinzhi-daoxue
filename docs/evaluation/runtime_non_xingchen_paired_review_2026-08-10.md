@@ -642,3 +642,23 @@ They are ignored and must not be committed.
   replan. The browser diagnostic remains a failed semantic/provider stability
   check until the internal model profile produces a recoverable structured
   result within the bounded Runtime budget.
+
+## 38. 2026-08-11 authenticated teacher browser recheck
+
+- Re-ran the bounded browser diagnostic from a clean single-instance state;
+  the redacted report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_42632/report.json`.
+  The authenticated `admin` identity was accepted, the visible approval
+  control was enabled, the task resumed after the first plan-proposal
+  approval, and the browser observed 38 strictly increasing events with no
+  page errors or request failures.
+- The task still ended as
+  `runtime_replan_budget_exhausted` (`proposed plan exceeds remaining Runtime
+  budget`) after repeated internal structured-output failures. This repeats
+  the Provider/profile instability, not an approval or checkpoint-loss
+  finding; the frontend control path is verified, while real-provider Lesson
+  Prep stability remains unresolved.
+- The API regression now asserts that the successful post-approval path keeps
+  exactly one persisted plan proposal in `applied` state and emits only
+  `approval_required → applied` proposal events. The test does not convert the
+  failed browser Provider run into a Runtime success claim.
