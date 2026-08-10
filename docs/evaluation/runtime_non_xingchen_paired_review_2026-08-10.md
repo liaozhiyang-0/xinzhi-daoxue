@@ -529,3 +529,21 @@ They are ignored and must not be committed.
   `SOLVER_CT v1.0` baseline was modified. Independent semantic review and a
   human release decision remain required; no release, canary, or default
   authorization was created.
+
+## 32. 2026-08-11 browser-rendered workspace acceptance
+
+- The repository browser acceptance completed against one isolated test API
+  process with `APP_ENV=test`, `DEFAULT_AGENT_PROVIDER=mock`, Xingchen and
+  external Providers disabled, and a temporary SQLite database. Its static
+  and route preflight passed `19/19`; the browser flow produced 17 screenshots
+  with zero page errors and no server left listening on the target port.
+- The flow covered workspace empty state, CT/AE/DE task submission, evidence
+  expansion and linking, process and answer-info tabs, Solver text and image
+  input, Mock/fallback boundary presentation, execution and retrieval views,
+  demo center, 1280x720 presentation mode, dark theme, and 390px mobile
+  layout. The recorded assets are under
+  `docs/reviews/workspace_v2_screenshots/`.
+- This proves the static/browser interaction path under an isolated Mock
+  configuration. It does not prove real Provider semantic quality, Runtime
+  release authorization, or production browser behavior under external
+  dependencies.
