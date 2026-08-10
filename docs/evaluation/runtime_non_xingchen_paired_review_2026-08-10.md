@@ -509,3 +509,23 @@ They are ignored and must not be committed.
   `decision=needs_review`; provider-free preflight returned exit code 1 with
   `semantic_decision_not_pass`. The sidecar is diagnostic evidence only and
   cannot substitute for an independent human semantic review.
+
+## 31. 2026-08-11 Solver Runtime structural recheck
+
+- A fresh bounded single-instance paired run exercised
+  `ACADEMIC_PROBLEM_SOLVER` with Xingchen disabled. Legacy and Runtime both
+  completed 1/1 with matching agent IDs, zero timeouts, zero agent mismatches,
+  and zero event-order failures. Legacy produced two checkpoints and one
+  node; Runtime produced 15 checkpoints and four nodes. Both traces had no
+  unresolved failures or plan proposals.
+- The paired sample used `local_graph` without fallback. The observed Legacy
+  latency was 48.2 seconds and Runtime latency was 32.4 seconds; this is a
+  single diagnostic sample and does not establish a stable performance
+  baseline because earlier repeats showed substantial provider-latency
+  variance.
+- Offline packaging produced `structural_release_eligible=true` with
+  `agent_version=solver-runtime-v1` and
+  `runtime_plan_version=solver-runtime-v1`. No Solver source or frozen
+  `SOLVER_CT v1.0` baseline was modified. Independent semantic review and a
+  human release decision remain required; no release, canary, or default
+  authorization was created.
