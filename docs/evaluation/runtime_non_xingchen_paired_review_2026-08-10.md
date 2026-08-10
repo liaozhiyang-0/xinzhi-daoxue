@@ -599,3 +599,23 @@ They are ignored and must not be committed.
 - This is a UI authorization/state-presentation verification under the Mock
   profile. It does not establish real-provider semantic quality or a canary/
   default release decision; those gates remain unchanged.
+
+## 36. 2026-08-11 fresh Lesson Prep single-instance follow-up
+
+- A fresh bounded single-instance paired run used the local Spark/Qwen-backed
+  profile with Xingchen disabled and completed both Legacy and Runtime for
+  `TEACH_01_LESSON_PREP_V1`. The report is under
+  `.local_outputs/runtime_authorized_dev_e2e_20260811_lesson_ui_followup/report.json`.
+  Both runs completed 1/1 with matching Agent IDs, zero timeouts, zero Agent
+  mismatches, and zero event-order failures; the Runtime trace had 26
+  checkpoints and 47 strictly increasing events.
+- The Runtime result preserved `formative_assessment: []` and reached the
+  explicit `lesson_prep.quality_gate` approval. It also recovered two bounded
+  `StructuredOutputError`/`subagent_child_result_missing` attempts through the
+  configured replan path: the redacted report records two plan-proposal
+  observations, one approved plan proposal, and one quality-gate approval, with
+  no unresolved failure codes and no `approval_budget_exhausted` terminal state.
+- This is useful recovery evidence, but not a clean zero-proposal qualification
+  and not a semantic release pass. The structured-output instability remains a
+  provider/profile risk to monitor; independent semantic review and the
+  version-bound human release authorization are still required.
