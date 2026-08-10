@@ -586,7 +586,7 @@ async def event_stream(
     cursor: int,
 ) -> AsyncGenerator[str, None]:
     heartbeat_seconds = request.app.state.settings.sse_heartbeat_seconds
-    while not await request.is_disconnected():
+    while True:
         async with request.app.state.session_factory() as db:
             repository = TaskRepository(db)
             task = await repository.get(task_id)
@@ -603,6 +603,12 @@ async def event_stream(
                 )
             if task.status in TERMINAL_STATUSES:
                 return
+        # A completed Task must close its historical SSE response without
+        # waiting on a client-disconnect probe. In-process ASGI clients can
+        # keep that probe pending after the request body is exhausted, which
+        # otherwise leaves terminal event replay open indefinitely.
+        if await request.is_disconnected():
+            return
         if not events:
             yield ": heartbeat\n\n"
             await asyncio.sleep(heartbeat_seconds)

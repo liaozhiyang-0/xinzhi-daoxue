@@ -41,6 +41,12 @@ is an engineering checkpoint, not a production release approval.
 - A broad Windows application-suite run was allowed to run for 364 seconds
   and timed out without a failure report. It is not counted as a passing
   result; slow task-path fixtures should continue to be run separately.
+- A later broad non-RESEARCH_03 Runtime/SSE matrix again exceeded the local
+  124-second command limit and is likewise not counted as passing. Focused
+  terminal-replay/reconnect and Task-to-HTTP-SSE sequence tests passed after
+  terminal SSE replay was changed to inspect durable Task state before waiting
+  on a disconnect probe. Each focused TestClient fixture still takes roughly
+  13 seconds locally, so the remaining broad suite should be sharded in CI.
 
 ## Authorized development E2E update (2026-08-10)
 

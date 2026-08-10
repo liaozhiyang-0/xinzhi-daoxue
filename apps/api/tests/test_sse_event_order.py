@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
+from app.api.v1.tasks import event_stream
 from app.contracts import AgentEventType
 from app.models import TaskModel, TaskStatus
 from app.repositories import (
@@ -56,6 +58,70 @@ def test_sse_ids_follow_database_sequence(api, client) -> None:
     ]
     assert ids == sorted(ids)
     assert ids == list(range(1, len(ids) + 1))
+
+
+def test_terminal_sse_replay_does_not_wait_for_disconnect_probe(api, app) -> None:
+    """A terminal replay must complete even when no disconnect is observable."""
+
+    session = api.create_session()
+    task_id = "task-terminal-sse-replay"
+
+    async def seed_terminal_event() -> None:
+        async with app.state.session_factory() as db:
+            db.add(
+                TaskModel(
+                    id=task_id,
+                    session_id=session["id"],
+                    user_id="user-test",
+                    course_id="CT",
+                    intent="general_qa",
+                    agent_id="GENERAL_QUESTION_V1",
+                    status=TaskStatus.COMPLETED,
+                    input_content={"text": "terminal replay"},
+                )
+            )
+            await db.flush()
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.TASK_QUEUED,
+                agent_id="GENERAL_QUESTION_V1",
+            )
+            await append_task_event(
+                db,
+                task_id,
+                AgentEventType.TASK_COMPLETED,
+                agent_id="GENERAL_QUESTION_V1",
+            )
+            await db.commit()
+
+    class TerminalReplayRequest:
+        def __init__(self, state: object) -> None:
+            self.app = SimpleNamespace(state=state)
+
+        async def is_disconnected(self) -> bool:
+            raise AssertionError("terminal replay must not await disconnect")
+
+    async def collect(cursor: int) -> list[str]:
+        return [
+            chunk
+            async for chunk in event_stream(
+                TerminalReplayRequest(app.state), task_id, cursor=cursor
+            )
+        ]
+
+    asyncio.run(seed_terminal_event())
+    full_chunks = asyncio.run(collect(0))
+    reconnect_chunks = asyncio.run(collect(1))
+
+    full_records = _parse_sse("".join(full_chunks))
+    reconnect_records = _parse_sse("".join(reconnect_chunks))
+    assert [record["id"] for record in full_records] == [1, 2]
+    assert [record["event"] for record in full_records] == [
+        "task.queued",
+        "task.completed",
+    ]
+    assert [record["id"] for record in reconnect_records] == [2]
 
 
 def test_concurrent_event_appends_keep_unique_contiguous_sequences(
