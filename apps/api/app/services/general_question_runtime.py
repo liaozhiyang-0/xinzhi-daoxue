@@ -835,6 +835,9 @@ class GeneralQuestionRuntimeService:
                     reason_codes=[f"{self.runtime_name}_execution_required"],
                 )
             if verify_state.status == RuntimeNodeStatus.PARTIAL:
+                approval_decision = self._verification_approval_decision(current)
+                if approval_decision is not None:
+                    return approval_decision
                 if current.iteration >= current.budget.max_iterations - 1:
                     return RuntimeDecision(
                         action=DecisionAction.FAIL,
@@ -913,6 +916,20 @@ class GeneralQuestionRuntimeService:
                 f"{self.runtime_name} runtime ended with {run.status.value}",
             )
         return result
+
+    def _verification_approval_decision(
+        self, run: AgentRun
+    ) -> RuntimeDecision | None:
+        """Allow business runtimes to turn a quality gate into approval.
+
+        A quality approval is distinct from an adaptive plan replacement. The
+        default Runtime keeps the existing bounded replan behavior; business
+        adapters can opt into a direct human gate when the current result is
+        usable but requires explicit review.
+        """
+
+        del run
+        return None
 
     def _is_valid_result(self, result: AgentResult) -> bool:
         return (

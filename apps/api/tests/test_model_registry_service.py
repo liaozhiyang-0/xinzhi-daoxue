@@ -263,6 +263,37 @@ async def test_structured_output_error_does_not_call_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_opt_in_allows_structured_output_fallback() -> None:
+    spark = FakeProvider(
+        "iflytek_spark",
+        "spark-x",
+        [
+            StructuredOutputError(
+                "invalid schema",
+                provider="iflytek_spark",
+                model="spark-x",
+            )
+        ],
+    )
+    qwen = FakeProvider(
+        "dashscope",
+        "qwen3.7-plus",
+        [response("dashscope", "qwen3.7-plus")],
+    )
+    gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
+
+    result = await gateway.generate_json_for_task(
+        "lesson_prep",
+        messages=[],
+        extra_options={"_allow_structured_fallback": True},
+    )
+
+    assert result.provider == "dashscope"
+    assert spark.calls == 1
+    assert qwen.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_fallback_response_includes_failed_attempt_usage() -> None:
     spark = FakeProvider(
         "iflytek_spark",

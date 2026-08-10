@@ -172,6 +172,41 @@ def test_low_quality_plan_waits_for_approval_and_resume_reuses_execution() -> No
     assert run.nodes[service.verify_node_id].attempt == 1
 
 
+def test_quality_gate_uses_direct_approval_with_plan_proposals_enabled() -> None:
+    fake = FakeLessonAgents(
+        [
+            make_result(
+                business_data={
+                    "learning_objectives": ["Explain the concept"],
+                    "lesson_flow": ["Introduce"],
+                    "activities": ["Guided practice"],
+                    "formative_assessment": ["Exit ticket"],
+                }
+            )
+        ]
+    )
+    service = LessonPrepRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
+    request = make_request("task-lesson-proposal-gate")
+    run = make_run(service, request)
+
+    async def unexpected_proposal(*_args: object) -> object:
+        raise AssertionError("quality approval must not create a plan proposal")
+
+    with pytest.raises(RuntimeRunSuspended):
+        asyncio.run(
+            service.run(
+                request,
+                run,
+                plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
+            )
+        )
+
+    assert run.last_decision is not None
+    assert run.last_decision.action == DecisionAction.REQUEST_APPROVAL
+    assert run.last_decision.approval_scope == service.approval_scope
+    assert fake.calls == 1
+
+
 def test_lesson_prep_checkpoint_recovery_reuses_result_without_provider_call() -> None:
     fake = FakeLessonAgents(
         [

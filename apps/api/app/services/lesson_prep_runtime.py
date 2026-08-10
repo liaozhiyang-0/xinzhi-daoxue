@@ -163,6 +163,17 @@ class LessonPrepRuntimeService(GeneralQuestionRuntimeService):
             )
         )
 
+    def _verification_approval_decision(
+        self, run: AgentRun
+    ) -> RuntimeDecision | None:
+        if not self._approval_required_for_run(run):
+            return None
+        return RuntimeDecision(
+            action=DecisionAction.REQUEST_APPROVAL,
+            approval_scope=self.approval_scope,
+            reason_codes=["lesson_prep_quality_gate"],
+        )
+
     def _mark_verification_approved(self, run: AgentRun) -> None:
         """Complete only the checkpointed quality gate after approval."""
 

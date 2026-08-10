@@ -142,11 +142,17 @@ class InternalAgentExecutionService:
                 raise RuntimeError("科研前沿简报服务未注入")
             return await self.research_frontier.run(request)
         internal_id = WORKFLOW_INTERNAL_AGENT_MAP[workflow_agent_id]
+        model_options = (
+            {"_allow_structured_fallback": True}
+            if request.options.get("runtime_allow_structured_fallback") is True
+            else None
+        )
         internal = await self.hub.run_text(
             internal_id,
             input_text=self._input_text(request, context),
             request_id=str(request.options.get("request_id", "")) or None,
             max_tokens=self._max_tokens(request),
+            extra_options=model_options,
         )
         answer, business_data, warnings, risks = self._formatters[workflow_agent_id](
             internal.structured_result

@@ -22,6 +22,7 @@ from app.services.internal_agent_execution import InternalAgentExecutionService
 class FakeHub:
     def __init__(self) -> None:
         self.input_text = ""
+        self.extra_options: dict[str, Any] | None = None
 
     def list_agents(self) -> list[dict[str, Any]]:
         return [
@@ -36,6 +37,7 @@ class FakeHub:
 
     async def run_text(self, agent_id: str, **kwargs: Any) -> InternalAgentResult:
         self.input_text = str(kwargs["input_text"])
+        self.extra_options = kwargs.get("extra_options")
         values: dict[str, dict[str, Any]] = {
             "LESSON_PREP_LOCAL_V1": {
                 "title": "电容连续性",
@@ -165,6 +167,23 @@ async def test_lesson_internal_agent_reuses_local_rag_context() -> None:
     assert result.business_data["activities"] == ["证据导入", "例题讨论"]
     assert "[S1]" in hub.input_text
     assert result.artifacts[0].content["execution_source"] == "internal_agent_hub"
+
+
+@pytest.mark.asyncio
+async def test_runtime_internal_agent_enables_structured_fallback() -> None:
+    executor, hub = service()
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "options": {
+                "request_id": "request-runtime",
+                "runtime_allow_structured_fallback": True,
+            }
+        }
+    )
+
+    await executor.run("TEACH_01_LESSON_PREP_V1", runtime_request)
+
+    assert hub.extra_options == {"_allow_structured_fallback": True}
 
 
 @pytest.mark.asyncio

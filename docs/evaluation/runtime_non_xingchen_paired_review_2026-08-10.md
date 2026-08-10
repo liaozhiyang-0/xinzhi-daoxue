@@ -16,21 +16,20 @@
 
 | Agent | Legacy | Runtime | 事件/Checkpoint | 自动预审结论 |
 |---|---|---|---|---|
-| `TEACH_01_LESSON_PREP_V1` | 完成 | `waiting_approval` 超时 | 23--24 个事件，13--14 个 checkpoint，3 个节点 | 不通过；首次子 Agent 结构化输出为 `StructuredOutputError`，暴露失败 child 复用问题 |
+| `TEACH_01_LESSON_PREP_V1` | 完成 | 完成 | Legacy 18/2；Runtime 27/14，3 个节点 | 结构与前后端链路通过；语义仍需人工复核 |
 | `TEACH_02_ASSIGNMENT_REVIEW_V1` | 完成 | 完成 | Legacy 18/2；Runtime 27/13，3 个节点 | 结构与前后端链路通过；语义仍需人工复核 |
-| `RESEARCH_02_ACADEMIC_WRITING_V1` | 完成 | 一次完成，一次 `waiting_approval` 超时 | 成功样本 27/13；失败样本 24/13，3 个节点 | 不稳定；不能作为默认发布依据 |
+| `RESEARCH_02_ACADEMIC_WRITING_V1` | 完成 | 完成 | Legacy 21/2；Runtime 27/13，3 个节点 | 结构与前后端链路通过；语义仍需人工复核 |
 
-说明：所有已完成 Runtime 样本均确认 Agent ID 匹配、事件序列严格递增，且结果 artifact 可被原应用结果视图读取。`waiting_approval` 不代表成功；它表示 Runtime 保留了可恢复状态并等待控制。
+说明：最新三组配对均为 2/2 完成，确认 Agent ID 匹配、事件序列严格递增，且结果 artifact 可被原应用结果视图读取。历史失败样本仍保留在私有目录中，用于证明 child retry、结构化 fallback 和质量审批修复过程。`waiting_approval` 不代表成功；它表示 Runtime 保留了可恢复状态并等待控制。
 
 ## 3. 私有证据位置
 
 以下目录已被忽略，不应提交到公共仓库：
 
-- Assignment Review 配对：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_assignment_review_pair\report.json)
-- Academic Writing 成功 Runtime：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_academic_writing_runtime\report.json)
-- Academic Writing 配对重试：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_academic_writing_pair\report.json)
-- Lesson Prep 配对：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_lesson_prep_pair\report.json)
-- Lesson Prep 修复前后验证：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_lesson_prep_runtime_retry4\report.json)
+- Lesson Prep 最新配对：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_lesson_prep_pair_after_quality_gate_fix\report.json)
+- Assignment Review 最新配对：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_assignment_review_pair_after_runtime_hardening\report.json)
+- Academic Writing 最新配对：[report.json](C:\Users\86184\Desktop\xinzhi-daoxue\.local_outputs\runtime_authorized_dev_e2e_20260810_academic_writing_pair_after_runtime_hardening\report.json)
+- 历史失败与修复证据仍保留在同一 `.local_outputs` 根目录下，不进入公共仓库。
 
 前端原应用成功链路的浏览器证据见：[runtime_non_xingchen_application_e2e_2026-08-10.md](C:\Users\86184\Desktop\xinzhi-daoxue\docs\evaluation\runtime_non_xingchen_application_e2e_2026-08-10.md)。该证据覆盖输入、Task、SSE、Runtime、外部检索和结果视图，但不替代语义等价评审。
 
@@ -45,13 +44,15 @@
 - Task 创建保持非阻塞，Provider 调用未放入路由请求线程。
 - Runtime 已产生可恢复的 plan、节点状态、checkpoint、控制事件和结果 artifact。
 - 已完成样本的事件序列严格递增，Legacy/Runtime 的目标 Agent ID 匹配。
-- Assignment Review 已完成一次 Legacy/Runtime 全流程配对。
+- 三个新增业务 Agent 均完成最新 Legacy/Runtime 全流程配对。
 - `runtime_child_run.py` 的失败 child 不再无限复用：失败且没有结果的 child 会在有界重规划时创建新的 durable child；新增回归测试已通过。
+- Runtime 子 Agent 可在显式授权下对结构化输出错误使用已配置 fallback；Legacy 默认“不自动切换 Provider”的行为保持不变。
+- Lesson Prep 的业务质量门与自适应重规划已分离：质量门只请求一次人工审批，批准后复用结果完成验证。
 
 ### 4.2 未通过项与风险
 
-- Lesson Prep 的本地模型结构化输出可能返回 `StructuredOutputError`；Runtime 会安全停在审批/重规划状态，但当前业务不能稳定产出结果。
-- Academic Writing 出现一次成功、一次结构化输出失败，说明当前模型/结构化输出链路仍有波动。
+- 最新三组配对各只有一个合成输入样本，不能代表长期稳定性或真实用户分布。
+- 本轮 fallback 只验证了开发环境已配置的 Provider 链路；未验证星辰 Flow，也不应据此推断生产 Provider 行为。
 - 自动审批仅用于开发链路验证，不能替代教师、研究负责人或发布责任人的语义判断。
 - 本轮未证明 Legacy 与 Runtime 的语义等价性，也未证明可设为生产默认。
 
@@ -60,7 +61,7 @@
 ### 自动建议
 
 建议：**继续开发环境灰度，暂不设为默认，暂不发布生产**。  
-理由：Assignment Review 链路通过，但 Lesson Prep 未通过且 Academic Writing 稳定性不足；当前证据不能支持全范围默认切换。
+理由：三条 Runtime 路径的应用级结构链路已通过一轮配对，但样本量有限且尚未完成独立语义评审；当前证据不足以支持生产默认切换。
 
 ### 人工最终决定（必须由责任人填写）
 
@@ -86,6 +87,6 @@
 
 ## 7. 后续门槛
 
-1. 重启并确认 API 加载 child retry 修复后，重新跑 Lesson Prep；至少取得连续 3 次 Runtime 完成样本。
-2. 对 Lesson Prep 和 Academic Writing 各做独立语义评审，逐对记录等价性、质量和风险。
+1. 对三条路径各增加至少 3 个不同合成输入，检查连续完成率、fallback 率和审批恢复率。
+2. 对三条路径各做独立语义评审，逐对记录等价性、质量和风险。
 3. 只有在语义评审、前端显示检查和责任人发布决定均完成后，才考虑扩大灰度。

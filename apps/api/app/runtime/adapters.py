@@ -314,6 +314,7 @@ def register_subagent_handlers(
                     "runtime_parent_run_id": run.run_id,
                     "runtime_subagent_id": _definition.subagent_id,
                     "runtime_subagent_version": _definition.version,
+                    "runtime_allow_structured_fallback": True,
                 }
             )
             request = request.model_copy(update={"options": options})

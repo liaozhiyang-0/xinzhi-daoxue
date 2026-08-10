@@ -203,6 +203,9 @@ class ModelService:
         route = self.registry.get_route(task_type)
         call_options = dict(extra_options or {})
         allow_route_fallback = bool(call_options.pop("_allow_route_fallback", True))
+        allow_structured_fallback = bool(
+            call_options.pop("_allow_structured_fallback", False)
+        )
         preferred_alias = call_options.pop("_preferred_route_alias", None)
         max_retries = (
             self.settings.model_max_retries
@@ -298,7 +301,10 @@ class ModelService:
                 failed_usage = self._merge_usage(
                     failed_usage, self._usage_from_details(exc.details)
                 )
-                if isinstance(exc, (InvalidModelRequestError, StructuredOutputError)):
+                if isinstance(exc, InvalidModelRequestError) or (
+                    isinstance(exc, StructuredOutputError)
+                    and not allow_structured_fallback
+                ):
                     raise
         if last_error is not None:
             attempted = [item for item in aliases if item]
