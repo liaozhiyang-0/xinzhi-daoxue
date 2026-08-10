@@ -300,7 +300,9 @@ class InternalAgentHub:
         schema_json = self._schema_json(definition)
         route = self.model_service.registry.get_route(definition.task_type)
         primary = self.model_service.registry.get_model(route.primary)
-        if primary.provider == "iflytek_spark":
+        if primary.provider == "iflytek_spark" and not bool(
+            options.get("_prefer_route_fallback", False)
+        ):
             response = await self._reason_then_structure(
                 definition,
                 input_text=input_text.strip(),

@@ -662,3 +662,28 @@ They are ignored and must not be committed.
   exactly one persisted plan proposal in `applied` state and emits only
   `approval_required → applied` proposal events. The test does not convert the
   failed browser Provider run into a Runtime success claim.
+
+## 39. 2026-08-11 Lesson Prep Runtime recovery follow-up
+
+- The prior failure was reproduced with redacted Runtime budget evidence: the
+  approval was applied, but unavailable internal model execution caused four
+  failed typed child runs across the initial plan and one proposed replan. The
+  terminal `runtime_replan_budget_exhausted` was therefore a Provider/profile
+  availability failure, not an approval checkpoint loss.
+- Runtime typed sub-agents now accept the existing definition-driven
+  development Mock only when the internal Agent is unavailable and the Mock is
+  allowed by the active development/test configuration. Configured Spark/Qwen
+  execution remains the first path; Mock results retain the explicit `mock`
+  provider and warning markers.
+- A fresh authenticated browser acceptance run used one API PID and completed
+  after the first approval: one child run, 27 strictly increasing events, no
+  page errors, and no request failures. The result provider was `mock`.
+- A separate real-provider paired run used one API PID, an isolated temporary
+  SQLite database, Xingchen disabled, and the locally configured Spark/Qwen
+  Providers. The private report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_real_pair_followup/`.
+  Legacy and Runtime completed 2/2 with zero timeouts, agent mismatches, or
+  event-order failures. Runtime used 13 checkpoints and three nodes, produced
+  27 strictly increasing events, applied no plan proposal, and required one
+  quality-gate approval. This is development verification evidence, not a
+  production release authorization.

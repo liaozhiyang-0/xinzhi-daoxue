@@ -187,6 +187,61 @@ async def test_runtime_internal_agent_enables_structured_fallback() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lesson_runtime_replan_prefers_configured_route_fallback() -> None:
+    executor, hub = service()
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "options": {
+                "request_id": "request-runtime-replan",
+                "runtime_allow_structured_fallback": True,
+                "lesson_prep_runtime": {
+                    "execute": True,
+                    "runtime_replan_iteration": 1,
+                },
+            }
+        }
+    )
+
+    await executor.run("TEACH_01_LESSON_PREP_V1", runtime_request)
+
+    assert hub.extra_options == {
+        "_allow_structured_fallback": True,
+        "_prefer_route_fallback": True,
+    }
+
+
+def test_lesson_formatter_fills_empty_title_for_reviewable_draft() -> None:
+    answer, data, _, _ = InternalAgentExecutionService._lesson(
+        {
+            "title": "",
+            "learning_objectives": [],
+            "lesson_flow": [],
+            "formative_assessment": [],
+            "warnings": [],
+        }
+    )
+
+    assert data["title"] == "Lesson plan draft"
+    assert answer.startswith("## ")
+
+
+def test_lesson_runtime_uses_deep_structured_output_budget() -> None:
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "options": {
+                "lesson_prep_runtime": {"execute": True},
+                "response_depth": "standard",
+            }
+        }
+    )
+
+    assert InternalAgentExecutionService._max_tokens(runtime_request) == 512
+    assert InternalAgentExecutionService._max_tokens(
+        request(Intent.LESSON_PREP)
+    ) == 384
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("workflow_id", "intent", "field"),
     [

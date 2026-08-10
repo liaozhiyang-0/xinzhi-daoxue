@@ -142,11 +142,19 @@ class InternalAgentExecutionService:
                 raise RuntimeError("科研前沿简报服务未注入")
             return await self.research_frontier.run(request)
         internal_id = WORKFLOW_INTERNAL_AGENT_MAP[workflow_agent_id]
-        model_options = (
+        model_options: dict[str, Any] | None = (
             {"_allow_structured_fallback": True}
             if request.options.get("runtime_allow_structured_fallback") is True
             else None
         )
+        if workflow_agent_id == "TEACH_01_LESSON_PREP_V1":
+            runtime_options = request.options.get("lesson_prep_runtime")
+            if (
+                isinstance(runtime_options, dict)
+                and self._runtime_replan_iteration(runtime_options) > 0
+            ):
+                model_options = dict(model_options or {})
+                model_options["_prefer_route_fallback"] = True
         internal = await self.hub.run_text(
             internal_id,
             input_text=self._input_text(request, context),
@@ -1104,11 +1112,29 @@ class InternalAgentExecutionService:
 
     @staticmethod
     def _max_tokens(request: AgentRequest) -> int:
-        return {
+        depth = str(request.options.get("response_depth", "standard"))
+        tokens = {
             "brief": 256,
             "standard": 384,
             "deep": 512,
-        }.get(str(request.options.get("response_depth", "standard")), 384)
+        }.get(depth, 384)
+        if (
+            depth == "standard"
+            and isinstance(request.options.get("lesson_prep_runtime"), dict)
+        ):
+            # Lesson Prep's structured contract contains multiple bounded
+            # sections. Give the Runtime normalizer the existing deep-output
+            # allowance so a valid draft is not truncated into empty fields.
+            return 512
+        return tokens
+
+    @staticmethod
+    def _runtime_replan_iteration(options: dict[str, Any]) -> int:
+        value = options.get("runtime_replan_iteration", 0)
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _execution_metadata(result: InternalAgentResult) -> dict[str, Any]:
@@ -1141,6 +1167,8 @@ class InternalAgentExecutionService:
             "formative_assessment": assessment,
             "teacher_notes": warnings,
         }
+        if not str(data["title"]).strip():
+            data["title"] = "Lesson plan draft"
         answer = InternalAgentExecutionService._markdown(
             str(data["title"]),
             (

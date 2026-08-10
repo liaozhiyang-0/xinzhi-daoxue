@@ -206,6 +206,9 @@ class ModelService:
         allow_structured_fallback = bool(
             call_options.pop("_allow_structured_fallback", False)
         )
+        prefer_route_fallback = bool(
+            call_options.pop("_prefer_route_fallback", False)
+        )
         preferred_alias = call_options.pop("_preferred_route_alias", None)
         max_retries = (
             self.settings.model_max_retries
@@ -221,14 +224,18 @@ class ModelService:
                     "preferred_alias": preferred_alias,
                 },
             )
-        aliases = (
-            [preferred_alias]
-            if preferred_alias is not None
-            else [
+        if preferred_alias is not None:
+            aliases = [preferred_alias]
+        elif prefer_route_fallback and route.fallback:
+            aliases = [
+                route.fallback,
+                route.primary if allow_route_fallback else None,
+            ]
+        else:
+            aliases = [
                 route.primary,
                 route.fallback if allow_route_fallback else None,
             ]
-        )
         last_error: ModelProviderError | None = None
         failed_usage: ModelUsage | None = None
         for index, alias in enumerate(item for item in aliases if item):

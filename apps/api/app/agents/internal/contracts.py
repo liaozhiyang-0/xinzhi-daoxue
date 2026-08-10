@@ -96,9 +96,14 @@ class CircuitPlan(BaseModel):
 
 
 class LessonPrepDraft(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    learning_objectives: list[str] = Field(min_length=1, max_length=8)
-    lesson_flow: list[str] = Field(min_length=1, max_length=12)
+    # An explicitly empty title is reviewable; a missing title remains
+    # invalid because the field has no default value.
+    title: str = Field(max_length=200)
+    # Empty sections are valid structured output and are routed to the
+    # Lesson Prep human-quality gate. Missing fields remain invalid because
+    # these fields have no default value.
+    learning_objectives: list[str] = Field(max_length=8)
+    lesson_flow: list[str] = Field(max_length=12)
     formative_assessment: list[str] = Field(default_factory=list, max_length=8)
     warnings: list[str] = Field(default_factory=list, max_length=8)
 

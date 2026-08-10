@@ -44,10 +44,12 @@ class RuntimeChildRunService:
         session_factory: async_sessionmaker[AsyncSession],
         internal_agents: Any,
         *,
+        development_mock_provider: Any | None = None,
         after_batch_hook: RuntimeBatchHook | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.internal_agents = internal_agents
+        self.development_mock_provider = development_mock_provider
         self.after_batch_hook = after_batch_hook
 
     async def execute(
@@ -114,10 +116,10 @@ class RuntimeChildRunService:
         async def invoke(
             current: AgentRun, node: RuntimeNode
         ) -> RuntimeObservation:
-            result = await agent_service.run(
+            result = await self._run_subagent(
+                agent_service,
                 definition.target_agent_id,
                 request,
-                None,
             )
             return RuntimeObservation(
                 node_id=node.node_id,
@@ -189,6 +191,30 @@ class RuntimeChildRunService:
         if result is None:
             raise RuntimeNodeError("subagent_child_result_missing")
         return result, child_run.run_id
+
+    async def _run_subagent(
+        self,
+        agent_service: Any,
+        agent_id: str,
+        request: AgentRequest,
+    ) -> AgentResult:
+        """Use the explicit development Mock when the local Agent is unavailable."""
+
+        if (
+            self.development_mock_provider is not None
+            and hasattr(agent_service, "available")
+            and not agent_service.available(agent_id)
+            and self.development_mock_provider.is_allowed(agent_id)
+        ):
+            options = dict(request.options)
+            options["allow_agent_mock"] = True
+            mock_request = request.model_copy(update={"options": options})
+            return await self.development_mock_provider.run(
+                agent_id,
+                mock_request,
+                stream=False,
+            )
+        return await agent_service.run(agent_id, request, None)
 
     async def _load_or_create(
         self,

@@ -175,7 +175,32 @@ async function collectEvidence(page, taskId) {
     readJson(page, `/api/v1/tasks/${encodeURIComponent(taskId)}/events`),
     readJson(page, `/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`),
   ]);
+  let debug = null;
+  try {
+    debug = await readJson(
+      page,
+      `/api/v1/debug/execution/${encodeURIComponent(taskId)}`,
+    );
+  } catch {}
   const sequences = events.map((event) => Number(event.sequence));
+  const runtime = debug?.runtime || {};
+  const runtimeNodes = Array.isArray(runtime.observability?.nodes)
+    ? runtime.observability.nodes
+      .filter((node) => node && typeof node === "object")
+      .map((node) => ({
+        node_id: node.node_id || null,
+        status: node.status || null,
+        error_code: node.error_code || null,
+      }))
+    : [];
+  const runtimeChildren = Array.isArray(runtime.children)
+    ? runtime.children.map((child) => ({
+      run_id: child.run_id || null,
+      parent_node_id: child.parent_node_id || null,
+      status: child.status || null,
+      state_version: child.state_version || null,
+    }))
+    : [];
   return {
     identity: { role: identity.role, user_id: identity.user_id || identity.id },
     task: {
@@ -191,6 +216,9 @@ async function collectEvidence(page, taskId) {
       control_scope: controls.control_scope,
       runtime_run_id: controls.runtime_run_id,
     },
+    runtime_budget: runtime.budget || null,
+    runtime_nodes: runtimeNodes,
+    runtime_children: runtimeChildren,
     event_count: events.length,
     event_sequences_strictly_increasing: sequences.every(
       (value, index) => index === 0 || value > sequences[index - 1],

@@ -54,6 +54,59 @@ class FailOnceInternalAgents(FakeInternalAgents):
         return AgentResult(agent_id=agent_id, provider="mock", answer="child answer")
 
 
+class UnavailableInternalAgents(FakeInternalAgents):
+    def available(self, _agent_id: str) -> bool:
+        return False
+
+    async def run(
+        self,
+        _agent_id: str,
+        _request: AgentRequest,
+        _context: object,
+    ) -> AgentResult:
+        raise AssertionError("unavailable internal Agent must not be called")
+
+
+class DevelopmentMockFallback:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def is_allowed(self, _agent_id: str) -> bool:
+        return True
+
+    async def run(
+        self,
+        agent_id: str,
+        request: AgentRequest,
+        *,
+        stream: bool,
+    ) -> AgentResult:
+        assert stream is False
+        self.calls += 1
+        assert request.options["allow_agent_mock"] is True
+        return AgentResult(agent_id=agent_id, provider="mock", answer="mock child")
+
+
+def test_runtime_child_uses_mock_when_internal_unavailable() -> None:
+    async def scenario() -> None:
+        fallback = DevelopmentMockFallback()
+        service = RuntimeChildRunService(
+            None,  # type: ignore[arg-type]
+            UnavailableInternalAgents(),
+            development_mock_provider=fallback,
+        )
+        result = await service._run_subagent(
+            service.internal_agents,
+            "TEACH_01_LESSON_PREP_V1",
+            AgentRequest(task_id="mock-child", session_id="s", user_id="u"),
+        )
+        assert result.provider == "mock"
+        assert result.answer == "mock child"
+        assert fallback.calls == 1
+
+    asyncio.run(scenario())
+
+
 def test_typed_subagent_has_durable_child_run_and_reuses_terminal_result(
     tmp_path,
 ) -> None:

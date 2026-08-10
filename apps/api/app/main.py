@@ -332,6 +332,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tool_registry=tool_registry,
         runtime_subagent_registry=runtime_subagent_registry,
         runtime_handler_registry=runtime_handler_registry,
+        development_mock_provider=development_mock_provider,
     )
     learning_loop = LearningLoopService(
         teaching_interactions=teaching_interactions,

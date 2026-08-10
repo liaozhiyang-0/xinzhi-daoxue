@@ -6,10 +6,12 @@ from typing import Any, cast
 
 import pytest
 from app.agents.internal import InternalAgentHub
+from app.agents.internal.contracts import LessonPrepDraft
 from app.contracts import ImageInput, ModelResponse, ModelUsage
 from app.core.config import Settings
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
+from pydantic import ValidationError
 
 
 class FakeModelService:
@@ -104,6 +106,28 @@ class FakeModelService:
 def hub() -> tuple[InternalAgentHub, FakeModelService]:
     service = FakeModelService()
     return InternalAgentHub(cast(ModelService, service)), service
+
+
+def test_lesson_draft_allows_explicit_empty_sections_but_requires_fields() -> None:
+    draft = LessonPrepDraft.model_validate(
+        {
+            "title": "",
+            "learning_objectives": [],
+            "lesson_flow": [],
+            "formative_assessment": [],
+            "warnings": ["teacher review required"],
+        }
+    )
+
+    assert draft.learning_objectives == []
+    assert draft.lesson_flow == []
+    with pytest.raises(ValidationError):
+        LessonPrepDraft.model_validate(
+            {
+                "title": "Lesson draft",
+                "lesson_flow": [],
+            }
+        )
 
 
 def test_internal_agent_catalog_maps_to_model_routes() -> None:

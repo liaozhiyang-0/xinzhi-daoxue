@@ -185,6 +185,7 @@ class TaskRunner:
         tool_registry: ToolRegistry | None = None,
         runtime_subagent_registry: RuntimeSubagentRegistry | None = None,
         runtime_handler_registry: RuntimeHandlerRegistry | None = None,
+        development_mock_provider: AgentProvider | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -252,7 +253,11 @@ class TaskRunner:
             ),
         )
         self.runtime_child_run = (
-            RuntimeChildRunService(session_factory, internal_agents)
+            RuntimeChildRunService(
+                session_factory,
+                internal_agents,
+                development_mock_provider=development_mock_provider,
+            )
             if internal_agents is not None
             else None
         )
