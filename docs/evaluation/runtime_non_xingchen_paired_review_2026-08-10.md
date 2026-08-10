@@ -252,3 +252,21 @@ They are ignored and must not be committed.
   eligible, but `semantic_evidence_missing` blocked release. No semantic
   judgement or human release decision was fabricated. The generated files are
   development-only private artifacts and are not committed.
+
+## 16. 2026-08-11 Lesson Prep paired diagnostic
+
+- A fresh isolated single-instance Lesson Prep run completed both Legacy and
+  Runtime cases under the explicit Runtime development profile. The private
+  report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_lesson_runtime_profile_followup/`.
+  Both cases matched `TEACH_01_LESSON_PREP_V1`, completed without timeout, and
+  emitted strictly increasing Task events. The Runtime trace contained 14
+  checkpoints, three Runtime nodes, one subagent retry after a recovered
+  `StructuredOutputError`, and no unresolved Runtime failure.
+- The run did not reproduce the earlier repeated-proposal loop: the Runtime
+  report recorded zero plan proposals and no approval-budget exhaustion. The
+  result nevertheless remains diagnostic, not release evidence. The Legacy
+  side used the local fallback path with zero model calls, while Runtime used
+  `local_agent` with two model calls; the offline packager therefore blocked
+  the pair for provider and model-call regression. No structural suite or
+  semantic release decision was promoted from this run.
