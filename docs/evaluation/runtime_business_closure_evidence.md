@@ -47,3 +47,13 @@ were no timeouts or Agent mismatches. The reports are retained under ignored
 These are real Provider/application traces, but they still lack the independent
 semantic judgement sidecars and version-bound human release approvals required
 for canary or default launch.
+
+The authenticated teacher browser path was also verified under the real local
+Provider profile. The redacted report is under
+`.local_outputs/runtime_teacher_browser_acceptance_real_local_20260811_retry/`.
+The single-instance flow completed with an administrator identity, one visible
+approval action, `provider=local_agent`, 27 strictly increasing events, and no
+page/request errors. A Workspace SSE/control-projection reconciliation fix was
+required and covered by the focused UI contract suite. This strengthens
+application-flow evidence only; it does not satisfy semantic sidecar or human
+release-authorization requirements.

@@ -157,3 +157,12 @@ def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
     assert "events.close()" not in error_block
     assert "pollTimer = setInterval" in error_block
     assert "refreshRuntimeTaskControls(id)" in error_block
+
+
+def test_workspace_reconciles_controls_while_sse_is_open() -> None:
+    static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
+    script = (static_root / "workspace.js").read_text(encoding="utf-8")
+
+    assert "let controlRefreshTimer = null" in script
+    assert "controlRefreshTimer = setInterval" in script
+    assert "clearInterval(controlRefreshTimer)" in script

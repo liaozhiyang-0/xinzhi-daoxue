@@ -18,18 +18,22 @@ const outputDir = path.resolve(
   process.env.XINZHI_TEACHER_BROWSER_OUTPUT
     || `.local_outputs/runtime_teacher_browser_acceptance_${process.pid}`,
 );
+const providerProfile = process.env.XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE || "mock";
+const useRealLocalProviders = providerProfile === "real_local";
 const adminLogin = "runtime_teacher_acceptance_admin";
 const adminPassword = "RuntimeTeacherAcceptance2026!";
 
-const runtimeLaunchModes = [
-  "ACADEMIC_PROBLEM_SOLVER",
-  "GENERAL_QUESTION_V1",
-  "LEARN_01_LOCAL_RETRIEVAL_V1",
-  "TEACH_01_LESSON_PREP_V1",
-  "TEACH_02_ASSIGNMENT_REVIEW_V1",
-  "RESEARCH_01_ACADEMIC_SEARCH_V1",
-  "RESEARCH_02_ACADEMIC_WRITING_V1",
-].map((agentId) => `${agentId}=default`).join(",");
+const runtimeLaunchModes = useRealLocalProviders
+  ? "TEACH_01_LESSON_PREP_V1=default"
+  : [
+      "ACADEMIC_PROBLEM_SOLVER",
+      "GENERAL_QUESTION_V1",
+      "LEARN_01_LOCAL_RETRIEVAL_V1",
+      "TEACH_01_LESSON_PREP_V1",
+      "TEACH_02_ASSIGNMENT_REVIEW_V1",
+      "RESEARCH_01_ACADEMIC_SEARCH_V1",
+      "RESEARCH_02_ACADEMIC_WRITING_V1",
+    ].map((agentId) => `${agentId}=default`).join(",");
 
 const serverEnvironment = {
   ...process.env,
@@ -38,10 +42,10 @@ const serverEnvironment = {
   AUTH_REQUIRED: "true",
   AUTH_ALLOW_GUEST: "false",
   DEFAULT_AGENT_PROVIDER: "mock",
-  ALLOW_AGENT_MOCKS: "true",
+  ALLOW_AGENT_MOCKS: useRealLocalProviders ? "false" : "true",
   XINGCHEN_ENABLED: "false",
-  IFLYTEK_SPARK_ENABLED: "false",
-  DASHSCOPE_ENABLED: "false",
+  IFLYTEK_SPARK_ENABLED: useRealLocalProviders ? "true" : "false",
+  DASHSCOPE_ENABLED: useRealLocalProviders ? "true" : "false",
   SPARK_ENABLED: "false",
   OVERALL_ROUTING_ENABLED: "false",
   RAG_ENABLED: "false",
@@ -151,13 +155,14 @@ async function waitForRuntimeApproval(page, taskId, observations) {
       runtime_status: projection.status,
       control_scope: projection.control_scope,
       plan_proposal_id: projection.plan_proposal?.proposal_id || null,
+      controls: projection.controls || [],
       approve_visible: await page.locator("#runtime-task-approve").isVisible().catch(() => false),
       approve_enabled: await page.locator("#runtime-task-approve").isEnabled().catch(() => false),
     });
     if (["completed", "failed", "cancelled"].includes(task.status)) return task;
     if (projection.status === "waiting_approval") {
       const approve = page.locator("#runtime-task-approve");
-      await approve.waitFor({ state: "visible", timeout: 5_000 });
+      await approve.waitFor({ state: "visible", timeout: 15_000 });
       if (await approve.isDisabled()) throw new Error("teacher approval control is disabled");
       await approve.click();
       await sleep(900);
@@ -230,7 +235,7 @@ async function collectEvidence(page, taskId) {
   fs.mkdirSync(outputDir, { recursive: true });
   const report = {
     profile: "isolated_authenticated_teacher_browser",
-    provider_profile: "local_agent_with_inherited_model_config",
+    provider_profile: providerProfile,
     base_url: baseURL,
     single_api_pid: null,
     task_id: null,

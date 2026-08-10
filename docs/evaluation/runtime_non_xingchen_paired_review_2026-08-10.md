@@ -730,3 +730,34 @@ development profile:
 - This confirms application-level Runtime ownership for the general and local
   retrieval paths under the bounded development profile. It does not establish
   semantic parity or production release authorization.
+
+## 42. 2026-08-11 real-provider authenticated teacher browser flow
+
+- `scripts/run_runtime_teacher_browser_acceptance.js` now supports the
+  `XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE=real_local` profile. Mock remains the
+  default; the real profile disables Agent Mocks, enables the configured local
+  Spark/Qwen Providers, and launches only `TEACH_01_LESSON_PREP_V1`.
+- The bounded browser report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_real_local_20260811_retry/report.json`.
+  One isolated API process authenticated as `admin`, created a Lesson Prep
+  task, exposed an enabled approval button at the Runtime checkpoint, resumed
+  the task after the visible approval action, and completed with
+  `result_provider=local_agent`.
+- The completed trace contained one Runtime child, three succeeded nodes, 27
+  strictly increasing events, zero page errors, and zero request failures.
+  This is real application/browser-flow evidence, but not semantic release
+  evidence: independent semantic sidecars, version-bound human authorization,
+  release preflight, and a canary decision remain outstanding.
+- During the first real run, the API projection exposed `approve.available=true`
+  while the UI retained a stale running projection. The unified Workspace now
+  periodically reconciles public Runtime controls while SSE remains connected;
+  the focused workspace contract suite passed 8/8 after the fix.
+
+Reproducible bounded command (starts exactly one API/Worker process inside the
+script):
+
+```powershell
+$env:NODE_PATH = (Join-Path (Get-Location) '.codex-tmp\playwright-runner\node_modules')
+$env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
+node scripts\run_runtime_teacher_browser_acceptance.js
+```

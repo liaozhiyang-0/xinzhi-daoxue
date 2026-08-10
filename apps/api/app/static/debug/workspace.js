@@ -1877,10 +1877,11 @@ function attachmentRef(file) { return { file_id: file.id, filename: file.filenam
 async function waitForTask(id, runSequence) {
   state.liveProcessSteps.clear();
   return new Promise((resolve, reject) => {
-    let settled = false; let pollTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
+    let settled = false; let pollTimer = null; let controlRefreshTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
     const cleanup = () => {
       events.close();
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (controlRefreshTimer) { clearInterval(controlRefreshTimer); controlRefreshTimer = null; }
       if (state.activeTaskWait?.runSequence === runSequence) state.activeTaskWait = null;
     };
     const cancel = () => { if (settled) return; settled = true; cleanup(); resolve(null); };
@@ -1920,6 +1921,13 @@ async function waitForTask(id, runSequence) {
       updateLiveProgress(liveProgressData(event));
       void refreshRuntimeTaskControls(id);
     });
+    // SSE progress events can arrive while an earlier control projection is
+    // still in flight. Reconcile the public control surface periodically so a
+    // waiting approval is rendered even when event and request completion
+    // order differs.
+    controlRefreshTimer = setInterval(() => {
+      if (!settled) void refreshRuntimeTaskControls(id);
+    }, 900);
     events.onerror = () => {
       if (settled) return;
       // Keep EventSource open so the browser retries the same stream and
