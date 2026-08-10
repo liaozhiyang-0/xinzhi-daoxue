@@ -17,6 +17,7 @@ from app.runtime import (
     AgentRun,
     AgentRunPlan,
     RuntimeNode,
+    RuntimeNodeError,
     RuntimeNodeSuspended,
     RuntimeRunStatus,
     RuntimeSubagentDefinition,
@@ -37,6 +38,19 @@ class FakeInternalAgents:
         _context: object,
     ) -> AgentResult:
         self.calls += 1
+        return AgentResult(agent_id=agent_id, provider="mock", answer="child answer")
+
+
+class FailOnceInternalAgents(FakeInternalAgents):
+    async def run(
+        self,
+        agent_id: str,
+        request: AgentRequest,
+        context: object,
+    ) -> AgentResult:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeNodeError("structured_output_failed")
         return AgentResult(agent_id=agent_id, provider="mock", answer="child answer")
 
 
@@ -142,6 +156,96 @@ def test_typed_subagent_has_durable_child_run_and_reuses_terminal_result(
         assert restarted_parent.budget.child_consumption[child_run_id][
             "model_calls"
         ] == 1
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_failed_child_without_result_gets_a_fresh_replan_attempt(tmp_path) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{tmp_path / 'child-replan.db'}"
+        )
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        fake = FailOnceInternalAgents()
+        service = RuntimeChildRunService(session_factory, fake)
+        parent = AgentRun(
+            run_id="parent-replan",
+            task_id="task-child-replan",
+            goal="retry a failed child agent",
+            plan=AgentRunPlan(
+                plan_id="parent-replan-plan",
+                goal="retry a failed child agent",
+                nodes=[
+                    RuntimeNode(
+                        node_id="parent.execute",
+                        node_type="subagent",
+                        handler_id="subagent.TEST_AGENT",
+                    )
+                ],
+            ),
+        )
+        request = AgentRequest(
+            task_id="task-child-replan",
+            session_id="session-child-replan",
+            user_id="user-child-replan",
+        )
+        async with session_factory() as db:
+            db.add(
+                SessionModel(
+                    id="session-child-replan",
+                    user_id="user-child-replan",
+                    course_id="CT",
+                )
+            )
+            db.add(
+                TaskModel(
+                    id="task-child-replan",
+                    session_id="session-child-replan",
+                    user_id="user-child-replan",
+                    course_id="CT",
+                    intent="general_qa",
+                    agent_id="GENERAL_QUESTION_V1",
+                    input_content={"text": "retry"},
+                )
+            )
+            await db.flush()
+            await AgentRunRepository(db).create(
+                parent,
+                agent_id="GENERAL_QUESTION_V1",
+                provider="mock",
+            )
+            await db.commit()
+
+        definition = RuntimeSubagentDefinition(
+            subagent_id="TEST_AGENT",
+            target_agent_id="GENERAL_QUESTION_V1",
+        )
+        with pytest.raises(RuntimeNodeError, match="subagent_child_result_missing"):
+            await service.execute_with_run(
+                parent,
+                parent.plan.nodes[0],
+                definition,
+                request,
+            )
+
+        result, replacement_id = await service.execute_with_run(
+            parent,
+            parent.plan.nodes[0],
+            definition,
+            request,
+        )
+        assert result.answer == "child answer"
+        assert fake.calls == 2
+
+        async with session_factory() as db:
+            children = await AgentRunRepository(db).list_children(parent.run_id)
+            assert len(children) == 2
+            assert replacement_id == children[-1].id
+            assert children[0].status == RuntimeRunStatus.FAILED.value
+            assert children[1].status == RuntimeRunStatus.COMPLETED.value
         await engine.dispose()
 
     asyncio.run(scenario())

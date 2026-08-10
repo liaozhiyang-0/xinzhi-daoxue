@@ -209,7 +209,16 @@ class RuntimeChildRunService:
                 if restored is not None:
                     restored.control_request = model.control_request
                     restored.control_data = dict(model.control_data or {})
-                    return restored
+                    # A failed child without a result cannot be resumed: the
+                    # parent Runtime's bounded replan must get a fresh child
+                    # attempt instead of replaying the same terminal error.
+                    # Completed children and suspended children remain
+                    # durable/resumable as before.
+                    if not (
+                        restored.status == RuntimeRunStatus.FAILED
+                        and self._result_from_run(restored) is None
+                    ):
+                        return restored
             child_run = AgentRun(
                 run_id=uuid4().hex,
                 task_id=parent_run.task_id,

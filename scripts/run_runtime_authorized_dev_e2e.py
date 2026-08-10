@@ -15,11 +15,12 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 RunMode = Literal["legacy", "runtime"]
 PairOrder = Literal["legacy-first", "runtime-first", "alternate"]
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+MAX_AUTO_APPROVALS = 3
 SENSITIVE_KEYS = {
     "api_key",
     "authorization",
@@ -78,6 +79,39 @@ CASES: tuple[E2ECase, ...] = (
             "给出来源，并明确不确定性。"
         ),
     ),
+    E2ECase(
+        case_id="lesson_prep_runtime_handoff",
+        agent_id="TEACH_01_LESSON_PREP_V1",
+        runtime_option_key="lesson_prep_runtime",
+        course_id="CT",
+        intent="lesson_prep",
+        question=(
+            "请为电路理论中的基尔霍夫定律设计一节脱敏的课堂活动，"
+            "包含学习目标、形成性评价和教师复核点。"
+        ),
+    ),
+    E2ECase(
+        case_id="assignment_review_runtime_handoff",
+        agent_id="TEACH_02_ASSIGNMENT_REVIEW_V1",
+        runtime_option_key="assignment_review_runtime",
+        course_id="CT",
+        intent="assignment_review",
+        question=(
+            "题目：一个10 V电压源串联5欧姆电阻，求电流。"
+            "学生答案：2 A。请按步骤诊断并给教师反馈，不要自动定分。"
+        ),
+    ),
+    E2ECase(
+        case_id="academic_writing_runtime_handoff",
+        agent_id="RESEARCH_02_ACADEMIC_WRITING_V1",
+        runtime_option_key="academic_writing_runtime",
+        course_id="CT",
+        intent="academic_writing",
+        question=(
+            "请根据一个关于电路理论实验教学的脱敏研究问题，"
+            "给出论文提纲、待核实的论断和引用检查清单。"
+        ),
+    ),
 )
 
 
@@ -113,6 +147,14 @@ def parse_args() -> argparse.Namespace:
         choices=("legacy-first", "runtime-first", "alternate"),
         default="alternate",
         help="Order the two modes within each pair to expose order effects.",
+    )
+    parser.add_argument(
+        "--auto-approve-dev",
+        action="store_true",
+        help=(
+            "development-only: approve Runtime waiting_approval checkpoints "
+            "and record each approval in the private report"
+        ),
     )
     return parser.parse_args()
 
@@ -208,7 +250,7 @@ def create_task(
         },
     )
     response.raise_for_status()
-    return response.json()
+    return cast(dict[str, Any], response.json())
 
 
 def await_task(
@@ -219,9 +261,11 @@ def await_task(
     *,
     poll_interval: float,
     timeout_seconds: float,
-) -> tuple[dict[str, Any], int]:
+    auto_approve_dev: bool = False,
+) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
     started = time.monotonic()
     latest: dict[str, Any] = {}
+    control_actions: list[dict[str, Any]] = []
     while time.monotonic() - started < timeout_seconds:
         response = client.get(
             f"{base_url}/tasks/{task_id}", params={"user_id": user_id}
@@ -229,11 +273,90 @@ def await_task(
         response.raise_for_status()
         latest = response.json()
         if str(latest.get("status", "")).casefold() in TERMINAL_STATUSES:
-            return latest, round((time.monotonic() - started) * 1000)
+            return (
+                latest,
+                round((time.monotonic() - started) * 1000),
+                control_actions,
+            )
+        if auto_approve_dev:
+            controls_response = client.get(
+                f"{base_url}/tasks/{task_id}/runtime-controls",
+                params={"user_id": user_id},
+            )
+            controls_response.raise_for_status()
+            projection = controls_response.json()
+            approval_attempt_count = sum(
+                1
+                for action in control_actions
+                if action.get("action") in {"approve", "approve_conflict"}
+            )
+            approve_available = any(
+                item.get("action") == "approve" and item.get("available")
+                for item in projection.get("controls", [])
+                if isinstance(item, dict)
+            )
+            if (
+                projection.get("status") == "waiting_approval"
+                and projection.get("runtime_run_id")
+                and approve_available
+                and approval_attempt_count < MAX_AUTO_APPROVALS
+            ):
+                approval = client.post(
+                    f"{base_url}/tasks/{task_id}/approve",
+                    params={
+                        "runtime_run_id": projection["runtime_run_id"],
+                    },
+                    json={
+                        "decision": "approved",
+                        "reason": "authorized development E2E control test",
+                        "expected_state_version": projection.get("state_version"),
+                    },
+                )
+                if approval.status_code == 409:
+                    # The worker can advance the checkpoint between the
+                    # projection read and this optimistic-concurrency write.
+                    # Re-read on the next poll instead of treating that race
+                    # as a failed E2E run.
+                    control_actions.append(
+                        {
+                            "action": "approve_conflict",
+                            "runtime_run_id": projection["runtime_run_id"],
+                            "state_version": projection.get("state_version"),
+                            "actor": "anonymous_development_test",
+                        }
+                    )
+                else:
+                    approval.raise_for_status()
+                    control_actions.append(
+                        {
+                            "action": "approve",
+                            "runtime_run_id": projection["runtime_run_id"],
+                            "state_version": projection.get("state_version"),
+                            "actor": "anonymous_development_test",
+                        }
+                    )
+            elif (
+                projection.get("status") == "waiting_approval"
+                and approval_attempt_count >= MAX_AUTO_APPROVALS
+                and not any(
+                    action.get("action") == "approval_budget_exhausted"
+                    for action in control_actions
+                )
+            ):
+                control_actions.append(
+                    {
+                        "action": "approval_budget_exhausted",
+                        "runtime_run_id": projection.get("runtime_run_id"),
+                        "state_version": projection.get("state_version"),
+                        "actor": "anonymous_development_test",
+                        "max_auto_approval_attempts": MAX_AUTO_APPROVALS,
+                    }
+                )
         time.sleep(poll_interval)
     return (
         {**latest, "status": "timeout", "timeout_seconds": timeout_seconds},
         round((time.monotonic() - started) * 1000),
+        control_actions,
     )
 
 
@@ -340,19 +463,21 @@ def run_one(
     sample_id: str,
     poll_interval: float,
     timeout_seconds: float,
+    auto_approve_dev: bool,
 ) -> dict[str, Any]:
     session_id = make_session(
         client, base_url, user_id, case, mode, sample_id
     )
     created = create_task(client, base_url, user_id, session_id, case, mode)
     task_id = str(created["id"])
-    terminal, observed_wait_ms = await_task(
+    terminal, observed_wait_ms, control_actions = await_task(
         client,
         base_url,
         task_id,
         user_id,
         poll_interval=poll_interval,
         timeout_seconds=timeout_seconds,
+        auto_approve_dev=auto_approve_dev,
     )
     actual_agent = str(terminal.get("agent_id", ""))
     if actual_agent != case.agent_id:
@@ -369,6 +494,7 @@ def run_one(
             "actual_agent_id": actual_agent,
             "events": {"captured": False},
             "result": {"status": terminal.get("status")},
+            "control_actions": control_actions,
             "artifact_dir": None,
         }
     events = task_events(client, base_url, task_id)
@@ -391,6 +517,7 @@ def run_one(
         "result": result_summary(
             terminal, execution, observed_wait_ms=observed_wait_ms
         ),
+        "control_actions": control_actions,
         "artifact_dir": str(artifact_dir),
     }
 
@@ -406,12 +533,13 @@ def main() -> int:
         raise SystemExit("--repeat-count must be between 1 and 20")
     output = args.output.resolve()
     report: dict[str, Any] = {
-        "schema_version": "runtime_authorized_dev_e2e.v2",
+        "schema_version": "runtime_authorized_dev_e2e.v3",
         "started_at": datetime.now(UTC).isoformat(),
         "base_url": api_root(args.base_url),
         "case_ids": [case.case_id for case in cases],
         "repeat_count": args.repeat_count,
         "pair_order": args.pair_order,
+        "auto_approve_dev": args.auto_approve_dev,
         "results": [],
     }
     # A development API on loopback must never be redirected through a
@@ -433,6 +561,7 @@ def main() -> int:
                             sample_id=sample_id,
                             poll_interval=args.poll_interval,
                             timeout_seconds=args.timeout_seconds,
+                            auto_approve_dev=args.auto_approve_dev,
                         )
                     )
     report["completed_at"] = datetime.now(UTC).isoformat()
