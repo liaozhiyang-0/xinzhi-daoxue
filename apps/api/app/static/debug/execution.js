@@ -981,6 +981,148 @@ function renderAll(data) {
   if (taskId && !terminal && !executionEventStream && !executionEventStreamRetryTimer && !executionEventStreamExhausted) connectExecutionEventStream(taskId);
 }
 
+// LearningLoop controls use the same durable CAS boundary as the public API.
+// Keep the UI capability-driven so a backend policy change cannot accidentally
+// turn an unavailable action into a client-side request.
+function learningRuntimeControlActionAvailable(projection, action) {
+  const entry = learningRuntimeControlEntry(projection, action);
+  const availableControls = Array.isArray(projection?.available_controls)
+    ? projection.available_controls
+    : [];
+  return entry?.available === true
+    && availableControls.includes(action)
+    && learningRuntimeControlStateVersion(projection) != null;
+}
+
+function learningRuntimeControlContractSurface(reference, projection) {
+  const status = projection?.status || reference.status || reference.snapshot.status;
+  const availableControls = Array.isArray(projection?.available_controls)
+    ? projection.available_controls
+    : [];
+  const rows = ["pause", "resume", "approve", "input"].map((action) => {
+    const entry = learningRuntimeControlEntry(projection, action);
+    const available = learningRuntimeControlActionAvailable(projection, action);
+    return el("div", { class: "runtime-control-row" }, [
+      el("strong", { text: learningRuntimeControlLabels[action] }),
+      badge(available ? "ready" : "blocked", available ? "backend available" : "unavailable"),
+      el("span", { text: `reason_code: ${entry?.reason_code || "not_reported"}` }),
+      el("p", { text: entry?.reason || "The backend has not exposed this action for the current checkpoint." }),
+    ]);
+  });
+  return el("div", { id: "learning-runtime-control-contract", class: "debug-surface" }, [
+    el("h3", { text: "LearningLoop control contract" }),
+    el("p", { text: "Actions are rendered from the redacted backend projection and submitted with the current state_version." }),
+    kvSurface("Control projection", [
+      ["status", status],
+      ["state_version", projection?.state_version || reference.snapshot.state_version],
+      ["available_controls", availableControls],
+      ["control_scope", projection?.control_scope || reference.snapshot.control_scope],
+      ["projection_error", projection?.fetch_error_code],
+    ]),
+    el("div", { class: "runtime-control-list" }, rows),
+  ]);
+}
+
+function renderLearningRuntimeControls(reference) {
+  const panel = $("#runtime-controls");
+  if (!panel) return;
+  const projection = learningRuntimeControlProjection(reference);
+  const status = runtimeStatusKey(projection?.status || reference.status || reference.snapshot.status);
+  panel.hidden = false;
+  panel.dataset.learningRuntime = "true";
+  const title = panel.querySelector("#runtime-controls-title");
+  if (title) title.textContent = "LearningLoop Operator Control";
+  const description = panel.querySelector(".runtime-control-heading p");
+  if (description) description.textContent = "Only actions exposed by the backend checkpoint are enabled.";
+  const state = $("#runtime-control-state");
+  if (state) {
+    state.textContent = `LearningLoop: ${runtimeStatusLabel(status)}`;
+    state.dataset.status = status || "unknown";
+  }
+  ["pause", "resume", "approve"].forEach((action) => {
+    const button = $(`#runtime-${action}`);
+    if (!button) return;
+    const available = learningRuntimeControlActionAvailable(projection, action);
+    button.hidden = !available;
+    button.disabled = runtimeControlBusy || !available;
+    button.setAttribute("aria-disabled", String(button.disabled));
+    button.title = available
+      ? `Submit ${action} with expected_state_version=${learningRuntimeControlStateVersion(projection)}`
+      : (learningRuntimeControlEntry(projection, action)?.reason || "Unavailable for the current checkpoint");
+  });
+  const inputAvailable = learningRuntimeControlActionAvailable(projection, "input");
+  const inputForm = $("#runtime-input-form");
+  if (inputForm) inputForm.hidden = !inputAvailable;
+  const inputSubmit = $("#runtime-input-submit");
+  if (inputSubmit) inputSubmit.disabled = runtimeControlBusy || !inputAvailable;
+  panel.querySelector("#learning-runtime-control-contract")?.remove();
+  panel.append(learningRuntimeControlContractSurface(reference, projection));
+  const feedback = $("#runtime-control-feedback");
+  if (feedback) {
+    feedback.className = `runtime-control-feedback${runtimeControlFeedback?.tone ? ` ${runtimeControlFeedback.tone}` : ""}`;
+    feedback.textContent = runtimeControlFeedback?.message || "";
+  }
+}
+
+async function executeLearningRuntimeControl(action = "approve", inputData = null) {
+  const reference = learningRuntimeReference(execution);
+  const projection = learningRuntimeControlProjection(reference);
+  if (!reference || runtimeControlBusy || !learningRuntimeControlActionAvailable(projection, action)) {
+    if (reference && !runtimeControlBusy) {
+      setRuntimeControlFeedback("The backend has not enabled this control for the current checkpoint.", "warning");
+      renderLearningRuntimeControls(reference);
+    }
+    return;
+  }
+  let data = {};
+  if (action === "input") {
+    const text = String(inputData?.text || $("#runtime-input")?.value || "").trim();
+    if (!text) {
+      $("#runtime-input")?.focus();
+      setRuntimeControlFeedback("Enter the information required by the Runtime.", "warning");
+      return;
+    }
+    data = { text };
+  }
+  const expectedStateVersion = learningRuntimeControlStateVersion(projection);
+  runtimeControlBusy = true;
+  setRuntimeControlFeedback(`Submitting LearningLoop ${action}...`, "pending");
+  renderLearningRuntimeControls(reference);
+  try {
+    await api(`/api/v1/learning/runtime/${encodeURIComponent(reference.runId)}/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        expected_state_version: expectedStateVersion,
+        data,
+        idempotency_key: `execution_${action}_${crypto.randomUUID()}`,
+      }),
+    });
+    if (action === "input") $("#runtime-input").value = "";
+    const [statusRefresh, controlsRefresh] = await Promise.all([
+      loadLearningRuntimeStatus(execution, true),
+      loadLearningRuntimeControls(execution, true),
+    ]);
+    setRuntimeControlFeedback(
+      statusRefresh == null || controlsRefresh == null
+        ? "Control submitted, but the refreshed Runtime projection is incomplete."
+        : `LearningLoop ${action} submitted and status refreshed.`,
+      statusRefresh == null || controlsRefresh == null ? "warning" : "success",
+    );
+  } catch (error) {
+    setRuntimeControlFeedback(safeRuntimeControlError(error), "failed");
+  } finally {
+    runtimeControlBusy = false;
+    if (reference) renderLearningRuntimeControls(reference);
+  }
+}
+
+function submitLearningRuntimeInput(event) {
+  event.preventDefault();
+  void executeLearningRuntimeControl("input");
+}
+
 function stopRuntimePolling() {
   runtimePollToken += 1;
   if (runtimePollTimer) window.clearTimeout(runtimePollTimer);
@@ -1049,6 +1191,7 @@ window.addEventListener("DOMContentLoaded", () => {
     connectExecutionEventStream(taskId, { preserveCursor: executionEventStreamTaskId === taskId });
   });
   all("[data-runtime-action]").forEach((button) => button.addEventListener("click", () => executeRuntimeControl(button.dataset.runtimeAction)));
+  $("#runtime-input-form")?.addEventListener("submit", submitLearningRuntimeInput);
   if (location.pathname === "/debug/rag") document.querySelector('[data-tab-target="retrieval"]').click();
   if ($("#task-id").value) loadExecution();
 });

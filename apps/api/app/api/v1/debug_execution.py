@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import NotFoundError
 from app.dependencies import get_db, require_admin
 from app.models import AgentRunModel, AgentRunNodeModel, TaskModel
 from app.repositories import AgentRunRepository
 from app.runtime import AgentRun, build_runtime_observability
+from app.services.learning_loop import LearningLoopService
 from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(
@@ -73,6 +75,52 @@ def _read_runtime_handoff(run: AgentRunModel | None) -> dict[str, Any]:
         return {}
     handoff = run.control_data.get("runtime_handoff")
     return dict(handoff) if isinstance(handoff, dict) else {}
+
+
+async def _read_learning_runtime_projection(
+    request: Request,
+    db: AsyncSession,
+    task: TaskModel,
+) -> dict[str, Any]:
+    """Expose the latest LearningLoop checkpoint without private payloads."""
+
+    run = await db.scalar(
+        select(AgentRunModel)
+        .where(
+            AgentRunModel.task_id == task.id,
+            AgentRunModel.run_kind.in_(
+                ("teaching_interaction", "learning_progress")
+            ),
+        )
+        .order_by(AgentRunModel.created_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        return {}
+    service = getattr(request.app.state, "learning_loop", None)
+    if not isinstance(service, LearningLoopService):
+        return {}
+    try:
+        status = await service.runtime_status(db, run.id, user_id=task.user_id)
+    except NotFoundError:
+        # A stale or partially-created learning run must not break the main
+        # execution debug projection. The dedicated status endpoint remains
+        # the authoritative error surface for that run.
+        return {}
+    return {
+        "run_id": status.run_id,
+        "runtime_id": status.runtime_id,
+        "run_kind": status.run_kind,
+        "status": status.status,
+        "state_version": status.state_version,
+        "control_scope": status.control_scope,
+        "available_controls": list(status.available_controls),
+        "approval_required": status.approval_required,
+        "resumable": status.resumable,
+        "node_statuses": [
+            node.model_dump(mode="json") for node in status.node_statuses
+        ],
+    }
 
 
 @router.get("/metrics/summary", response_model=dict[str, Any])
@@ -284,6 +332,7 @@ async def get_execution(
             .limit(1)
         )
     runtime_handoff = _read_runtime_handoff(run)
+    learning_runtime = await _read_learning_runtime_projection(request, db, task)
     runtime_nodes = []
     runtime_children = []
     runtime_checkpoints = []
@@ -476,6 +525,7 @@ async def get_execution(
                     "parse_status": structured.get("parse_status", "not_reported"),
                 },
             },
+            "learning_runtime": learning_runtime,
             "runtime": {
                 "run_kind": run.run_kind if run is not None else "",
                 "run_id": run.id if run is not None else "",

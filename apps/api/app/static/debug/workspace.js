@@ -36,6 +36,8 @@ let pendingLearningFollowUp = null;
 let runtimeTaskControls = null;
 let runtimeTaskControlsRequest = 0;
 let runtimeTaskControlsBusy = false;
+let runtimeLearningRunId = "";
+let runtimeLearningTaskId = "";
 const documentPageState = {
   item: null,
   previousOffset: null,
@@ -321,6 +323,9 @@ function resetConversation() {
   conversationMaterialUrls.forEach((url) => URL.revokeObjectURL(url));
   conversationMaterialUrls = [];
   state.currentTask = null; state.archivedTaskIds.clear(); state.liveProcessSteps.clear();
+  runtimeLearningRunId = "";
+  runtimeLearningTaskId = "";
+  runtimeTaskControls = null;
   state.lastQuestion = ""; state.lastAnswer = "";
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
   $("#context-task-title").textContent = "等待提问";
@@ -1083,16 +1088,36 @@ function renderRuntimeTaskControls() {
   $("#runtime-task-submit-input").disabled = runtimeTaskControlsBusy || !inputAvailable;
 }
 
-async function refreshRuntimeTaskControls(taskId = state.currentTask?.id || state.taskId) {
+async function refreshRuntimeTaskControls(
+  taskId = state.currentTask?.id || state.taskId,
+  learningRunId = runtimeLearningTaskId === taskId ? runtimeLearningRunId : "",
+) {
   if (!taskId) {
     runtimeTaskControls = null;
     renderRuntimeTaskControls();
     return null;
   }
+  if (learningRunId) {
+    runtimeLearningRunId = learningRunId;
+    runtimeLearningTaskId = taskId;
+  } else if (runtimeLearningTaskId !== taskId) {
+    runtimeLearningRunId = "";
+    runtimeLearningTaskId = "";
+  }
   const requestSequence = runtimeTaskControlsRequest + 1;
   runtimeTaskControlsRequest = requestSequence;
   try {
-    const projection = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`);
+    const projection = runtimeLearningRunId
+      ? {
+          ...(await api(
+            `/api/v1/learning/runtime/${encodeURIComponent(runtimeLearningRunId)}/controls`,
+          )),
+          task_id: taskId,
+          runtime_run_id: runtimeLearningRunId,
+          control_scope: "learning_loop",
+          control_request: "",
+        }
+      : await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`);
     if (requestSequence !== runtimeTaskControlsRequest) return null;
     runtimeTaskControls = projection;
     renderRuntimeTaskControls();
@@ -1107,6 +1132,9 @@ async function refreshRuntimeTaskControls(taskId = state.currentTask?.id || stat
 
 function runtimeTaskControlUrl(action) {
   const runId = String(runtimeTaskControls?.runtime_run_id || "").trim();
+  if (runtimeTaskControls?.control_scope === "learning_loop" && runId) {
+    return `/api/v1/learning/runtime/${encodeURIComponent(runId)}/control`;
+  }
   const query = runId ? `?runtime_run_id=${encodeURIComponent(runId)}` : "";
   return `/api/v1/tasks/${encodeURIComponent(state.currentTask?.id || state.taskId || "")}/${action}${query}`;
 }
@@ -1117,15 +1145,27 @@ async function submitRuntimeTaskControl(action, payload = null) {
   runtimeTaskControlsBusy = true;
   renderRuntimeTaskControls();
   try {
-    const options = { method: "POST" };
-    if (payload) {
-      options.headers = { "Content-Type": "application/json" };
-      options.body = JSON.stringify(payload);
-    }
+    const learningControl = runtimeTaskControls?.control_scope === "learning_loop";
+    const options = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      ...(learningControl
+        ? {
+            body: JSON.stringify({
+              action,
+              expected_state_version: runtimeTaskControls?.state_version,
+              idempotency_key: `workspace_${action}_${crypto.randomUUID()}`,
+              data: payload || {},
+            }),
+          }
+        : payload
+          ? { body: JSON.stringify(payload) }
+          : {}),
+    };
     const task = await api(runtimeTaskControlUrl(action), options);
-    state.currentTask = task;
+    if (!learningControl) state.currentTask = task;
     if (action === "input") $("#runtime-task-input").value = "";
-    await refreshRuntimeTaskControls(task.id);
+    await refreshRuntimeTaskControls(state.currentTask?.id || state.taskId);
     toast(action === "pause" ? "已提交暂停请求，将在安全边界暂停。" : action === "resume" ? "已提交恢复请求。" : action === "approve" ? "审批已提交，任务将从断点继续。" : "补充信息已提交，任务将从断点继续。");
   } catch (error) {
     const status = Number(error?.status);
@@ -2097,6 +2137,12 @@ async function learningAction(action, payload = {}) {
       }),
     });
     toast(result.message);
+    if (result.runtime_run_id && state.currentTask?.id) {
+      await refreshRuntimeTaskControls(
+        state.currentTask.id,
+        result.runtime_run_id,
+      );
+    }
     if (result.feedback_uptake || revisionAction) {
       $("#feedback-uptake-message").hidden = false;
       $("#feedback-uptake-message").textContent = result.message;

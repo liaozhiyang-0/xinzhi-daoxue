@@ -109,6 +109,9 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
     assert 'id="runtime-task-approve"' in html
     assert 'id="runtime-task-input-form"' in html
     assert "/runtime-controls" in script
+    assert "/api/v1/learning/runtime/" in script
+    assert 'control_scope === "learning_loop"' in script
+    assert "result.runtime_run_id" in script
     assert "/debug/execution" not in script
     assert "expected_state_version: runtimeTaskControls?.state_version" in script
     assert "runtimeTaskControlAvailable(action)" in script

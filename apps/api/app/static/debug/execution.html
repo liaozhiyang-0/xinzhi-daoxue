@@ -36,6 +36,11 @@
           <button id="runtime-resume" class="button secondary" type="button" data-runtime-action="resume">恢复</button>
           <button id="runtime-approve" class="button primary" type="button" data-runtime-action="approve">人工批准</button>
         </div>
+        <form id="runtime-input-form" class="runtime-input-form" hidden>
+          <label for="runtime-input">Runtime 请求补充信息</label>
+          <textarea id="runtime-input" maxlength="4000" rows="3" placeholder="仅填写完成当前节点所需的信息；不要填写密码、密钥或其他敏感内容。"></textarea>
+          <button id="runtime-input-submit" class="button secondary" type="submit">提交补充信息</button>
+        </form>
         <p id="runtime-control-feedback" class="runtime-control-feedback" role="status" aria-live="polite"></p>
       </section>
       <div id="runtime-panel"></div>

@@ -132,3 +132,26 @@ the public request remains `POST /api/v1/learning/actions`.
 
 Private artifacts are under `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_*`.
 They are ignored and must not be committed.
+
+## 10. 2026-08-11 control and recovery follow-up
+
+- Added a redacted `learning_runtime` projection to the execution debug API.
+  It exposes the latest LearningLoop run identifier, status, state version,
+  available controls, and node statuses without request snapshots or student
+  answers. A regression test verifies the projection against a real test-app
+  LearningLoop run.
+- The student workspace now keeps LearningLoop controls separate from the
+  generic Task Runtime controls and submits them through
+  `/api/v1/learning/runtime/{run_id}/control` with the current state-version
+  CAS and idempotency key.
+- The empty business-section recovery regression passes: an approved
+  `formative_assessment: []` checkpoint completes at iteration 0 with one
+  provider result and no repeated proposal.
+- Verification passed: 20 focused tests for Lesson Prep, workspace controls,
+  UI contracts, and the debug projection; 9 LearningLoop control API tests;
+  5 SSE/readiness/status tests; Ruff, Mypy, and Node syntax checks.
+- A fresh HTTP attempt was not release evidence: the local API returned 502
+  because PostgreSQL/Redis dependencies were not running. The in-app browser
+  transport was also unavailable, so no visual browser acceptance is claimed.
+  Full Task creation, SSE, approval, recovery, and result-display E2E remains
+  pending a dependency-backed single-instance run.

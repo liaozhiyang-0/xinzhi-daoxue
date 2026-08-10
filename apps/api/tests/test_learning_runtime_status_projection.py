@@ -45,6 +45,16 @@ def test_learning_runtime_status_is_redacted_and_provider_free(api, app) -> None
     assert "student_answer" not in str(payload)
     assert "idempotency_key" not in str(payload)
 
+    debug = api.client.get(f"/api/v1/debug/execution/{task['id']}")
+    assert debug.status_code == 200, debug.text
+    learning_runtime = debug.json()["learning_runtime"]
+    assert learning_runtime["run_id"] == run_id
+    assert learning_runtime["run_kind"] == "learning_progress"
+    assert learning_runtime["status"] == "completed"
+    assert learning_runtime["control_scope"] == "learning_loop"
+    assert "student_answer" not in str(learning_runtime)
+    assert "request_snapshot" not in str(learning_runtime)
+
 
 def test_learning_runtime_status_reports_approval_wait_and_rejects_missing_run(
     api, app

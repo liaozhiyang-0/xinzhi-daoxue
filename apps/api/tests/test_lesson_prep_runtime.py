@@ -234,6 +234,37 @@ def test_incomplete_business_section_uses_quality_approval() -> None:
     assert fake.calls == 1
 
 
+def test_empty_business_section_approval_resumes_without_replanning() -> None:
+    fake = FakeLessonAgents(
+        [
+            make_result(
+                business_data={
+                    "learning_objectives": ["Explain the concept"],
+                    "lesson_flow": ["Introduce", "Practice"],
+                    "activities": ["Guided practice"],
+                    "formative_assessment": [],
+                }
+            )
+        ]
+    )
+    service = LessonPrepRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
+    request = make_request("task-lesson-empty-section-recovery")
+    run = make_run(service, request)
+
+    with pytest.raises(RuntimeRunSuspended):
+        asyncio.run(service.run(request, run))
+    recovered = AgentRun.model_validate(run.model_dump(mode="json"))
+    recovered.control_data["approved"] = True
+
+    result = asyncio.run(service.run(request, recovered))
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert recovered.status == RuntimeRunStatus.COMPLETED
+    assert fake.calls == 1
+    assert recovered.iteration == 0
+    assert recovered.nodes[service.execute_node_id].attempt == 1
+
+
 def test_lesson_prep_checkpoint_recovery_reuses_result_without_provider_call() -> None:
     fake = FakeLessonAgents(
         [
