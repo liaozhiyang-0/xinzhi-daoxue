@@ -687,3 +687,46 @@ They are ignored and must not be committed.
   27 strictly increasing events, applied no plan proposal, and required one
   quality-gate approval. This is development verification evidence, not a
   production release authorization.
+
+## 40. 2026-08-11 Assignment Review and Academic Writing real-provider pairs
+
+- A single API process used an isolated temporary SQLite database, Xingchen
+  disabled, and the locally configured Spark/Qwen Providers. The redacted
+  report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_teaching_research_real_pairs/`.
+- Assignment Review and Academic Writing each completed both Legacy and
+  Runtime execution: 4/4 runs completed, with zero timeouts, Agent mismatches,
+  or event-order failures.
+- Both Runtime runs used three nodes, 13 checkpoints, and 27 strictly
+  increasing events, required one quality approval, and applied zero plan
+  proposals. All four runs reported `provider_used=local_agent`.
+- This expands structural/application evidence only. Independent semantic
+  review, version-bound authorization, release preflight, and a human canary
+  decision remain required before any default migration.
+
+Reproducible bounded command after starting exactly one API with the Runtime
+development profile:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_runtime_authorized_dev_e2e.py `
+  --base-url http://127.0.0.1:8032/api/v1 `
+  --case assignment_review_runtime_handoff `
+  --case academic_writing_runtime_handoff `
+  --mode both --pair-order alternate --timeout-seconds 240 `
+  --auto-approve-dev `
+  --output .local_outputs\runtime_authorized_evidence_20260811_teaching_research_real_pairs
+```
+
+## 41. 2026-08-11 General and local-knowledge real-provider pairs
+
+- A separate single-instance run covered `GENERAL_QUESTION_V1` and
+  `LEARN_01_LOCAL_RETRIEVAL_V1` with Xingchen disabled and the configured
+  Spark/Qwen Providers. The redacted report is under
+  `.local_outputs/runtime_authorized_evidence_20260811_general_knowledge_real_pairs/`.
+- Both Legacy/Runtime pairs completed: 4/4 completed, zero timeouts, Agent
+  mismatches, or event-order failures. General Runtime used three nodes, 12
+  checkpoints, and 23 events; local-knowledge Runtime used two nodes, nine
+  checkpoints, and 19 events. Neither required approval or a plan proposal.
+- This confirms application-level Runtime ownership for the general and local
+  retrieval paths under the bounded development profile. It does not establish
+  semantic parity or production release authorization.

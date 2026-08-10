@@ -29,3 +29,21 @@ The next release requirement is an authorized, redacted Legacy/Runtime paired
 trace with matching Agent and Runtime plan versions, followed by an independent
 semantic sidecar and release approval. Mock, synthetic, readiness, and
 provider-free contract results must not be promoted to release evidence.
+
+## 2026-08-11 bounded real-provider application evidence
+
+Fresh single-instance development runs expanded the application-level paired
+trace set without changing the release conclusion:
+
+- Lesson Prep: 2/2 completed; Runtime used 13 checkpoints and three nodes.
+- Assignment Review and Academic Writing: 4/4 completed; each Runtime used 13
+  checkpoints and three nodes.
+- General Question and Local Knowledge: 4/4 completed; Runtime used three and
+  two nodes respectively.
+
+Across these bounded runs, event sequences were strictly increasing and there
+were no timeouts or Agent mismatches. The reports are retained under ignored
+`.local_outputs/runtime_authorized_evidence_20260811_*_real_*` directories.
+These are real Provider/application traces, but they still lack the independent
+semantic judgement sidecars and version-bound human release approvals required
+for canary or default launch.
