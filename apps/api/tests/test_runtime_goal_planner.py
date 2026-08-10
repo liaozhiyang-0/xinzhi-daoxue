@@ -71,3 +71,22 @@ def test_goal_planner_fails_closed_for_unknown_capability() -> None:
             ),
             plan_id="unknown-plan",
         )
+
+
+def test_goal_planner_reads_handlers_registered_after_construction() -> None:
+    registry = RuntimeHandlerRegistry()
+    planner = RuntimeGoalPlanner(registry)
+    registry.register(
+        RuntimeHandlerDescriptor(handler_id="tool.late", kind="tool"),
+        lambda _run, node: RuntimeObservation(node_id=node.node_id),
+    )
+
+    plan = planner.build(
+        RuntimeGoal(
+            objective="use a late-registered capability",
+            required_capabilities=["late"],
+        ),
+        plan_id="late-handler-goal",
+    ).plan
+
+    assert plan.nodes[0].handler_id == "tool.late"

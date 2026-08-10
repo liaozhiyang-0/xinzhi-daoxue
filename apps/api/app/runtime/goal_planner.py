@@ -52,7 +52,7 @@ class RuntimeGoalPlanner:
     """Compile structured capabilities into executable, registered nodes."""
 
     def __init__(self, registry: RuntimeHandlerRegistry) -> None:
-        self._candidates = self._index(registry.descriptors())
+        self._registry = registry
 
     def build(
         self,
@@ -65,6 +65,11 @@ class RuntimeGoalPlanner:
         if not goal.required_capabilities:
             raise RuntimeGoalPlannerError("goal_has_no_required_capabilities")
 
+        # Runtime handlers can be registered by an enabled extension after the
+        # TaskRunner is constructed. Build the bounded alias index per plan so
+        # an explicit goal sees the current registry rather than a stale
+        # startup snapshot.
+        candidates = self._index(self._registry.descriptors())
         nodes: list[RuntimeNode] = []
         selections: list[RuntimeCapabilitySelection] = []
         phases = _execution_phases(goal)
@@ -74,7 +79,7 @@ class RuntimeGoalPlanner:
             phase_node_ids: list[str] = []
             for capability in phase:
                 step += 1
-                candidate = self._candidates.get(capability.casefold())
+                candidate = candidates.get(capability.casefold())
                 if candidate is None:
                     raise RuntimeGoalPlannerError(
                         f"capability_not_registered:{capability}"

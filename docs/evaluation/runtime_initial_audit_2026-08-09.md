@@ -160,3 +160,15 @@ ordering. The matrix deliberately excludes RESEARCH_03-specific tests because
 that business path is being handled independently. It does not substitute for
 new authorized Provider samples, independent semantic review, or a human
 release decision.
+
+## Generic goal Task approval lifecycle (2026-08-10)
+
+The Generic Goal Runtime now re-indexes handler descriptors for each plan
+compilation, so an enabled extension registered after the TaskRunner exists is
+visible to the next explicitly declared goal. A Task API regression registers
+an in-memory approval-gated fixture, grants it only to
+`GENERAL_QUESTION_V1`, then proves `Task → waiting_review → /approve → queued
+→ Runtime completion` with the final answer and the durable
+`approval_required` event projection. This is provider-free integration
+coverage; it does not authorize a production extension or replace release
+review.
