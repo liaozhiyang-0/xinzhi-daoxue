@@ -58,6 +58,8 @@ def test_execution_console_exposes_agent_runtime_operator_surfaces() -> None:
     assert "runtimeEventSurface" in script
     assert "depends_on: not reported by debug contract" in script
     assert "runtime_event" in script
+    assert "node_elapsed_ms" in script
+    assert "Number.isInteger(elapsedMs)" in script
     assert ".runtime-phase-strip" in css
     assert ".runtime-resilience-grid" in css
 

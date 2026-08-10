@@ -383,9 +383,11 @@ function runtimeEventSurface(data) {
   events.forEach((event) => {
     const runtimeEvent = event.data.runtime_event || event.type;
     const node = event.data.node_id ? `node ${event.data.node_id}` : "task scope";
+    const elapsedMs = event.data.node_elapsed_ms;
+    const timing = Number.isInteger(elapsedMs) ? ` · ${elapsedMs} ms` : "";
     const detail = event.data.action
       ? `${node} · action ${event.data.action}`
-      : `${node}${event.data.status ? ` · ${event.data.status}` : ""}${event.data.error_code ? ` · ${event.data.error_code}` : ""}`;
+      : `${node}${event.data.status ? ` · ${event.data.status}` : ""}${timing}${event.data.error_code ? ` · ${event.data.error_code}` : ""}`;
     list.append(el("div", { class: "runtime-event-row", "data-event-kind": executionEventKind(event.type, event.data) }, [
       el("span", { class: "runtime-event-sequence", text: `#${event.sequence ?? "—"}` }),
       el("div", { class: "runtime-event-detail" }, [el("strong", { text: runtimeEvent }), el("span", { text: detail })]),
