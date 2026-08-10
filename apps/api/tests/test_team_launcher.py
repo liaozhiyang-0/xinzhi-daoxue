@@ -67,10 +67,12 @@ def test_runtime_development_profile_enables_only_safe_local_defaults() -> None:
         {"APP_ENV": "development"}
     )
 
+    assert profile["AGENT_RUNTIME_SOLVER_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_GENERAL_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_LAUNCH_MODES"] == (
-        "GENERAL_QUESTION_V1=default,LEARN_01_LOCAL_RETRIEVAL_V1=default"
+        "ACADEMIC_PROBLEM_SOLVER=default,GENERAL_QUESTION_V1=default,"
+        "LEARN_01_LOCAL_RETRIEVAL_V1=default"
     )
     assert profile["AGENT_RUNTIME_RELEASE_GATE_REQUIRED"] == "false"
     assert "XINGCHEN_ENABLED" not in profile

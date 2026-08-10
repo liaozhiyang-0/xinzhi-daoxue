@@ -562,9 +562,9 @@ def test_academic_solver_runtime_path_keeps_solver_graph_behind_runtime(
     runtime = debug.json()["runtime"]
     assert runtime["status"] == "completed"
     assert [node["node_id"] for node in runtime["nodes"]] == [
-        "solver.execute",
         "solver.observe",
         "solver.retrieve",
+        "solver.execute",
         "solver.verify",
     ]
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])

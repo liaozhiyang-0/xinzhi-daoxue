@@ -36,6 +36,7 @@ COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
 FRONTEND_BUILD_ID = "20260808-research-analysis-v13"
 RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
+    "ACADEMIC_PROBLEM_SOLVER": "default",
     "GENERAL_QUESTION_V1": "default",
     "LEARN_01_LOCAL_RETRIEVAL_V1": "default",
 }
@@ -98,8 +99,8 @@ def enable_runtime_development_profile(
 ) -> dict[str, str]:
     """Return an explicit local Runtime profile for the student entry paths.
 
-    The profile is intentionally limited to the two local task families that
-    have durable Runtime plans and no Xingchen dependency. It is a local
+    The profile is intentionally limited to local task families that have
+    durable Runtime plans and no Xingchen dependency. It is a local
     development execution aid, not a production promotion: production keeps
     the normal semantic-evidence release gate.
     """
@@ -116,6 +117,7 @@ def enable_runtime_development_profile(
     runtime_environment = dict(environment)
     runtime_environment.update(
         {
+            "AGENT_RUNTIME_SOLVER_ENABLED": "true",
             "AGENT_RUNTIME_GENERAL_ENABLED": "true",
             "AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED": "true",
             "AGENT_RUNTIME_LAUNCH_MODES": ",".join(
