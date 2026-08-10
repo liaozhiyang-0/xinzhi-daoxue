@@ -488,3 +488,24 @@ They are ignored and must not be committed.
   closed`. The temporary API was healthy on port 8021 and was stopped after
   the failed connection. No browser-rendering or visual approval result is
   claimed; the existing public API/SSE regression evidence remains separate.
+
+## 30. 2026-08-11 Academic Writing structured-route convergence
+
+- The `academic_writing` model route now uses `qwen_vision_primary` as its
+  structured-output primary and `qwen_text_fast` as its fallback. The default
+  ModelService policy remains fail-closed; this changes only the configured
+  route order and does not enable unbounded fallback.
+- A fresh bounded single-instance paired run completed both Legacy and Runtime
+  for `RESEARCH_02_ACADEMIC_WRITING_V1`. Both results used `local_agent` with
+  one model call, completed 2/2, and had zero timeouts, agent mismatches, event
+  order failures, unresolved failures, or plan proposals. Legacy had two
+  checkpoints and one node; Runtime had 13 checkpoints and three nodes.
+- Offline packaging now reports `structural_release_eligible=true` with
+  `agent_version=academic-writing-v1` and
+  `runtime_plan_version=academic-writing-v1`. Independent semantic review and
+  a human release decision are still required; no release, canary, or default
+  authorization was created.
+- A redacted preliminary model sidecar was generated with
+  `decision=needs_review`; provider-free preflight returned exit code 1 with
+  `semantic_decision_not_pass`. The sidecar is diagnostic evidence only and
+  cannot substitute for an independent human semantic review.

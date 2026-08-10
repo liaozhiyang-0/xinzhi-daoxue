@@ -76,8 +76,8 @@ routes:
   lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
   assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}
   academic_writing:
-    primary: qwen_text_fast
-    fallback: qwen_vision_primary
+    primary: qwen_vision_primary
+    fallback: qwen_text_fast
     max_retries: 0
     fallback_on_timeout: false
     options: {timeout: 45}
