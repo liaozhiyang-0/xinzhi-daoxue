@@ -61,7 +61,7 @@
           </div>
           <form id="account-filters" class="filter-row">
             <input name="search" placeholder="搜索登录名或显示名称" aria-label="搜索账号">
-            <select name="role" aria-label="按角色筛选"><option value="">全部角色</option><option value="student">学生</option><option value="teacher">教师</option><option value="operator">运营</option><option value="admin">管理员</option></select>
+            <select name="role" aria-label="按角色筛选"><option value="">全部角色</option><option value="student">学生</option><option value="teacher">教师</option><option value="researcher">研究者</option><option value="operator">运营</option><option value="admin">管理员</option></select>
             <select name="status" aria-label="按状态筛选"><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option><option value="locked">锁定</option></select>
             <button class="button secondary" type="submit">筛选</button>
           </form>
@@ -164,7 +164,7 @@
       <div class="section-heading"><div><h2>创建账号</h2><p>密码至少 12 个字符。</p></div><button class="dialog-close" value="cancel" type="submit" aria-label="关闭">×</button></div>
       <label>登录名<input name="login" type="email" required></label>
       <label>显示名称<input name="display_name" type="text"></label>
-      <label>角色<select name="role"><option value="student">学生</option><option value="teacher">教师</option><option value="operator">运营</option><option value="admin">管理员</option></select></label>
+      <label>角色<select name="role"><option value="student">学生</option><option value="teacher">教师</option><option value="researcher">研究者</option><option value="operator">运营</option><option value="admin">管理员</option></select></label>
       <label>初始密码<input name="password" type="password" minlength="12" required></label>
       <p id="account-form-error" class="form-error" role="alert"></p>
       <button class="button primary" type="submit" value="create">创建账号</button>
@@ -173,6 +173,6 @@
 
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <script src="/debug-assets/ui-core.js"></script>
-  <script src="/debug-assets/admin.js?v=20260804-feature-switch-v2"></script>
+  <script src="/debug-assets/admin.js?v=20260810-role-aware-scenarios-v1"></script>
 </body>
 </html>

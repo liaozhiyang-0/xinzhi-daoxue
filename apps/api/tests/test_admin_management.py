@@ -74,6 +74,25 @@ def test_admin_can_manage_accounts_sessions_and_audit_log(
     assert listed.json()["total"] == 1
     assert listed.json()["items"][0]["id"] == teacher_id
 
+    researcher = auth_client.post(
+        "/api/v1/admin/accounts",
+        json={
+            "login": "researcher@example.com",
+            "password": "researcher password secure",
+            "display_name": "Researcher",
+            "role": "researcher",
+        },
+    )
+    assert researcher.status_code == 201, researcher.text
+    researcher_id = researcher.json()["id"]
+
+    researchers = auth_client.get(
+        "/api/v1/admin/accounts", params={"role": "researcher"}
+    )
+    assert researchers.status_code == 200
+    assert researchers.json()["total"] == 1
+    assert researchers.json()["items"][0]["id"] == researcher_id
+
     disabled = auth_client.patch(
         f"/api/v1/admin/accounts/{teacher_id}",
         json={"status": "disabled"},

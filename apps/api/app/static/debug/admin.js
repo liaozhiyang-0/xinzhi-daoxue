@@ -1,6 +1,6 @@
 const { $, all, api, badge, el, initShell, initTabs, toast } = XinzhiUI;
 
-const roleLabels = { student: "学生", teacher: "教师", operator: "运营", admin: "管理员" };
+const roleLabels = { student: "学生", teacher: "教师", researcher: "研究者", operator: "运营", admin: "管理员" };
 const statusLabels = { active: "启用", disabled: "停用", locked: "锁定" };
 let currentPrincipal = null;
 

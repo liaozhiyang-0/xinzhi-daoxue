@@ -10,9 +10,10 @@ def test_admin_and_login_pages_are_available(client: TestClient) -> None:
     assert "/debug-assets/admin.css" in admin.text
     assert "admin.css?v=20260804-feature-switch-v2" in admin.text
     assert "/debug-assets/admin.js" in admin.text
-    assert "admin.js?v=20260804-feature-switch-v2" in admin.text
+    assert "admin.js?v=20260810-role-aware-scenarios-v1" in admin.text
     assert 'data-admin-module-target="settings"' in admin.text
     assert 'id="admin-feature-settings"' in admin.text
+    assert 'option value="researcher"' in admin.text
 
     login = client.get("/login?next=/admin")
     assert login.status_code == 200
@@ -34,3 +35,4 @@ def test_admin_feature_switch_contract(client: TestClient) -> None:
     assert "updateFeatureSetting" in script.text
     assert 'class: "feature-toggle-button"' in script.text
     assert 'aria-pressed' in script.text
+    assert 'researcher: "研究者"' in script.text

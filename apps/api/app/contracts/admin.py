@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.entities import TaskStatus
 
-AccountRole = Literal["student", "teacher", "operator", "admin"]
+AccountRole = Literal["student", "teacher", "researcher", "operator", "admin"]
 AccountStatusValue = Literal["active", "disabled", "locked"]
 
 
