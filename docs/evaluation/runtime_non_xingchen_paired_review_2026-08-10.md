@@ -421,3 +421,20 @@ They are ignored and must not be committed.
   was collected with `decision=needs_review`; provider-free preflight returned
   `semantic_decision_not_pass`. No release, canary, or default decision was
   created.
+
+## 25. 2026-08-11 Academic Writing real-provider diagnostic
+
+- A bounded single-instance paired run used the locally configured Spark/Qwen
+  environment with Xingchen disabled. Legacy and Runtime both completed 1/1
+  with matching `RESEARCH_02_ACADEMIC_WRITING_V1`, zero timeouts or event-order
+  failures, and 2/2 overall completed runs. Runtime contained 13 checkpoints,
+  three nodes, and 27 strictly increasing events with no unresolved failure.
+- Evidence packaging intentionally rejected this sample as structurally
+  release-eligible. The Legacy result used the local fallback with
+  `fallback_used=true` and zero model calls, while Runtime used `local_agent`
+  with one model call. The packager reported
+  `provider_mismatch_rate_above_threshold`,
+  `model_call_regression_above_threshold`, and
+  `single_pair_model_call_regression_above_threshold`; no semantic sidecar or
+  release preflight was created. This is a useful migration diagnostic, not a
+  passing release result.
