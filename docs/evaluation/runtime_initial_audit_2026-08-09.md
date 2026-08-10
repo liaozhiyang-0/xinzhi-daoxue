@@ -89,3 +89,24 @@ This completes the initial code-layer audit, not the production migration.
 The overall objective remains incomplete until structural packaging of the
 authorized pairs, independent semantic review, canary observation, and an
 explicit default-or-rollback decision are available as auditable evidence.
+
+## Observability and static-check refresh (2026-08-10)
+
+Runtime node timing is now derived only from the durable node timestamps and
+is exposed consistently through the checkpoint observability projection, the
+`plan.node_*` Task/SSE event payload, and the Debug execution event list. The
+authorized E2E runner records both a Task lifecycle clock and its client-side
+terminal wait clock for future paired sampling; neither field has been used to
+rewrite the historical solver parity result.
+
+The follow-up verification passed application Mypy for all 297 source files,
+51 focused Runtime/UI tests, configuration validation, sensitive-file scan,
+and `git diff --check`. Whole-repository Ruff is intentionally still blocked
+by one pre-existing E501 in the frozen, already-committed migration
+`20260808_0018_agent_runtime_targets.py`; that migration was deliberately not
+rewritten. All currently modified Runtime source and test files pass Ruff.
+
+An attempted fresh local Solver E2E sample did not start because the desktop
+execution environment rejected creation of a background API process before a
+server or Provider call existed. It is not a test result and does not change
+the existing performance or release conclusions.
