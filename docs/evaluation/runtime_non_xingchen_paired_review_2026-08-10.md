@@ -209,3 +209,19 @@ They are ignored and must not be committed.
   release artifact. The release preflight remains fail-closed because the
   required version-bound structural suite, semantic sidecar, and independent
   release decision are still absent for this Agent.
+
+## 14. 2026-08-11 capability version binding follow-up
+
+- Task Runtime capability descriptors now receive `agent_version` from the
+  authoritative Agent Registry during application assembly. The descriptor
+  factory remains provider-free and keeps its empty-version compatibility for
+  isolated callers that do not supply a registry projection.
+- This removes a version ambiguity from readiness/UI/release inspection: the
+  Task capability identity is now bound to the registered Agent definition,
+  while `version` continues to represent the Runtime plan version. No
+  execution routing, Task/SSE contract, Provider call, or release permission
+  was changed.
+- Provider-free verification passed: capability descriptor, readiness API
+  projection, Ruff, Mypy, and diff checks. Release preflight still requires
+  independently captured authorized paired traces and semantic review; the
+  new version field does not manufacture that evidence.

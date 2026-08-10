@@ -349,7 +349,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if getattr(service, "agent_id", "") != "*"
     )
     runtime_capability_descriptors = (
-        descriptors_from_task_runtime_services(task_runtime_services)
+        descriptors_from_task_runtime_services(
+            task_runtime_services,
+            agent_versions={
+                definition.agent_id: definition.version
+                for definition in agent_registry.list_agents()
+            },
+        )
         + descriptors_from_learning_loop_services(
             teaching_interaction=teaching_interaction_runtime,
             learning_progress=learning_progress_runtime,

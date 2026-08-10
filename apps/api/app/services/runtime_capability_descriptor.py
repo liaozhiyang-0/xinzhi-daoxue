@@ -9,7 +9,7 @@ later migration slices.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
@@ -123,6 +123,8 @@ class RuntimeCapabilityDescriptor:
 
 def descriptor_from_task_runtime_service(
     service: RuntimeBusinessService,
+    *,
+    agent_version: str | None = None,
 ) -> RuntimeCapabilityDescriptor:
     """Build a descriptor from a Task ``RuntimeBusinessService`` by inspection.
 
@@ -151,12 +153,19 @@ def descriptor_from_task_runtime_service(
         service, "control_scope", default="task_runtime"
     )
     control_policy = control_policy_for_runtime_kind(control_scope)
+    resolved_agent_version = _first_text(
+        service,
+        "agent_version",
+        default=(agent_version or ""),
+    )
+    if agent_version is not None and agent_version.strip():
+        resolved_agent_version = agent_version.strip()
     return RuntimeCapabilityDescriptor(
         capability_id=_first_text(service, "capability_id", default=capability_id),
         domain="task_agent",
         runtime_id=runtime_id,
         version=version,
-        agent_version=_first_text(service, "agent_version", default=""),
+        agent_version=resolved_agent_version,
         enabled=_read_bool(service, "enabled", default=False),
         supported_actions=_read_actions(
             service, default=TASK_RUNTIME_ACTIONS
@@ -233,10 +242,24 @@ def descriptors_from_learning_loop_services(
 
 def descriptors_from_task_runtime_services(
     services: Iterable[RuntimeBusinessService],
+    *,
+    agent_versions: Mapping[str, str] | None = None,
 ) -> tuple[RuntimeCapabilityDescriptor, ...]:
-    """Build Task descriptors while preserving registry order."""
+    """Build Task descriptors while preserving registry order.
 
-    return tuple(descriptor_from_task_runtime_service(service) for service in services)
+    ``agent_versions`` is the authoritative Agent Registry projection.  The
+    optional mapping keeps this provider-free factory backwards compatible for
+    isolated descriptor tests and callers that do not own the registry.
+    """
+
+    versions = agent_versions or {}
+    return tuple(
+        descriptor_from_task_runtime_service(
+            service,
+            agent_version=versions.get(str(getattr(service, "agent_id", ""))),
+        )
+        for service in services
+    )
 
 
 def _descriptor_from_learning_service(

@@ -46,6 +46,10 @@ def test_runtime_readiness_exposes_cross_entry_capabilities_provider_free(
     )
     assert general["runtime_capabilities"]
     assert all(
+        item["agent_version"] == "1.0"
+        for item in general["runtime_capabilities"]
+    )
+    assert all(
         item["domain"] == "task_agent"
         for item in general["runtime_capabilities"]
     )

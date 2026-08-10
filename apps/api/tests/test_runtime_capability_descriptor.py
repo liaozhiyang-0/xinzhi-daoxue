@@ -16,6 +16,7 @@ from app.services.runtime_capability_descriptor import (
     descriptor_from_task_runtime_service,
     descriptor_from_teaching_interaction_runtime_service,
     descriptors_from_learning_loop_services,
+    descriptors_from_task_runtime_services,
 )
 from app.services.teaching_interaction_runtime import (
     TeachingInteractionRuntimeService,
@@ -129,6 +130,17 @@ def test_declared_actions_are_deduplicated_without_calling_service_methods() -> 
     descriptor = descriptor_from_task_runtime_service(service)  # type: ignore[arg-type]
 
     assert descriptor.supported_actions == ("verify", "act")
+
+
+def test_task_descriptor_can_bind_authoritative_registry_version() -> None:
+    descriptors = descriptors_from_task_runtime_services(
+        [ExplodingTaskService()],
+        agent_versions={"TASK_AGENT_V1": "2.3"},
+    )
+
+    assert len(descriptors) == 1
+    assert descriptors[0].agent_version == "2.3"
+    assert descriptors[0].to_dict()["agent_version"] == "2.3"
 
 
 def test_real_learning_runtime_services_declare_agent_version() -> None:
