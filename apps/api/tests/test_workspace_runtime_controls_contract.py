@@ -77,6 +77,32 @@ def test_workspace_runtime_control_projection_fails_closed() -> None:
     assert all(not item.available for item in unsupported.controls)
 
 
+def test_pending_plan_proposal_is_not_exposed_as_side_effect_approval() -> None:
+    proposal = SimpleNamespace(
+        id="proposal-workspace",
+        status="pending",
+        state_version=9,
+        base_iteration=0,
+        target_iteration=1,
+        reason_codes=["bounded_replan"],
+        affected_node_ids=["execute"],
+    )
+    projection = _project_task_runtime_controls(
+        "task-proposal",
+        _runtime(status="waiting_approval"),  # type: ignore[arg-type]
+        plan_proposal=proposal,
+    )
+
+    assert projection.control_scope == "runtime_plan_proposal"
+    assert projection.plan_proposal is not None
+    assert projection.plan_proposal.proposal_id == "proposal-workspace"
+    assert all(not item.available for item in projection.controls)
+    assert all(
+        item.reason_code == "runtime_plan_proposal_requires_explicit_decision"
+        for item in projection.controls
+    )
+
+
 def test_task_runtime_controls_endpoint_uses_public_projection(
     api: Any, app: Any
 ) -> None:
@@ -108,7 +134,10 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
     assert 'id="runtime-task-resume"' in html
     assert 'id="runtime-task-approve"' in html
     assert 'id="runtime-task-input-form"' in html
+    assert 'id="runtime-task-reject-proposal"' in html
     assert "/runtime-controls" in script
+    assert "runtime-plan-proposals/" in script
+    assert 'decision: action === "approve" ? "approved" : "rejected"' in script
     assert "/api/v1/learning/runtime/" in script
     assert 'control_scope === "learning_loop"' in script
     assert "result.runtime_run_id" in script

@@ -1044,12 +1044,24 @@ function runtimeTaskControlEntry(action) {
 }
 
 function runtimeTaskControlAvailable(action) {
+  if (action === "approve" || action === "reject") {
+    return Boolean(
+      runtimeTaskControls?.control_scope === "runtime_plan_proposal"
+      && runtimeTaskControls?.plan_proposal?.proposal_id,
+    ) || runtimeTaskControlEntry(action)?.available === true;
+  }
   return runtimeTaskControlEntry(action)?.available === true;
 }
 
 function runtimeTaskControlMessage(projection) {
   if (!projection?.runtime_run_id) {
     return "当前任务尚未进入可控制的 Runtime；旧任务与未启动任务不会显示控制操作。";
+  }
+  if (
+    projection.control_scope === "runtime_plan_proposal"
+    && projection.plan_proposal?.proposal_id
+  ) {
+    return `Runtime proposal ${projection.plan_proposal.proposal_id} requires an explicit apply or reject decision.`;
   }
   const available = ["pause", "resume", "approve", "input"]
     .filter(runtimeTaskControlAvailable);
@@ -1071,6 +1083,10 @@ function renderRuntimeTaskControls() {
   if (!hasRuntime) return;
 
   const status = String(projection.status || "").toLowerCase();
+  const proposalPending = Boolean(
+    projection.control_scope === "runtime_plan_proposal"
+    && projection.plan_proposal?.proposal_id,
+  );
   $("#runtime-task-status").textContent = runtimeTaskStatusLabels[status]
     || "状态待确认";
   $("#runtime-task-controls-message").textContent = runtimeTaskControlMessage(projection);
@@ -1078,11 +1094,19 @@ function renderRuntimeTaskControls() {
     const button = $(`#runtime-task-${action}`);
     if (!button) return;
     const entry = runtimeTaskControlEntry(action);
-    const available = entry?.available === true;
+    const available = proposalPending && action === "approve"
+      ? true
+      : entry?.available === true;
     button.hidden = !available;
     button.disabled = runtimeTaskControlsBusy || !available;
+    if (proposalPending && action === "approve") button.textContent = "应用恢复计划";
     button.title = available ? "" : `${entry?.reason_code || "runtime_control_unavailable"}: ${entry?.reason || "当前状态不可用"}`;
   });
+  const reject = $("#runtime-task-reject-proposal");
+  if (reject) {
+    reject.hidden = !proposalPending;
+    reject.disabled = runtimeTaskControlsBusy || !proposalPending;
+  }
   const inputAvailable = runtimeTaskControlAvailable("input");
   $("#runtime-task-input-form").hidden = !inputAvailable;
   $("#runtime-task-submit-input").disabled = runtimeTaskControlsBusy || !inputAvailable;
@@ -1132,6 +1156,12 @@ async function refreshRuntimeTaskControls(
 
 function runtimeTaskControlUrl(action) {
   const runId = String(runtimeTaskControls?.runtime_run_id || "").trim();
+  if (
+    runtimeTaskControls?.control_scope === "runtime_plan_proposal"
+    && runtimeTaskControls?.plan_proposal?.proposal_id
+  ) {
+    return `/api/v1/tasks/${encodeURIComponent(state.currentTask?.id || state.taskId || "")}/runtime-plan-proposals/${encodeURIComponent(runtimeTaskControls.plan_proposal.proposal_id)}/decision`;
+  }
   if (runtimeTaskControls?.control_scope === "learning_loop" && runId) {
     return `/api/v1/learning/runtime/${encodeURIComponent(runId)}/control`;
   }
@@ -1146,10 +1176,19 @@ async function submitRuntimeTaskControl(action, payload = null) {
   renderRuntimeTaskControls();
   try {
     const learningControl = runtimeTaskControls?.control_scope === "learning_loop";
+    const planProposalControl = runtimeTaskControls?.control_scope === "runtime_plan_proposal";
     const options = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      ...(learningControl
+      ...(planProposalControl
+        ? {
+            body: JSON.stringify({
+              decision: action === "approve" ? "approved" : "rejected",
+              reason: payload?.reason || "",
+              expected_state_version: runtimeTaskControls?.plan_proposal?.state_version,
+            }),
+          }
+        : learningControl
         ? {
             body: JSON.stringify({
               action,
@@ -2228,6 +2267,9 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#runtime-task-approve").addEventListener("click", () => submitRuntimeTaskControl("approve", {
     decision: "approved",
     expected_state_version: runtimeTaskControls?.state_version,
+  }));
+  $("#runtime-task-reject-proposal").addEventListener("click", () => submitRuntimeTaskControl("reject", {
+    reason: "The proposed Runtime recovery plan was rejected from the workspace.",
   }));
   $("#runtime-task-input-form").addEventListener("submit", submitRuntimeTaskInput);
   $("#question-input").addEventListener("input", autoGrow);

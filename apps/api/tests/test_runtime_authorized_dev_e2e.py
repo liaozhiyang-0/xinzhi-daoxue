@@ -13,6 +13,56 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
+class _ProposalResponse:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self.payload
+
+
+class _ProposalClient:
+    def get(self, _url: str) -> _ProposalResponse:
+        return _ProposalResponse(
+            [
+                {
+                    "proposal_id": "old",
+                    "run_id": "run-1",
+                    "status": "pending",
+                    "state_version": 4,
+                },
+                {
+                    "proposal_id": "new",
+                    "run_id": "run-1",
+                    "status": "pending",
+                    "state_version": 7,
+                },
+                {
+                    "proposal_id": "other-run",
+                    "run_id": "run-2",
+                    "status": "pending",
+                    "state_version": 99,
+                },
+            ]
+        )
+
+
+def test_e2e_runner_selects_pending_plan_proposal_before_side_effect_approval() -> None:
+    proposal = MODULE.pending_plan_proposal(
+        _ProposalClient(),
+        "http://test/api/v1",
+        "task-1",
+        "run-1",
+    )
+
+    assert proposal is not None
+    assert proposal["proposal_id"] == "new"
+    assert proposal["state_version"] == 7
+
+
 def test_result_summary_projects_runtime_control_plane_timing() -> None:
     summary = MODULE.result_summary(
         {

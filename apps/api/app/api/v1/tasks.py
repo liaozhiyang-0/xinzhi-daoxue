@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,7 @@ from app.contracts.api import (
     TaskRead,
     TaskRuntimeControlProjectionRead,
     TaskRuntimeControlRead,
+    TaskRuntimePlanProposalRead,
 )
 from app.contracts.conversation import ConversationContextBundle
 from app.contracts.research_analysis import (
@@ -38,7 +40,12 @@ from app.dependencies import (
 )
 from app.models import AgentRunModel, TaskModel, TaskStatus
 from app.providers.base import AgentProvider
-from app.repositories import AgentRunRepository, FileRepository, TaskRepository
+from app.repositories import (
+    AgentRunRepository,
+    FileRepository,
+    RuntimePlanProposalRepository,
+    TaskRepository,
+)
 from app.repositories.sessions import SessionRepository
 from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
@@ -59,7 +66,13 @@ TERMINAL_STATUSES = {
     TaskStatus.FAILED,
     TaskStatus.CANCELLED,
 }
-_TASK_RUNTIME_CONTROL_ACTIONS = ("pause", "resume", "approve", "input")
+TaskRuntimeControlAction = Literal["pause", "resume", "approve", "input"]
+_TASK_RUNTIME_CONTROL_ACTIONS: tuple[TaskRuntimeControlAction, ...] = (
+    "pause",
+    "resume",
+    "approve",
+    "input",
+)
 
 
 def task_read(
@@ -368,7 +381,23 @@ async def task_runtime_controls(
 
     task = await _get_owned_task(db, task_id, principal)
     runtime = await AgentRunRepository(db).get_for_task(task.id)
-    return _project_task_runtime_controls(task.id, runtime)
+    plan_proposal = None
+    if runtime is not None:
+        proposal_id = (runtime.control_data or {}).get("plan_proposal_id")
+        if isinstance(proposal_id, str) and proposal_id:
+            candidate = await RuntimePlanProposalRepository(db).get(proposal_id)
+            if (
+                candidate is not None
+                and candidate.task_id == task.id
+                and candidate.run_id == runtime.id
+                and candidate.status == "pending"
+            ):
+                plan_proposal = candidate
+    return _project_task_runtime_controls(
+        task.id,
+        runtime,
+        plan_proposal=plan_proposal,
+    )
 
 
 @router.post(
@@ -570,7 +599,10 @@ async def decide_runtime_plan_proposal(
 
 
 def _project_task_runtime_controls(
-    task_id: str, runtime: AgentRunModel | None
+    task_id: str,
+    runtime: AgentRunModel | None,
+    *,
+    plan_proposal: object | None = None,
 ) -> TaskRuntimeControlProjectionRead:
     """Return a fail-closed, checkpoint-free task control projection."""
 
@@ -588,38 +620,67 @@ def _project_task_runtime_controls(
             ],
         )
 
-    policy = control_policy_for_runtime_kind(runtime.run_kind)
-    available = set(policy.available_controls(runtime.status))
-    if runtime.control_request:
-        available.discard("pause")
-
-    controls = [
-        TaskRuntimeControlRead(
-            action=action,
-            available=action in available,
-            reason_code=(
-                ""
-                if action in available
-                else _task_runtime_control_reason_code(
-                    action,
-                    runtime_status=runtime.status,
-                    control_request=runtime.control_request,
-                    declared_controls=policy.declared_controls,
-                )
+    proposal_projection = None
+    if plan_proposal is not None:
+        proposal_projection = TaskRuntimePlanProposalRead(
+            proposal_id=str(getattr(plan_proposal, "id", "")),
+            status=cast(
+                Literal["pending", "approved", "rejected", "applied"],
+                str(getattr(plan_proposal, "status", "pending")),
             ),
-            reason=(
-                ""
-                if action in available
-                else _task_runtime_control_reason(
-                    action,
-                    runtime_status=runtime.status,
-                    control_request=runtime.control_request,
-                    declared_controls=policy.declared_controls,
-                )
+            state_version=int(getattr(plan_proposal, "state_version", 0)),
+            base_iteration=int(getattr(plan_proposal, "base_iteration", 0)),
+            target_iteration=int(getattr(plan_proposal, "target_iteration", 1)),
+            reason_codes=list(getattr(plan_proposal, "reason_codes", []) or []),
+            affected_node_ids=list(
+                getattr(plan_proposal, "affected_node_ids", []) or []
             ),
         )
-        for action in _TASK_RUNTIME_CONTROL_ACTIONS
-    ]
+        controls = [
+            TaskRuntimeControlRead(
+                action=action,
+                available=False,
+                reason_code="runtime_plan_proposal_requires_explicit_decision",
+                reason=(
+                    "A pending Runtime plan proposal must be approved or "
+                    "rejected through the explicit plan-proposal decision API."
+                ),
+            )
+            for action in _TASK_RUNTIME_CONTROL_ACTIONS
+        ]
+    else:
+        policy = control_policy_for_runtime_kind(runtime.run_kind)
+        available = set(policy.available_controls(runtime.status))
+        if runtime.control_request:
+            available.discard("pause")
+
+        controls = [
+            TaskRuntimeControlRead(
+                action=action,
+                available=action in available,
+                reason_code=(
+                    ""
+                    if action in available
+                    else _task_runtime_control_reason_code(
+                        action,
+                        runtime_status=runtime.status,
+                        control_request=runtime.control_request,
+                        declared_controls=policy.declared_controls,
+                    )
+                ),
+                reason=(
+                    ""
+                    if action in available
+                    else _task_runtime_control_reason(
+                        action,
+                        runtime_status=runtime.status,
+                        control_request=runtime.control_request,
+                        declared_controls=policy.declared_controls,
+                    )
+                ),
+            )
+            for action in _TASK_RUNTIME_CONTROL_ACTIONS
+        ]
     return TaskRuntimeControlProjectionRead(
         task_id=task_id,
         runtime_run_id=runtime.id,
@@ -627,6 +688,12 @@ def _project_task_runtime_controls(
         status=runtime.status,
         state_version=runtime.state_version,
         control_request=runtime.control_request,
+        control_scope=(
+            "runtime_plan_proposal"
+            if proposal_projection is not None
+            else "runtime"
+        ),
+        plan_proposal=proposal_projection,
         controls=controls,
     )
 

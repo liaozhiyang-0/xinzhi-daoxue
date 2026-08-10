@@ -155,3 +155,27 @@ They are ignored and must not be committed.
   transport was also unavailable, so no visual browser acceptance is claimed.
   Full Task creation, SSE, approval, recovery, and result-display E2E remains
   pending a dependency-backed single-instance run.
+
+## 11. 2026-08-11 plan-proposal control boundary follow-up
+
+- The Runtime control projection now distinguishes a pending adaptive plan
+  proposal from an ordinary Runtime quality or side-effect approval. While a
+  plan proposal is pending, the task control API exposes a redacted proposal
+  summary and fail-closed control reasons; the proposal must use the explicit
+  `/tasks/{task_id}/runtime-plan-proposals/{proposal_id}/decision` endpoint.
+- The authorized development E2E runner now detects the pending proposal and
+  sends that explicit decision. The workspace exposes separate apply/reject
+  controls for this state; ordinary quality approval continues to use the
+  existing task approval endpoint.
+- In a fresh synthetic Lesson Prep HTTP task (`task_6642a13ee6354a4b936f860a9262c05b`),
+  the bounded runner timed out before the proposal became visible because the
+  local provider path exceeded the observation window. A bounded continuation
+  then applied exactly one pending proposal, observed the normal quality gate,
+  approved that gate once, and completed the same task.
+- The completed task ended at Runtime iteration 1, state version 24, with one
+  proposal in `applied` status and 43 strictly ordered events ending in
+  `task.completed`. No second plan proposal was created after the explicit
+  decision. This is synthetic development evidence, not release qualification.
+- The local provider `StructuredOutputError`/latency path remains a separate
+  risk. Full paired evaluation and visual browser acceptance are still
+  pending; no production or Xingchen conclusion is drawn from this case.

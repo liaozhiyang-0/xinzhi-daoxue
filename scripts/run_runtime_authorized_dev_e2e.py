@@ -254,6 +254,33 @@ def create_task(
     return cast(dict[str, Any], response.json())
 
 
+def pending_plan_proposal(
+    client: Any,
+    base_url: str,
+    task_id: str,
+    runtime_run_id: str,
+) -> dict[str, Any] | None:
+    """Return the newest pending plan proposal for the controlled Runtime."""
+
+    response = client.get(f"{base_url}/tasks/{task_id}/runtime-plan-proposals")
+    response.raise_for_status()
+    proposals = response.json()
+    if not isinstance(proposals, list):
+        return None
+    pending = [
+        item
+        for item in proposals
+        if isinstance(item, dict)
+        and item.get("status") == "pending"
+        and item.get("run_id") == runtime_run_id
+    ]
+    return max(
+        pending,
+        key=lambda item: int(item.get("state_version") or 0),
+        default=None,
+    )
+
+
 def await_task(
     client: Any,
     base_url: str,
@@ -286,10 +313,22 @@ def await_task(
             )
             controls_response.raise_for_status()
             projection = controls_response.json()
+            runtime_run_id = str(projection.get("runtime_run_id") or "")
+            proposal = (
+                pending_plan_proposal(client, base_url, task_id, runtime_run_id)
+                if projection.get("status") == "waiting_approval"
+                and runtime_run_id
+                else None
+            )
             approval_attempt_count = sum(
                 1
                 for action in control_actions
-                if action.get("action") in {"approve", "approve_conflict"}
+                if action.get("action") in {
+                    "approve",
+                    "approve_conflict",
+                    "approve_plan_proposal",
+                    "approve_plan_proposal_conflict",
+                }
             )
             approve_available = any(
                 item.get("action") == "approve" and item.get("available")
@@ -298,20 +337,38 @@ def await_task(
             )
             if (
                 projection.get("status") == "waiting_approval"
-                and projection.get("runtime_run_id")
-                and approve_available
+                and runtime_run_id
+                and (approve_available or proposal is not None)
                 and approval_attempt_count < MAX_AUTO_APPROVALS
             ):
+                proposal_decision = proposal is not None
                 approval = client.post(
-                    f"{base_url}/tasks/{task_id}/approve",
-                    params={
-                        "runtime_run_id": projection["runtime_run_id"],
-                    },
-                    json={
-                        "decision": "approved",
-                        "reason": "authorized development E2E control test",
-                        "expected_state_version": projection.get("state_version"),
-                    },
+                    (
+                        f"{base_url}/tasks/{task_id}/runtime-plan-proposals/"
+                        f"{proposal['proposal_id']}/decision"
+                        if proposal_decision
+                        else f"{base_url}/tasks/{task_id}/approve"
+                    ),
+                    params=(
+                        {}
+                        if proposal_decision
+                        else {"runtime_run_id": runtime_run_id}
+                    ),
+                    json=(
+                        {
+                            "decision": "approved",
+                            "reason": "authorized development E2E control test",
+                            "expected_state_version": proposal["state_version"],
+                        }
+                        if proposal_decision
+                        else {
+                            "decision": "approved",
+                            "reason": "authorized development E2E control test",
+                            "expected_state_version": projection.get(
+                                "state_version"
+                            ),
+                        }
+                    ),
                 )
                 if approval.status_code == 409:
                     # The worker can advance the checkpoint between the
@@ -320,9 +377,22 @@ def await_task(
                     # as a failed E2E run.
                     control_actions.append(
                         {
-                            "action": "approve_conflict",
-                            "runtime_run_id": projection["runtime_run_id"],
-                            "state_version": projection.get("state_version"),
+                            "action": (
+                                "approve_plan_proposal_conflict"
+                                if proposal_decision
+                                else "approve_conflict"
+                            ),
+                            "runtime_run_id": runtime_run_id,
+                            "proposal_id": (
+                                proposal.get("proposal_id")
+                                if proposal_decision
+                                else None
+                            ),
+                            "state_version": (
+                                proposal.get("state_version")
+                                if proposal_decision
+                                else projection.get("state_version")
+                            ),
                             "actor": "anonymous_development_test",
                         }
                     )
@@ -330,9 +400,22 @@ def await_task(
                     approval.raise_for_status()
                     control_actions.append(
                         {
-                            "action": "approve",
-                            "runtime_run_id": projection["runtime_run_id"],
-                            "state_version": projection.get("state_version"),
+                            "action": (
+                                "approve_plan_proposal"
+                                if proposal_decision
+                                else "approve"
+                            ),
+                            "runtime_run_id": runtime_run_id,
+                            "proposal_id": (
+                                proposal.get("proposal_id")
+                                if proposal_decision
+                                else None
+                            ),
+                            "state_version": (
+                                proposal.get("state_version")
+                                if proposal_decision
+                                else projection.get("state_version")
+                            ),
                             "actor": "anonymous_development_test",
                         }
                     )

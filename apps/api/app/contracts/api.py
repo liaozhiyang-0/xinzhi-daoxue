@@ -104,6 +104,18 @@ class TaskRuntimeControlRead(BaseModel):
     reason: str = ""
 
 
+class TaskRuntimePlanProposalRead(BaseModel):
+    """Redacted summary of a pending adaptive Runtime plan proposal."""
+
+    proposal_id: str
+    status: Literal["pending", "approved", "rejected", "applied"]
+    state_version: int = Field(ge=1)
+    base_iteration: int = Field(ge=0)
+    target_iteration: int = Field(ge=1)
+    reason_codes: list[str] = Field(default_factory=list, max_length=16)
+    affected_node_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
 class TaskRuntimeControlProjectionRead(BaseModel):
     """Redacted Runtime control state for the student-facing task workspace.
 
@@ -118,6 +130,8 @@ class TaskRuntimeControlProjectionRead(BaseModel):
     status: str = ""
     state_version: int = 0
     control_request: str = ""
+    control_scope: Literal["runtime", "runtime_plan_proposal"] = "runtime"
+    plan_proposal: TaskRuntimePlanProposalRead | None = None
     controls: list[TaskRuntimeControlRead] = Field(default_factory=list)
 
 
