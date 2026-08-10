@@ -30,6 +30,22 @@ from pydantic import AnyHttpUrl, TypeAdapter
 
 
 class FakeLessonRuntimeAgents:
+    def __init__(self, results: list[AgentResult] | None = None) -> None:
+        self.results = results or [
+            AgentResult(
+                agent_id="TEACH_01_LESSON_PREP_V1",
+                provider="local_agent",
+                answer="## Lesson plan",
+                business_data={
+                    "learning_objectives": ["Explain the concept"],
+                    "lesson_flow": ["Introduce", "Practice"],
+                    "activities": ["Practice"],
+                    "formative_assessment": ["Exit ticket"],
+                },
+            )
+        ]
+        self.calls = 0
+
     async def run(
         self,
         agent_id: str,
@@ -37,17 +53,9 @@ class FakeLessonRuntimeAgents:
         context: object = None,
     ) -> AgentResult:
         del request, context
-        return AgentResult(
-            agent_id=agent_id,
-            provider="local_agent",
-            answer="## Lesson plan",
-            business_data={
-                "learning_objectives": ["Explain the concept"],
-                "lesson_flow": ["Introduce", "Practice"],
-                "activities": ["Practice"],
-                "formative_assessment": ["Exit ticket"],
-            },
-        )
+        result = self.results[min(self.calls, len(self.results) - 1)]
+        self.calls += 1
+        return result.model_copy(update={"agent_id": agent_id})
 
 
 class FakeAssignmentRuntimeAgents:
@@ -858,6 +866,116 @@ def test_lesson_prep_runtime_default_launch_uses_registry_plan(api, app) -> None
         "lesson.verify",
     ]
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])
+
+
+def test_lesson_empty_quality_section_uses_one_approval_without_reproposal(
+    api, app
+) -> None:
+    """A reviewable empty section must not enter the adaptive-plan gate."""
+
+    runner = app.state.task_runner
+    settings = runner.knowledge_base.settings
+    settings.agent_runtime_plan_proposals_enabled = True
+    definition = runner.agent_registry.get("TEACH_01_LESSON_PREP_V1")
+    runtime_plan_version = runner.runtime_boundary.runtime_plan_version(
+        definition.agent_id
+    )
+    assert runtime_plan_version is not None
+    runner.runtime_canary_release = _passing_runtime_release_registry(
+        agent_id=definition.agent_id,
+        agent_version=definition.version,
+        runtime_plan_version=runtime_plan_version,
+    )
+    runner.runtime_launch_policy = RuntimeLaunchPolicy(
+        "TEACH_01_LESSON_PREP_V1=default",
+        release_registry=runner.runtime_canary_release,
+        release_gate_required=True,
+    )
+    runner.runtime_lifecycle.enabled = True
+    assert runner.lesson_prep_runtime is not None
+    runner.lesson_prep_runtime.enabled = True
+    fake = FakeLessonRuntimeAgents(
+        [
+            AgentResult(
+                agent_id=definition.agent_id,
+                provider="local_agent",
+                answer="## Lesson plan",
+                business_data={
+                    "learning_objectives": ["Explain the concept"],
+                    "lesson_flow": ["Introduce", "Practice"],
+                    "activities": ["Practice"],
+                    "formative_assessment": [],
+                },
+            )
+        ]
+    )
+    runner.lesson_prep_runtime.internal_agents = fake
+    session = api.create_session()
+    payload = api.task_payload(
+        session["id"],
+        options={
+            "scenario_agent_id": definition.agent_id,
+            "_scenario_catalog_bound": True,
+        },
+        intent="lesson_prep",
+        user_role="teacher",
+    )
+    payload.update(
+        {
+            "scene": "teaching",
+            "scenario_id": "faculty_course_copilot_v1",
+            "canonical_input": {"text": "Prepare a lesson with a reviewable rubric."},
+        }
+    )
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    task_id = response.json()["id"]
+
+    waiting = api.wait_for_task(task_id, statuses={"waiting_review"}, timeout=15)
+    assert waiting["status"] == "waiting_review"
+    controls = api.client.get(f"/api/v1/tasks/{task_id}/runtime-controls")
+    assert controls.status_code == 200, controls.text
+    projection = controls.json()
+    assert projection["status"] == "waiting_approval"
+    assert projection["runtime_run_id"]
+
+    approval = api.client.post(
+        f"/api/v1/tasks/{task_id}/approve",
+        params={"runtime_run_id": projection["runtime_run_id"]},
+        json={
+            "decision": "approved",
+            "reason": (
+                "Reviewable empty assessment section approved for teacher editing."
+            ),
+            "expected_state_version": projection["state_version"],
+        },
+    )
+    assert approval.status_code in {200, 202}, approval.text
+    completed = api.wait_for_task(task_id, timeout=15)
+    assert completed["status"] == "completed"
+    assert fake.calls == 1
+
+    proposals = api.client.get(
+        f"/api/v1/tasks/{task_id}/runtime-plan-proposals"
+    )
+    assert proposals.status_code == 200, proposals.text
+    assert proposals.json() == []
+    debug = api.client.get(f"/api/v1/debug/execution/{task_id}")
+    assert debug.status_code == 200
+    runtime = debug.json()["runtime"]
+    assert runtime["status"] == "completed"
+    assert runtime["iteration"] == 0
+    events = api.client.get(f"/api/v1/tasks/{task_id}/events")
+    assert events.status_code == 200
+    event_data = [event["event_data"] for event in events.json()]
+    approvals = [
+        item["data"]
+        for item in event_data
+        if item.get("data", {}).get("stage_id") == "runtime_control"
+        and item.get("data", {}).get("status") == "approve_requested"
+    ]
+    assert len(approvals) == 1
+    assert approvals[0]["scope"] == "lesson_prep.quality_gate"
 
 
 def test_assignment_review_runtime_default_launch_uses_registry_plan(

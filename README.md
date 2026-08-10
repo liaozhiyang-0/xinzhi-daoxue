@@ -21,6 +21,8 @@
 
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。
 
+在 `development`/`test` 环境中，普通 `start` 和双击启动入口默认由非星辰 Agent Runtime 接管已迁移的原应用路径（目标、计划、节点 checkpoint、SSE 事件以及暂停/审批/恢复控制仍沿用原 Task API）。可使用 `--legacy` 或将 `AGENT_RUNTIME_DEFAULT_ENABLED=false` 关闭这个隐式默认以诊断 Legacy；显式配置的 `AGENT_RUNTIME_LAUNCH_MODES` 仍优先。生产环境不会启用这个隐式默认，仍需通过发布证据门禁显式配置。
+
 业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。文字分类、检索改写、知识回答和专业解题优先使用科大讯飞 Spark，Qwen 主要承担视觉任务、结构化归一化和模型故障兜底。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`、`ENABLE_XINGCHEN_FALLBACK=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true`，并在需要时显式启用星辰回退，才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
 
 PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：

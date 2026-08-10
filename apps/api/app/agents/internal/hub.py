@@ -307,6 +307,7 @@ class InternalAgentHub:
                 schema_json=schema_json,
                 request_id=request_id,
                 max_tokens=max_tokens,
+                extra_options=options,
             )
             return self._result(definition, response)
         response = await self.model_service.generate_json_for_task(
@@ -336,8 +337,11 @@ class InternalAgentHub:
         schema_json: str,
         request_id: str | None,
         max_tokens: int | None,
+        extra_options: dict[str, Any] | None = None,
     ) -> ModelResponse:
-        draft_options = {"max_tokens": max_tokens} if max_tokens is not None else None
+        draft_options = dict(extra_options or {})
+        if max_tokens is not None:
+            draft_options["max_tokens"] = max_tokens
         draft = await self.model_service.generate_for_task(
             definition.task_type,
             messages=[
@@ -371,7 +375,10 @@ class InternalAgentHub:
                 ],
                 schema=definition.output_schema,
                 request_id=request_id,
-                extra_options={"max_tokens": normalization_limit},
+                extra_options={
+                    **(extra_options or {}),
+                    "max_tokens": normalization_limit,
+                },
             )
         except ModelProviderError as exc:
             downstream_usage = exc.details.get("usage", {})

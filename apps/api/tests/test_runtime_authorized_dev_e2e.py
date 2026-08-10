@@ -50,3 +50,116 @@ def test_pair_modes_rotates_pair_order_without_changing_single_mode_runs() -> No
     assert MODULE.pair_modes("both", "runtime-first", 0) == ("runtime", "legacy")
     assert MODULE.pair_modes("legacy", "alternate", 5) == ("legacy",)
     assert MODULE.pair_modes("runtime", "alternate", 5) == ("runtime",)
+
+
+def test_runtime_failure_diagnostics_distinguish_child_failure_from_proposals() -> None:
+    diagnostics = MODULE.runtime_failure_diagnostics(
+        {
+            "runtime": {
+                "nodes": [
+                    {
+                        "node_id": "lesson.execute",
+                        "status": "failed",
+                        "error_code": "subagent_child_result_missing",
+                    },
+                    {
+                        "node_id": "lesson.verify",
+                        "status": "blocked",
+                        "error_code": "dependency_failed",
+                    },
+                ],
+                "events": [],
+            },
+            "events": [
+                {
+                    "data": {
+                        "data": {
+                            "status": "failed",
+                            "error_code": "StructuredOutputError",
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "data": {
+                            "stage_id": "runtime_plan_proposal",
+                            "reason_codes": ["lesson_prep_execution_failed"],
+                        }
+                    }
+                },
+            ],
+        }
+    )
+
+    assert diagnostics == {
+        "failure_codes": [
+            "StructuredOutputError",
+            "dependency_failed",
+            "subagent_child_result_missing",
+        ],
+        "unresolved_failure_codes": [
+            "StructuredOutputError",
+            "dependency_failed",
+            "subagent_child_result_missing",
+        ],
+        "recovered_failure_codes": [],
+        "failed_node_ids": ["lesson.execute", "lesson.verify"],
+        "plan_proposal_count": 1,
+        "plan_proposal_reason_codes": ["lesson_prep_execution_failed"],
+    }
+
+
+def test_runtime_failure_diagnostics_redacts_unstable_identifiers() -> None:
+    diagnostics = MODULE.runtime_failure_diagnostics(
+        {
+            "runtime": {
+                "nodes": [
+                    {
+                        "node_id": "node/with-sensitive text",
+                        "status": "failed",
+                        "error_code": "provider error: raw details",
+                    }
+                ]
+            }
+        }
+    )
+
+    assert diagnostics == {
+        "failure_codes": [],
+        "unresolved_failure_codes": [],
+        "recovered_failure_codes": [],
+        "failed_node_ids": [],
+        "plan_proposal_count": 0,
+        "plan_proposal_reason_codes": [],
+    }
+
+
+def test_runtime_failure_diagnostics_marks_recovered_child_errors() -> None:
+    diagnostics = MODULE.runtime_failure_diagnostics(
+        {
+            "runtime": {
+                "status": "completed",
+                "nodes": [
+                    {
+                        "node_id": "lesson.execute",
+                        "status": "succeeded",
+                        "error_code": "",
+                    }
+                ],
+            },
+            "events": [
+                {
+                    "data": {
+                        "data": {
+                            "status": "failed",
+                            "error_code": "StructuredOutputError",
+                        }
+                    }
+                }
+            ],
+        }
+    )
+
+    assert diagnostics["failure_codes"] == ["StructuredOutputError"]
+    assert diagnostics["unresolved_failure_codes"] == []
+    assert diagnostics["recovered_failure_codes"] == ["StructuredOutputError"]

@@ -98,6 +98,33 @@ def test_runtime_development_profile_rejects_production_and_existing_modes() -> 
         )
 
 
+def test_normal_development_start_defaults_to_runtime() -> None:
+    launcher = load_launcher()
+
+    assert launcher.should_enable_default_runtime_profile({"APP_ENV": "development"})
+    assert launcher.should_enable_default_runtime_profile({"APP_ENV": "test"})
+    assert not launcher.should_enable_default_runtime_profile(
+        {"APP_ENV": "production"}
+    )
+    assert not launcher.should_enable_default_runtime_profile(
+        {
+            "APP_ENV": "development",
+            "AGENT_RUNTIME_LAUNCH_MODES": "GENERAL_QUESTION_V1=canary",
+        }
+    )
+
+
+def test_normal_development_start_can_explicitly_keep_legacy() -> None:
+    launcher = load_launcher()
+
+    assert not launcher.should_enable_default_runtime_profile(
+        {"APP_ENV": "development"}, legacy_opt_out=True
+    )
+    assert not launcher.should_enable_default_runtime_profile(
+        {"APP_ENV": "development", "AGENT_RUNTIME_DEFAULT_ENABLED": "false"}
+    )
+
+
 def test_configuration_summary_never_returns_secret_values() -> None:
     launcher = load_launcher()
     secret = "this-value-must-never-be-returned"
@@ -112,6 +139,19 @@ def test_configuration_summary_never_returns_secret_values() -> None:
     assert secret not in rendered
     assert summary["secrets"]["XINGCHEN_API_KEY"] == "configured"
     assert summary["secrets"]["XINGCHEN_SOLVER_CT_FLOW_ID"] == "missing"
+
+
+def test_launch_lock_rejects_a_second_local_api_start(monkeypatch, tmp_path) -> None:
+    launcher = load_launcher()
+    monkeypatch.setattr(launcher, "ROOT", tmp_path)
+    first = launcher.SingleInstanceLaunchLock(8000)
+    second = launcher.SingleInstanceLaunchLock(8000)
+    first.acquire()
+    try:
+        with pytest.raises(launcher.LaunchError, match="already in progress"):
+            second.acquire()
+    finally:
+        first.release()
 
 
 def test_compose_uses_stable_project_and_volume_names() -> None:

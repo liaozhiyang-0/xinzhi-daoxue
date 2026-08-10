@@ -184,6 +184,27 @@ async def test_circuit_agent_uses_reason_then_structure_pipeline() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_structured_fallback_option_reaches_spark_pipeline() -> None:
+    agent_hub, service = hub()
+
+    await agent_hub.run_text(
+        "CIRCUIT_PLANNER_LOCAL_V1",
+        input_text="plan a two-mesh circuit",
+        max_tokens=128,
+        extra_options={"_allow_structured_fallback": True},
+    )
+
+    assert service.calls[0]["extra_options"] == {
+        "_allow_structured_fallback": True,
+        "max_tokens": 128,
+    }
+    assert service.calls[1]["extra_options"] == {
+        "_allow_structured_fallback": True,
+        "max_tokens": 128,
+    }
+
+
+@pytest.mark.asyncio
 async def test_circuit_vision_agent_uses_schema_and_image_route() -> None:
     agent_hub, service = hub()
 

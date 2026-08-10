@@ -212,8 +212,16 @@ class LessonPrepRuntimeService(GeneralQuestionRuntimeService):
 
         fields: dict[str, list[str]] = {}
         for field in cls._REQUIRED_FIELDS:
-            items = cls._field_items(result.business_data.get(field))
+            raw_value = result.business_data.get(field)
+            items = cls._field_items(raw_value)
             if items is None:
+                # An explicitly empty section is still a reviewable answer:
+                # replanning the same deterministic request can reproduce the
+                # omission and trap the Runtime in an approval/replan loop.
+                # A missing or malformed section remains a structural failure
+                # and must use the bounded replan path.
+                if isinstance(raw_value, (list, tuple)):
+                    return "approval"
                 return "replan"
             fields[field] = items
 

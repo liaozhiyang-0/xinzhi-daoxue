@@ -51,6 +51,90 @@ class LaunchError(RuntimeError):
     """A safe, user-facing launcher failure."""
 
 
+class SingleInstanceLaunchLock:
+    """Serialize local API starts for one port without killing unknown owners."""
+
+    def __init__(self, port: int) -> None:
+        self.path = ROOT / ".codex-tmp" / f"team-launcher-{port}.lock"
+        self._file_descriptor: int | None = None
+
+    def acquire(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(2):
+            try:
+                descriptor = os.open(
+                    self.path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                )
+            except FileExistsError as err:
+                owner = self._owner_pid()
+                if owner is not None and _process_is_running(owner):
+                    raise LaunchError(
+                        "another local API launch is already in progress; "
+                        "wait for it to finish"
+                    ) from err
+                try:
+                    self.path.unlink()
+                except FileNotFoundError:
+                    continue
+                continue
+            os.write(descriptor, f"{os.getpid()}\n".encode("ascii"))
+            self._file_descriptor = descriptor
+            return
+        raise LaunchError("could not acquire the local API launch lock")
+
+    def release(self) -> None:
+        descriptor = self._file_descriptor
+        self._file_descriptor = None
+        if descriptor is not None:
+            os.close(descriptor)
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
+
+    def _owner_pid(self) -> int | None:
+        try:
+            value = self.path.read_text(encoding="ascii").strip()
+            return int(value) if value else None
+        except (OSError, ValueError):
+            return None
+
+
+def _process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        # Windows maps ``os.kill(pid, 0)`` to an actual termination attempt;
+        # use a non-destructive process handle probe instead.
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        synchronize = 0x00100000
+        wait_timeout = 0x00000102
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(
+            process_query_limited_information | synchronize,
+            False,
+            pid,
+        )
+        if not handle:
+            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == wait_timeout
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 def parse_dotenv(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
@@ -139,6 +223,33 @@ def enable_runtime_development_profile(
         }
     )
     return runtime_environment
+
+
+def should_enable_default_runtime_profile(
+    environment: dict[str, str], *, legacy_opt_out: bool = False
+) -> bool:
+    """Decide whether the normal local application entry uses Runtime.
+
+    The application entry point is intentionally Runtime-first in development
+    and test environments. An explicit launch-mode configuration remains the
+    source of truth, and ``AGENT_RUNTIME_DEFAULT_ENABLED=false`` is the safe
+    local opt-out for diagnosing the Legacy path. Production never receives
+    this implicit profile.
+    """
+
+    if legacy_opt_out:
+        return False
+    app_env = environment.get("APP_ENV", "development").strip().lower()
+    if app_env not in {"development", "test"}:
+        return False
+    if environment.get("AGENT_RUNTIME_DEFAULT_ENABLED", "true").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return False
+    return not environment.get("AGENT_RUNTIME_LAUNCH_MODES", "").strip()
 
 
 def configuration_summary(dotenv: dict[str, str]) -> dict[str, object]:
@@ -424,8 +535,19 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
     if args.reload:
         command.append("--reload")
     print(f"[xzd] 启动 Web：{base_url}/")
-    process = subprocess.Popen(command, cwd=ROOT, env=environment)  # noqa: S603
+    launch_lock = SingleInstanceLaunchLock(args.port)
+    launch_lock.acquire()
+    process: subprocess.Popen[bytes] | None = None
     try:
+        # Another launcher may have bound the port while this process waited
+        # for the start lock. Reuse that service instead of spawning a second
+        # API/worker process.
+        if api_ready(base_url):
+            launch_lock.release()
+            if args.open_browser:
+                open_workspace(base_url)
+            return 0
+        process = subprocess.Popen(command, cwd=ROOT, env=environment)  # noqa: S603
         for _ in range(90):
             if process.poll() is not None:
                 raise LaunchError("FastAPI 启动失败；请查看上方服务器日志。")
@@ -442,6 +564,7 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
         print("  按 Ctrl+C 停止 Web；需要停止容器时运行 '.\\xzd.ps1 stop'。\n")
         if args.open_browser:
             open_workspace(base_url)
+        launch_lock.release()
         if args.with_cloud:
             result = run_command(
                 [
@@ -456,12 +579,14 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
             )
             if result.returncode != 0:
                 print("[xzd] 云端 Preflight 存在失败项；Web 仍保持运行。")
+        assert process is not None
         return int(process.wait())
     except KeyboardInterrupt:
         print("\n[xzd] 正在停止 Web...")
         return 0
     finally:
-        if process.poll() is None:
+        launch_lock.release()
+        if process is not None and process.poll() is None:
             process.terminate()
             try:
                 process.wait(timeout=10)
@@ -475,6 +600,7 @@ def command_start(args: argparse.Namespace) -> int:
     base_url = f"http://127.0.0.1:{args.port}"
     running_pids = owned_api_pids(args.port)
     runtime_dev = bool(getattr(args, "runtime_dev", False))
+    legacy_opt_out = bool(getattr(args, "legacy", False))
     if getattr(args, "force_reload", False) and api_ready(base_url):
         if not running_pids:
             raise LaunchError(
@@ -504,8 +630,16 @@ def command_start(args: argparse.Namespace) -> int:
         return 0
     dotenv = parse_dotenv(ensure_env_file())
     environment = build_host_environment(dotenv)
-    if runtime_dev:
+    runtime_default = should_enable_default_runtime_profile(
+        environment, legacy_opt_out=legacy_opt_out
+    )
+    if runtime_dev or runtime_default:
         environment = enable_runtime_development_profile(environment)
+        if runtime_default and not runtime_dev:
+            print(
+                "[xzd] development 默认使用 Agent Runtime；"
+                "如需诊断 Legacy，请使用 --legacy"
+            )
     ensure_python_environment(refresh=args.refresh_deps)
     start_dependencies(environment)
     migrate_database(environment)
@@ -638,6 +772,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--runtime-dev",
         action="store_true",
         help="development/test：以 Runtime 默认接管本地通用问答与知识问答",
+    )
+    start.add_argument(
+        "--legacy",
+        action="store_true",
+        help="development/test：关闭隐式 Runtime 默认（不覆盖显式 launch modes）",
     )
     start.set_defaults(handler=command_start)
     commands.add_parser("stop", help="停止本地基础服务").set_defaults(

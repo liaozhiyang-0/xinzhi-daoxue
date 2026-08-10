@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -407,6 +408,111 @@ def _task_lifecycle_elapsed_ms(task: dict[str, Any]) -> int | None:
     return max(0, round((completed - started).total_seconds() * 1000))
 
 
+_DIAGNOSTIC_IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
+
+
+def _safe_diagnostic_identifier(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    return candidate if _DIAGNOSTIC_IDENTIFIER.fullmatch(candidate) else None
+
+
+def runtime_failure_diagnostics(execution: dict[str, Any]) -> dict[str, Any]:
+    """Summarize safe Runtime failure/proposal signals for E2E triage.
+
+    The public debug projection intentionally omits provider prompts and raw
+    exception messages.  Stable error codes, node IDs, and bounded proposal
+    reason codes are sufficient to distinguish a Provider/child failure from
+    an approval or quality-gate decision without copying sensitive payloads
+    into the private report.
+    """
+
+    runtime = execution.get("runtime", {})
+    if not isinstance(runtime, dict):
+        return {
+            "failure_codes": [],
+            "unresolved_failure_codes": [],
+            "recovered_failure_codes": [],
+            "failed_node_ids": [],
+            "plan_proposal_count": 0,
+            "plan_proposal_reason_codes": [],
+        }
+
+    failure_codes: set[str] = set()
+    failed_node_ids: set[str] = set()
+    raw_nodes = runtime.get("nodes", [])
+    nodes = raw_nodes if isinstance(raw_nodes, list) else []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        status = str(node.get("status", "")).casefold()
+        code = _safe_diagnostic_identifier(node.get("error_code"))
+        node_id = _safe_diagnostic_identifier(node.get("node_id"))
+        if code and status in {"failed", "blocked", "partial"}:
+            failure_codes.add(code)
+        if node_id and status in {"failed", "blocked"}:
+            failed_node_ids.add(node_id)
+
+    proposal_count = 0
+    proposal_reason_codes: set[str] = set()
+    events = execution.get("events", [])
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            envelope = event.get("data")
+            if not isinstance(envelope, dict):
+                continue
+            data = envelope.get("data")
+            if not isinstance(data, dict):
+                continue
+            code = _safe_diagnostic_identifier(data.get("error_code"))
+            if code and str(data.get("status", "")).casefold() in {
+                "failed",
+                "blocked",
+                "partial",
+            }:
+                failure_codes.add(code)
+            if data.get("stage_id") != "runtime_plan_proposal":
+                continue
+            proposal_count += 1
+            reasons = data.get("reason_codes", [])
+            if isinstance(reasons, list):
+                for reason in reasons:
+                    safe_reason = _safe_diagnostic_identifier(reason)
+                    if safe_reason:
+                        proposal_reason_codes.add(safe_reason)
+
+    runtime_status = str(runtime.get("status", "")).casefold()
+    unresolved_failure_codes = (
+        set(failure_codes)
+        if runtime_status != "completed"
+        else {
+            _safe_diagnostic_identifier(node.get("error_code"))
+            for node in nodes
+            if isinstance(node, dict)
+            and str(node.get("status", "")).casefold()
+            in {"failed", "blocked", "partial"}
+            and _safe_diagnostic_identifier(node.get("error_code"))
+        }
+    )
+    unresolved_failure_codes.discard(None)
+    recovered_failure_codes = failure_codes - {
+        code for code in unresolved_failure_codes if isinstance(code, str)
+    }
+    return {
+        "failure_codes": sorted(failure_codes),
+        "unresolved_failure_codes": sorted(
+            code for code in unresolved_failure_codes if isinstance(code, str)
+        ),
+        "recovered_failure_codes": sorted(recovered_failure_codes),
+        "failed_node_ids": sorted(failed_node_ids),
+        "plan_proposal_count": proposal_count,
+        "plan_proposal_reason_codes": sorted(proposal_reason_codes),
+    }
+
+
 def result_summary(
     task: dict[str, Any], execution: dict[str, Any], *, observed_wait_ms: int
 ) -> dict[str, Any]:
@@ -448,6 +554,7 @@ def result_summary(
                 "runtime_control_overhead_ms",
             )
         },
+        "runtime_failure_diagnostics": runtime_failure_diagnostics(execution),
         "metrics": result.get("metrics", {}),
     }
 

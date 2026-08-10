@@ -207,6 +207,33 @@ def test_quality_gate_uses_direct_approval_with_plan_proposals_enabled() -> None
     assert fake.calls == 1
 
 
+def test_incomplete_business_section_uses_quality_approval() -> None:
+    fake = FakeLessonAgents(
+        [
+            make_result(
+                business_data={
+                    "learning_objectives": ["Explain the concept"],
+                    "lesson_flow": ["Introduce", "Practice"],
+                    "activities": ["Guided practice"],
+                    "formative_assessment": [],
+                }
+            )
+        ]
+    )
+    service = LessonPrepRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
+    request = make_request("task-lesson-incomplete-section")
+    run = make_run(service, request)
+
+    with pytest.raises(RuntimeRunSuspended) as suspended:
+        asyncio.run(service.run(request, run))
+
+    assert suspended.value.status == RuntimeRunStatus.WAITING_APPROVAL
+    assert run.last_decision is not None
+    assert run.last_decision.action == DecisionAction.REQUEST_APPROVAL
+    assert run.last_decision.approval_scope == service.approval_scope
+    assert fake.calls == 1
+
+
 def test_lesson_prep_checkpoint_recovery_reuses_result_without_provider_call() -> None:
     fake = FakeLessonAgents(
         [
