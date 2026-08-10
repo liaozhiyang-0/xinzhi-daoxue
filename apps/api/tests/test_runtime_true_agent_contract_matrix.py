@@ -396,7 +396,12 @@ def test_runtime_enforces_budget_approval_pause_and_resume() -> None:
         approved_handler,
         requires_approval=True,
     )
-    approval_service = GenericGoalRuntimeService(registry)
+    approval_service = GenericGoalRuntimeService(
+        registry,
+        intake_policy=RuntimeGoalIntakePolicy.from_config(
+            "request=tool.approved"
+        ),
+    )
     approval_request = AgentRequest(
         task_id="true-agent-approval-task",
         session_id="true-agent-approval-session",

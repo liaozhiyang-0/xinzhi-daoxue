@@ -52,6 +52,23 @@ def test_goal_intake_rejects_side_effect_without_agent_allowlist() -> None:
         )
 
 
+def test_goal_intake_rejects_approval_gated_tool_without_agent_allowlist() -> None:
+    with pytest.raises(
+        RuntimeGoalIntakeError,
+        match="goal_capability_requires_agent_allowlist:tool.privileged_read",
+    ):
+        RuntimeGoalIntakePolicy({}).validate(
+            "GENERAL_QUESTION_V1",
+            _goal(),
+            [
+                _selection(
+                    handler_id="tool.privileged_read",
+                    requires_approval=True,
+                )
+            ],
+        )
+
+
 def test_goal_intake_requires_full_handler_id_in_agent_allowlist() -> None:
     policy = RuntimeGoalIntakePolicy.from_config(
         "GENERAL_QUESTION_V1=tool.write"

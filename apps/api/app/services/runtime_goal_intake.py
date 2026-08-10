@@ -95,7 +95,11 @@ class RuntimeGoalIntakePolicy:
             unsafe = [
                 selection.handler_id
                 for selection in selections
-                if selection.kind != "tool" or selection.side_effecting
+                if (
+                    selection.kind != "tool"
+                    or selection.side_effecting
+                    or selection.requires_approval
+                )
             ]
             if unsafe:
                 raise RuntimeGoalIntakeError(

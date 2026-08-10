@@ -139,3 +139,12 @@ even when nodes run in parallel. The authorized E2E runner copies these values
 into its redacted private `report.json`, and the offline paired-sample analyzer
 compares them when present. Historical reports simply omit the new fields; no
 old result or release decision is rewritten.
+
+## Generic goal capability admission hardening (2026-08-10)
+
+The default Generic Goal Runtime policy now admits only tools that are both
+non-side-effecting and not approval-gated. A request goal can select a
+privileged tool or subagent only when the routed Agent has an explicit full
+handler-ID allowlist. This prevents request-controlled goals from converting a
+descriptor's approval requirement into an implicit authority grant; the
+existing Runtime approval gate remains the second, durable enforcement layer.
