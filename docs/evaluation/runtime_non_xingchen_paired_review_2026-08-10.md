@@ -449,3 +449,20 @@ They are ignored and must not be committed.
   or worker failure-recovery drill was performed. Production-equivalent
   restart evidence and a Runtime run against the Docker-backed dependencies
   remain outstanding.
+
+## 27. 2026-08-11 Lesson Prep real-provider recovery recheck
+
+- A fresh bounded single-instance paired run was executed after the Lesson
+  Prep quality-gate and checkpoint-recovery changes. Legacy and Runtime both
+  completed 1/1 with matching `TEACH_01_LESSON_PREP_V1`, zero timeouts, zero
+  agent mismatches, and zero event-order failures.
+- The Runtime result contained 13 checkpoints, three nodes, 27 strictly
+  increasing events, no unresolved failure codes, and one explicit approval
+  action. The post-approval path completed without a repeated proposal or
+  `approval_budget_exhausted` terminal state. Both modes used `local_agent`
+  without fallback in this run.
+- Offline packaging produced a version-bound structural suite with
+  `structural_release_eligible=true`, `agent_version=lesson-prep-v1`, and
+  `runtime_plan_version=lesson-prep-v1`. Semantic review and a human release
+  decision remain required; no release, canary, or default decision was
+  created.
