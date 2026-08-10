@@ -50,15 +50,15 @@ class FakeLessonRuntimeAgents:
         )
 
 
-def _passing_general_runtime_release_registry(
+def _passing_runtime_release_registry(
     *,
+    agent_id: str,
     agent_version: str,
     runtime_plan_version: str,
 ) -> RuntimeCanaryReleaseRegistry:
     """Provide a fully bound release fixture for the Task API handoff test."""
 
-    agent_id = "GENERAL_QUESTION_V1"
-    suite_id = "general-runtime-task-api-release"
+    suite_id = f"{agent_id.casefold()}-runtime-task-api-release"
     captured_at = datetime(2026, 8, 10, tzinfo=UTC)
     report = RuntimeCanaryReport(
         suite_id=suite_id,
@@ -78,7 +78,7 @@ def _passing_general_runtime_release_registry(
     )
     semantic = RuntimeSemanticEvidence(
         suite_id=suite_id,
-        case_id="general-runtime-task-api-case",
+        case_id=f"{agent_id.casefold()}-runtime-task-api-case",
         agent_id=agent_id,
         agent_version=agent_version,
         runtime_plan_version=runtime_plan_version,
@@ -626,7 +626,8 @@ def test_general_question_runtime_default_launch_mode_requires_no_runtime_option
         definition.agent_id
     )
     assert runtime_plan_version is not None
-    runner.runtime_canary_release = _passing_general_runtime_release_registry(
+    runner.runtime_canary_release = _passing_runtime_release_registry(
+        agent_id=definition.agent_id,
         agent_version=definition.version,
         runtime_plan_version=runtime_plan_version,
     )
@@ -711,6 +712,69 @@ def test_local_retrieval_runtime_default_launch_fails_closed_without_evidence(
     assert events.status_code == 200
     assert not any(
         event["event_data"].get("stage_id") == "local_retrieval"
+        for event in events.json()
+    )
+
+
+def test_local_retrieval_runtime_default_launch_owns_learning_task(
+    api, app
+) -> None:
+    runner = app.state.task_runner
+    definition = runner.agent_registry.get("LEARN_01_LOCAL_RETRIEVAL_V1")
+    runtime_plan_version = runner.runtime_boundary.runtime_plan_version(
+        definition.agent_id
+    )
+    assert runtime_plan_version is not None
+    runner.runtime_canary_release = _passing_runtime_release_registry(
+        agent_id=definition.agent_id,
+        agent_version=definition.version,
+        runtime_plan_version=runtime_plan_version,
+    )
+    runner.runtime_launch_policy = RuntimeLaunchPolicy(
+        "LEARN_01_LOCAL_RETRIEVAL_V1=default",
+        release_registry=runner.runtime_canary_release,
+        release_gate_required=True,
+    )
+    runner.runtime_lifecycle.enabled = True
+    runner.knowledge_qa_runtime.enabled = True
+    knowledge_path = runner.knowledge_base.settings.knowledge_ct_path
+    knowledge_path.mkdir(parents=True, exist_ok=True)
+    (knowledge_path / "runtime-kcl.md").write_text(
+        "# 基尔霍夫电流定律\n\n"
+        "基尔霍夫电流定律说明：任一节点流入电流之和等于流出电流之和。\n",
+        encoding="utf-8",
+    )
+    session = api.create_session()
+    payload = api.task_payload(session["id"], options={}, intent="general_qa")
+    payload.update(
+        {
+            "scene": "learning",
+            "course_id": "CT",
+            "canonical_input": {"text": "请解释基尔霍夫电流定律。"},
+        }
+    )
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"], timeout=20)
+    debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
+    assert debug.status_code == 200
+
+    assert completed["status"] == "completed"
+    assert completed["result_content"]["citations"]
+    runtime = debug.json()["runtime"]
+    assert runtime["status"] == "completed"
+    assert runtime["launch_decision"]["mode"] == "default"
+    assert runtime["launch_decision"]["source"] == "configured_launch_mode"
+    assert [node["node_id"] for node in runtime["nodes"]] == [
+        "knowledge.execute",
+        "knowledge.verify",
+    ]
+    assert all(node["status"] == "succeeded" for node in runtime["nodes"])
+    events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
+    assert events.status_code == 200
+    assert any(
+        event["event_data"].get("data", {}).get("runtime_run_id")
+        == runtime["run_id"]
         for event in events.json()
     )
 

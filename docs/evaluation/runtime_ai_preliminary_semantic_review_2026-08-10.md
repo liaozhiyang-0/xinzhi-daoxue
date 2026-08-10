@@ -6,6 +6,8 @@
 
 自 2026-08-10 起，Runtime 发布门禁不再允许仅凭结构性配对证据进入 `canary` 或 `default`：必须同时有覆盖全部案例、哈希绑定且结论为 `pass` 的语义 sidecar。模型初审中的 `needs_review` 会保持阻断；该规则已由 Task API 默认接管路径回归测试覆盖。
 
+默认接管回归目前已覆盖 `GENERAL_QUESTION_V1` 与 `LEARN_01_LOCAL_RETRIEVAL_V1`：测试通过现有 `POST /api/v1/tasks`、轮询、SSE 事件和执行调试 API 验证 Runtime 结果拥有权。测试中的 release 证据和本地课程片段均为隔离夹具，不是对真实环境的发布授权。
+
 | Agent / case | 初审分数（完成度 / 事实 / 证据 / 安全） | 初审结论 | 原因 |
 | --- | --- | --- | --- |
 | `GENERAL_QUESTION_V1` / `general_stack_explanation` | 1.0 / 1.0 / N/A / 1.0 | `needs_review` | 两条路径均满足“两句话解释栈”的要求，定义正确；无外部证据要求。 |
