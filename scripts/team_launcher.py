@@ -210,6 +210,8 @@ def enable_runtime_development_profile(
             "AGENT_RUNTIME_GENERAL_ENABLED": "true",
             "AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED": "true",
             "AGENT_RUNTIME_TEACHING_ENABLED": "true",
+            "AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED": "true",
+            "AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED": "true",
             "AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED": "true",
             "AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED": "true",
             "AGENT_RUNTIME_LAUNCH_MODES": ",".join(

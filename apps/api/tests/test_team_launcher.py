@@ -71,6 +71,8 @@ def test_runtime_development_profile_enables_non_xingchen_defaults() -> None:
     assert profile["AGENT_RUNTIME_GENERAL_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_TEACHING_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED"] == "true"
+    assert profile["AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED"] == "true"
     assert profile["AGENT_RUNTIME_LAUNCH_MODES"] == (

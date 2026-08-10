@@ -800,3 +800,35 @@ $env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
 $env:XINZHI_TEACHER_BROWSER_SCENARIO = 'assignment_review'
 node scripts\run_runtime_teacher_browser_acceptance.js
 ```
+
+## 45. 2026-08-11 LearningLoop development profile activation
+
+- The explicit `--runtime-dev` launcher profile now enables both
+  `TEACHING_INTERACTION_V1` and `LEARNING_PROGRESS_V1` in addition to the
+  Task Teaching Runtime. The safe `.env.example` defaults remain disabled;
+  this change affects only the named development/test profile.
+- A bounded isolated SQLite API run used that profile contract with Mock
+  Provider, Xingchen disabled, and one API process. The redacted report is
+  under
+  `.local_outputs/learning_runtime_dev_profile_20260811_recheck/report.json`.
+- `teaching_request_more_hint` and
+  `learning_progress_manual_review` both routed to Runtime and completed 2/2.
+  Each entered `waiting_approval`, accepted one explicit approval, completed
+  all four Runtime nodes, and preserved strictly increasing events (34 and 33
+  events respectively). This proves development wiring and durable approval
+  behavior; it is Mock/application evidence, not semantic or release evidence.
+
+The bounded API action runner is:
+
+```powershell
+$env:AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED = 'true'
+$env:AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED = 'true'
+.\.venv\Scripts\python.exe scripts\run_learning_runtime_authorized_dev_e2e.py `
+  --base-url http://127.0.0.1:8044/api/v1 `
+  --mode runtime `
+  --case teaching_request_more_hint `
+  --case learning_progress_manual_review `
+  --auto-approve-dev `
+  --timeout-seconds 90 `
+  --output .local_outputs\learning_runtime_dev_profile_20260811_recheck
+```
