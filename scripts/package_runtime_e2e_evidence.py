@@ -30,8 +30,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.runtime import (  # type: ignore[import-untyped]  # noqa: E402
+    RuntimeCanarySuite,
     audit_checkpoint_trace,
 )
+from app.runtime.semantic_evidence import payload_sha256  # noqa: E402
 
 from scripts.collect_runtime_canary import build_suite_from_manifest  # noqa: E402
 
@@ -323,21 +325,45 @@ def _write_semantic_review_material(
     root: Path,
     agent_id: str,
     pairs: list[PairArtifact],
+    suite: RuntimeCanarySuite,
     authorization_ref: str,
-) -> tuple[Path, Path]:
-    """Create controlled reviewer inputs without manufacturing a judgement.
+) -> tuple[Path, Path, Path]:
+    """Create controlled reviewer inputs, paired outputs, and a blank template.
 
-    Structural suites deliberately hold only input digests, while an
-    independent reviewer needs the corresponding redacted input to bind a
-    semantic sidecar.  The template is intentionally invalid as evidence:
-    every case remains ``needs_review`` with an explicit incomplete reviewer
-    marker, so it cannot be mistaken for an approval record.
+    The packet deliberately exposes only a review whitelist rather than whole
+    Task records or Runtime state.  This gives a reviewer the paired answers
+    needed for a semantic comparison without accidentally re-exporting Task
+    metadata, provider details, or checkpoint state.  The blank template is
+    intentionally not release evidence: every case remains ``needs_review``
+    with an explicit incomplete reviewer marker.
     """
 
     inputs: dict[str, dict[str, Any]] = {}
     judgements: dict[str, dict[str, Any]] = {}
+    pair_by_case_id = {pair.case_id: pair for pair in suite.pairs}
+    review_cases: list[dict[str, Any]] = []
     for pair in sorted(pairs, key=lambda item: item.case_id):
-        inputs[pair.case_id] = _read_json_object(pair.runtime_input, "runtime input")
+        input_payload = _read_json_object(pair.runtime_input, "runtime input")
+        input_sensitive_paths = _sensitive_key_paths(input_payload)
+        if input_sensitive_paths:
+            raise ValueError(
+                f"{agent_id}:{pair.case_id}: input contains sensitive keys: "
+                + ",".join(sorted(input_sensitive_paths))
+            )
+        suite_pair = pair_by_case_id.get(pair.case_id)
+        if suite_pair is None:
+            raise ValueError(
+                f"{agent_id}:{pair.case_id}: structural suite pair is missing"
+            )
+        legacy_output = _reviewable_output(
+            pair.legacy_task,
+            label=f"{agent_id}:{pair.case_id}: Legacy task",
+        )
+        runtime_output = _reviewable_output(
+            pair.runtime_task,
+            label=f"{agent_id}:{pair.case_id}: Runtime task",
+        )
+        inputs[pair.case_id] = input_payload
         judgements[pair.case_id] = {
             "dimensions": {
                 "task_fulfillment": None,
@@ -353,12 +379,65 @@ def _write_semantic_review_material(
             "redaction_status": "redacted",
             "authorization_ref": authorization_ref,
         }
+        review_cases.append(
+            {
+                "case_id": pair.case_id,
+                "redacted_input": input_payload,
+                "legacy_output": legacy_output,
+                "runtime_output": runtime_output,
+                "input_sha256": suite_pair.input_sha256,
+                "legacy_payload_sha256": payload_sha256(suite_pair.legacy_payload),
+                "runtime_payload_sha256": payload_sha256(suite_pair.runtime_payload),
+                "runtime_checkpoint_path": _relative(
+                    root, pair.runtime_task.parent / "checkpoints.json"
+                ),
+            }
+        )
     slug = _slug(agent_id)
     inputs_path = root / "semantic_review_inputs" / f"{slug}.json"
+    packet_path = root / "semantic_review_packets" / f"{slug}.json"
     template_path = root / "semantic_review_judgements_template" / f"{slug}.json"
     _write_json(inputs_path, inputs)
+    _write_json(
+        packet_path,
+        {
+            "schema_version": "runtime_semantic_review_packet.v1",
+            "agent_id": agent_id,
+            "runtime_plan_version": suite.evidence.runtime_plan_version,
+            "authorization_ref": authorization_ref,
+            "redaction_status": "redacted",
+            "review_boundary": (
+                "Paired output excerpts for semantic review only; this packet "
+                "does not constitute an independent human review or release decision."
+            ),
+            "cases": review_cases,
+        },
+    )
     _write_json(template_path, judgements)
-    return inputs_path, template_path
+    return inputs_path, packet_path, template_path
+
+
+def _reviewable_output(path: Path, *, label: str) -> dict[str, Any]:
+    """Return the minimum paired-output projection needed for semantic review."""
+
+    task = _read_json_object(path, label)
+    result_content = task.get("result_content")
+    if not isinstance(result_content, dict):
+        raise ValueError(f"{label}: result_content must be a JSON object")
+    sensitive_paths = _sensitive_key_paths(result_content)
+    if sensitive_paths:
+        raise ValueError(
+            f"{label}: result_content contains sensitive keys: "
+            + ",".join(sorted(sensitive_paths))
+        )
+    answer = result_content.get("answer")
+    if not isinstance(answer, str):
+        raise ValueError(f"{label}: result_content.answer must be a string")
+    output: dict[str, Any] = {"status": task.get("status"), "answer": answer}
+    for field in ("citations", "warnings"):
+        if field in result_content:
+            output[field] = result_content[field]
+    return output
 
 
 def package_e2e_evidence(
@@ -439,11 +518,12 @@ def package_e2e_evidence(
             suite = build_suite_from_manifest(manifest_path)
             suite_path = root / "structural_suites" / f"{_slug(agent_id)}.json"
             _write_json(suite_path, suite.model_dump(mode="json"))
-            semantic_inputs_path, judgement_template_path = (
+            semantic_inputs_path, semantic_packet_path, judgement_template_path = (
                 _write_semantic_review_material(
                     root=root,
                     agent_id=agent_id,
                     pairs=pairs,
+                    suite=suite,
                     authorization_ref=authorization_ref.strip(),
                 )
             )
@@ -454,6 +534,7 @@ def package_e2e_evidence(
                     "manifest": _relative(root, manifest_path),
                     "structural_suite": _relative(root, suite_path),
                     "semantic_inputs": _relative(root, semantic_inputs_path),
+                    "semantic_review_packet": _relative(root, semantic_packet_path),
                     "semantic_judgements_template": _relative(
                         root, judgement_template_path
                     ),
