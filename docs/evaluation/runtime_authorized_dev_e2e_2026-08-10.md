@@ -1,0 +1,97 @@
+# 授权开发环境 Runtime 端到端验证记录（2026-08-10）
+
+## 结论
+
+在用户授权的开发隔离环境中，四个非星辰顶层 Agent 已完成小样本的真实
+Legacy/Runtime 成对执行。Runtime 路径实际写入了业务计划节点、checkpoint 与
+Task 事件，未再使用 `compat-1` 的 Legacy 包装计划。该记录证明开发环境的真实
+调用与前后端任务链可走通；它**不是**语义等价、答案正确率、生产 canary 或
+default 发布批准。
+
+所有原始任务、事件、checkpoint 与输出仅位于被 Git 忽略的
+`.local_outputs/runtime_authorized_dev_e2e_20260810/`。本文不复制原始答案、
+Provider 请求 ID、密钥、Flow ID 或私有路径。
+
+## 授权与隔离边界
+
+- 授权范围：开发环境、现有环境变量、所有非星辰工作流；本次实际执行四个本地
+  顶层 Agent，各一条脱敏合成输入的 Legacy/Runtime 配对。
+- 星辰：`XINGCHEN_ENABLED=false` 与
+  `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`；没有调用或修改星辰工作流，
+  也没有修改冻结的 `SOLVER_CT v1.0`。
+- 数据库与存储：独立 SQLite 数据库和 `.local_outputs` 存储根；先执行现有
+  Alembic 增量 migration 后启动 API。
+- 发布：隔离进程临时设定 `AGENT_RUNTIME_RELEASE_GATE_REQUIRED=false`，只为了
+  采集首批 Runtime trace；没有修改工作区 `.env`、没有设为 default、没有写入
+  生产 release artifact。
+- 模型：DashScope 连通性探针的三个配置模型均通过。Spark-X 本次未满足探针的
+  `SPARK_OK` 回包约定，因此隔离 API 显式禁用 Spark 主链并允许既有 Qwen 后备。
+- 外部检索：低强度检查中 Crossref、OpenAlex、Tavily、SearXNG、Aliyun IQS、
+  Bocha 和 News RSS 返回完成；arXiv 出现限流/超时，作为可预期的外部依赖风险
+  保留在科研案例 warnings 中。
+
+## Runtime 成对结果
+
+| Agent | Legacy / Runtime 终态 | 实际 Runtime plan | Runtime 节点 | checkpoint（Legacy / Runtime） | Task 事件（Legacy / Runtime） | 备注 |
+| --- | --- | --- | --- | ---: | ---: | --- |
+| `GENERAL_QUESTION_V1` | completed / completed | `general-qa-v1` | observe → 子 Agent execute → verify | 2 / 12 | 17 / 23 | Runtime 创建 1 个受控子运行 |
+| `LEARN_01_LOCAL_RETRIEVAL_V1` | completed / completed | `knowledge-qa-v1` | execute → verify | 2 / 9 | 21 / 19 | 本地课程资料检索回答；结果明确标注非星辰生成 |
+| `ACADEMIC_PROBLEM_SOLVER` | completed / completed | `solver-runtime-v1` | observe → retrieve → execute → verify | 2 / 15 | 18 / 23 | 使用本地学术求解图；未修改 `SOLVER_CT v1.0` |
+| `RESEARCH_01_ACADEMIC_SEARCH_V1` | completed / completed | `external-research-v1` | intent → fetch → answer → verify | 2 / 15 | 25 / 27 | 出现 arXiv 限流/超时与论文复核超时 warning，但任务在受控降级下完成 |
+
+八个 Task 的事件 sequence 均严格单调递增。Runtime 任务均无 Legacy fallback，
+且目标 Agent 与请求的显式开发调试目标一致。
+
+运行中还发现并处理了两项验证基础设施问题：
+
+1. 空的隔离 SQLite 数据库在开发态不会自动建表；执行既有 Alembic migration 后，
+   `/sessions` 与任务创建恢复正常。
+2. `.env` 默认关闭多个 `AGENT_RUNTIME_*_ENABLED` 开关。只配置 launch mode 时会
+   产生 `compat-1` / `legacy.execution` 包装计划，不能视为真实 Runtime。隔离进程
+   显式启用四项服务后复跑，才得到上表的业务 Runtime plan。先前包装结果已排除
+   在本记录的证据范围外。
+
+## 前端到后端验证
+
+使用浏览器访问隔离 API 的 `/workspace`：
+
+1. 以游客模式进入；
+2. 从真实输入框提交一条脱敏的电容电压概念问题；
+3. 等待任务完成，页面显示课程资料计数、格式化公式、回答、资料入口和反馈入口；
+4. 浏览器控制台 error 为 0。
+
+页面明确显示“后备模型完成”和“主模型未完成”的提示。这与隔离测试中主动禁用
+不稳定 Spark 主链一致，属于透明降级而非真实主链通过。UI 没有卡在“正在执行”
+状态；此前的卡住现象是空隔离数据库导致任务创建失败，迁移后已消失。
+
+## 可复现命令
+
+先在隔离开发环境中：使用绝对 SQLite `DATABASE_URL` 执行
+`python -m alembic -c alembic.ini upgrade head`，启动 API 时保持星辰关闭，并对这
+四项能力设置 `AGENT_RUNTIME_*_ENABLED=true`、对应的 canary launch mode 与仅本次
+采集所需的 release-gate 覆盖。随后运行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_runtime_authorized_dev_e2e.py `
+  --base-url http://127.0.0.1:8031/api/v1 `
+  --output .local_outputs\runtime_authorized_dev_e2e_YYYYMMDD `
+  --timeout-seconds 210
+```
+
+脚本通过 `POST /api/v1/sessions`、`POST /api/v1/tasks`、Task 轮询、事件读取与
+`/debug/execution/{task_id}` 采集证据。它使用仅开发环境可用的 admin debug target
+固定目标 Agent；如果实际 Agent 不匹配，会 fail closed，并且不读取或落盘意外
+能力的结果、事件或调试输出。
+
+## 仍未满足的发布条件
+
+- 每个 Agent 仍需由独立评审人对脱敏 Legacy/Runtime 输出给出语义 judgement；
+  不能由本次自动化结果代替。
+- 需按
+  [授权成对 trace Runbook](runtime_authorized_paired_trace_release_runbook.md)
+  生成 v2 structural suite、semantic sidecar，并使 release preflight 返回
+  `release_eligible=true`。
+- 需由发布责任人明确决定 canary 观察范围、通过阈值、观察期与是否切换 default。
+- Spark-X 回包/提示词合同需要单独修复或重新验证，才可将“主模型完成”作为通过项。
+- Docker、生产数据库/Redis/MinIO 与真实生产配置均未执行，不应从本次隔离验证
+  外推为生产就绪。

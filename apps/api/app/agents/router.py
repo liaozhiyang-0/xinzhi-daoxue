@@ -176,6 +176,28 @@ class TaskRouter:
                     "visited_agents": [decision.agent_id],
                 }
             )
+        debug_target = str(request.options.get("debug_agent_id", "")).strip()
+        if (
+            debug_target
+            and request.user_role.value == "admin"
+            and self.settings.app_env in {"development", "test"}
+        ):
+            decision = self._decision_for_target(
+                debug_target,
+                request,
+                course_id=course_id,
+                intent=AGENT_INTENT.get(debug_target, request.intent.value),
+                input_type=input_type,
+                confidence=1.0,
+            )
+            return decision.model_copy(
+                update={
+                    "route_source": "admin_debug_override",
+                    "reason": f"admin debug selected {debug_target}",
+                    "reason_codes": ["admin_debug_override"],
+                    "visited_agents": [debug_target],
+                }
+            )
         scored = self._score(request, material.materials, material.raw_text)
         previous_agent = str(request.options.get("previous_agent", ""))
         previous_answer_summary = str(
@@ -279,28 +301,6 @@ class TaskRouter:
             and "domain_contract:academic_problem_language"
             in scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
         )
-        debug_target = str(request.options.get("debug_agent_id", "")).strip()
-        if (
-            debug_target
-            and request.user_role.value == "admin"
-            and self.settings.app_env in {"development", "test"}
-        ):
-            decision = self._decision_for_target(
-                debug_target,
-                request,
-                course_id=course_id,
-                intent=AGENT_INTENT.get(debug_target, request.intent.value),
-                input_type=input_type,
-                confidence=1.0,
-            )
-            return decision.model_copy(
-                update={
-                    "route_source": "admin_debug_override",
-                    "reason": f"admin debug selected {debug_target}",
-                    "reason_codes": ["admin_debug_override"],
-                    "visited_agents": [debug_target],
-                }
-            )
         if request.intent != Intent.UNKNOWN and not general_qa_problem_override:
             for rule in self.registry.routing_rules:
                 if (

@@ -197,6 +197,27 @@ def test_bound_scenario_selects_declared_agent_before_keyword_routing() -> None:
     assert "scenario_catalog_bound" in decision.reason_codes
 
 
+def test_admin_debug_override_wins_before_research_intent_recognition() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-debug-override",
+            "user_id": "user-debug-override",
+            "user_role": "admin",
+            "course_id": "UNKNOWN",
+            "intent": "general_qa",
+            "canonical_input": {"question": "请解释数据结构中的栈。"},
+            "options": {"debug_agent_id": "GENERAL_QUESTION_V1"},
+        }
+    )
+
+    decision = TaskRouter(
+        AgentRegistry(), Settings(_env_file=None, app_env="development")
+    ).route(task_request)
+
+    assert decision.agent_id == "GENERAL_QUESTION_V1"
+    assert decision.route_source == "admin_debug_override"
+
+
 def test_latest_paper_request_routes_to_dedicated_academic_search() -> None:
     task_request = AgentRequest.model_validate(
         {

@@ -42,12 +42,27 @@ is an engineering checkpoint, not a production release approval.
   and timed out without a failure report. It is not counted as a passing
   result; slow task-path fixtures should continue to be run separately.
 
+## Authorized development E2E update (2026-08-10)
+
+[The authorized development E2E record](runtime_authorized_dev_e2e_2026-08-10.md)
+now captures real, low-volume Legacy/Runtime pairs for
+`GENERAL_QUESTION_V1`, `LEARN_01_LOCAL_RETRIEVAL_V1`,
+`ACADEMIC_PROBLEM_SOLVER`, and `RESEARCH_01_ACADEMIC_SEARCH_V1`. The isolated
+service used real configured non-Xingchen Providers, durable Task/SSE/checkpoint
+paths, and one browser-driven workspace submission. Runtime traces used the
+actual business plan versions, not the `compat-1` Legacy wrapper.
+
+This evidence is still development-only. It does not include a semantic sidecar
+or human promotion decision, so it must not be represented as production canary
+or default evidence.
+
 ## Release blockers
 
 The provider-free preflight remains intentionally fail-closed when no
 authorized artifacts are configured. The current blocking conditions are
 missing structural paired-suite evidence and missing semantic evidence. Docker
-and real Provider calls were not executed in this audit.
+was not executed. Real non-Xingchen Provider calls were executed only in the
+isolated development record above, not in production.
 
 The next release action is to collect a redacted, authorized Legacy/Runtime
 pair for each intended Agent/version/plan combination, validate it with the
@@ -65,6 +80,6 @@ evaluation with fail-closed release gates. The frozen SOLVER_CT implementation
 was not changed, and the sensitive-file scan passed.
 
 This completes the initial code-layer audit, not the production migration.
-The overall objective remains incomplete until authorized real-Provider paired
-execution, independent semantic review, canary observation, and an explicit
-default-or-rollback decision are available as auditable evidence.
+The overall objective remains incomplete until structural packaging of the
+authorized pairs, independent semantic review, canary observation, and an
+explicit default-or-rollback decision are available as auditable evidence.
