@@ -57,3 +57,9 @@ page/request errors. A Workspace SSE/control-projection reconciliation fix was
 required and covered by the focused UI contract suite. This strengthens
 application-flow evidence only; it does not satisfy semantic sidecar or human
 release-authorization requirements.
+
+The release semantic gate also now distinguishes diagnostic model review from
+independent release review: `judge_type=model` is fail-closed with
+`semantic_judge_not_independent`, while `human` and `hybrid` pass judgements
+remain eligible subject to all structural, version, authorization, and
+preflight gates. No Agent was promoted by this change.

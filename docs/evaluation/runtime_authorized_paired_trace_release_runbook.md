@@ -215,6 +215,7 @@ collector 成功时会输出结构评测报告，并写出 `RuntimeCanarySuite`�
 ~~~
 
 该命令要求结构 suite 是 `authorized_paired` 且已通过结构 release gate；它会拒绝缺失/多余 case、judgement 未知字段、非 `redacted` 状态、无时区 `reviewed_at` 和非法维度。sidecar 的 Agent、Agent version、Runtime plan version、suite 和 case 必须与结构 suite 绑定。
+其中 `judge_type=model` 仅用于记录模型初审或诊断结果，即使其 `decision=pass` 也不能通过发布语义门禁；发布候选必须由 `human` 或 `hybrid` 审查以 `decision=pass` 明确确认。
 
 ## 7. Provider-free release preflight
 

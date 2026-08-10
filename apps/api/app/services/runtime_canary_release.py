@@ -387,6 +387,8 @@ class RuntimeCanaryReleaseRegistry:
             return "semantic_redaction_status_invalid"
         if not evidence.authorization_ref.strip():
             return "semantic_authorization_ref_missing"
+        if evidence.judge_type == "model":
+            return "semantic_judge_not_independent"
         if evidence.decision != "pass":
             return "semantic_decision_not_pass"
         return None

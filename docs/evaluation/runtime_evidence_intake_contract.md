@@ -22,6 +22,9 @@
 - 每条语义 judgement 必须具备完整且无额外字段的 dimensions、decision、judge_type、
   rubric_version、reviewer_ref、reviewed_at、redaction_status 和 authorization_ref；
   `reviewed_at` 必须带时区，`redaction_status` 必须为 `redacted`。
+- `judge_type=model` 可以作为诊断性初审 sidecar 保存，但不能通过发布语义门禁；
+  只有 `human` 或 `hybrid` 且 `decision=pass` 的独立审查才能满足
+  `semantic_eligible`。模型初审不得替代人工发布语义判断。
 - sidecar 的 Agent、Agent 版本、Runtime plan 版本、suite、case、输入 hash 和两份输出
   hash 必须绑定到结构套件；preflight 的 expected version 也必须匹配。
 - `synthetic`、缺 suite、缺 sidecar、非法 JSON、证据不完整或任何绑定失败都必须

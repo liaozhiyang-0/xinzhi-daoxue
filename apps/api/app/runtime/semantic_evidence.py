@@ -174,9 +174,18 @@ def semantic_release_eligible(
     structural_release_eligible: bool,
     evidence: RuntimeSemanticEvidence,
 ) -> bool:
-    """Return the independent promotion gate for structural plus semantic proof."""
+    """Return the promotion gate for structural proof and independent review.
 
-    return structural_release_eligible and evidence.decision == "pass"
+    Model-only judgements remain valid diagnostic sidecars, but they cannot
+    authorize a canary or default launch.  A release decision must include a
+    human review, either directly or as part of a documented hybrid review.
+    """
+
+    return (
+        structural_release_eligible
+        and evidence.decision == "pass"
+        and evidence.judge_type in {"human", "hybrid"}
+    )
 
 
 __all__ = [

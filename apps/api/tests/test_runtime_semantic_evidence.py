@@ -190,22 +190,36 @@ def test_contract_rejects_invalid_hash_extra_fields_and_out_of_range_scores() ->
 
 
 @pytest.mark.parametrize(
-    ("structural", "decision", "expected"),
+    ("structural", "decision", "judge_type", "expected"),
     [
-        (True, "pass", True),
-        (False, "pass", False),
-        (True, "needs_review", False),
-        (True, "fail", False),
+        (True, "pass", "human", True),
+        (True, "pass", "hybrid", True),
+        (True, "pass", "model", False),
+        (False, "pass", "human", False),
+        (True, "needs_review", "human", False),
+        (True, "fail", "human", False),
     ],
 )
 def test_semantic_release_eligibility_requires_both_gates(
     structural: bool,
     decision: str,
+    judge_type: str,
     expected: bool,
 ) -> None:
-    evidence = _evidence(decision=decision)
+    evidence = _evidence(decision=decision, judge_type=judge_type)
 
     assert semantic_release_eligible(structural, evidence) is expected
+
+
+def test_model_only_pass_is_diagnostic_not_release_eligible() -> None:
+    evidence = _evidence(judge_type="model")
+    registry = RuntimeCanaryReleaseRegistry(
+        {AGENT_ID: _release_report()},
+        semantic_evidence={AGENT_ID: evidence},
+    )
+
+    assert registry.release_eligible(AGENT_ID) is False
+    assert registry.reason(AGENT_ID) == "semantic_judge_not_independent"
 
 
 @pytest.mark.parametrize(

@@ -761,3 +761,15 @@ $env:NODE_PATH = (Join-Path (Get-Location) '.codex-tmp\playwright-runner\node_mo
 $env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
 node scripts\run_runtime_teacher_browser_acceptance.js
 ```
+
+## 43. 2026-08-11 semantic release gate hardening
+
+- Model-only semantic judgements remain accepted as diagnostic sidecars, which
+  preserves the existing preliminary-review workflow.
+- The actual release semantic gate now rejects `judge_type=model` even when
+  `decision=pass`; only `human` or `hybrid` review with `decision=pass` can
+  make `semantic_eligible=true`. The stable blocking reason is
+  `semantic_judge_not_independent`.
+- The change is covered by registry and provider-free preflight tests,
+  including a model-only pass regression. It does not create a release record
+  or promote any Agent; current canary/default decisions remain unchanged.
