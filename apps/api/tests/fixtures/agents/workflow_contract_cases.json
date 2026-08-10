@@ -3,7 +3,7 @@
   {"case_id":"ROUTER_01_002","agent_id":"ROUTER_01_FALLBACK_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"ROUTER_01_003","agent_id":"ROUTER_01_FALLBACK_V1","input":{"question":"无法确定课程的边界问题","course_id":"CT"},"expected_status":"success","required_business_fields":["target_agent_id"],"forbidden_strings":[],"manual_review_required":true},
 
-  {"case_id":"TEACH_01_001","agent_id":"TEACH_01_LESSON_PREP_V1","input":{"question":"为节点电压法准备一节课","course_id":"CT"},"expected_status":"success","required_business_fields":["learning_objectives","prerequisites","lesson_flow","activities","assessment","homework"],"forbidden_strings":["Authorization"],"manual_review_required":true},
+  {"case_id":"TEACH_01_001","agent_id":"TEACH_01_LESSON_PREP_V1","input":{"question":"为节点电压法准备一节课","course_id":"CT"},"expected_status":"success","required_business_fields":["learning_objectives","prerequisites","lesson_flow","activities","formative_assessment","homework"],"forbidden_strings":["Authorization"],"manual_review_required":true},
   {"case_id":"TEACH_01_002","agent_id":"TEACH_01_LESSON_PREP_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"TEACH_01_003","agent_id":"TEACH_01_LESSON_PREP_V1","input":{"question":"课时和学生基础均未知","course_id":"AE"},"expected_status":"success","required_business_fields":["lesson_flow"],"forbidden_strings":[],"manual_review_required":true},
 

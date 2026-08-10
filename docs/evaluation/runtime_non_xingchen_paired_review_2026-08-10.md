@@ -619,3 +619,26 @@ They are ignored and must not be committed.
   and not a semantic release pass. The structured-output instability remains a
   provider/profile risk to monitor; independent semantic review and the
   version-bound human release authorization are still required.
+
+## 37. 2026-08-11 authenticated teacher browser diagnostic
+
+- Added `scripts/run_runtime_teacher_browser_acceptance.js`, which starts one
+  isolated API on port 8022, creates an administrator in a temporary SQLite
+  database, logs in through `/login`, submits the Workspace Lesson Prep flow,
+  and uses only the visible teacher approval control to resume the task. The
+  command requires the existing isolated Playwright runtime:
+  `NODE_PATH=.codex-tmp/playwright-runner/node_modules node scripts/run_runtime_teacher_browser_acceptance.js`
+  (PowerShell uses `$env:NODE_PATH = (Join-Path (Get-Location) '.codex-tmp\playwright-runner\node_modules')`).
+- The authenticated browser path was confirmed: the identity was `admin`, the
+  approval button was visible and enabled, the task resumed after approval,
+  page errors and request failures were empty, and the final task event
+  sequences were strictly increasing. The bounded diagnostic then failed with
+  `runtime_replan_budget_exhausted` after repeated internal structured-output
+  failures; this is not evidence that approval persistence was lost.
+- The development Lesson Prep Mock profile and its contract fixture were also
+  aligned to the Runtime field `formative_assessment`. The dedicated Mock
+  regression test verifies that the field is present even when it is an
+  explicit empty list, while the Runtime unit tests cover approval without a
+  replan. The browser diagnostic remains a failed semantic/provider stability
+  check until the internal model profile produces a recoverable structured
+  result within the bounded Runtime budget.

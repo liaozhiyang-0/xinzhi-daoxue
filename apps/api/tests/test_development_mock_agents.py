@@ -52,6 +52,23 @@ async def test_each_active_workflow_runs_definition_driven_mock(
     assert MOCK_WARNING in result.warnings
 
 
+async def test_lesson_prep_mock_matches_runtime_business_contract(
+    settings: Settings,
+) -> None:
+    runtime_settings = settings.model_copy(update={"allow_agent_mocks": True})
+    registry = AgentRegistry()
+    provider = DevelopmentMockProvider(runtime_settings, registry)
+
+    result = await provider.run(
+        "TEACH_01_LESSON_PREP_V1",
+        mock_request("TEACH_01_LESSON_PREP_V1", registry),
+    )
+
+    assert "formative_assessment" in result.business_data
+    assert result.business_data["formative_assessment"] == []
+    assert "assessment" not in result.business_data
+
+
 async def test_production_forces_mock_off(settings: Settings) -> None:
     production = settings.model_copy(
         update={"app_env": "production", "allow_agent_mocks": True}

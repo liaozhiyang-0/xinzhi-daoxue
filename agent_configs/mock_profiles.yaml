@@ -17,7 +17,7 @@ profiles:
       prerequisites: [先修知识检查]
       lesson_flow: [导入, 讲解, 练习, 总结]
       activities: [概念辨析, 分组练习]
-      assessment: [形成性检查]
+      formative_assessment: []
       homework: [基础巩固题]
 
   teach_assignment_review_v1:
