@@ -27,6 +27,45 @@ def _elapsed_ms(
     return max(0, round((completed_at - started_at).total_seconds() * 1000))
 
 
+def _active_node_wall_ms(node_projections: list[dict[str, Any]]) -> int:
+    """Return elapsed wall time covered by completed node intervals.
+
+    Summing node elapsed times overcounts parallel execution.  Merging the
+    intervals lets the observability projection distinguish actual node work
+    from the Runtime's checkpoint, event, and controller overhead without
+    pretending concurrent nodes ran serially.
+    """
+
+    intervals = sorted(
+        (
+            (item["started_at"], item["completed_at"])
+            for item in node_projections
+            if isinstance(item.get("started_at"), str)
+            and isinstance(item.get("completed_at"), str)
+        ),
+        key=lambda interval: interval[0],
+    )
+    if not intervals:
+        return 0
+    covered_ms = 0
+    current_start = datetime.fromisoformat(intervals[0][0])
+    current_end = datetime.fromisoformat(intervals[0][1])
+    for raw_start, raw_end in intervals[1:]:
+        start = datetime.fromisoformat(raw_start)
+        end = datetime.fromisoformat(raw_end)
+        if start <= current_end:
+            current_end = max(current_end, end)
+            continue
+        covered_ms += max(
+            0, round((current_end - current_start).total_seconds() * 1000)
+        )
+        current_start = start
+        current_end = end
+    return covered_ms + max(
+        0, round((current_end - current_start).total_seconds() * 1000)
+    )
+
+
 def to_task_event(
     event: str, run: AgentRun, node_id: str
 ) -> tuple[AgentEventType, dict[str, Any]]:
@@ -141,6 +180,8 @@ def build_runtime_observability(run: AgentRun) -> dict[str, Any]:
         for item in node_projections
         if isinstance(item["elapsed_ms"], int)
     ]
+    run_elapsed_ms = _elapsed_ms(run.started_at, run.completed_at)
+    active_node_wall_ms = _active_node_wall_ms(node_projections)
     return {
         "schema_version": "1",
         "timing": {
@@ -150,8 +191,14 @@ def build_runtime_observability(run: AgentRun) -> dict[str, Any]:
             "run_completed_at": (
                 run.completed_at.isoformat() if run.completed_at is not None else None
             ),
-            "run_elapsed_ms": _elapsed_ms(run.started_at, run.completed_at),
+            "run_elapsed_ms": run_elapsed_ms,
             "completed_node_elapsed_ms": sum(completed_node_elapsed),
+            "active_node_wall_ms": active_node_wall_ms,
+            "runtime_control_overhead_ms": (
+                max(0, run_elapsed_ms - active_node_wall_ms)
+                if run_elapsed_ms is not None
+                else None
+            ),
             "slowest_completed_node_elapsed_ms": max(
                 completed_node_elapsed, default=0
             ),

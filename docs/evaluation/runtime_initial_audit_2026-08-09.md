@@ -127,3 +127,15 @@ event data used by the SSE/UI contract. The focused Runtime, Task API, SSE
 ordering, and Debug UI matrix passed `26` tests. This is integration evidence
 only: it uses the read-only calculator tool and makes no external Provider
 call, semantic judgment, or release decision.
+
+## Paired-latency attribution refresh (2026-08-10)
+
+To diagnose the Solver's remaining latency variance without weakening the
+single-pair fail-closed threshold, Runtime observability now reports both the
+sum of completed node work and the wall-clock union of node execution
+intervals. `runtime_control_overhead_ms` is the durable Run elapsed time not
+covered by that union, so it can expose checkpoint/event/controller overhead
+even when nodes run in parallel. The authorized E2E runner copies these values
+into its redacted private `report.json`, and the offline paired-sample analyzer
+compares them when present. Historical reports simply omit the new fields; no
+old result or release decision is rewritten.

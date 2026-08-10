@@ -24,6 +24,10 @@ METRIC_KEYS = (
     "metrics.verification_latency_ms",
     "task_lifecycle_elapsed_ms",
     "client_observed_terminal_wait_ms",
+    "runtime_timing.run_elapsed_ms",
+    "runtime_timing.completed_node_elapsed_ms",
+    "runtime_timing.active_node_wall_ms",
+    "runtime_timing.runtime_control_overhead_ms",
 )
 
 

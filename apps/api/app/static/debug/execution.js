@@ -376,6 +376,17 @@ function runtimeResilienceSurface(data, runtime, controlEvent) {
   ];
   return el("div", { class: "runtime-resilience-grid" }, cards.map(([title, state, detail]) => el("article", { class: "runtime-resilience-card", "data-state": state }, [el("strong", { text: title }), el("span", { text: detail })])));
 }
+function runtimeTimingSurface(runtime) {
+  const observability = asRecord(runtime?.observability);
+  const timing = asRecord(observability.timing);
+  const duration = (value) => Number.isFinite(value) && value >= 0 ? `${value} ms` : "not reported";
+  return kvSurface("Durable timing", [
+    ["Run wall time", duration(timing.run_elapsed_ms)],
+    ["Node work (sum)", duration(timing.completed_node_elapsed_ms)],
+    ["Node work (wall)", duration(timing.active_node_wall_ms)],
+    ["Runtime control overhead", duration(timing.runtime_control_overhead_ms)],
+  ]);
+}
 function runtimeEventSurface(data) {
   const events = runtimeEventRecords(data).slice(-40).reverse();
   if (!events.length) return el("div", { class: "empty-state", text: "No Task/SSE events reported." });
@@ -917,6 +928,7 @@ function renderRuntime(data) {
     runtimePanel.append(
       section("Observe → Decide → Act → Verify → Replan", "仅按当前调试快照和已记录事件标记阶段；未返回的阶段保持未报告。", runtimePhaseSurface(data, runtime)),
       section("依赖与执行拓扑", "优先使用后端返回的 depends_on；当前响应未提供时明确显示未报告，不从节点顺序推断依赖。", runtimeDependencySurface(data, runtime)),
+      section("Runtime timing", "基于持久化 Run 与节点时间戳；控制面开销不代表模型或工具执行时间。", runtimeTimingSurface(runtime)),
       section("Checkpoint / Recovery / Control", "把 state_version、副作用恢复和人工控制门聚合为操作员可读的安全边界。", runtimeResilienceSurface(data, runtime, controlEvent)),
       section("Runtime 事件时间线", "展示 Task/SSE 已持久化的结构化事件；不展示隐藏思维链或未返回的内部决策。", runtimeEventSurface(data)),
     );

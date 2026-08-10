@@ -204,8 +204,36 @@ def test_projection_includes_durable_run_and_node_timings() -> None:
         "run_completed_at": "2026-08-10T00:00:00.450000+00:00",
         "run_elapsed_ms": 450,
         "completed_node_elapsed_ms": 370,
+        "active_node_wall_ms": 370,
+        "runtime_control_overhead_ms": 80,
         "slowest_completed_node_elapsed_ms": 250,
     }
     nodes = {item["node_id"]: item for item in projection["nodes"]}
     assert nodes["retrieve"]["elapsed_ms"] == 120
     assert nodes["review"]["elapsed_ms"] == 250
+
+
+def test_projection_merges_overlapping_node_intervals_for_control_overhead() -> None:
+    run = AgentRun(
+        run_id="observability-parallel-timing",
+        task_id="observability-task",
+        goal="observe parallel timing",
+        plan=_plan(),
+    )
+    started_at = datetime(2026, 8, 10, tzinfo=UTC)
+    run.started_at = started_at
+    run.completed_at = started_at + timedelta(milliseconds=500)
+    retrieve = run.nodes["retrieve"]
+    retrieve.started_at = started_at
+    retrieve.completed_at = started_at + timedelta(milliseconds=300)
+    retrieve.status = RuntimeNodeStatus.SUCCEEDED
+    review = run.nodes["review"]
+    review.started_at = started_at + timedelta(milliseconds=100)
+    review.completed_at = started_at + timedelta(milliseconds=400)
+    review.status = RuntimeNodeStatus.SUCCEEDED
+
+    timing = build_runtime_observability(run)["timing"]
+
+    assert timing["completed_node_elapsed_ms"] == 600
+    assert timing["active_node_wall_ms"] == 400
+    assert timing["runtime_control_overhead_ms"] == 100

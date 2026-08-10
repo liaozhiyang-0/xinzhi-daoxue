@@ -262,6 +262,10 @@ def result_summary(
     result = result if isinstance(result, dict) else {}
     runtime = execution.get("runtime", {}) if isinstance(execution, dict) else {}
     runtime = runtime if isinstance(runtime, dict) else {}
+    observability = runtime.get("observability", {})
+    observability = observability if isinstance(observability, dict) else {}
+    runtime_timing = observability.get("timing", {})
+    runtime_timing = runtime_timing if isinstance(runtime_timing, dict) else {}
     checkpoints = runtime.get("checkpoints", [])
     return {
         "status": task.get("status"),
@@ -283,6 +287,15 @@ def result_summary(
         else None,
         "task_lifecycle_elapsed_ms": _task_lifecycle_elapsed_ms(task),
         "client_observed_terminal_wait_ms": observed_wait_ms,
+        "runtime_timing": {
+            key: runtime_timing.get(key)
+            for key in (
+                "run_elapsed_ms",
+                "completed_node_elapsed_ms",
+                "active_node_wall_ms",
+                "runtime_control_overhead_ms",
+            )
+        },
         "metrics": result.get("metrics", {}),
     }
 
