@@ -438,3 +438,14 @@ They are ignored and must not be committed.
   `single_pair_model_call_regression_above_threshold`; no semantic sidecar or
   release preflight was created. This is a useful migration diagnostic, not a
   passing release result.
+
+## 26. 2026-08-11 Docker dependency readiness check
+
+- `docker compose config --quiet` returned success, and the existing
+  `xzd-postgres`, `xzd-redis`, `xzd-minio`, and `xzd-qdrant` containers were
+  reported running/healthy by `docker compose ps --all` where health checks are
+  defined.
+- This was a read-only readiness check; no container restart, migration, API,
+  or worker failure-recovery drill was performed. Production-equivalent
+  restart evidence and a Runtime run against the Docker-backed dependencies
+  remain outstanding.
