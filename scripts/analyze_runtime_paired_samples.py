@@ -19,6 +19,9 @@ from typing import Any
 
 METRIC_KEYS = (
     "metrics.latency_ms",
+    "metrics.provider_latency_ms",
+    "metrics.retrieval_latency_ms",
+    "metrics.verification_latency_ms",
     "task_lifecycle_elapsed_ms",
     "client_observed_terminal_wait_ms",
 )

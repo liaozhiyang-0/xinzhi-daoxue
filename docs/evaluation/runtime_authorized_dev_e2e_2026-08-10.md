@@ -166,9 +166,9 @@ trace、身份、版本、输入哈希与非语义结构条件；它不生成、
 形成新的性能结论。
 
 对同一脱敏 case 的多次受控运行，可在私有输出目录中使用只读诊断器汇总多个
-`report.json`。它报告每个样本的 Legacy/Runtime 延迟差、中位数和超过单样本阈值的
-异常，但输出始终标记为 `diagnostic_only`，不会生成 structural suite、semantic
-sidecar 或 release decision：
+`report.json`。它报告每个样本的总耗时、Provider、RAG 检索、验证、生命周期和客户端
+等待时钟的 Legacy/Runtime 差、中位数和超过单样本阈值的异常，但输出始终标记为
+`diagnostic_only`，不会生成 structural suite、semantic sidecar 或 release decision：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\analyze_runtime_paired_samples.py `
