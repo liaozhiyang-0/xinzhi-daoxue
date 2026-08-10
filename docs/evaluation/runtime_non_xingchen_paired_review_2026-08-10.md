@@ -179,3 +179,17 @@ They are ignored and must not be committed.
 - The local provider `StructuredOutputError`/latency path remains a separate
   risk. Full paired evaluation and visual browser acceptance are still
   pending; no production or Xingchen conclusion is drawn from this case.
+
+## 12. 2026-08-11 workspace SSE recovery follow-up
+
+- The student/teacher workspace now keeps its `EventSource` alive after a
+  transient error so the browser can reconnect using the existing
+  `Last-Event-ID` cursor. This preserves the Task stream replay contract and
+  avoids losing intermediate progress events.
+- While the stream is recovering, the workspace continues a periodic status
+  poll and refreshes the public Runtime control projection. This keeps pause,
+  input, quality approval, and plan-proposal controls current even when the
+  event channel is temporarily unavailable.
+- Static workspace contract tests and Node syntax validation passed. Visual
+  browser acceptance remains unverified because the browser transport was
+  unavailable during this turn.

@@ -1911,12 +1911,15 @@ async function waitForTask(id, runSequence) {
     });
     events.onerror = () => {
       if (settled) return;
-      events.close();
+      // Keep EventSource open so the browser retries the same stream and
+      // sends its Last-Event-ID cursor; polling reconciles controls while it
+      // is reconnecting.
       if (pollTimer) return;
       pollTimer = setInterval(async () => {
         if (settled) return;
         try {
           const task = await api(ownedTaskUrl(id));
+          void refreshRuntimeTaskControls(id);
           if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); }
         } catch (error) { settled = true; cleanup(); reject(error); }
       }, 900);

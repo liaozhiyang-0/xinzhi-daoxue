@@ -144,3 +144,14 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
     assert "/debug/execution" not in script
     assert "expected_state_version: runtimeTaskControls?.state_version" in script
     assert "runtimeTaskControlAvailable(action)" in script
+
+
+def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
+    static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
+    script = (static_root / "workspace.js").read_text(encoding="utf-8")
+    error_block = script.split("events.onerror = () => {", 1)[1].split("};", 1)[0]
+
+    assert "Last-Event-ID" in error_block
+    assert "events.close()" not in error_block
+    assert "pollTimer = setInterval" in error_block
+    assert "refreshRuntimeTaskControls(id)" in error_block
