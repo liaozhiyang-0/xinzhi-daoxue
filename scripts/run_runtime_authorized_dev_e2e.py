@@ -190,7 +190,7 @@ def await_task(
     *,
     poll_interval: float,
     timeout_seconds: float,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], int]:
     started = time.monotonic()
     latest: dict[str, Any] = {}
     while time.monotonic() - started < timeout_seconds:
@@ -200,9 +200,12 @@ def await_task(
         response.raise_for_status()
         latest = response.json()
         if str(latest.get("status", "")).casefold() in TERMINAL_STATUSES:
-            return latest
+            return latest, round((time.monotonic() - started) * 1000)
         time.sleep(poll_interval)
-    return {**latest, "status": "timeout", "timeout_seconds": timeout_seconds}
+    return (
+        {**latest, "status": "timeout", "timeout_seconds": timeout_seconds},
+        round((time.monotonic() - started) * 1000),
+    )
 
 
 def task_events(client: Any, base_url: str, task_id: str) -> list[dict[str, Any]]:
@@ -239,7 +242,22 @@ def event_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def result_summary(task: dict[str, Any], execution: dict[str, Any]) -> dict[str, Any]:
+def _task_lifecycle_elapsed_ms(task: dict[str, Any]) -> int | None:
+    started_at = task.get("started_at")
+    completed_at = task.get("completed_at")
+    if not isinstance(started_at, str) or not isinstance(completed_at, str):
+        return None
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0, round((completed - started).total_seconds() * 1000))
+
+
+def result_summary(
+    task: dict[str, Any], execution: dict[str, Any], *, observed_wait_ms: int
+) -> dict[str, Any]:
     result = task.get("result_content")
     result = result if isinstance(result, dict) else {}
     runtime = execution.get("runtime", {}) if isinstance(execution, dict) else {}
@@ -263,6 +281,8 @@ def result_summary(task: dict[str, Any], execution: dict[str, Any]) -> dict[str,
         "runtime_launch_mode": (runtime.get("launch_decision") or {}).get("mode")
         if isinstance(runtime.get("launch_decision"), dict)
         else None,
+        "task_lifecycle_elapsed_ms": _task_lifecycle_elapsed_ms(task),
+        "client_observed_terminal_wait_ms": observed_wait_ms,
         "metrics": result.get("metrics", {}),
     }
 
@@ -281,7 +301,7 @@ def run_one(
     session_id = make_session(client, base_url, user_id, case, mode)
     created = create_task(client, base_url, user_id, session_id, case, mode)
     task_id = str(created["id"])
-    terminal = await_task(
+    terminal, observed_wait_ms = await_task(
         client,
         base_url,
         task_id,
@@ -319,7 +339,9 @@ def run_one(
         "task_id": task_id,
         "expected_agent_matched": terminal.get("agent_id") == case.agent_id,
         "events": event_summary(events),
-        "result": result_summary(terminal, execution),
+        "result": result_summary(
+            terminal, execution, observed_wait_ms=observed_wait_ms
+        ),
         "artifact_dir": str(artifact_dir),
     }
 

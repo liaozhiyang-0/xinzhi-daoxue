@@ -154,6 +154,17 @@ trace、身份、版本、输入哈希与非语义结构条件；它不生成、
 即使聚合总延迟下降，只要任一 pair 超过默认 50% 阈值，suite 仍 fail closed。学术求解
 在出现可解释且可复现的性能界限前保持 Legacy，且不得把两个通过的重复样本视为发布批准。
 
+## 后续性能采样约束（2026-08-10）
+
+后续授权配对运行必须同时保留两类独立时钟：Task 的
+`task_lifecycle_elapsed_ms`（由持久化 `started_at` / `completed_at` 计算）和
+客户端的 `client_observed_terminal_wait_ms`。二者都不能替代结果内既有的
+`metrics.latency_ms`；后者仍用于与 Legacy 的结果级结构门禁对比。Runtime 的
+节点开始、完成和耗时也会出现在持久化 checkpoint、SSE `plan.node_*` 事件以及
+调试投影中。这样才能将 Provider/RAG 冷启动或缓存波动与 Runtime 控制面开销分开
+审计。此文档中的历史样本不会被补写；只有重新执行受控配对后产生的私有工件才能
+形成新的性能结论。
+
 ## 仍未满足的发布条件
 
 - 每个 Agent 仍需由独立评审人对脱敏 Legacy/Runtime 输出给出语义 judgement；

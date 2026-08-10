@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.contracts import AgentEventType
@@ -444,6 +445,14 @@ def test_runtime_event_bridge_preserves_task_event_contract() -> None:
     assert event_type.value == "plan.node_started"
     assert data["runtime_run_id"] == "run-events"
     assert data["handler_id"] == "external.retrieval"
+    assert data["node_elapsed_ms"] is None
+
+    state = run.nodes["retrieve"]
+    state.started_at = datetime(2026, 8, 10, tzinfo=UTC)
+    state.completed_at = state.started_at + timedelta(milliseconds=125)
+    _, completed_data = to_task_event("node_completed", run, "retrieve")
+    assert completed_data["node_elapsed_ms"] == 125
+    assert completed_data["node_started_at"] == "2026-08-10T00:00:00+00:00"
 
 
 def test_runtime_controller_executes_selected_nodes_and_verifies() -> None:

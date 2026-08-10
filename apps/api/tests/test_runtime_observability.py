@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 from app.runtime import (
     AgentRun,
@@ -175,3 +176,36 @@ def test_projection_recovers_legacy_last_decision_and_verification_node() -> Non
 
     assert len(projection["decisions"]) == 1
     assert projection["verifications"][0]["facts"]["passed"] is True
+
+
+def test_projection_includes_durable_run_and_node_timings() -> None:
+    run = AgentRun(
+        run_id="observability-timing",
+        task_id="observability-task",
+        goal="observe timing",
+        plan=_plan(),
+    )
+    started_at = datetime(2026, 8, 10, tzinfo=UTC)
+    run.started_at = started_at
+    run.completed_at = started_at + timedelta(milliseconds=450)
+    retrieve = run.nodes["retrieve"]
+    retrieve.started_at = started_at
+    retrieve.completed_at = started_at + timedelta(milliseconds=120)
+    retrieve.status = RuntimeNodeStatus.SUCCEEDED
+    review = run.nodes["review"]
+    review.started_at = started_at + timedelta(milliseconds=125)
+    review.completed_at = started_at + timedelta(milliseconds=375)
+    review.status = RuntimeNodeStatus.SUCCEEDED
+
+    projection = build_runtime_observability(run)
+
+    assert projection["timing"] == {
+        "run_started_at": "2026-08-10T00:00:00+00:00",
+        "run_completed_at": "2026-08-10T00:00:00.450000+00:00",
+        "run_elapsed_ms": 450,
+        "completed_node_elapsed_ms": 370,
+        "slowest_completed_node_elapsed_ms": 250,
+    }
+    nodes = {item["node_id"]: item for item in projection["nodes"]}
+    assert nodes["retrieve"]["elapsed_ms"] == 120
+    assert nodes["review"]["elapsed_ms"] == 250

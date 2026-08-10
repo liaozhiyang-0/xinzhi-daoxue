@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from app.contracts import AgentEventType
@@ -16,6 +17,14 @@ RUNTIME_EVENT_TYPES: dict[str, AgentEventType] = {
     "node_recovery_required": AgentEventType.AGENT_PROGRESS,
     "node_suspended": AgentEventType.AGENT_PROGRESS,
 }
+
+
+def _elapsed_ms(
+    started_at: datetime | None, completed_at: datetime | None
+) -> int | None:
+    if started_at is None or completed_at is None:
+        return None
+    return max(0, round((completed_at - started_at).total_seconds() * 1000))
 
 
 def to_task_event(
@@ -46,6 +55,15 @@ def to_task_event(
         "status": state.status.value,
         "attempt": state.attempt,
         "error_code": state.error_code,
+        "node_started_at": (
+            state.started_at.isoformat() if state.started_at is not None else None
+        ),
+        "node_completed_at": (
+            state.completed_at.isoformat()
+            if state.completed_at is not None
+            else None
+        ),
+        "node_elapsed_ms": _elapsed_ms(state.started_at, state.completed_at),
     }
 
 
@@ -100,13 +118,44 @@ def build_runtime_observability(run: AgentRun) -> dict[str, Any]:
         node_projections.append(
             {
                 "node_id": node.node_id,
+                "status": state.status.value,
+                "attempt": state.attempt,
+                "started_at": (
+                    state.started_at.isoformat()
+                    if state.started_at is not None
+                    else None
+                ),
+                "completed_at": (
+                    state.completed_at.isoformat()
+                    if state.completed_at is not None
+                    else None
+                ),
+                "elapsed_ms": _elapsed_ms(state.started_at, state.completed_at),
                 "observation": node_observation,
                 "decisions": node_decisions,
                 "verifications": node_verifications,
             }
         )
+    completed_node_elapsed = [
+        item["elapsed_ms"]
+        for item in node_projections
+        if isinstance(item["elapsed_ms"], int)
+    ]
     return {
         "schema_version": "1",
+        "timing": {
+            "run_started_at": (
+                run.started_at.isoformat() if run.started_at is not None else None
+            ),
+            "run_completed_at": (
+                run.completed_at.isoformat() if run.completed_at is not None else None
+            ),
+            "run_elapsed_ms": _elapsed_ms(run.started_at, run.completed_at),
+            "completed_node_elapsed_ms": sum(completed_node_elapsed),
+            "slowest_completed_node_elapsed_ms": max(
+                completed_node_elapsed, default=0
+            ),
+        },
         "observations": observations,
         "decisions": decisions,
         "verifications": verifications,
