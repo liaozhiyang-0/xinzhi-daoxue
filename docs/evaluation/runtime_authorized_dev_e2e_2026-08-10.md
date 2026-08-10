@@ -165,6 +165,26 @@ trace、身份、版本、输入哈希与非语义结构条件；它不生成、
 审计。此文档中的历史样本不会被补写；只有重新执行受控配对后产生的私有工件才能
 形成新的性能结论。
 
+对同一脱敏 case 的多次受控运行，可在私有输出目录中使用只读诊断器汇总多个
+`report.json`。它报告每个样本的 Legacy/Runtime 延迟差、中位数和超过单样本阈值的
+异常，但输出始终标记为 `diagnostic_only`，不会生成 structural suite、semantic
+sidecar 或 release decision：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\analyze_runtime_paired_samples.py `
+  --report .local_outputs\runtime_authorized_dev_e2e_run_a\report.json `
+  --report .local_outputs\runtime_authorized_dev_e2e_run_b\report.json `
+  --output .local_outputs\runtime_authorized_paired_sample_analysis.json
+```
+
+已于 2026-08-10 对既有三个 Solver 重复运行报告执行该诊断（仅读取私有
+`report.json`，没有新的 Provider 调用）。三个配对样本均完整、目标 Agent 匹配且
+事件序列递增；历史工件早于新增时钟，因此 `task_lifecycle_elapsed_ms` 与
+`client_observed_terminal_wait_ms` 没有值。结果级 `metrics.latency_ms` 的中位数为
+Legacy `6634ms`、Runtime `668ms`，但第三个样本仍为 `181ms → 668ms`（+269.1%），
+超过 50% 单样本阈值。诊断输出为 `requires_investigation=true`，不构成性能通过、
+structural parity 通过或发布批准。
+
 ## 仍未满足的发布条件
 
 - 每个 Agent 仍需由独立评审人对脱敏 Legacy/Runtime 输出给出语义 judgement；
