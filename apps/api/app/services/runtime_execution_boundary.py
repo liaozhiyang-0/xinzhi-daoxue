@@ -120,6 +120,22 @@ class RuntimeExecutionBoundary:
     def runtime_option_key(self, agent_id: str) -> str | None:
         return self.business_registry.runtime_option_key(agent_id)
 
+    def runtime_option_key_for_request(
+        self, agent_id: str, request: AgentRequest
+    ) -> str | None:
+        """Return the option key of the Runtime service selected by a request.
+
+        A direct business Runtime is still the only key advertised for default
+        launch configuration. An explicitly opted-in wildcard Goal Runtime,
+        however, must drive the request launch decision even when the routed
+        Agent also has a direct business adapter. Otherwise the Task boundary
+        would silently fall back to Legacy before the generic plan is reached.
+        """
+
+        service = self.business_registry.resolve(agent_id, request)
+        option_key = getattr(service, "runtime_option_key", None)
+        return option_key if isinstance(option_key, str) and option_key else None
+
     def runtime_plan_version(self, agent_id: str) -> str | None:
         return self.business_registry.runtime_plan_version(agent_id)
 

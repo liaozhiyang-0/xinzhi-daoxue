@@ -677,8 +677,10 @@ class TaskRunner:
                         task.agent_id,
                         request,
                         lifecycle_enabled=self.runtime_lifecycle.enabled,
-                        runtime_option_key=self.runtime_boundary.runtime_option_key(
-                            task.agent_id
+                        runtime_option_key=(
+                            self.runtime_boundary.runtime_option_key_for_request(
+                                task.agent_id, request
+                            )
                         ),
                         expected_agent_version=self.agent_registry.get(
                             task.agent_id

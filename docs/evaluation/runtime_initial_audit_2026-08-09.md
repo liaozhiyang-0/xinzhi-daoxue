@@ -110,3 +110,20 @@ An attempted fresh local Solver E2E sample did not start because the desktop
 execution environment rejected creation of a background API process before a
 server or Provider call existed. It is not a test result and does not change
 the existing performance or release conclusions.
+
+## Explicit Goal Runtime Task-boundary regression (2026-08-10)
+
+The Task launch policy now resolves the Runtime option key from the business
+service selected for the individual request. This preserves the direct business
+Runtime as the advertised default while allowing an explicit
+`runtime_goal_runtime.execute=true` request to select the wildcard Generic Goal
+Runtime instead of silently falling back to Legacy.
+
+The new provider-free TestClient regression submits a structured calculator
+goal through `POST /tasks`, waits for its non-blocking Task completion, then
+checks the durable Runtime plan (`goal-runtime-v1.r0`), checkpoint-backed Debug
+projection, and the persisted `plan.node_started` / `plan.node_completed`
+event data used by the SSE/UI contract. The focused Runtime, Task API, SSE
+ordering, and Debug UI matrix passed `26` tests. This is integration evidence
+only: it uses the read-only calculator tool and makes no external Provider
+call, semantic judgment, or release decision.
