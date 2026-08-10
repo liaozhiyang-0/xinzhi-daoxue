@@ -148,3 +148,15 @@ privileged tool or subagent only when the routed Agent has an explicit full
 handler-ID allowlist. This prevents request-controlled goals from converting a
 descriptor's approval requirement into an implicit authority grant; the
 existing Runtime approval gate remains the second, durable enforcement layer.
+
+## Core Runtime audit matrix (2026-08-10)
+
+The current provider-free core audit matrix passed `142` tests in 122 seconds.
+It covers Runtime contracts, structured-goal planning and intake, Generic Goal
+execution/replan, typed subagents, durable checkpoint/replay and parallel
+recovery, proposal and control gates, Runtime observability, paired-sample and
+semantic/release evidence contracts, Solver parity, and Task/SSE reconnect and
+ordering. The matrix deliberately excludes RESEARCH_03-specific tests because
+that business path is being handled independently. It does not substitute for
+new authorized Provider samples, independent semantic review, or a human
+release decision.
