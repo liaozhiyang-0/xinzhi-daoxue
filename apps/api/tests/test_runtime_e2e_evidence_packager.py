@@ -155,6 +155,20 @@ def test_packager_exports_unchanged_trace_and_builds_structural_suite(
     suite = json.loads(suite_path.read_text(encoding="utf-8"))
     assert suite["evidence"]["kind"] == "authorized_paired"
     assert "controlled private input" not in json.dumps(suite)
+    semantic_inputs = json.loads(
+        (output_root / agent["semantic_inputs"]).read_text(encoding="utf-8")
+    )
+    judgement_template = json.loads(
+        (output_root / agent["semantic_judgements_template"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert semantic_inputs == {"general-case": {"question": "controlled private input"}}
+    assert judgement_template["general-case"]["decision"] == "needs_review"
+    assert (
+        judgement_template["general-case"]["reviewer_ref"]
+        == "TO_BE_COMPLETED_BY_INDEPENDENT_REVIEWER"
+    )
 
 
 def test_packager_rejects_sensitive_checkpoint_state(tmp_path: Path) -> None:

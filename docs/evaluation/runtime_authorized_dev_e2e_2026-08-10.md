@@ -106,6 +106,18 @@ checkpoint state。只能对受控且 Git 忽略的本地目录执行：
 `structural_suites/*.json` 和 `evidence_packaging_report.json`。结构套件通过仅证明
 trace、身份、版本、输入哈希与非语义结构条件；它不生成、推断或代替独立语义审查。
 
+对每个已通过结构门禁的 Agent，打包器还会生成同一受控目录下的
+`semantic_review_inputs/*.json` 与 `semantic_review_judgements_template/*.json`。
+前者保存与 suite input hash 对应的脱敏输入，后者的每个 case 都明确为
+`needs_review`、缺少真实评审人和时间，不能直接作为 sidecar 或发布凭据。独立评审人
+应在受控目录查看 structural suite 中的成对输出，复制并完成模板后，才可调用
+`collect_runtime_semantic_evidence.py`。
+
+本次已为 `GENERAL_QUESTION_V1`、`LEARN_01_LOCAL_RETRIEVAL_V1` 与
+`RESEARCH_01_ACADEMIC_SEARCH_V1` 实际生成上述两类私有评审材料。它们均明确处于
+`needs_review`，没有评审分数、责任人或发布结论；`ACADEMIC_PROBLEM_SOLVER` 因结构
+性能门禁失败而没有生成评审包。
+
 #### 本次已捕获工件的离线打包结果（2026-08-10）
 
 实际对 `.local_outputs/runtime_authorized_dev_e2e_20260810/` 与同次隔离 SQLite

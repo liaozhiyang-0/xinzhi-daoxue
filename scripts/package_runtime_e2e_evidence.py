@@ -318,6 +318,49 @@ def _suite_id(prefix: str, agent_id: str, pairs: list[PairArtifact]) -> str:
     return f"{_slug(prefix)}-{_slug(agent_id)}-{digest}"
 
 
+def _write_semantic_review_material(
+    *,
+    root: Path,
+    agent_id: str,
+    pairs: list[PairArtifact],
+    authorization_ref: str,
+) -> tuple[Path, Path]:
+    """Create controlled reviewer inputs without manufacturing a judgement.
+
+    Structural suites deliberately hold only input digests, while an
+    independent reviewer needs the corresponding redacted input to bind a
+    semantic sidecar.  The template is intentionally invalid as evidence:
+    every case remains ``needs_review`` with an explicit incomplete reviewer
+    marker, so it cannot be mistaken for an approval record.
+    """
+
+    inputs: dict[str, dict[str, Any]] = {}
+    judgements: dict[str, dict[str, Any]] = {}
+    for pair in sorted(pairs, key=lambda item: item.case_id):
+        inputs[pair.case_id] = _read_json_object(pair.runtime_input, "runtime input")
+        judgements[pair.case_id] = {
+            "dimensions": {
+                "task_fulfillment": None,
+                "factual_correctness": None,
+                "evidence_faithfulness": None,
+                "safety": None,
+            },
+            "decision": "needs_review",
+            "judge_type": "human",
+            "rubric_version": "runtime-semantic-v1",
+            "reviewer_ref": "TO_BE_COMPLETED_BY_INDEPENDENT_REVIEWER",
+            "reviewed_at": "TO_BE_COMPLETED_WITH_ISO8601_TIMEZONE",
+            "redaction_status": "redacted",
+            "authorization_ref": authorization_ref,
+        }
+    slug = _slug(agent_id)
+    inputs_path = root / "semantic_review_inputs" / f"{slug}.json"
+    template_path = root / "semantic_review_judgements_template" / f"{slug}.json"
+    _write_json(inputs_path, inputs)
+    _write_json(template_path, judgements)
+    return inputs_path, template_path
+
+
 def package_e2e_evidence(
     *,
     output_root: Path,
@@ -396,12 +439,24 @@ def package_e2e_evidence(
             suite = build_suite_from_manifest(manifest_path)
             suite_path = root / "structural_suites" / f"{_slug(agent_id)}.json"
             _write_json(suite_path, suite.model_dump(mode="json"))
+            semantic_inputs_path, judgement_template_path = (
+                _write_semantic_review_material(
+                    root=root,
+                    agent_id=agent_id,
+                    pairs=pairs,
+                    authorization_ref=authorization_ref.strip(),
+                )
+            )
             agent_report.update(
                 {
                     "agent_version": manifest["agent_version"],
                     "runtime_plan_version": manifest["runtime_plan_version"],
                     "manifest": _relative(root, manifest_path),
                     "structural_suite": _relative(root, suite_path),
+                    "semantic_inputs": _relative(root, semantic_inputs_path),
+                    "semantic_judgements_template": _relative(
+                        root, judgement_template_path
+                    ),
                     "structural_release_eligible": True,
                 }
             )
