@@ -762,23 +762,6 @@ $env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
 node scripts\run_runtime_teacher_browser_acceptance.js
 ```
 
-## 47. 2026-08-11 execution debug LearningLoop control parity
-
-- The execution debug page now uses the same LearningLoop control request
-  contract as the Workspace: `data` is sent only for `input`; approval,
-  pause, and resume send the action and current `state_version` without an
-  empty data object.
-- The focused UI contract suite is green at 18/18 after synchronizing stale
-  assertions with the current capability-driven implementation.
-- The authenticated browser harness also opens `/debug/execution` for the
-  LearningLoop scenario and approves from the execution page itself. The
-  bounded report is under
-  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_execution_debug_20260811/report.json`.
-  It records one HTTP 200 accepted approval, a completed four-node
-  `teaching_interaction` run, visible execution controls, 39 strictly
-  increasing task events, and zero page/request failures. This remains Mock
-  development evidence, not semantic or release authorization.
-
 ## 43. 2026-08-11 semantic release gate hardening
 
 - Model-only semantic judgements remain accepted as diagnostic sidecars, which
@@ -879,3 +862,38 @@ $env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'mock'
 $env:XINZHI_TEACHER_BROWSER_SCENARIO = 'learning_loop'
 node scripts\run_runtime_teacher_browser_acceptance.js
 ```
+
+## 47. 2026-08-11 execution debug LearningLoop control parity
+
+- The execution debug page now uses the same LearningLoop control request
+  contract as the Workspace: `data` is sent only for `input`; approval,
+  pause, and resume send the action and current `state_version` without an
+  empty data object.
+- The focused UI contract suite is green at 18/18 after synchronizing stale
+  assertions with the current capability-driven implementation.
+- The authenticated browser harness also opens `/debug/execution` for the
+  LearningLoop scenario and approves from the execution page itself. The
+  bounded report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_execution_debug_20260811_post_timing/report.json`.
+  It records one HTTP 200 accepted approval, a completed four-node
+  `teaching_interaction` run, visible execution controls, 39 strictly
+  increasing task events, and zero page/request failures. This remains Mock
+  development evidence, not semantic or release authorization.
+
+## 48. 2026-08-11 real-local LearningLoop browser path
+
+- A bounded authenticated browser run used the `real_local` profile with one
+  API process, an isolated SQLite database, Xingchen disabled, Agent Mocks
+  disabled, and `ACADEMIC_PROBLEM_SOLVER=default`.
+- The Workspace created the interactive `check_my_work` task, submitted
+  `request_more_hint`, opened the Execution Debug page, and completed the
+  LearningLoop Runtime. The redacted report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_real_local_20260811_retry/report.json`.
+- The task routed to `ACADEMIC_PROBLEM_SOLVER` with
+  `result_provider=local_graph`; the LearningLoop used four succeeded nodes,
+  the approval node was explicitly `skipped` for this local path, the
+  execution controls projection was visible, and 34 task events were strictly
+  increasing. Page and request failures were both zero.
+- This proves the real-local application/browser path and a no-approval
+  terminal variant. It does not replace the Mock approval/recovery evidence,
+  semantic review, or production release authorization.

@@ -429,8 +429,8 @@ async function collectEvidence(page, taskId) {
         `${baseURL}/debug/execution?task_id=${encodeURIComponent(report.task_id)}`,
         { waitUntil: "networkidle" },
       );
+      await executionPage.locator("#execution-console").waitFor({ state: "visible", timeout: 30_000 });
       await executionPage.locator('button[data-tab-target="runtime"]').click();
-      await executionPage.locator("#runtime-approve").waitFor({ state: "visible", timeout: 30_000 });
       const learningRuntime = await waitForLearningRuntimeApproval(
         page,
         report.task_id,
