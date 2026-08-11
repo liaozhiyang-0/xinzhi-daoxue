@@ -1871,3 +1871,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The result validates persistence and ordering after the optimization, but
   no performance claim or threshold relaxation is made. The isolated API
   process and port were released after the run.
+
+## 107. 2026-08-11 checkpoint commit-cost profile
+
+- A provider-free in-process public-API profile captured eight Runtime
+  checkpoint calls. They averaged `65.338 ms` and peaked at `83.405 ms`.
+- The same profile observed `15` database commits totaling approximately
+  `327.790 ms` (maximum `28.147 ms` per commit). This identifies the durable
+  transaction/commit boundary as the dominant remaining local cost; the
+  earlier event-sequence query was not the limiting factor.
+- No asynchronous or non-durable checkpoint shortcut was introduced. Runtime
+  recovery semantics and the release latency gate remain unchanged.
