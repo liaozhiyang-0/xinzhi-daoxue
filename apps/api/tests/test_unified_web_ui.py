@@ -129,3 +129,18 @@ def test_workspace_new_session_reenables_task_controls() -> None:
     reset_end = script.index("async function newSession()", reset_start)
 
     assert "setBusy(false);" in script[reset_start:reset_end]
+
+
+def test_workspace_restores_runtime_controls_after_checkpoint_reload() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function renderRuntimeCheckpoint(task)" in script
+    assert '"waiting_review"' in script
+    assert "renderRuntimeCheckpoint(latestTask);" in script
+    assert "function observeResumedRuntimeTask(taskId)" in script
+    assert 'if (["resume", "approve", "input"].includes(action))' in script
+    assert "function decodeHtmlEntities(value)" in script
+    assert "decodeHtmlEntities(item.abstract" in script

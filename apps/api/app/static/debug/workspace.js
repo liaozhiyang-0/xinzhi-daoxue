@@ -798,6 +798,17 @@ function relatedImageCard(images) {
   ]);
 }
 
+function decodeHtmlEntities(value) {
+  let decoded = String(value || "");
+  for (let pass = 0; pass < 2; pass += 1) {
+    const probe = document.createElement("textarea");
+    probe.innerHTML = decoded;
+    if (probe.value === decoded) break;
+    decoded = probe.value;
+  }
+  return decoded;
+}
+
 function externalPaperCard(item) {
   const rawUrl = String(item.url || "").trim();
   const category = item.metadata?.category === "conference"
@@ -819,7 +830,7 @@ function externalPaperCard(item) {
     item.citation_count != null ? `被引 ${item.citation_count} 次` : "引用数据未提供",
   ].filter(Boolean).join(" · ");
   const authors = Array.isArray(item.authors) ? item.authors.filter(Boolean).join(", ") : "";
-  const abstract = item.abstract || "暂无摘要，建议打开原文查看。";
+  const abstract = decodeHtmlEntities(item.abstract || "暂无摘要，建议打开原文查看。");
   const title = safeUrl
     ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: item.title || "未命名论文" })
     : el("span", { text: item.title || "未命名论文" });
@@ -1222,6 +1233,9 @@ async function submitRuntimeTaskControl(action, payload = null) {
     if (!learningControl) state.currentTask = task;
     if (action === "input") $("#runtime-task-input").value = "";
     await refreshRuntimeTaskControls(state.currentTask?.id || state.taskId);
+    if (["resume", "approve", "input"].includes(action)) {
+      observeResumedRuntimeTask(task?.id || taskId);
+    }
     toast(action === "pause" ? "已提交暂停请求，将在安全边界暂停。" : action === "resume" ? "已提交恢复请求。" : action === "approve" ? "审批已提交，任务将从断点继续。" : "补充信息已提交，任务将从断点继续。");
   } catch (error) {
     const status = Number(error?.status);
@@ -1236,6 +1250,28 @@ async function submitRuntimeTaskControl(action, payload = null) {
     runtimeTaskControlsBusy = false;
     renderRuntimeTaskControls();
   }
+}
+
+function observeResumedRuntimeTask(taskId) {
+  if (!taskId || state.activeTaskWait) return;
+  const runSequence = state.runSequence;
+  state.taskId = taskId;
+  state.currentTask = { ...(state.currentTask || {}), id: taskId };
+  setBusy(true);
+  void waitForTask(taskId, runSequence).then(async (finishedTask) => {
+    if (!finishedTask || runSequence !== state.runSequence) return;
+    renderResult(finishedTask);
+    await loadSessionList();
+  }).catch((error) => {
+    if (runSequence === state.runSequence) {
+      $("#form-error").textContent = error.message || "任务恢复监听失败";
+    }
+  }).finally(() => {
+    if (runSequence === state.runSequence) {
+      state.taskId = "";
+      setBusy(false);
+    }
+  });
 }
 
 async function submitRuntimeTaskInput(event) {
@@ -1604,14 +1640,26 @@ async function loadSessionHistory() {
     if (latest.role === "user" && latest.source_task_id) {
       const latestTask = await api(ownedTaskUrl(latest.source_task_id));
       if (!isCurrent()) return;
-      if (["created", "queued", "running"].includes(latestTask.status)) {
+      const resumableStatuses = [
+        "created",
+        "queued",
+        "running",
+        "paused",
+        "waiting_user",
+        "waiting_review",
+      ];
+      if (resumableStatuses.includes(latestTask.status)) {
         state.taskId = latestTask.id;
-        setBusy(true);
-        try {
-          const finishedTask = await waitForTask(latestTask.id, requestSequence);
-          if (finishedTask && isCurrent()) renderResult(finishedTask);
-        } finally {
-          if (isCurrent()) { state.taskId = ""; setBusy(false); }
+        if (["paused", "waiting_user", "waiting_review"].includes(latestTask.status)) {
+          renderRuntimeCheckpoint(latestTask);
+        } else {
+          setBusy(true);
+          try {
+            const finishedTask = await waitForTask(latestTask.id, requestSequence);
+            if (finishedTask && isCurrent()) renderResult(finishedTask);
+          } finally {
+            if (isCurrent()) { state.taskId = ""; setBusy(false); }
+          }
         }
       }
     }
@@ -1971,6 +2019,27 @@ function markAnswerPending() {
   $("#answer-status").textContent = "\u6b63\u5728\u6267\u884c";
   $("#answer-title").textContent = "\u6b63\u5728\u7ec4\u7ec7\u56de\u7b54";
   $("#answer-source-chip").textContent = "\u7b49\u5f85\u672c\u8f6e\u7ed3\u679c";
+}
+
+function renderRuntimeCheckpoint(task) {
+  const runtimeStatus = task.status === "waiting_review"
+    ? "waiting_approval"
+    : task.status === "waiting_user"
+      ? "waiting_input"
+      : task.status;
+  state.currentTask = task;
+  state.taskId = task.id;
+  setBusy(true);
+  markAnswerPending();
+  $("#answer-status").textContent = runtimeTaskStatusLabels[runtimeStatus]
+    || "等待 Runtime 控制";
+  $("#answer-title").textContent = runtimeStatus === "paused"
+    ? "任务已暂停"
+    : "任务等待 Runtime 控制";
+  $("#answer-source-chip").textContent = "等待 checkpoint 操作";
+  $("#context-task-title").textContent = "已从持久化 checkpoint 恢复";
+  renderProcess([{ label: "已从持久化 checkpoint 恢复", status: "waiting" }]);
+  void refreshRuntimeTaskControls(task.id);
 }
 
 function markAnswerCancelled() {

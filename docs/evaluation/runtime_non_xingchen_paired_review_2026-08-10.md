@@ -2371,3 +2371,28 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The protected `RESEARCH_03_DATA_ANALYSIS_V1` path was not opened, inspected,
   or executed. Only the non-protected Academic Search and Academic Writing
   paths were tested in this continuation.
+
+## 137. 2026-08-11 real Edge checkpoint reload, resume observation, and evidence text rendering
+
+- A real Edge pause/reload pass reproduced a frontend recovery gap: after a
+  persisted Runtime checkpoint was refreshed, the conversation was restored but
+  the Runtime control surface was missing. `loadSessionHistory()` only resumed
+  `created`, `queued`, and `running` tasks, so `paused`, `waiting_user`, and
+  `waiting_review` checkpoints were not rendered.
+- The Workspace now renders a persisted checkpoint, reloads its Runtime control
+  projection, and re-establishes task/SSE observation after `resume`, `approve`,
+  or `input`. Static UI tests cover both the checkpoint status set and the
+  resumed-task observer.
+- Real Edge revalidation confirmed the full path: a paused task reloaded with
+  `已暂停` and `恢复`; after clicking `恢复`, the page showed the running
+  controls, later rendered the completed answer, and ended with terminal Runtime
+  controls disabled. The run produced six external evidence cards.
+- The same evidence panel exposed a separate presentation defect: one of six
+  external abstracts contained literal HTML entities such as `&amp;lt;`. The
+  card renderer now decodes up to two layers of HTML entities into text before
+  display, without using HTML injection. After cache-busted reload, Edge showed
+  six cards with zero encoded-entity anomalies and valid DOI/arXiv links.
+- Verification completed for the changed UI surface: targeted Pytest (`2
+  passed`), Ruff, JavaScript syntax check, and `git diff --check`. The full
+  multi-domain frontend audit remains in progress; the protected research-data
+  path remains excluded.
