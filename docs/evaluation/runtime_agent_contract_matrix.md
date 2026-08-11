@@ -95,6 +95,23 @@ LearningLoop 是 provider-free、可评测、无授权证据的能力；因此
 | capability identity | `agent_version=learning-agent-v1` 与各自 `runtime_plan_version` 已显式声明 | descriptor/readiness tests 与 evidence intake contract | suite、checkpoint、sidecar、preflight 的版本完全一致 | 实现、可核验、未授权 |
 | Legacy → Runtime 默认切换 | `LearningLoopService` 保留 Legacy/Runtime 分流 | offline collector、replay audit、release preflight schema | authorized release record、canary 观察、回滚配置和独立 default 审批 | 未完成 |
 
+## 2026-08-11 readiness evidence split
+
+The readiness projections now expose two additive evidence fields alongside
+the existing combined Canary field:
+
+- `structural_release_eligible`: the authorized structural/provenance suite
+  passed with the expected Agent and Runtime plan versions.
+- `semantic_release_eligible`: the bound semantic sidecar passed the semantic
+  gate, including the independent-judge requirement.
+- `canary_release_eligible`: the combined release result retained for
+  compatibility; it remains false unless the structural and semantic gates
+  both pass.
+
+The Agent debug UI consumes the explicit fields when present and keeps a
+fail-closed fallback for older payloads. These fields describe evidence only;
+they do not authorize default launch or replace the human release decision.
+
 ## 证据限制
 
 本文件和对应测试产生的是 synthetic fixture/结构合同证据。它们只能证明测试中
