@@ -67,6 +67,9 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_REQUIREMENT: ${TORCH_REQUIREMENT:-torch>=2.7,<3}
     container_name: xzd-api
     env_file:
       - path: .env
@@ -178,6 +181,9 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_REQUIREMENT: ${TORCH_REQUIREMENT:-torch>=2.7,<3}
     container_name: xzd-queue-worker
     env_file:
       - path: .env

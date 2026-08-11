@@ -1631,3 +1631,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   temporary API process and port were released after the run. This is real
   frontend application-wiring and UI-state evidence with an explicitly mock
   Provider; it is not real Provider, semantic-equivalence, or release evidence.
+
+## 92. 2026-08-11 Docker build override contract
+
+- `docker-compose.yml` now passes `TORCH_INDEX_URL` and `TORCH_REQUIREMENT` as
+  build arguments to both the API and queue-worker services. The defaults are
+  the CPU Torch index and the project-compatible `torch>=2.7,<3` requirement;
+  an intentional GPU build can override them without editing the Dockerfile.
+- `.env.example` documents these build-time settings, and the new Docker
+  runtime contract tests passed `3` tests. Compose parsing and whitespace
+  validation also passed. This makes the image choice configurable but does
+  not claim that a full image build completed in the current network.
