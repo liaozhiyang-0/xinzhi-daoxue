@@ -2025,3 +2025,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   interaction adapter. It remains synthetic Mock-provider evidence and is not
   a reviewed semantic sidecar, canary authorization, or default-release
   decision; the LearningLoop readiness gate remains fail-closed.
+
+## 116. 2026-08-11 LearningLoop paired evidence packaging
+
+- Added `scripts/package_learning_runtime_pair.py` and a focused regression
+  suite. The packager reads the two public-API reports, validates case/task
+  identity, Legacy/Runtime route separation, terminal status, event ordering,
+  and Runtime checkpoint ordering, then emits only redacted summaries.
+- Packaging the fresh teaching pair produced
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_learning_pair_package/learning_runtime_paired_evidence.json`.
+  Structural checks passed; the package explicitly retains
+  `release_ready=false`, requires a semantic review sidecar and a human
+  release decision, and contains no student answer, request snapshot, or
+  Runtime state data.
+- The packager is evidence governance only. It does not mutate launch modes,
+  register authorization, or turn development Mock evidence into canary or
+  default-release evidence.
