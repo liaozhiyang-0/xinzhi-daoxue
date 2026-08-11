@@ -270,7 +270,7 @@ class RuntimeLaunchPolicy:
         if release_reason is not None:
             return release_reason
         if self._release_authorization_registry is None:
-            return None
+            return "release_authorization_missing"
         report = self._release_registry.report(agent_id)
         if report is None:
             return "canary_release_evidence_missing"

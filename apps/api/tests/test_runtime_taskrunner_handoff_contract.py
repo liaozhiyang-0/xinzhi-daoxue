@@ -284,6 +284,7 @@ def test_failed_default_runtime_cannot_be_masked_by_legacy_completion(api, app) 
                 "_scenario_catalog_bound": True,
             },
             intent="data_analysis",
+            user_role="teacher",
         )
         payload.update(
             {

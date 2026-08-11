@@ -23,6 +23,10 @@ from app.services.runtime_agent_readiness import RuntimeAgentReadinessService
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 from app.services.runtime_launch_policy import RuntimeLaunchPolicy
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorization,
+    RuntimeReleaseAuthorizationRegistry,
+)
 
 
 class _RuntimeService:
@@ -61,6 +65,9 @@ def _readiness(
     release_gate_required: bool = False,
     handler_registry: RuntimeHandlerRegistry | None = None,
     release_registry: RuntimeCanaryReleaseRegistry | None = None,
+    release_authorization_registry: (
+        RuntimeReleaseAuthorizationRegistry | None
+    ) = None,
 ) -> RuntimeAgentReadinessService:
     registry = (
         RuntimeHandlerRegistry()
@@ -78,6 +85,7 @@ def _readiness(
         RuntimeLaunchPolicy(
             launch_modes,
             release_registry=release,
+            release_authorization_registry=release_authorization_registry,
             release_gate_required=release_gate_required,
         ),
         lifecycle_enabled=True,
@@ -130,6 +138,25 @@ def _release_registry(
     return RuntimeCanaryReleaseRegistry(
         {"GENERAL_QUESTION_V1": report},
         semantic_evidence={"GENERAL_QUESTION_V1": evidence},
+    )
+
+
+def _release_authorization(
+    launch_mode: str,
+) -> RuntimeReleaseAuthorizationRegistry:
+    return RuntimeReleaseAuthorizationRegistry(
+        {
+            "GENERAL_QUESTION_V1": RuntimeReleaseAuthorization(
+                agent_id="GENERAL_QUESTION_V1",
+                suite_id="general-canary",
+                agent_version="1.0",
+                runtime_plan_version="general-qa-v1",
+                launch_mode=launch_mode,  # type: ignore[arg-type]
+                authorization_ref="release-auth-123",
+                approver_ref="release-reviewer-123",
+                approved_at=datetime(2026, 8, 9, tzinfo=UTC),
+            )
+        }
     )
 
 
@@ -259,6 +286,7 @@ def test_readiness_accepts_matching_release_artifact(
         launch_modes=f"GENERAL_QUESTION_V1={launch_mode}",
         release_gate_required=True,
         release_registry=_release_registry(),
+        release_authorization_registry=_release_authorization(launch_mode),
     )
 
     item = readiness.inspect("GENERAL_QUESTION_V1")
@@ -296,6 +324,7 @@ def test_default_ready_recommends_canary_observation_and_approval() -> None:
         launch_modes="GENERAL_QUESTION_V1=default",
         release_gate_required=True,
         release_registry=_release_registry(),
+        release_authorization_registry=_release_authorization("default"),
     )
 
     item = readiness.inspect("GENERAL_QUESTION_V1")

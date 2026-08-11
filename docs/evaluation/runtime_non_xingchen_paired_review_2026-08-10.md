@@ -1446,3 +1446,31 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   preflight group passed `65 tests`; Ruff, target Mypy, and the sensitive-file
   scan passed. The local `.env` has no canary artifact, semantic sidecar, or
   release authorization configured, so no Agent is promoted by this change.
+
+## 81. 2026-08-11 explicit human release authorization gate
+
+- `RuntimeLaunchPolicy` previously returned no blocker when the structural
+  and semantic evidence passed but the caller omitted the release-authorization
+  registry. That allowed a directly constructed policy to enter canary/default
+  without the required version-bound human approval.
+- The policy now returns `release_authorization_missing` whenever the release
+  gate is required and no authorization registry is supplied. Matching
+  readiness fixtures now include an explicit authorization bound to Agent,
+  suite, Agent version, Runtime plan version, and launch mode; missing or
+  mismatched authorization remains Legacy/fail-closed.
+- Launch-policy, authorization, and readiness regression tests passed `35`
+  tests; Ruff and Mypy passed. This closes the policy-level omission but does
+  not create a real approval record or promote any current Agent.
+
+## 82. 2026-08-11 RESEARCH_03 handoff contract fixture refresh
+
+- The bounded cross-entry regression found one stale RESEARCH_03 handoff
+  fixture using the default `student` role even though the scenario contract
+  authorizes only `teacher` and `researcher`. It was rejected with `422` before
+  reaching the intended assertion about a failed Default Runtime not being
+  masked by Legacy completion.
+- The fixture now explicitly uses the authorized `teacher` role; no scenario
+  allowlist or production authorization was broadened. The cross-entry,
+  TaskRunner handoff, and release-preflight group passed `20 tests`, and Ruff
+  passed. The corrected test confirms failed Default Runtime does not invoke
+  Legacy Provider generation or emit a successful completion event.

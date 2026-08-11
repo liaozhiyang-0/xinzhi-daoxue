@@ -18,6 +18,10 @@ from app.services.runtime_launch_policy import (
     RuntimeLaunchMode,
     RuntimeLaunchPolicy,
 )
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorization,
+    RuntimeReleaseAuthorizationRegistry,
+)
 
 AGENT_VERSION = "1.0"
 RUNTIME_PLAN_VERSION = "general-qa-v1"
@@ -59,6 +63,25 @@ def _request(options: dict[str, object] | None = None) -> AgentRequest:
         intent=Intent.GENERAL_QA,
         canonical_input={"text": "test"},
         options=options or {},
+    )
+
+
+def _matching_release_authorization(
+    launch_mode: str,
+) -> RuntimeReleaseAuthorizationRegistry:
+    return RuntimeReleaseAuthorizationRegistry(
+        {
+            "GENERAL_QUESTION_V1": RuntimeReleaseAuthorization(
+                agent_id="GENERAL_QUESTION_V1",
+                suite_id="general-canary",
+                agent_version=AGENT_VERSION,
+                runtime_plan_version=RUNTIME_PLAN_VERSION,
+                launch_mode=launch_mode,  # type: ignore[arg-type]
+                authorization_ref="release-auth-123",
+                approver_ref="release-reviewer-123",
+                approved_at=datetime(2026, 8, 9, tzinfo=UTC),
+            )
+        }
     )
 
 
@@ -193,6 +216,9 @@ def test_configured_runtime_mode_accepts_matching_release_artifact(
     policy = RuntimeLaunchPolicy(
         f"GENERAL_QUESTION_V1={launch_mode}",
         release_registry=registry,
+        release_authorization_registry=_matching_release_authorization(
+            launch_mode
+        ),
         release_gate_required=True,
     )
 
@@ -205,6 +231,49 @@ def test_configured_runtime_mode_accepts_matching_release_artifact(
     )
 
     assert decision.mode == expected_mode
+
+
+def test_configured_runtime_mode_requires_authorization_registry() -> None:
+    registry = RuntimeCanaryReleaseRegistry(
+        {
+            "GENERAL_QUESTION_V1": RuntimeCanaryReport(
+                suite_id="general-canary",
+                suite_version="1",
+                canary_eligible=True,
+                release_eligible=True,
+                thresholds=RuntimeCanaryThresholds(),
+                evidence=RuntimeCanaryEvidence(
+                    kind="authorized_paired",
+                    agent_id="GENERAL_QUESTION_V1",
+                    agent_version=AGENT_VERSION,
+                    runtime_plan_version=RUNTIME_PLAN_VERSION,
+                    authorization_ref="change-123",
+                    captured_at=datetime(2026, 8, 9, tzinfo=UTC),
+                    redaction_status="redacted",
+                ),
+            )
+        },
+        semantic_evidence={
+            "GENERAL_QUESTION_V1": _passing_semantic_evidence()
+        },
+    )
+    policy = RuntimeLaunchPolicy(
+        "GENERAL_QUESTION_V1=canary",
+        release_registry=registry,
+        release_gate_required=True,
+    )
+
+    decision = policy.resolve(
+        "GENERAL_QUESTION_V1",
+        _request(),
+        lifecycle_enabled=True,
+        expected_agent_version=AGENT_VERSION,
+        expected_runtime_plan_version=RUNTIME_PLAN_VERSION,
+    )
+
+    assert decision.mode == RuntimeLaunchMode.LEGACY
+    assert decision.source == "canary_release_gate"
+    assert decision.reason == "release_authorization_missing"
 
 
 @pytest.mark.parametrize(
