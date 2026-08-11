@@ -2073,3 +2073,17 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `status=pending_independent_review`; they contain no raw action payload,
   student answer, request snapshot, or Runtime state data. This is an intake
   template, not a semantic sidecar and not a release authorization.
+
+## 119. 2026-08-11 LearningLoop evidence identity binding
+
+- The redacted pair packager now records the capability ID, Agent version, and
+  Runtime plan version selected from the declared LearningLoop Runtime
+  contract. The package labels this source as
+  `declared_runtime_contract` and keeps `authorization_status=not_authorized`;
+  these fields are version-binding metadata, not captured authorization.
+- Unknown Runtime `run_kind` values now fail the structural package check with
+  `learning_runtime_identity_unknown`, preventing a future semantic sidecar
+  from being attached to an unrecognized plan.
+- The package remains `release_ready=false` until a separately redacted
+  semantic sidecar and independent release decision are supplied. No
+  development artifact was promoted by this change.

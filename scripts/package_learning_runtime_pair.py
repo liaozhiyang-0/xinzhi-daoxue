@@ -21,6 +21,22 @@ SEMANTIC_DIMENSIONS = (
     "safety",
 )
 
+# These identities mirror the published Runtime capability descriptors.  They
+# are included as an explicit binding in the redacted package, but are not
+# treated as authorization or as proof that a captured trace carried them.
+LEARNING_RUNTIME_IDENTITIES = {
+    "teaching_interaction": {
+        "capability_id": "TEACHING_INTERACTION_V1",
+        "agent_version": "learning-agent-v1",
+        "runtime_plan_version": "teaching-interaction-v1",
+    },
+    "learning_progress": {
+        "capability_id": "LEARNING_PROGRESS_V1",
+        "agent_version": "learning-agent-v1",
+        "runtime_plan_version": "learning-progress-v1",
+    },
+}
+
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -174,6 +190,18 @@ def _semantic_review_intake(case_id: str) -> dict[str, Any]:
     }
 
 
+def _runtime_identity(runtime: dict[str, Any]) -> dict[str, Any] | None:
+    run_kind = _safe_string(runtime.get("run_kind"))
+    identity = LEARNING_RUNTIME_IDENTITIES.get(run_kind or "")
+    if identity is None:
+        return None
+    return {
+        **identity,
+        "source": "declared_runtime_contract",
+        "authorization_status": "not_authorized",
+    }
+
+
 def build_pair_report(
     runtime_report: dict[str, Any],
     legacy_report: dict[str, Any],
@@ -207,6 +235,9 @@ def build_pair_report(
 
     runtime_summary = _safe_runtime(runtime)
     legacy_summary = _safe_runtime(legacy)
+    runtime_identity = _runtime_identity(runtime_summary)
+    if runtime_identity is None:
+        reasons.append("learning_runtime_identity_unknown")
     runtime_events = runtime_summary["events"]
     legacy_events = legacy_summary["events"]
     runtime_checkpoints = runtime_summary["checkpoints"]
@@ -227,6 +258,7 @@ def build_pair_report(
         "evidence_kind": "development_paired",
         "case_id": case_id,
         "source_task_id": runtime.get("task_id"),
+        "capability_identity": runtime_identity,
         "runtime": runtime_summary,
         "legacy": legacy_summary,
         "structural_checks": {

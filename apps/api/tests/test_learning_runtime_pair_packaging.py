@@ -74,6 +74,13 @@ def test_learning_pair_packaging_is_structural_and_redacted(tmp_path: Path) -> N
 
     assert report["structural_checks"] == {"passed": True, "reasons": []}
     assert report["release_ready"] is False
+    assert report["capability_identity"] == {
+        "capability_id": "TEACHING_INTERACTION_V1",
+        "agent_version": "learning-agent-v1",
+        "runtime_plan_version": "teaching-interaction-v1",
+        "source": "declared_runtime_contract",
+        "authorization_status": "not_authorized",
+    }
     assert report["semantic_review_required"] is True
     assert report["semantic_review"]["status"] == "pending_independent_review"
     assert report["semantic_review"]["cases"][0][
@@ -108,3 +115,20 @@ def test_learning_pair_packaging_records_route_mismatch(tmp_path: Path) -> None:
     assert report["structural_checks"]["passed"] is False
     assert "runtime_route_not_observed" in report["structural_checks"]["reasons"]
     assert json.loads(output.read_text(encoding="utf-8"))["release_ready"] is False
+
+
+def test_learning_pair_packaging_blocks_unknown_runtime_identity() -> None:
+    runtime = _report(mode="runtime", observed_runtime_route=True)
+    runtime["results"][0]["runtime"]["run_kind"] = "unknown_learning_runtime"
+
+    report = build_pair_report(
+        runtime,
+        _report(mode="legacy", observed_runtime_route=False),
+    )
+
+    assert report["capability_identity"] is None
+    assert report["structural_checks"]["passed"] is False
+    assert "learning_runtime_identity_unknown" in report["structural_checks"][
+        "reasons"
+    ]
+    assert report["release_ready"] is False
