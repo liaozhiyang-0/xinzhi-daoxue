@@ -213,6 +213,9 @@ def enable_runtime_development_profile(
             "AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED": "true",
             "AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED": "true",
             "AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED": "true",
+            # RESEARCH_03 remains explicit-opt-in: enabling the local service
+            # does not add it to the default launch-mode list below.
+            "AGENT_RUNTIME_RESEARCH_ENABLED": "true",
             "AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED": "true",
             "AGENT_RUNTIME_LAUNCH_MODES": ",".join(
                 f"{agent_id}={mode}"

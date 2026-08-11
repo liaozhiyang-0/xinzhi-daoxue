@@ -960,6 +960,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   pair was run in this step, and no release evidence or default launch was
   created.
 
+## 77. 2026-08-11 explicit local profile enablement
+
+- The `--runtime-dev` launcher profile now enables the RESEARCH_03 local
+  Runtime service while deliberately leaving it out of the default launch-mode
+  list. RESEARCH_03 therefore remains explicit opt-in in development and is
+  not silently promoted by the profile.
+- Launcher and paired-harness regression tests passed together (`23 tests`),
+  with Ruff and sensitive-file checks passing.
+
 ## 51. 2026-08-11 researcher approval boundary and remaining quality risk
 
 - Runtime approval is now role- and Agent-scoped: a `researcher` may approve
