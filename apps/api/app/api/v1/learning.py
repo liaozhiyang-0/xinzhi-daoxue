@@ -448,7 +448,11 @@ def _project_learning_runtime_descriptor(
     # artifact to satisfy the release gate for an otherwise unversioned
     # capability.
     agent_version = _descriptor_text(descriptor, "agent_version") or ""
-    canary_release_eligible, canary_reason = _learning_canary_readiness(
+    (
+        structural_release_eligible,
+        semantic_release_eligible,
+        canary_reason,
+    ) = _learning_canary_readiness(
         capability_id=capability_id,
         agent_version=agent_version,
         runtime_plan_version=runtime_plan_version,
@@ -478,7 +482,9 @@ def _project_learning_runtime_descriptor(
         version=version,
         agent_version=agent_version,
         runtime_plan_version=runtime_plan_version,
-        canary_release_eligible=canary_release_eligible,
+        structural_release_eligible=structural_release_eligible,
+        semantic_release_eligible=semantic_release_eligible,
+        canary_release_eligible=semantic_release_eligible,
         canary_reason=canary_reason,
         enabled=_descriptor_bool(descriptor, "enabled"),
         supported_actions=_descriptor_actions(descriptor),
@@ -498,17 +504,22 @@ def _learning_canary_readiness(
     agent_version: str,
     runtime_plan_version: str,
     release_registry: RuntimeCanaryReleaseRegistry | None,
-) -> tuple[bool, str]:
+) -> tuple[bool, bool, str]:
     """Project the shared release gate without entering an execution path."""
 
     if release_registry is None:
-        return False, "canary_release_registry_missing"
+        return False, False, "canary_release_registry_missing"
     if not agent_version.strip() or not runtime_plan_version.strip():
-        return False, "canary_artifact_version_expectation_missing"
+        return False, False, "canary_artifact_version_expectation_missing"
 
     expected_agent_version = agent_version.strip() or None
     expected_runtime_plan_version = runtime_plan_version.strip()
-    eligible = release_registry.release_eligible(
+    structural_eligible = release_registry.structural_eligible(
+        capability_id,
+        expected_agent_version=expected_agent_version,
+        expected_runtime_plan_version=expected_runtime_plan_version,
+    )
+    semantic_eligible = release_registry.release_eligible(
         capability_id,
         expected_agent_version=expected_agent_version,
         expected_runtime_plan_version=expected_runtime_plan_version,
@@ -518,7 +529,7 @@ def _learning_canary_readiness(
         expected_agent_version=expected_agent_version,
         expected_runtime_plan_version=expected_runtime_plan_version,
     )
-    return eligible, reason
+    return structural_eligible, semantic_eligible, reason
 
 
 @router.get("/states", response_model=list[LearnerKnowledgeState])

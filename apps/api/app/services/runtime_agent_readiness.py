@@ -42,6 +42,8 @@ class RuntimeAgentReadiness:
     effective_launch_mode: str
     launch_source: str
     launch_reason: str
+    structural_release_eligible: bool
+    semantic_release_eligible: bool
     canary_release_eligible: bool
     canary_reason: str
     status: str
@@ -60,6 +62,8 @@ class RuntimeAgentReadiness:
             "effective_launch_mode": self.effective_launch_mode,
             "launch_source": self.launch_source,
             "launch_reason": self.launch_reason,
+            "structural_release_eligible": self.structural_release_eligible,
+            "semantic_release_eligible": self.semantic_release_eligible,
             "canary_release_eligible": self.canary_release_eligible,
             "canary_reason": self.canary_reason,
             "status": self.status,
@@ -106,6 +110,12 @@ class RuntimeAgentReadinessService:
                 payload.update(
                     {
                         "status": readiness.status,
+                        "structural_release_eligible": (
+                            readiness.structural_release_eligible
+                        ),
+                        "semantic_release_eligible": (
+                            readiness.semantic_release_eligible
+                        ),
                         "canary_release_eligible": readiness.canary_release_eligible,
                         "canary_reason": readiness.canary_reason,
                         "blockers": list(readiness.blockers),
@@ -131,6 +141,8 @@ class RuntimeAgentReadinessService:
         if not descriptor.enabled:
             return {
                 "status": "blocked",
+                "structural_release_eligible": False,
+                "semantic_release_eligible": False,
                 "canary_release_eligible": False,
                 "canary_reason": "runtime_capability_disabled",
                 "blockers": ["runtime_capability_disabled"],
@@ -140,12 +152,19 @@ class RuntimeAgentReadinessService:
             reason = "canary_artifact_version_expectation_missing"
             return {
                 "status": "blocked",
+                "structural_release_eligible": False,
+                "semantic_release_eligible": False,
                 "canary_release_eligible": False,
                 "canary_reason": reason,
                 "blockers": [reason],
             }
 
-        canary_release_eligible = self.release_registry.release_eligible(
+        structural_release_eligible = self.release_registry.structural_eligible(
+            descriptor.capability_id,
+            expected_agent_version=descriptor.agent_version,
+            expected_runtime_plan_version=descriptor.version,
+        )
+        semantic_release_eligible = self.release_registry.release_eligible(
             descriptor.capability_id,
             expected_agent_version=descriptor.agent_version,
             expected_runtime_plan_version=descriptor.version,
@@ -155,12 +174,16 @@ class RuntimeAgentReadinessService:
             expected_agent_version=descriptor.agent_version,
             expected_runtime_plan_version=descriptor.version,
         )
-        blockers = [] if canary_release_eligible else [canary_reason]
+        blockers = [] if semantic_release_eligible else [canary_reason]
         return {
             "status": (
-                "canary_ready" if canary_release_eligible else "runtime_implemented"
+                "canary_ready"
+                if semantic_release_eligible
+                else "runtime_implemented"
             ),
-            "canary_release_eligible": canary_release_eligible,
+            "structural_release_eligible": structural_release_eligible,
+            "semantic_release_eligible": semantic_release_eligible,
+            "canary_release_eligible": semantic_release_eligible,
             "canary_reason": canary_reason,
             "blockers": blockers,
         }
@@ -254,11 +277,20 @@ class RuntimeAgentReadinessService:
             and expected_plan_version
             and expected_plan_version.strip()
         )
-        canary_eligible = self.release_registry.release_eligible(
-            agent_id,
-            expected_agent_version=definition.version,
-            expected_runtime_plan_version=expected_plan_version,
-        )
+        structural_eligible = False
+        semantic_eligible = False
+        if version_expectations_available:
+            structural_eligible = self.release_registry.structural_eligible(
+                agent_id,
+                expected_agent_version=definition.version,
+                expected_runtime_plan_version=expected_plan_version,
+            )
+            semantic_eligible = self.release_registry.release_eligible(
+                agent_id,
+                expected_agent_version=definition.version,
+                expected_runtime_plan_version=expected_plan_version,
+            )
+        canary_eligible = semantic_eligible
         canary_reason = (
             "canary_artifact_version_expectation_missing"
             if not version_expectations_available
@@ -324,6 +356,8 @@ class RuntimeAgentReadinessService:
             effective_launch_mode=decision.mode.value,
             launch_source=decision.source,
             launch_reason=decision.reason,
+            structural_release_eligible=structural_eligible,
+            semantic_release_eligible=semantic_eligible,
             canary_release_eligible=canary_eligible,
             canary_reason=canary_reason,
             status=status,

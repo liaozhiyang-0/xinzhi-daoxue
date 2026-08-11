@@ -1248,3 +1248,18 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   collection completed and was stopped. It is not counted as a pass; the file
   also contains a protected research-analysis case and was not broadened in
   this sweep.
+
+## 68. 2026-08-11 readiness evidence state separation
+
+- The provider-free readiness projection now exposes additive
+  `structural_release_eligible` and `semantic_release_eligible` fields for
+  Task Agents and LearningLoop capabilities. The existing
+  `canary_release_eligible` field remains the combined operational release
+  result for compatibility.
+- The Agent debug page consumes the explicit fields when present and keeps a
+  conservative fallback for older payloads. It now displays structural,
+  semantic, and Canary states separately, so a structurally valid but
+  model-only semantic sidecar is not presented as a passed publication gate.
+- Regression coverage passed `29 tests`, plus Ruff, Mypy, and Node syntax
+  checks. The change is additive and provider-free; it does not alter launch
+  policy or promote any capability.

@@ -19,6 +19,8 @@ def test_runtime_readiness_exposes_cross_entry_capabilities_provider_free(
         "runtime_id",
         "version",
         "status",
+        "structural_release_eligible",
+        "semantic_release_eligible",
         "canary_release_eligible",
         "canary_reason",
         "blockers",
@@ -62,6 +64,14 @@ def test_runtime_readiness_exposes_cross_entry_capabilities_provider_free(
             assert (
                 capability["canary_release_eligible"]
                 == agent["canary_release_eligible"]
+            )
+            assert (
+                capability["structural_release_eligible"]
+                == agent["structural_release_eligible"]
+            )
+            assert (
+                capability["semantic_release_eligible"]
+                == agent["semantic_release_eligible"]
             )
             assert capability["canary_reason"] == agent["canary_reason"]
             assert capability["blockers"] == agent["blockers"]

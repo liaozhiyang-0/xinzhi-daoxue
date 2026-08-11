@@ -34,8 +34,14 @@ function runtimePublicationEvidence(readiness = {}) {
   const reason = safeRuntimeReadinessText(readiness.canary_reason, "");
   const reasons = [reason, ...blockers].filter(Boolean);
   const semanticBlocked = reasons.some((item) => semanticEvidenceReasons.has(item) || item.startsWith("semantic_"));
-  const structuralReady = readiness.canary_release_eligible === true || semanticBlocked;
-  const explicitSemanticReady = readiness.semantic_evidence_eligible === true || readiness.semantic_release_eligible === true;
+  const structuralReported = typeof readiness.structural_release_eligible === "boolean";
+  const semanticReported = typeof readiness.semantic_release_eligible === "boolean" || typeof readiness.semantic_evidence_eligible === "boolean";
+  const structuralReady = structuralReported
+    ? readiness.structural_release_eligible === true
+    : readiness.canary_release_eligible === true || semanticBlocked;
+  const explicitSemanticReady = semanticReported
+    ? readiness.semantic_release_eligible === true || readiness.semantic_evidence_eligible === true
+    : readiness.canary_release_eligible === true;
   const semanticReady = explicitSemanticReady && !semanticBlocked;
   return {
     blockers,
@@ -127,9 +133,15 @@ function runtimeCapabilityEvidence(capability) {
   const blockers = Array.isArray(capability.blockers)
     ? safeRuntimeReadinessItems(capability.blockers)
     : null;
+  const structuralReported = typeof capability.structural_release_eligible === "boolean";
+  const semanticReported = typeof capability.semantic_release_eligible === "boolean";
   const canaryReported = typeof capability.canary_release_eligible === "boolean";
   return {
     status: safeRuntimeCapabilityText(capability.status, "未报告"),
+    structuralReported,
+    structuralReleaseEligible: capability.structural_release_eligible === true,
+    semanticReported,
+    semanticReleaseEligible: capability.semantic_release_eligible === true,
     canaryReported,
     canaryReleaseEligible: capability.canary_release_eligible === true,
     canaryLabel: canaryReported
@@ -142,6 +154,8 @@ function runtimeCapabilityEvidence(capability) {
 function runtimeCapabilityEvidenceDetails(capability) {
   const evidence = runtimeCapabilityEvidence(capability);
   return [
+    el("small", { text: `结构证据：${evidence.structuralReported ? evidence.structuralReleaseEligible ? "通过" : "未通过" : "未报告"}` }),
+    el("small", { text: `语义证据：${evidence.semanticReported ? evidence.semanticReleaseEligible ? "通过" : "未通过" : "未报告"}` }),
     el("small", { text: `执行状态：${evidence.status}` }),
     el("small", { text: `Canary 发布资格：${evidence.canaryLabel}；原因：${evidence.reason}` }),
     el("small", { text: `发布阻塞项：${evidence.blockersLabel}` }),

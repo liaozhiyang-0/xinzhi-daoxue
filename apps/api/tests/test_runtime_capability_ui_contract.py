@@ -28,6 +28,8 @@ def test_agents_ui_consumes_optional_runtime_capability_contract() -> None:
         "status",
         "result_contract",
         "control_scope",
+        "structural_release_eligible",
+        "semantic_release_eligible",
         "canary_release_eligible",
         "canary_reason",
         "blockers",
@@ -106,6 +108,8 @@ def test_agents_ui_projects_read_only_publication_evidence_status() -> None:
     script = _read()
 
     assert "function runtimePublicationEvidence(readiness = {})" in script
+    assert "structural_release_eligible" in script
+    assert "semantic_release_eligible" in script
     assert "canary_release_eligible" in script
     assert "canary_reason" in script
     assert "configured_launch_mode" in script

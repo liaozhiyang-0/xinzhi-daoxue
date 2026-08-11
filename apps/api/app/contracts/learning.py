@@ -492,6 +492,8 @@ class LearningRuntimeCapabilityRead(BaseModel):
     version: str = Field(min_length=1, max_length=120)
     agent_version: str = Field(default="", max_length=120)
     runtime_plan_version: str = Field(default="", max_length=120)
+    structural_release_eligible: bool = False
+    semantic_release_eligible: bool = False
     canary_release_eligible: bool = False
     canary_reason: str = Field(default="", max_length=160)
     enabled: bool

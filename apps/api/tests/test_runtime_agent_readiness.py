@@ -266,7 +266,28 @@ def test_readiness_accepts_matching_release_artifact(
     assert item.status == expected_status
     assert item.effective_launch_mode == launch_mode
     assert item.canary_release_eligible is True
+    assert item.structural_release_eligible is True
+    assert item.semantic_release_eligible is True
     assert item.canary_reason == "canary_release_evidence_approved"
+
+
+def test_readiness_separates_structural_and_semantic_release_gates() -> None:
+    registry = _release_registry()
+    report = registry._semantic_evidence["GENERAL_QUESTION_V1"][0]  # type: ignore[index]
+    model_only = report.model_copy(update={"judge_type": "model"})
+    model_registry = RuntimeCanaryReleaseRegistry(
+        registry._reports,  # type: ignore[arg-type]
+        semantic_evidence={"GENERAL_QUESTION_V1": model_only},
+    )
+
+    item = _readiness(
+        [_RuntimeService()], release_registry=model_registry
+    ).inspect("GENERAL_QUESTION_V1")
+
+    assert item.structural_release_eligible is True
+    assert item.semantic_release_eligible is False
+    assert item.canary_release_eligible is False
+    assert item.canary_reason == "semantic_judge_not_independent"
 
 
 def test_default_ready_recommends_canary_observation_and_approval() -> None:

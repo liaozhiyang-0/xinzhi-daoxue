@@ -44,6 +44,8 @@ def test_learning_readiness_reports_versions_and_fails_closed_without_evidence(
     capability = response.json()["capabilities"][0]
     assert capability["agent_version"] == "learning-agent-v1"
     assert capability["runtime_plan_version"] == "teaching-interaction-v1"
+    assert capability["structural_release_eligible"] is False
+    assert capability["semantic_release_eligible"] is False
     assert capability["canary_release_eligible"] is False
     assert capability["canary_reason"] == "canary_release_evidence_missing"
 
