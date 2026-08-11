@@ -1582,3 +1582,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   lock tests still pass, but this observed duplicate-start behavior requires
   a separate launcher-process audit before claiming single-instance startup
   in every shell invocation.
+
+## 89. 2026-08-11 Docker build-context reduction and remaining build timeout
+
+- The initial queue-worker image attempt exposed a roughly `3.1 GB` Docker
+  build context caused by `.venv`, `.git`, pytest temporary directories,
+  caches, local indexes, and ignored evaluation outputs. `.dockerignore` now
+  excludes those development artifacts while retaining paths consumed by the
+  API/Worker Dockerfile.
+- After that change, a single follow-up build was allowed to run for `300`
+  seconds. It still produced no queue-worker image, so the remaining delay is
+  in dependency installation or later image layers rather than the original
+  context transfer alone. The CLI was stopped after the bound; no container
+  was started and the four existing infrastructure containers remained up.
+- The next deployment task is to profile the Docker build or introduce a
+  reproducible dependency/image cache strategy before claiming queue-worker
+  container readiness.
