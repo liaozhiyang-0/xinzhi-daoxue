@@ -2442,3 +2442,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - A follow-up real Edge refresh exposed a presentation leak in persisted assistant messages: the terminal status appeared as raw English cancelled even though the task was correctly cancelled.
 - The Workspace now maps persisted message statuses through messageStatusText() and advances the cache-busted build ID to 20260812-workspace-message-status-v1. The static Workspace contract test passed (1 passed in the targeted run output).
 - Real Edge validation after the cancellation fix showed the user-facing terminal message 任务已取消, with no raw task cancelled text and no restored approval checkpoint. The full audit remains in progress.
+
+## 142. 2026-08-12 real Edge evidence excerpt and source presentation cleanup
+
+- A fresh formal Edge student run reproduced a course-evidence rendering defect:
+  a clipped retrieval excerpt began with an orphaned formula tail such as
+  `Cu} = ... \\]`, and source pages exposed standalone `---` divider lines.
+- The backend evidence view now removes only clearly orphaned formula closers and
+  divider-only lines from clipped summaries; it does not invent missing formulas
+  and keeps the read-only source document available.
+- The Workspace applies the same compatibility cleanup to persisted historical
+  tasks, uses the cleaned excerpt for source anchoring, removes orphaned lines
+  from the displayed source window, and sanitizes image captions before placing
+  them in alt text or the image dialog.
+- Real Edge verification after reload showed readable S2/S3 cards, no `Cu}` or
+  `\\]` residue in the evidence summary/source match, no standalone divider
+  paragraphs in the source dialog, and correctly rendered KaTeX formulas in the
+  read-only source window. The full multi-domain audit remains in progress.

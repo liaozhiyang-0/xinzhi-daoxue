@@ -603,8 +603,50 @@ function documentPageStatus(page) {
   return `完整原文 ${format.format(start)}–${format.format(page.end_offset)} / ${format.format(page.total_chars)} 字符`;
 }
 
+function cleanEvidenceExcerpt(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const isOrphanFormulaLine = (line) => {
+    const text = line.trim();
+    if (!text) return true;
+    if (/^(?:-{2,3}|[}\]]|\\(?:\]|\)|right|end\{[^}]+\}))+$/u.test(text)) return true;
+    if (/[\u4e00-\u9fff]/u.test(text)) return false;
+    return text.split("}").length - 1 > text.split("{").length - 1
+      || text.split("]").length - 1 > text.split("[").length - 1
+      || (text.includes("\\right") && !text.includes("\\left"))
+      || (text.includes("\\]") && !text.includes("\\["));
+  };
+  const lines = raw.split(/\r?\n/u);
+  while (lines.length && isOrphanFormulaLine(lines[0])) lines.shift();
+  const cleaned = lines.filter((line) => !["--", "---", "\\]", "\\)"].includes(line.trim())).join("\n").trim();
+  return cleaned || "该资料片段的公式未完整落在检索片段内，请打开原文查看。";
+}
+
+function cleanEvidenceCaption(value) {
+  return String(value || "")
+    .replace(/\\(?:\]|\))/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function isOrphanFormulaLineForDocument(text) {
+  if (/^(?:-{2,3}|[}\]]|\\(?:\]|\)|right|end\{[^}]+\}))+$/u.test(text)) return true;
+  if (/[\u4e00-\u9fff]/u.test(text)) return false;
+  return text.split("}").length - 1 > text.split("{").length - 1
+    || text.split("]").length - 1 > text.split("[").length - 1
+    || (text.includes("\\right") && !text.includes("\\left"))
+    || (text.includes("\\]") && !text.includes("\\["));
+}
+
+function cleanKnowledgeDocumentContent(value) {
+  return String(value || "").split(/\r?\n/u).filter((line) => {
+    const text = line.trim();
+    return !text || !isOrphanFormulaLineForDocument(text);
+  }).join("\n");
+}
+
 async function loadEvidenceDocumentPage(item, offset = null) {
-  const anchor = offset == null ? String(item.summary || "").trim() : "";
+  const anchor = offset == null ? cleanEvidenceExcerpt(item.summary) : "";
   const url = knowledgeDocumentPageUrl(item.source_ref, { offset, anchor });
   if (!url) {
     toast("这条资料没有可打开的本地文档", "degraded");
@@ -642,7 +684,9 @@ async function loadEvidenceDocumentPage(item, offset = null) {
     renderMarkdown(
       content,
       rewriteKnowledgeDocumentImages(
+        cleanKnowledgeDocumentContent(
         page.content || "这部分原文没有可显示的文本。",
+        ),
         page,
       ),
     );
@@ -691,7 +735,7 @@ async function openEvidenceDocument(item) {
   $("#document-dialog-title").textContent = item.title || item.chapter || "课程资料";
   $("#document-dialog-meta").textContent = [courseLabels[item.course_id] || item.course_name, item.chapter, item.section].filter(Boolean).join(" · ");
   const match = $("#document-dialog-match");
-  const summary = String(item.summary || "").trim();
+  const summary = cleanEvidenceExcerpt(item.summary);
   match.hidden = !summary;
   if (summary) {
     renderMarkdown($("#document-dialog-match-content"), summary);
@@ -724,7 +768,7 @@ function evidenceCard(item) {
   const role = item.role === "method_reference" ? "方法参考" : item.used_by_answer ? "已引用" : item.entered_workflow ? "进入上下文" : "补充阅读";
   const card = el("article", { class: "evidence-card", "data-evidence-id": item.evidence_id, role: "button", tabindex: "0", "aria-label": `打开资料：${item.title || item.chapter || "课程资料"}` });
   const summary = el("div", { class: "evidence-summary" });
-  renderMarkdown(summary, item.summary || "本条资料没有可展示摘要。");
+  renderMarkdown(summary, cleanEvidenceExcerpt(item.summary) || "本条资料没有可展示摘要。");
   const actions = el("div", { class: "evidence-card-actions" }, [
     el("small", { text: item.source_ref ? "本地只读资料" : "来源路径不可用" }),
     el("button", { type: "button", class: "evidence-open", text: "打开资料" }),
@@ -735,7 +779,7 @@ function evidenceCard(item) {
     el("small", { text: [courseLabels[item.course_id] || item.course_name, item.chapter, item.content_type].filter(Boolean).join(" · ") }),
     summary,
   );
-  const images = (item.related_images || []).map((image) => ({ image, src: imageUrl(image.resource_uri) })).filter((entry) => entry.src);
+  const images = (item.related_images || []).map((image) => ({ image: { ...image, caption: cleanEvidenceCaption(image.caption) }, src: imageUrl(image.resource_uri) })).filter((entry) => entry.src);
   if (images.length) {
     const row = el("div", { class: "evidence-images" });
     images.forEach(({ image, src }) => row.append(el("button", { type: "button", onclick: (event) => { event.stopPropagation(); openImage(src, image.caption || item.title); } }, el("img", { src, loading: "lazy", alt: image.caption || item.title }))));
@@ -766,7 +810,7 @@ function relatedImageCard(images) {
   const unique = [...new Map(
     images
       .filter((item) => imageUrl(item.resource_uri))
-      .map((item) => [item.resource_uri, item]),
+      .map((item) => [item.resource_uri, { ...item, caption: cleanEvidenceCaption(item.caption) }]),
   ).values()];
   if (!unique.length) return null;
   const gallery = el("div", { class: "related-image-gallery" });

@@ -52,6 +52,7 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     student = client.get("/debug-assets/workspace.js").text
 
     assert "renderMarkdown" in script
+    assert "cleanEvidenceExcerpt" in script
     assert "document.createTextNode" in script
     assert "safeMarkdownUrl" in script
     assert 'class: "markdown-image"' in script

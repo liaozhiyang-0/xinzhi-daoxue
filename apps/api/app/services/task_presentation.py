@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.agents import AgentDefinition
 from app.contracts import (
     AgentResult,
@@ -15,6 +17,38 @@ from app.services.math_formatting_service import MathFormattingService
 
 COURSE_LABELS = KNOWLEDGE_COURSE_NAMES
 MATH_FORMATTER = MathFormattingService()
+
+
+def _is_orphan_formula_line(line: str) -> bool:
+    value = line.strip()
+    if not value:
+        return True
+    if re.fullmatch(r"(?:-{2,3}|[}\]]|\\(?:\]|\)|right|end\{[^}]+\}))+", value):
+        return True
+    if re.search(r"[\u4e00-\u9fff]", value):
+        return False
+    return (
+        value.count("}") > value.count("{")
+        or value.count("]") > value.count("[")
+        or ("\\right" in value and "\\left" not in value)
+        or ("\\]" in value and "\\[" not in value)
+    )
+
+
+def _clean_evidence_excerpt(value: str) -> str:
+    """Keep clipped retrieval excerpts readable without fabricating missing math."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    lines = raw.splitlines()
+    while lines and _is_orphan_formula_line(lines[0]):
+        lines.pop(0)
+    lines = [line for line in lines if line.strip() not in {"--", "---", "\\]", "\\)"}]
+    cleaned = "\n".join(lines).strip()
+    return cleaned or "该资料片段的公式未完整落在检索片段内，请打开原文查看。"
+
+
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
     "LEARN_01_KNOWLEDGE_QA_V1": "知识问答",
@@ -398,7 +432,9 @@ def _evidence_view(
                 chapter=hit.chapter,
                 section=hit.section,
                 content_type=hit.content_type,
-                summary=MATH_FORMATTER.process_markdown(hit.content[:320]).markdown,
+                summary=MATH_FORMATTER.process_markdown(
+                    _clean_evidence_excerpt(hit.content[:320])
+                ).markdown,
                 source_ref=hit.source_ref,
                 related_images=hit.related_images,
                 entered_workflow=hit.evidence_id in entered_ids,

@@ -9,7 +9,7 @@ from app.contracts import (
     RetrievalContextPacket,
     WorkflowContextBundle,
 )
-from app.services.task_presentation import build_task_views
+from app.services.task_presentation import _clean_evidence_excerpt, build_task_views
 from app.services.task_runner import TaskRunner
 
 
@@ -26,6 +26,20 @@ def hit(evidence_id: str = "S1") -> KnowledgeHit:
         score=0.9,
         source_ref="kb://CT/chapter.md#chunk-1",
     )
+
+
+def test_evidence_excerpt_removes_orphaned_formula_tail_and_dividers() -> None:
+    excerpt = (
+        "Cu} = \\varepsilon \\left( t\\right) }\\right)\n\\]\n---\n"
+        "⑤ 工程上认为电容的电压总是连续变化的。"
+    )
+
+    cleaned = _clean_evidence_excerpt(excerpt)
+
+    assert "Cu}" not in cleaned
+    assert r"\]" not in cleaned
+    assert "---" not in cleaned
+    assert "工程上认为电容的电压总是连续变化的" in cleaned
 
 
 def bundle(mode: RAGInteractionMode) -> WorkflowContextBundle:
