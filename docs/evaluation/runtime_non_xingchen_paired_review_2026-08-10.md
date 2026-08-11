@@ -1101,6 +1101,21 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   its 180-second limit, so the grouped results are the reproducible evidence;
   the combined command is not reported as passed.
 
+## 61. 2026-08-11 teacher Assignment Review browser recheck
+
+- A fresh bounded real-local browser run exercised the authenticated teacher
+  workspace and Assignment Review capability on an isolated port. The
+  redacted report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_assignment_review_real_local_20260811_postfix1/report.json`.
+- The run authenticated as `admin`, routed to
+  `TEACH_02_ASSIGNMENT_REVIEW_V1`, completed with `result_provider=local_agent`,
+  and recorded 23 strictly increasing events with zero page/request failures.
+- While the Runtime was running, the teacher control projection exposed pause
+  as available and kept approval/input disabled; after terminal completion all
+  controls were correctly disabled as `runtime_terminal`. This verifies the
+  teacher Assignment Review path and control-state presentation, but not its
+  independent semantic-quality or release authorization.
+
 ## 58. 2026-08-11 browser acceptance single-instance guard
 
 - `scripts/run_runtime_teacher_browser_acceptance.js` now validates that its
