@@ -2244,3 +2244,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The remaining production decision is intentionally external: an authorized
   semantic review and a version-bound human release authorization must be
   supplied before any canary/default promotion.
+
+## 132. 2026-08-11 real-browser control prerequisite diagnosis
+
+- A real Microsoft Edge window did open the formal Workspace page; its window
+  title was `智能任务工作台 · 芯智导学`. The local API page itself was therefore
+  reachable, but no interactive browser evidence was collected in this pass.
+- The browser diagnostic reported the selected Edge profile with
+  `Installed: no` and `Enabled: no` for the Codex browser extension. The native
+  host diagnostic also reported that
+  `C:\Users\86184\AppData\Local\OpenAI\extension\com.openai.codexextension.json`
+  and the corresponding user registry key were absent.
+- Chrome extension diagnostics were additionally interrupted by a UTF-8 BOM
+  parse error in the selected profile configuration. These are browser-control
+  prerequisites, not application acceptance results. The formal frontend
+  student/teacher/researcher click-through remains pending until the extension
+  and native host are restored.
