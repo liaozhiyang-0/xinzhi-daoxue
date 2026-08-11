@@ -1701,6 +1701,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `/api/v1` URL, with a regression test for both forms. This removes an
   operator-only 404 footgun without changing the public API contract.
 
+## 98. 2026-08-11 additional core Runtime pairs
+
+- A second bounded single-API run paired `general_stack_explanation` and
+  `assignment_review_runtime_handoff` in Legacy and Runtime modes, four runs
+  total. All four completed with zero Agent mismatches and zero event-order
+  failures.
+- General Question Runtime reached three nodes with `12` checkpoints and
+  `22` ordered events. Assignment Review Runtime reached three nodes with
+  `13` checkpoints and `27` ordered events, including one explicit approval
+  and zero plan proposals. Legacy counterparts completed with `16` and `18`
+  ordered events respectively.
+- These results extend application/structural Runtime evidence across four
+  non-protected business paths when combined with section 95. They still use
+  the development Mock Provider and do not constitute semantic parity or
+  release authorization.
+
 ## 96. 2026-08-11 Docker queue-worker build boundary rechecked
 
 - `docker compose config --quiet` remained valid and the existing Postgres,
