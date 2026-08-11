@@ -160,7 +160,7 @@ async def _submit(
         db, provider.provider_name, request.app.state.settings
     ).create_queued(prepared.request, route=prepared.route)
     if task.status == TaskStatus.QUEUED:
-        request.app.state.task_runner.submit(task.id)
+        await request.app.state.task_executor.submit(task.id)
     submission = ChatSubmission(
         request_id=payload.request_id,
         session_id=session_id,

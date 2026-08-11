@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -88,7 +89,12 @@ from app.services.skill_registry import SkillRegistry
 from app.services.solution_packet_adapter import SolutionPacketAdapterService
 from app.services.storage import StorageService
 from app.services.student_verification import StudentVerificationService
-from app.services.task_executor import LocalTaskExecutor
+from app.services.task_executor import (
+    LocalTaskExecutor,
+    QueueTaskExecutor,
+    TaskExecutor,
+)
+from app.services.task_queue import RedisTaskQueue
 from app.services.task_runner import TaskRunner
 from app.services.teaching_execution_planner import TeachingExecutionPlanner
 from app.services.teaching_foundation import TeachingFoundationService
@@ -372,7 +378,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         handler_registry=runtime_handler_registry,
         capability_descriptors=runtime_capability_descriptors,
     )
-    task_executor = LocalTaskExecutor(task_runner)
+    task_queue = None
+    task_executor: TaskExecutor
+    if app_settings.task_executor_mode == "redis":
+        task_queue = RedisTaskQueue(
+            app_settings.redis_url,
+            queue_name=app_settings.task_queue_name,
+            worker_lock_ttl_seconds=app_settings.task_worker_lock_ttl_seconds,
+        )
+        task_executor = QueueTaskExecutor(task_queue)
+    else:
+        task_executor = LocalTaskExecutor(task_runner)
     rag_debug = RAGDebugService(
         app_settings,
         task_router,
@@ -439,6 +455,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.auth_rate_limiter = auth_rate_limiter
         app.state.task_runner = task_runner
         app.state.task_executor = task_executor
+        app.state.task_queue = task_queue
         app.state.learning_loop = learning_loop
         app.state.context_budget = context_budget
         app.state.context_cache = context_cache
@@ -656,4 +673,4 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+app = None if os.getenv("XZD_SKIP_DEFAULT_APP") == "1" else create_app()

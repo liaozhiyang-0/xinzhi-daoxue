@@ -76,6 +76,11 @@ services:
       APP_VERSION: ${APP_VERSION:-0.1.0}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://xzd_user:xzd_password@postgres:5432/xzd}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TASK_EXECUTOR_MODE: ${TASK_EXECUTOR_MODE:-local}
+      TASK_QUEUE_NAME: ${TASK_QUEUE_NAME:-xzd:tasks}
+      TASK_QUEUE_BLOCK_TIMEOUT_SECONDS: ${TASK_QUEUE_BLOCK_TIMEOUT_SECONDS:-5}
+      TASK_WORKER_RECOVERY_INTERVAL_SECONDS: ${TASK_WORKER_RECOVERY_INTERVAL_SECONDS:-15}
+      TASK_WORKER_LOCK_TTL_SECONDS: ${TASK_WORKER_LOCK_TTL_SECONDS:-120}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-xzd_minio}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me}
@@ -167,6 +172,88 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+
+  queue-worker:
+    profiles: ["queue-worker"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: xzd-queue-worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      PYTHONPATH: /workspace/apps/api
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://xzd_user:xzd_password@postgres:5432/xzd}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TASK_EXECUTOR_MODE: local
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-xzd_minio}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me}
+      MINIO_BUCKET: ${MINIO_BUCKET:-xzd-files}
+      DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-mock}
+      ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-true}
+      XINGCHEN_ENABLED: ${XINGCHEN_ENABLED:-false}
+      XINGCHEN_PUBLICATION_STATUS: ${XINGCHEN_PUBLICATION_STATUS:-published}
+      XINGCHEN_BASE_URL: ${XINGCHEN_BASE_URL:-https://xingchen-api.xf-yun.com}
+      XINGCHEN_WORKFLOW_PATH: ${XINGCHEN_WORKFLOW_PATH:-/workflow/v1/chat/completions}
+      XINGCHEN_UPLOAD_PATH: ${XINGCHEN_UPLOAD_PATH:-/workflow/v1/upload_file}
+      XINGCHEN_API_KEY: ${XINGCHEN_API_KEY:-}
+      XINGCHEN_API_SECRET: ${XINGCHEN_API_SECRET:-}
+      XINGCHEN_SOLVER_CT_FLOW_ID: ${XINGCHEN_SOLVER_CT_FLOW_ID:-}
+      XINGCHEN_UID: ${XINGCHEN_UID:-local-demo-user}
+      XINGCHEN_TIMEOUT_SECONDS: ${XINGCHEN_TIMEOUT_SECONDS:-300}
+      XINGCHEN_USE_LOCAL_KB_CONTEXT: ${XINGCHEN_USE_LOCAL_KB_CONTEXT:-true}
+      XINGCHEN_BOT_ID: ${XINGCHEN_BOT_ID:-}
+      LOCAL_STORAGE_FALLBACK: ${LOCAL_STORAGE_FALLBACK:-true}
+      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/local_storage}
+      KNOWLEDGE_ENABLED: ${KNOWLEDGE_ENABLED:-true}
+      KNOWLEDGE_CT_PATH: /knowledge/CT
+      KNOWLEDGE_AE_PATH: /knowledge/AE
+      KNOWLEDGE_DE_PATH: /knowledge/DE
+      KNOWLEDGE_SS_PATH: /knowledge/SS
+      KNOWLEDGE_DSP_PATH: /knowledge/DSP
+      KNOWLEDGE_COMM_PATH: /knowledge/COMM
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
+    volumes:
+      - type: bind
+        source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
+        target: /knowledge/CT
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_AE_HOST_PATH:-./local_knowledge/AE}
+        target: /knowledge/AE
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_DE_HOST_PATH:-./local_knowledge/DE}
+        target: /knowledge/DE
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_SS_HOST_PATH:-./local_knowledge/SS}
+        target: /knowledge/SS
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_DSP_HOST_PATH:-./local_knowledge/DSP}
+        target: /knowledge/DSP
+        read_only: true
+      - type: bind
+        source: ${KNOWLEDGE_COMM_HOST_PATH:-./local_knowledge/COMM}
+        target: /knowledge/COMM
+        read_only: true
+    command: ["python", "/workspace/apps/worker/worker.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
 
 volumes:
   xzd_postgres_data:

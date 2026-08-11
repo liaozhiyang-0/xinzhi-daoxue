@@ -12,6 +12,7 @@ COPY apps/api/alembic.ini /workspace/apps/api/alembic.ini
 COPY agent_configs /workspace/agent_configs
 COPY knowledge_config /workspace/knowledge_config
 COPY evaluation/knowledge_retrieval /workspace/evaluation/knowledge_retrieval
+COPY apps/worker /workspace/apps/worker
 
 RUN pip install --no-cache-dir .
 

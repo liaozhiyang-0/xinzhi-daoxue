@@ -8,6 +8,7 @@ from app.main import create_app
 from app.models import TaskStatus
 from app.repositories import TaskRepository
 from app.services.task_executor import LocalTaskExecutor, QueueTaskExecutor
+from app.services.task_queue import InMemoryTaskQueue
 from fastapi.testclient import TestClient
 
 
@@ -20,19 +21,27 @@ def test_task_creation_idempotency_reuses_same_task(api) -> None:
     assert second["idempotency_key"] == "idem-task-0001"
 
 
-def test_local_executor_delegates_without_changing_contract() -> None:
+@pytest.mark.asyncio
+async def test_local_executor_delegates_without_changing_contract() -> None:
     class Runner:
         def submit(self, task_id: str) -> bool:
             return task_id == "accepted"
 
     executor = LocalTaskExecutor(Runner())  # type: ignore[arg-type]
-    assert executor.submit("accepted") is True
-    assert executor.submit("duplicate") is False
+    assert await executor.submit("accepted") is True
+    assert await executor.submit("duplicate") is False
 
 
-def test_queue_executor_fails_explicitly_when_unconfigured() -> None:
-    with pytest.raises(RuntimeError, match="尚未配置"):
-        QueueTaskExecutor().submit("task-1")
+@pytest.mark.asyncio
+async def test_queue_executor_publishes_without_local_fallback() -> None:
+    queue = InMemoryTaskQueue()
+    executor = QueueTaskExecutor(queue)
+
+    assert await executor.submit("task-1") is True
+    assert queue.published == ["task-1"]
+    assert await queue.receive(timeout_seconds=1) == "task-1"
+    await executor.shutdown()
+    assert queue.closed is True
 
 
 def test_retry_respects_max_attempts(api) -> None:

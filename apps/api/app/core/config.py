@@ -533,6 +533,11 @@ class Settings(BaseSettings):
     retrieval_p95_target_ms: int = Field(default=600, ge=1, le=30000)
     context_format_budget_ms: int = Field(default=50, ge=1, le=5000)
     local_total_p95_target_ms: int = Field(default=1000, ge=1, le=30000)
+    task_executor_mode: Literal["local", "redis"] = "local"
+    task_queue_name: str = "xzd:tasks"
+    task_queue_block_timeout_seconds: int = Field(default=5, ge=1, le=60)
+    task_worker_recovery_interval_seconds: int = Field(default=15, ge=5, le=300)
+    task_worker_lock_ttl_seconds: int = Field(default=120, ge=30, le=3600)
     task_lease_seconds: int = Field(default=120, ge=30, le=3600)
     task_recovery_enabled: bool = True
     agent_runtime_shadow_enabled: bool = False

@@ -171,7 +171,7 @@ async def create_task(
         db, provider.provider_name, request.app.state.settings
     ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
-        request.app.state.task_executor.submit(task.id)
+        await request.app.state.task_executor.submit(task.id)
     return task_read(task, requester_user_id=data.user_id)
 
 
@@ -422,7 +422,7 @@ async def retry_task(
     task = await TaskControlService(db, provider, request.app.state.settings).retry(
         task_id
     )
-    request.app.state.task_runner.submit(task.id)
+    await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 
@@ -473,7 +473,7 @@ async def resume_task(
     task = await TaskControlService(
         db, provider, request.app.state.settings
     ).resume(task_id, runtime_run_id=runtime_run_id)
-    request.app.state.task_runner.submit(task.id)
+    await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 
@@ -499,7 +499,7 @@ async def approve_task(
         submission=submission,
     )
     if task.status == TaskStatus.QUEUED:
-        request.app.state.task_runner.submit(task.id)
+        await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 
@@ -516,7 +516,7 @@ async def submit_runtime_input(
     task = await TaskControlService(
         db, provider, request.app.state.settings
     ).submit_input(task_id, submission)
-    request.app.state.task_runner.submit(task.id)
+    await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 
@@ -533,7 +533,7 @@ async def reconcile_runtime_node(
     task = await TaskControlService(
         db, provider, request.app.state.settings
     ).reconcile(task_id, submission)
-    request.app.state.task_runner.submit(task.id)
+    await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 
@@ -600,7 +600,7 @@ async def decide_runtime_plan_proposal(
         },
     )
     await db.commit()
-    request.app.state.task_runner.submit(task.id)
+    await request.app.state.task_executor.submit(task.id)
     return task_read(task)
 
 

@@ -1515,3 +1515,29 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   passed independently; the surrounding 56-test core contract/Task/SSE sweep
   had `55` passing cases before this assertion refresh. The test's intentionally
   unconfigured DashScope path remained fail-closed and was not changed.
+
+## 86. 2026-08-11 Redis queue and independent Worker boundary
+
+- The API `TaskExecutor` boundary is now asynchronous and supports an explicit
+  `local` or `redis` mode. In Redis mode, task creation, retry, resume,
+  approval, Runtime input/reconciliation, and orchestration entry points only
+  publish task IDs; they do not call `TaskRunner` or a Provider in the API
+  process.
+- `apps/worker/worker.py` owns the shared `TaskRunner` in a separate process.
+  Redis has an at-least-once task-id transport, a renewable single-worker
+  lease, and a periodic database recovery scan. Database task leases remain
+  authoritative when a worker exits after consuming a message.
+- The bounded unit/transport group passed `4` tests; the existing task
+  executor reliability file passed `7` tests; Ruff and Mypy passed for the
+  queue, executor, Worker, API dispatch changes, and entrypoint. A live Redis
+  smoke verified publish/consume and worker-lease exclusion.
+- A real local cross-process smoke used exactly one API and one Worker with a
+  synthetic `GENERAL_QUESTION_V1` task. The API returned `202 queued`, the
+  separate Worker completed the task, and the final event count was `23`.
+  Evidence is recorded in
+  `.local_outputs/runtime_worker_cross_process_20260811/report.json`.
+  The temporary API port and Python processes were verified stopped afterward.
+- This proves the development queue/Worker boundary and recovery ownership;
+  it is not a production release claim. Docker queue-profile execution,
+  crash/restart fault injection, SSE reconnect across process restart, and
+  full paired Runtime evaluation remain outstanding.

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.services.task_queue import TaskQueue
 from app.services.task_runner import TaskRunner
 
 
 class TaskExecutor(Protocol):
-    """Stable dispatch boundary for local execution or a future queue worker."""
+    """Stable dispatch boundary for local execution or a queue worker."""
 
-    def submit(self, task_id: str) -> bool: ...
+    async def submit(self, task_id: str) -> bool: ...
 
     async def recover(self) -> int: ...
 
@@ -19,7 +20,7 @@ class LocalTaskExecutor:
     def __init__(self, runner: TaskRunner) -> None:
         self.runner = runner
 
-    def submit(self, task_id: str) -> bool:
+    async def submit(self, task_id: str) -> bool:
         return self.runner.submit(task_id)
 
     async def recover(self) -> int:
@@ -30,13 +31,22 @@ class LocalTaskExecutor:
 
 
 class QueueTaskExecutor:
-    """Explicit extension point; it never silently falls back to local execution."""
+    """API-side executor that only publishes task IDs for an external worker."""
 
-    def submit(self, task_id: str) -> bool:
-        raise RuntimeError("QueueTaskExecutor 尚未配置消息队列后端")
+    def __init__(self, queue: TaskQueue) -> None:
+        self.queue = queue
+
+    async def submit(self, task_id: str) -> bool:
+        await self.queue.publish(task_id)
+        return True
 
     async def recover(self) -> int:
-        raise RuntimeError("QueueTaskExecutor 尚未配置消息队列后端")
+        # Recovery is owned by the worker because it has the TaskRunner and
+        # can claim database leases before dispatching. The API still pings
+        # Redis here so a misconfigured queue fails during startup, not on the
+        # first user request.
+        await self.queue.ping()
+        return 0
 
     async def shutdown(self) -> None:
-        return None
+        await self.queue.close()
