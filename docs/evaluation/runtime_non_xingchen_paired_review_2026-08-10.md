@@ -2003,3 +2003,25 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   Runtime failure codes.
 - This is Mock/local development evidence for `RESEARCH_01_ACADEMIC_SEARCH_V1`;
   it does not authorize a real Provider, semantic release, or default launch.
+
+## 115. 2026-08-11 LearningLoop teaching interaction paired recheck
+
+- A fresh temporary SQLite database was used to create one synthetic source
+  Task under the Runtime profile. After the source Task completed, the API
+  process was stopped and restarted on the same database with the Legacy
+  profile; the same `request_more_hint` action was then executed through the
+  Legacy path. No API/Worker processes overlapped.
+- The Runtime action matched the Runtime route and transitioned
+  `waiting_approval -> completed` after one accepted approval. All four
+  teaching nodes succeeded, the run retained `10` redacted checkpoints, and
+  its `39` task events were strictly increasing.
+- The Legacy action on the same source Task completed with no Runtime run; its
+  route matched Legacy and its `40` task events were strictly increasing. The
+  paired reports are under
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_runtime_teaching_pair_fresh/`
+  and
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_legacy_teaching_pair_fresh/`.
+- This closes the missing basic paired development trace for the teaching
+  interaction adapter. It remains synthetic Mock-provider evidence and is not
+  a reviewed semantic sidecar, canary authorization, or default-release
+  decision; the LearningLoop readiness gate remains fail-closed.
