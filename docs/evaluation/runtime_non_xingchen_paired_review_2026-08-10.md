@@ -1236,3 +1236,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   tests passed: `72 passed`. These tests are provider-free; they do not turn the
   existing model-only or mismatched local artifacts into independent semantic
   approval.
+
+## 67. 2026-08-11 Runtime core contract regression sweep
+
+- A bounded provider-free regression group covering Runtime contracts, control
+  policy and CAS data, checkpoint control data, durable child runs, parallel
+  recovery, observability, replay, subagents, plan proposals, release
+  authorization, and launch policy passed `86 tests`.
+- A separate collection-only attempt for
+  `test_runtime_task_execution_path.py` exceeded the 30-second bound before
+  collection completed and was stopped. It is not counted as a pass; the file
+  also contains a protected research-analysis case and was not broadened in
+  this sweep.
