@@ -1825,3 +1825,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   covered by the existing event/checkpoint tests. The evidence packager still
   fails closed on the two latency regression reasons; no threshold or semantic
   release rule was weakened.
+
+## 104. 2026-08-11 post-commit Lesson Prep browser smoke
+
+- A fresh isolated administrator browser run used the bundled Playwright
+  runtime, a temporary SQLite database, the mock Provider, and one API
+  process. The authenticated Lesson Prep task completed as
+  `TEACH_01_LESSON_PREP_V1` after one visible Runtime approval.
+- The report observed `lesson.observe`, `lesson.execute`,
+  `subagent.execute`, and `lesson.verify`, with `27` strictly increasing task
+  events, three succeeded Runtime nodes, and zero page errors or failed HTTP
+  requests. Evidence is stored under
+  `.local_outputs/runtime_teacher_browser_acceptance_lesson_prep_20260811_post_commit_retry/`.
+- The first attempt exceeded the shell observation window before writing its
+  report; the retry completed and released its process and port. This is
+  frontend/application-wiring evidence with an explicitly mock Provider, not
+  semantic-quality or release authorization evidence.
