@@ -29,11 +29,16 @@ const semanticEvidenceReasons = new Set([
   "semantic_evidence_agent_version_mismatch",
   "semantic_evidence_runtime_plan_version_mismatch",
 ]);
+const publicationAuthorizationReasons = new Set([
+  "release_authorization_missing",
+  "runtime_release_authorization_missing",
+]);
 function runtimePublicationEvidence(readiness = {}) {
   const blockers = safeRuntimeReadinessItems(readiness.blockers);
   const reason = safeRuntimeReadinessText(readiness.canary_reason, "");
   const reasons = [reason, ...blockers].filter(Boolean);
   const semanticBlocked = reasons.some((item) => semanticEvidenceReasons.has(item) || item.startsWith("semantic_"));
+  const authorizationBlocked = reasons.some((item) => publicationAuthorizationReasons.has(item));
   const structuralReported = typeof readiness.structural_release_eligible === "boolean";
   const semanticReported = typeof readiness.semantic_release_eligible === "boolean" || typeof readiness.semantic_evidence_eligible === "boolean";
   const structuralReady = structuralReported
@@ -43,19 +48,24 @@ function runtimePublicationEvidence(readiness = {}) {
     ? readiness.semantic_release_eligible === true || readiness.semantic_evidence_eligible === true
     : readiness.canary_release_eligible === true;
   const semanticReady = explicitSemanticReady && !semanticBlocked;
+  const publicationReady = structuralReady && semanticReady && !authorizationBlocked;
   return {
     blockers,
     reason,
     structuralReady,
     semanticReady,
     semanticBlocked,
+    authorizationBlocked,
+    publicationReady,
     structuralLabel: structuralReady ? "结构证据已就绪" : "结构证据未就绪",
     semanticLabel: semanticReady ? "语义证据已就绪" : "语义证据未就绪",
   };
 }
 function runtimePublicationEvidenceSummary(readiness = {}) {
   const evidence = runtimePublicationEvidence(readiness);
-  return evidence.structuralReady && evidence.semanticReady ? "发布证据已就绪" : "发布证据未就绪";
+  if (evidence.publicationReady) return "\u53d1\u5e03\u8bc1\u636e\u5df2\u5c31\u7eea";
+  if (evidence.authorizationBlocked) return "\u53d1\u5e03\u6388\u6743\u672a\u5b8c\u6210";
+  return "\u53d1\u5e03\u8bc1\u636e\u672a\u5c31\u7eea";
 }
 function runtimeReadinessActionHints(readiness, status) {
   const backendActions = readinessTextItems(readiness.recommended_actions ?? readiness.next_actions ?? readiness.next_action);
@@ -223,10 +233,10 @@ function runtimeReadinessDetails(readiness) {
   const launchReason = safeRuntimeReadinessText(readiness.launch_reason);
   const canaryReason = evidence.reason || "无 Canary 原因";
   return el("div", { class: "runtime-readiness-details" }, [
-    el("section", { class: "runtime-publication-evidence", "data-evidence-state": evidence.semanticReady ? "ready" : "not_ready" }, [
+    el("section", { class: "runtime-publication-evidence", "data-evidence-state": evidence.publicationReady ? "ready" : "not_ready" }, [
       el("div", { class: "runtime-readiness-actions-heading" }, [
         el("h3", { text: "发布证据状态（只读）" }),
-        badge(evidence.semanticReady ? "ready" : "planned", runtimePublicationEvidenceSummary(readiness)),
+        badge(evidence.publicationReady ? "ready" : "planned", runtimePublicationEvidenceSummary(readiness)),
       ]),
       el("div", { class: "definition-cards" }, [
         el("article", { class: "metric-card runtime-publication-evidence-card" }, [

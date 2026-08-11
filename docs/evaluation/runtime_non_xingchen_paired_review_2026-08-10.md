@@ -2114,4 +2114,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   authorized structural suite must still use the existing generic release
   intake and preflight before any canary/default decision.
 - Covered by
-  `apps/api/tests/test_learning_runtime_semantic_sidecar.py` (4 passed).
+  `apps/api/tests/test_learning_runtime_semantic_sidecar.py` (5 passed).
+
+## 122. 2026-08-11 frontend publication-gate status correction
+
+- The Agent debug page now treats `release_authorization_missing` as a
+  separate final publication blocker. Structural and semantic evidence may
+  display as passed, but the overall publication summary and badge remain
+  not-ready until the release authorization gate also passes.
+- Added a static UI contract assertion and `node --check` validation for the
+  browser bundle. The page remains read-only and does not call a readiness
+  endpoint or mutate launch configuration.

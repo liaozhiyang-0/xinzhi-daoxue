@@ -119,6 +119,11 @@ def test_agents_ui_projects_read_only_publication_evidence_status() -> None:
     assert "语义证据未就绪" in script
     assert "runtimePublicationEvidenceSummary" in script
     assert "data-evidence-state" in script
+    assert "publicationAuthorizationReasons" in script
+    assert '"release_authorization_missing"' in script
+    assert "authorizationBlocked" in script
+    assert "publicationReady" in script
+    assert 'evidence.publicationReady ? "ready" : "planned"' in script
 
 
 def test_agents_ui_keeps_publication_evidence_provider_free_and_no_control_post() -> (
