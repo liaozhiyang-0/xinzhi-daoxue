@@ -2483,3 +2483,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   loaded successfully, but approval controls correctly remained unavailable to
   the guest identity; a real teacher account is still required to complete the
   approval-click path. The protected research-data Runtime remains excluded.
+
+## 144. 2026-08-12 real Edge solver answer rendering regression
+
+- A fresh real Edge Circuit Theory solver task completed with the correct
+  result `I = 2 A`, but malformed display-math boundaries could cause the
+  Markdown renderer to consume the surrounding answer as one formula image.
+- The Workspace renderer now detects Markdown content inside a display-math
+  block, recovers the block as text/Markdown, and keeps only simple equations
+  in inline KaTeX. Static asset cache IDs were advanced to `v4`.
+- Real Edge validation after a new submission and a full page refresh showed
+  the conclusion, derivation, and course-rule checks together; no raw `$$`,
+  raw LaTeX escapes, or long formula alt labels remained. The previously
+  persisted historical task was not rewritten; it remains a legacy-result
+  artifact and was not counted as a new execution pass.
+- Ruff, Mypy, JavaScript syntax checking, configuration validation, and the
+  tracked-file sensitive scan passed. Targeted Pytest processes hung during
+  Windows cleanup and were stopped; this remains an environment limitation,
+  not a passing test result. Teacher approval still requires an authorized
+  teacher identity, and protected RESEARCH_03 remains excluded.

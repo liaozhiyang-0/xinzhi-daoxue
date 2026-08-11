@@ -55,6 +55,8 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     assert "cleanEvidenceExcerpt" in script
     assert "evidenceRelatedImages" in script
     assert ".replace(/-{3,}/gu, \" \")" in script
+    assert "renderRecoveredMathBlock" in script
+    assert "markdownInsideMath" in script
     assert "document.createTextNode" in script
     assert "safeMarkdownUrl" in script
     assert 'class: "markdown-image"' in script

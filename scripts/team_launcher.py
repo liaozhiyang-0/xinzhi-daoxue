@@ -35,7 +35,7 @@ SECRET_NAMES = (
 )
 COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
-FRONTEND_BUILD_ID = "20260812-workspace-evidence-clean-v3"
+FRONTEND_BUILD_ID = "20260812-workspace-evidence-clean-v4"
 RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
     "ACADEMIC_PROBLEM_SOLVER": "default",
     "GENERAL_QUESTION_V1": "default",

@@ -485,6 +485,21 @@
     return el("div", { class: "table-wrap" }, table);
   }
 
+  function renderRecoveredMathBlock(target, formula) {
+    const recovered = String(formula || "").split("\n").map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return "";
+      if (/^(?:[-*]\s+|#{1,6}\s+|>\s+)/.test(trimmed) || /\*\*[^*]+\*\*/.test(trimmed)) {
+        return line;
+      }
+      if (!/[\u4e00-\u9fff]/u.test(trimmed) && /[=\\^_]|\b(?:V|I|R|P)\b/.test(trimmed)) {
+        return `$${trimmed}$`;
+      }
+      return line;
+    }).join("\n");
+    renderMarkdown(target, recovered);
+  }
+
   function renderMarkdown(target, source) {
     target.replaceChildren();
     const lines = String(source || "").replace(/\r/g, "").split("\n");
@@ -514,7 +529,9 @@
           }
           formula = formulaLines.join("\n");
         }
-        target.append(renderLatex(formula, true));
+        const markdownInsideMath = /(?:^|\n)\s*(?:[-*]\s+|#{1,6}\s+|>\s+)|\*\*[^*]+\*\*|\[S\d+\]/.test(formula);
+        if (markdownInsideMath) renderRecoveredMathBlock(target, formula);
+        else target.append(renderLatex(formula, true));
         continue;
       }
       if (line.includes("|") && lineIndex + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[lineIndex + 1])) {
