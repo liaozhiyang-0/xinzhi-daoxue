@@ -1277,3 +1277,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The local browser-control plugin disconnected during initialization, so no
   visual browser acceptance is claimed for `/debug/agents`. The isolated API
   process was stopped and port `8066` was released afterward.
+
+## 70. 2026-08-11 cross-entry capability contract recheck
+
+- The provider-free descriptor, cross-entry readiness, capability API, and
+  LearningLoop readiness contracts passed `19 tests` after the evidence-state
+  field expansion.
+- The audit confirms that the non-RESEARCH_03 Task Runtime registry currently
+  covers General Question, Local Retrieval, Academic Problem Solver, Lesson
+  Prep, Assignment Review, Academic Writing, External Research, and the
+  wildcard Goal Runtime. LearningLoop remains a separate request/result
+  boundary and is exposed through its dedicated readiness projection.
