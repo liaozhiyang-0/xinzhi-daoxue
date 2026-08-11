@@ -1205,7 +1205,7 @@ async function submitRuntimeTaskControl(action, payload = null) {
               action,
               expected_state_version: runtimeTaskControls?.state_version,
               idempotency_key: `workspace_${action}_${crypto.randomUUID()}`,
-              data: payload || {},
+              ...(action === "input" ? { data: payload?.data || {} } : {}),
             }),
           }
         : payload

@@ -832,3 +832,33 @@ $env:AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED = 'true'
   --timeout-seconds 90 `
   --output .local_outputs\learning_runtime_dev_profile_20260811_recheck
 ```
+
+## 46. 2026-08-11 LearningLoop authenticated browser approval recovery
+
+- The Workspace browser harness now includes a bounded `learning_loop` scenario:
+  it selects `check_my_work`, submits an anonymized circuit attempt, clicks the
+  visible `request_more_hint` action, waits for the LearningLoop-specific
+  controls projection, approves it, and verifies the updated teaching and
+  learning panels.
+- The first browser run exposed a real request-contract defect. The Workspace
+  sent `decision` inside `data` for an `approve` action, while the LearningLoop
+  control contract reserves `data` for `input`; the API returned HTTP 422 and
+  the Runtime remained in `waiting_approval`. The Workspace now omits `data`
+  for approval and keeps input data scoped to the `input` action.
+- The post-fix report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_20260811_postfix_redacted/report.json`.
+  One isolated authenticated API process completed the initial task and the
+  LearningLoop Runtime. The learning run used `teaching_interaction`, four
+  succeeded nodes, one accepted approval response, 39 strictly increasing
+  task events, visible answer/teaching/progress panels, and zero page or
+  request failures. The provider profile was `mock`; this is development
+  application/browser evidence, not semantic parity or release authorization.
+
+Reproducible bounded command (starts exactly one API process inside the script):
+
+```powershell
+$env:NODE_PATH = (Join-Path (Get-Location) '.codex-tmp\playwright-runner\node_modules')
+$env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'mock'
+$env:XINZHI_TEACHER_BROWSER_SCENARIO = 'learning_loop'
+node scripts\run_runtime_teacher_browser_acceptance.js
+```

@@ -42,6 +42,14 @@ const scenarioDefinitions = {
     agentId: "GENERAL_QUESTION_V1",
     prompt: "Explain why capacitor voltage cannot change instantaneously, using a concise course-grounded explanation.",
   },
+  learning_loop: {
+    capability: "circuit_reasoning",
+    agentId: "ACADEMIC_PROBLEM_SOLVER",
+    prompt: "A 10V source is connected in series with a 5 ohm resistor. Check my calculation and guide me through the circuit current.",
+    teachingMode: "check_my_work",
+    studentAttempt: "I = 10 / 5 = 2 A",
+    learningAction: "request_more_hint",
+  },
 };
 const scenario = scenarioDefinitions[scenarioName];
 if (!scenario) {
@@ -202,6 +210,40 @@ async function waitForRuntimeApproval(page, taskId, observations) {
   throw new Error("runtime approval did not reach a terminal task state within the bounded wait");
 }
 
+async function waitForLearningRuntimeApproval(page, taskId, runId, observations) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const projection = await readJson(
+      page,
+      `/api/v1/learning/runtime/${encodeURIComponent(runId)}/controls`,
+    );
+    observations.push({
+      attempt,
+      task_status: (await readJson(page, `/api/v1/tasks/${encodeURIComponent(taskId)}`)).status,
+      runtime_status: projection.status,
+      control_scope: projection.control_scope,
+      runtime_run_id: runId,
+      approve_visible: await page.locator("#runtime-task-approve").isVisible().catch(() => false),
+      approve_enabled: await page.locator("#runtime-task-approve").isEnabled().catch(() => false),
+    });
+    if (projection.control_scope === "learning_loop" && projection.status === "waiting_approval") {
+      const approve = page.locator("#runtime-task-approve");
+      await approve.waitFor({ state: "visible", timeout: 15_000 });
+      if (await approve.isDisabled()) throw new Error("learning Runtime approval control is disabled");
+      await approve.click();
+      await sleep(900);
+      continue;
+    }
+    if (projection.control_scope === "learning_loop" && projection.status === "completed") {
+      return { runId, projection };
+    }
+    if (["failed", "cancelled"].includes(projection.status)) {
+      throw new Error(`learning Runtime ended as ${projection.status}`);
+    }
+    await sleep(500);
+  }
+  throw new Error("LearningLoop approval did not reach a completed Runtime state within the bounded wait");
+}
+
 async function collectEvidence(page, taskId) {
   const [identity, task, events, controls] = await Promise.all([
     readJson(page, "/api/v1/auth/me"),
@@ -272,6 +314,8 @@ async function collectEvidence(page, taskId) {
     task_id: null,
     approval_observations: [],
     evidence: null,
+    learning_runtime: null,
+    learning_control_responses: [],
     page_errors: [],
     request_failures: [],
     status: "failed",
@@ -293,6 +337,29 @@ async function collectEvidence(page, taskId) {
     page.setDefaultTimeout(60_000);
     page.on("pageerror", (error) => report.page_errors.push(error.message));
     page.on("requestfailed", (request) => report.request_failures.push(`${request.method()} ${request.url()}`));
+    let learningActionResponse = null;
+    let learningControlsLoaded = false;
+    page.on("response", async (response) => {
+      if (!response.url().endsWith("/api/v1/learning/actions")) return;
+      try {
+        learningActionResponse = await response.json();
+      } catch {}
+    });
+    page.on("response", (response) => {
+      if (response.url().includes("/api/v1/learning/runtime/") && response.url().endsWith("/controls")) {
+        learningControlsLoaded = true;
+      }
+      if (response.url().includes("/api/v1/learning/runtime/") && response.url().endsWith("/control")) {
+        void response.json().then((body) => {
+          report.learning_control_responses.push({
+            status: response.status(),
+            accepted: body.accepted === true,
+            action: body.action || null,
+            result_status: body.result?.status || null,
+          });
+        }).catch(() => {});
+      }
+    });
 
     await page.goto(`${baseURL}/login?next=${encodeURIComponent("/workspace?role=teacher")}`, { waitUntil: "networkidle" });
     await page.locator('input[name="login"]').fill(adminLogin);
@@ -305,7 +372,11 @@ async function collectEvidence(page, taskId) {
     const capabilityButton = page.locator(`[data-capability="${scenario.capability}"]`);
     await capabilityButton.click();
     const selectedCapabilityPrompt = await capabilityButton.getAttribute("data-prompt");
-    await page.locator("#question-input").fill(selectedCapabilityPrompt || scenario.prompt);
+    await page.locator("#question-input").fill(scenario.teachingMode ? scenario.prompt : (selectedCapabilityPrompt || scenario.prompt));
+    if (scenario.teachingMode) {
+      await page.locator("#teaching-mode").selectOption(scenario.teachingMode);
+      await page.locator("#student-attempt-input").fill(scenario.studentAttempt || "");
+    }
     await page.locator("#student-form").evaluate((form) => form.requestSubmit());
     await page.waitForFunction(() => Boolean(localStorage.getItem("xinzhi_last_task")), null, { timeout: 30_000 });
     report.task_id = await page.evaluate(() => localStorage.getItem("xinzhi_last_task"));
@@ -319,12 +390,50 @@ async function collectEvidence(page, taskId) {
       null,
       { timeout: 120_000 },
     );
+    if (scenario.learningAction) {
+      const learningButton = page.locator(`#${scenario.learningAction === "request_more_hint" ? "request-more-hint" : "submit-teaching-response"}`);
+      await learningButton.waitFor({ state: "visible", timeout: 30_000 });
+      await learningButton.click();
+      await page.waitForFunction(() => Boolean(window.localStorage.getItem("xinzhi_last_task")), null, { timeout: 10_000 });
+      for (let attempt = 0; attempt < 60 && !learningActionResponse?.runtime_run_id; attempt += 1) await sleep(250);
+      const learningRunId = learningActionResponse?.runtime_run_id;
+      if (!learningRunId) throw new Error("LearningLoop action response did not include runtime_run_id");
+      for (let attempt = 0; attempt < 60 && !learningControlsLoaded; attempt += 1) await sleep(250);
+      if (!learningControlsLoaded) throw new Error("workspace did not refresh LearningLoop runtime controls");
+      await page.locator("#runtime-task-controls").waitFor({ state: "visible", timeout: 30_000 });
+      const learningRuntime = await waitForLearningRuntimeApproval(
+        page,
+        report.task_id,
+        learningRunId,
+        report.approval_observations,
+      );
+      const runtimeStatus = await readJson(
+        page,
+        `/api/v1/learning/runtime/${encodeURIComponent(learningRuntime.runId)}`,
+      );
+      report.learning_runtime = {
+        run_id: learningRuntime.runId,
+        action_status: learningActionResponse.status || null,
+        status: runtimeStatus.status,
+        run_kind: runtimeStatus.run_kind || null,
+        state_version: runtimeStatus.state_version || null,
+        node_statuses: runtimeStatus.node_statuses || [],
+        ui: {
+          answer_visible: await page.locator("#answer-panel").isVisible(),
+          teaching_loop_visible: await page.locator("#teaching-loop-panel").isVisible(),
+          learning_progress_visible: await page.locator("#learning-progress-panel").isVisible(),
+        },
+      };
+    }
     report.evidence = await collectEvidence(page, report.task_id);
     await page.screenshot({ path: path.join(outputDir, "teacher-completed.png"), fullPage: true });
     if (report.evidence.identity.role !== "admin") throw new Error("authenticated browser identity was not admin");
     if (report.evidence.task.status !== "completed") throw new Error(`task ended as ${report.evidence.task.status}: ${report.evidence.task.error_message || "no error message"}`);
     if (report.evidence.task.agent_id !== scenario.agentId) throw new Error(`task routed to ${report.evidence.task.agent_id}, expected ${scenario.agentId}`);
     if (!report.evidence.event_sequences_strictly_increasing) throw new Error("task event sequence is not strictly increasing");
+    if (scenario.learningAction && report.learning_runtime?.status !== "completed") {
+      throw new Error(`LearningLoop Runtime ended as ${report.learning_runtime?.status || "unknown"}`);
+    }
     report.status = "completed";
   } catch (error) {
     report.error = error.message;
