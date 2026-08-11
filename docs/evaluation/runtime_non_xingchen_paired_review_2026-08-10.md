@@ -2210,7 +2210,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 
 - The API was started on the isolated development port for a frontend
   acceptance pass, but the in-app browser transport closed during browser
-  initialization before any page interaction. No browser result is claimed.
-- The API instance was stopped after the failed connection attempt. Existing
-  static/UI behavior tests remain the available frontend evidence; a real
-  browser pass is still pending until the browser connection is available.
+  initialization before any page interaction; this attempt produced no new
+  browser result.
+- The API instance was stopped after the failed connection attempt. This does
+  not invalidate the earlier redacted browser reports already retained under
+  `.local_outputs/`.
+
+## 130. 2026-08-11 browser evidence inventory reconciliation
+
+- Existing private reports record completed browser-driven flows for the
+  Workspace and for Lesson Prep, Assignment Review, Academic Search, Academic
+  Writing, and LearningLoop scenarios. The reports include visible task
+  status, Runtime controls, terminal result rendering, and ordered event
+  summaries; approval-gated scenarios record the visible approval transition.
+- Both Mock and selected `real_local` provider profiles are represented. These
+  are development acceptance artifacts, not production semantic review or
+  release authorization.
+- The current browser transport retry remains unverified, but the overall
+  frontend evidence is therefore `partially verified`, not “no browser
+  acceptance”.
