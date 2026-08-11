@@ -1432,3 +1432,17 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   Provider, semantic-equivalence, or release evidence. The harness change
   preserves the distinction between a completed task and a LearningLoop
   action awaiting an authorized reviewer.
+
+## 80. 2026-08-11 release evidence configuration determinism
+
+- Audited the version-bound release evidence loaders and found that repeated
+  `AGENT_ID=PATH` entries in structural or semantic evidence configuration
+  silently overwrote earlier entries. That made a release record dependent on
+  configuration order and could hide a stale or conflicting artifact.
+- `RuntimeCanaryReleaseRegistry.from_paths()` now rejects duplicate structural
+  Agent entries and duplicate semantic sidecar Agent entries, matching the
+  existing duplicate rejection behavior of the release-authorization registry.
+- The bounded canary, semantic evidence, evidence-intake, and release
+  preflight group passed `65 tests`; Ruff, target Mypy, and the sensitive-file
+  scan passed. The local `.env` has no canary artifact, semantic sidecar, or
+  release authorization configured, so no Agent is promoted by this change.

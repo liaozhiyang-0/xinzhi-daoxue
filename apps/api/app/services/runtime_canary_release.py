@@ -74,6 +74,11 @@ class RuntimeCanaryReleaseRegistry:
                     f"Runtime canary artifact Agent mismatch for {agent_id.strip()}"
                 )
             normalized_agent_id = agent_id.strip()
+            if normalized_agent_id in reports:
+                raise ValueError(
+                    "duplicate Runtime canary artifact for "
+                    f"{normalized_agent_id}"
+                )
             reports[normalized_agent_id] = report
             suites[normalized_agent_id] = suite
 
@@ -215,6 +220,11 @@ class RuntimeCanaryReleaseRegistry:
                 raise ValueError(
                     "AGENT_RUNTIME_SEMANTIC_EVIDENCE entries must be "
                     "AGENT_ID=PATH"
+                )
+            if normalized_agent_id in evidence_by_agent:
+                raise ValueError(
+                    "duplicate Runtime semantic evidence for "
+                    f"{normalized_agent_id}"
                 )
 
             report = reports.get(normalized_agent_id)

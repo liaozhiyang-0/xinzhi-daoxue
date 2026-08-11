@@ -249,6 +249,34 @@ def test_from_paths_loads_and_binds_optional_semantic_sidecar(
     ) is True
 
 
+def test_from_paths_rejects_duplicate_structural_agent_entries(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "suite.json"
+    _write_json(suite_path, _suite().model_dump(mode="json"))
+
+    with pytest.raises(ValueError, match="duplicate Runtime canary artifact"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path},{AGENT_ID}={suite_path}"
+        )
+
+
+def test_from_paths_rejects_duplicate_semantic_agent_entries(
+    tmp_path: Path,
+) -> None:
+    suite = _suite()
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "semantic.json"
+    _write_json(suite_path, suite.model_dump(mode="json"))
+    _write_json(sidecar_path, _semantic_evidence().model_dump(mode="json"))
+
+    with pytest.raises(ValueError, match="duplicate Runtime semantic evidence"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path},{AGENT_ID}={sidecar_path}",
+        )
+
+
 def test_from_paths_empty_semantic_config_is_structural_only(
     tmp_path: Path,
 ) -> None:
