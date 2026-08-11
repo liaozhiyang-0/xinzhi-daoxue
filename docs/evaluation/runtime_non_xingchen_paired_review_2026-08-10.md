@@ -1598,3 +1598,36 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The next deployment task is to profile the Docker build or introduce a
   reproducible dependency/image cache strategy before claiming queue-worker
   container readiness.
+
+## 90. 2026-08-11 Docker dependency-layer and CPU-wheel hardening
+
+- `apps/api/Dockerfile` now derives the runtime dependency list directly from
+  `apps/api/pyproject.toml`, installs dependencies before application source,
+  and uses a BuildKit pip-cache mount. Source edits therefore do not invalidate
+  the dependency layer, and no second hand-maintained requirements file was
+  introduced.
+- The default Docker build installs the CPU Torch wheel from the official CPU
+  index before resolving the remaining requirements. This avoids pulling the
+  CUDA 13 runtime into the default CPU-only API/Worker image; a deliberately
+  GPU-enabled build can override `TORCH_INDEX_URL`.
+- The bounded build confirmed a `29.37 kB` build context and selected
+  `torch-2.13.0+cpu`; it reached the single `191.8 MB` CPU wheel download but
+  did not finish within the observation window because the download stalled.
+  No queue-worker image or container success is claimed. Compose parsing and
+  `git diff --check` passed, and the exact build client tree was stopped.
+
+## 91. 2026-08-11 authenticated Lesson Prep browser acceptance rerun
+
+- The first harness attempt failed before application startup because the
+  system Node process did not have the provided `playwright` module on its
+  module path. The rerun used the workspace-bundled Node/Playwright runtime;
+  it did not install an undeclared dependency.
+- One isolated administrator `lesson_prep` case used SQLite, a mock Provider,
+  and port `8052`. The authenticated Task completed as
+  `TEACH_01_LESSON_PREP_V1`, observed `lesson.observe`, `lesson.execute`,
+  `subagent.execute`, and `lesson.verify`, and emitted `27` strictly ordered
+  events.
+- The report records zero page errors and zero failed HTTP requests. The
+  temporary API process and port were released after the run. This is real
+  frontend application-wiring and UI-state evidence with an explicitly mock
+  Provider; it is not real Provider, semantic-equivalence, or release evidence.
