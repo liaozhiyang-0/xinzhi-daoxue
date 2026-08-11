@@ -139,7 +139,8 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
     assert "runtime-plan-proposals/" in script
     assert 'decision: action === "approve" ? "approved" : "rejected"' in script
     assert "function runtimeApprovalAllowed()" in script
-    assert "return [\"teacher\", \"admin\"]" in script
+    assert '["teacher", "admin"]' in script
+    assert '"RESEARCH_02_ACADEMIC_WRITING_V1"' in script
     assert "/api/v1/learning/runtime/" in script
     assert 'control_scope === "learning_loop"' in script
     assert '...(action === "input" ? { data: payload?.data || {} } : {})' in script

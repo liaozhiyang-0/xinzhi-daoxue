@@ -1044,7 +1044,12 @@ function runtimeTaskControlEntry(action) {
 }
 
 function runtimeApprovalAllowed() {
-  return ["teacher", "admin"].includes(String(state.userRole || "").toLowerCase());
+  const role = String(state.userRole || "").toLowerCase();
+  if (["teacher", "admin"].includes(role)) return true;
+  return role === "researcher" && [
+    "RESEARCH_01_ACADEMIC_SEARCH_V1",
+    "RESEARCH_02_ACADEMIC_WRITING_V1",
+  ].includes(String(state.currentTask?.agent_id || ""));
 }
 
 function runtimeTaskControlAvailable(action) {
@@ -1063,7 +1068,7 @@ function runtimeTaskControlMessage(projection) {
     String(projection?.status || "").toLowerCase() === "waiting_approval"
     && !runtimeApprovalAllowed()
   ) {
-    return "Teacher or administrator approval is required; the task will continue from its checkpoint after review.";
+    return "An authorized reviewer must approve this checkpoint; the task will continue from its checkpoint after review.";
   }
   if (!projection?.runtime_run_id) {
     return "当前任务尚未进入可控制的 Runtime；旧任务与未启动任务不会显示控制操作。";

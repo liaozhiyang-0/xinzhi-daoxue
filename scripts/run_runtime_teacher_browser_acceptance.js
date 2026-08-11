@@ -21,10 +21,10 @@ const outputDir = path.resolve(
 const providerProfile = process.env.XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE || "mock";
 const useRealLocalProviders = providerProfile === "real_local";
 const identityProfile = process.env.XINZHI_BROWSER_IDENTITY || "admin";
-if (!["admin", "student"].includes(identityProfile)) {
+if (!["admin", "student", "researcher"].includes(identityProfile)) {
   throw new Error(`unsupported browser identity profile: ${identityProfile}`);
 }
-const expectedIdentityRole = identityProfile === "student" ? "student" : "admin";
+const expectedIdentityRole = identityProfile;
 const scenarioName = process.env.XINZHI_TEACHER_BROWSER_SCENARIO || "lesson_prep";
 const scenarioDefinitions = {
   lesson_prep: {
@@ -64,6 +64,8 @@ const adminLogin = "runtime_teacher_acceptance_admin";
 const adminPassword = "RuntimeTeacherAcceptance2026!";
 const studentLogin = `runtime_student_acceptance_${process.pid}`;
 const studentPassword = "RuntimeStudentAcceptance2026!";
+const researcherLogin = `runtime_researcher_acceptance_${process.pid}@example.com`;
+const researcherPassword = "RuntimeResearcherAcceptance2026!";
 
 const runtimeLaunchModes = useRealLocalProviders
   ? `${scenario.agentId}=default`
@@ -151,6 +153,49 @@ function createAdmin() {
   );
   if (result.status !== 0) {
     throw new Error(`isolated admin creation failed with exit code ${result.status}`);
+  }
+}
+
+async function provisionResearcher(browser) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(60_000);
+  try {
+    await page.goto(`${baseURL}/admin`, { waitUntil: "networkidle" });
+    await page.locator("#admin-login").waitFor();
+    await page.locator('#admin-login-form input[name="login"]').fill(adminLogin);
+    await page.locator('#admin-login-form input[name="password"]').fill(adminPassword);
+    const loginResponsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/v1/auth/login"),
+      { timeout: 15_000 },
+    );
+    await page.locator("#admin-login-form button[type=submit]").click();
+    const loginResponse = await loginResponsePromise;
+    if (!loginResponse.ok()) {
+      throw new Error(`admin provisioning login failed with HTTP ${loginResponse.status()}`);
+    }
+    await page.locator("#admin-app").waitFor({ timeout: 15_000 });
+    await page.locator("#open-create-account").click();
+    await page.locator("#account-dialog").waitFor();
+    await page.locator('#account-form input[name="login"]').fill(researcherLogin);
+    await page.locator('#account-form input[name="display_name"]').fill("Runtime Researcher Acceptance");
+    await page.locator('#account-form select[name="role"]').selectOption("researcher");
+    await page.locator('#account-form input[name="password"]').fill(researcherPassword);
+    const createResponsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/v1/admin/accounts"),
+      { timeout: 15_000 },
+    );
+    await page.locator('#account-form button[value="create"]').click();
+    const createResponse = await createResponsePromise;
+    if (!createResponse.ok()) {
+      throw new Error(`researcher provisioning failed with HTTP ${createResponse.status()}`);
+    }
+    await page.locator("#account-table").getByText(researcherLogin, { exact: true }).waitFor({ timeout: 15_000 });
+    await page.locator("#admin-logout").click();
+    await page.locator("#admin-login").waitFor();
+  } finally {
+    await page.close().catch(() => {});
+    await context.close().catch(() => {});
   }
 }
 
@@ -332,6 +377,7 @@ async function collectEvidence(page, taskId) {
     provider_profile: providerProfile,
     identity_profile: identityProfile,
     expected_identity_role: expectedIdentityRole,
+    identity_provisioning: identityProfile === "researcher" ? "admin_ui" : "direct_or_registration",
     scenario: scenarioName,
     expected_agent_id: scenario.agentId,
     base_url: baseURL,
@@ -355,9 +401,12 @@ async function collectEvidence(page, taskId) {
     );
     report.single_api_pid = server.pid;
     await waitForHealth();
-    if (identityProfile === "admin") createAdmin();
+    if (["admin", "researcher"].includes(identityProfile)) createAdmin();
 
     browser = await chromium.launch({ channel: "msedge", headless: true });
+    if (identityProfile === "researcher") {
+      await provisionResearcher(browser);
+    }
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(60_000);
@@ -387,16 +436,30 @@ async function collectEvidence(page, taskId) {
       }
     });
 
-    const nextPath = identityProfile === "student" ? "/student" : "/workspace?role=teacher";
+    const nextPath = identityProfile === "student"
+      ? "/student"
+      : identityProfile === "researcher"
+        ? "/workspace?role=researcher"
+        : "/workspace?role=teacher";
     const loginPath = identityProfile === "student"
       ? `/login?mode=register&next=${encodeURIComponent(nextPath)}`
       : `/login?next=${encodeURIComponent(nextPath)}`;
     await page.goto(`${baseURL}${loginPath}`, { waitUntil: "networkidle" });
-    await page.locator('input[name="login"]').fill(identityProfile === "student" ? studentLogin : adminLogin);
+    const login = identityProfile === "student"
+      ? studentLogin
+      : identityProfile === "researcher"
+        ? researcherLogin
+        : adminLogin;
+    const password = identityProfile === "student"
+      ? studentPassword
+      : identityProfile === "researcher"
+        ? researcherPassword
+        : adminPassword;
+    await page.locator('input[name="login"]').fill(login);
     if (identityProfile === "student") {
       await page.locator('input[name="display_name"]').fill("Runtime Student Acceptance");
     }
-    await page.locator('input[name="password"]').fill(identityProfile === "student" ? studentPassword : adminPassword);
+    await page.locator('input[name="password"]').fill(password);
     await page.locator("#auth-submit").click();
     await page.waitForURL(
       (url) => ["/student", "/workspace"].includes(url.pathname),
@@ -430,7 +493,7 @@ async function collectEvidence(page, taskId) {
     await page.locator("#runtime-task-controls").waitFor({ state: "visible", timeout: 60_000 });
     await page.screenshot({ path: path.join(outputDir, "teacher-waiting-approval.png"), fullPage: true });
     await waitForRuntimeApproval(page, report.task_id, report.approval_observations, {
-      allowApproval: identityProfile === "admin",
+      allowApproval: ["admin", "researcher"].includes(identityProfile),
     });
     await page.waitForFunction(
       () => !document.querySelector("#send-button")?.disabled,

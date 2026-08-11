@@ -936,3 +936,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   for RESEARCH_02 Runtime ownership and result delivery. It is not semantic
   approval of the rewritten text, external-provider equivalence, or production
   release authorization.
+
+## 51. 2026-08-11 researcher approval boundary and remaining quality risk
+
+- Runtime approval is now role- and Agent-scoped: a `researcher` may approve
+  only its own RESEARCH_01/RESEARCH_02 Runtime checkpoint, while teaching
+  Runtime approval remains limited to teacher/admin identities. The backend
+  task routes and Workspace control projection use the same allowlist. The
+  focused role and UI contract tests passed; RESEARCH_03 was not included.
+- The browser harness created a researcher account through the isolated admin
+  UI, logged into a fresh context as `researcher`, and verified the identity
+  and RESEARCH_02 routing. The bounded real-local report is under
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_writing_real_local_20260811_final6/report.json`.
+- This run did not reach a successful researcher terminal result: the local
+  academic-writing path entered two `runtime_plan_proposal` checkpoints,
+  continued after the bounded approvals, and ended with
+  `default Runtime execution did not complete (status=failed)` and
+  `failure_category=not_configured`. It still recorded 45 strictly increasing
+  events with zero page/request failures. This is an explicit semantic/provider
+  quality risk, not evidence that researcher authorization works end to end.

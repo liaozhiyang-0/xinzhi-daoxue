@@ -73,6 +73,12 @@ _TASK_RUNTIME_CONTROL_ACTIONS: tuple[TaskRuntimeControlAction, ...] = (
     "approve",
     "input",
 )
+_RESEARCH_RUNTIME_APPROVAL_AGENT_IDS = frozenset(
+    {
+        "RESEARCH_01_ACADEMIC_SEARCH_V1",
+        "RESEARCH_02_ACADEMIC_WRITING_V1",
+    }
+)
 
 
 def task_read(
@@ -481,8 +487,8 @@ async def approve_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
-    approval_actor = _require_runtime_approval(request, principal)
-    await _get_runtime_approval_task(db, task_id, principal)
+    approval_task = await _get_runtime_approval_task(db, task_id, principal)
+    approval_actor = _require_runtime_approval(request, principal, approval_task)
     task = await TaskControlService(
         db, provider, request.app.state.settings
     ).approve(
@@ -557,8 +563,8 @@ async def decide_runtime_plan_proposal(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> TaskRead:
-    approval_actor = _require_runtime_approval(request, principal)
-    await _get_runtime_approval_task(db, task_id, principal)
+    approval_task = await _get_runtime_approval_task(db, task_id, principal)
+    approval_actor = _require_runtime_approval(request, principal, approval_task)
     proposals = await RuntimePlanProposalService(db).list(task_id)
     proposal = next(
         (item for item in proposals if item.proposal_id == proposal_id),
@@ -748,9 +754,11 @@ async def _get_owned_task(
 
 
 def _require_runtime_approval(
-    request: Request, principal: Principal
+    request: Request,
+    principal: Principal,
+    task: TaskModel | None = None,
 ) -> tuple[str, str]:
-    """Return the existing Principal identity allowed to approve Runtime work."""
+    """Return the Principal identity allowed to approve this Runtime work."""
 
     if not principal.authenticated:
         if request.app.state.settings.auth_required:
@@ -760,13 +768,18 @@ def _require_runtime_approval(
         if principal.has_identity:
             raise HTTPException(
                 status_code=403,
-                detail="Runtime approval requires a teacher or administrator",
+                detail="Runtime approval requires an authorized reviewer",
             )
         return "anonymous", "anonymous"
-    if principal.role not in {"teacher", "admin"}:
+    research_reviewer = (
+        principal.role == "researcher"
+        and task is not None
+        and task.agent_id in _RESEARCH_RUNTIME_APPROVAL_AGENT_IDS
+    )
+    if principal.role not in {"teacher", "admin"} and not research_reviewer:
         raise HTTPException(
             status_code=403,
-            detail="Runtime approval requires a teacher or administrator",
+            detail="Runtime approval is not permitted for this role or Agent",
         )
     return principal.user_id or principal.account_id, principal.role
 
