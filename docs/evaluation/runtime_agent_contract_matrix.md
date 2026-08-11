@@ -79,7 +79,7 @@ authorized evidence，也不能把 LearningLoop 标记为已完成生产迁移�
 | `status` | 跨入口投影沿用 Runtime readiness 状态，如 `blocked`、`runtime_implemented`、`canary_ready`、`shadow_ready`、`default_ready`；它描述执行/发布准备度，不是成熟度等级。`implemented`、`evaluable`、`authorized` 仍是由实现、可重复评测和授权证据推导的独立证据阶段。 | 两个 LearningLoop Runtime 当前为 `runtime_implemented`，但只有 provider-free 合同与 readiness 证据，不能解释为 `authorized`。 |
 | `canary_release_eligible` | 只表示共享 `RuntimeCanaryReleaseRegistry` 已按期望的 `agent_version` 与 `runtime_plan_version` 通过结构、语义和版本绑定门禁；查询 provider-free，不执行能力，也不等于 default 授权。 | 当前为 `false`，因为没有授权 evidence。 |
 | `canary_reason` | 稳定的门禁原因码，不是质量分数、模型判断或执行结果。当前实现可返回 `canary_release_evidence_missing`、`canary_structural_gate_failed`、`canary_authorized_evidence_missing`、版本不匹配、`semantic_evidence_missing` 或 `canary_release_evidence_approved` 等原因。 | 空 registry 的真实 descriptor 返回 `canary_release_evidence_missing`；缺失版本时 fail-closed 为 `canary_artifact_version_expectation_missing`。 |
-| `blockers` | 可行动的独立阻塞码列表，既可描述未实现控制能力，也可描述 disabled、descriptor/evidence 缺失；它不能把已有实现降写成不存在，也不能把 Mock/synthetic 证据升级成授权。 | 至少包含 `learning_runtime_authorized_paired_evidence_missing`；当前还会报告 LearningLoop 尚未实现的 pause/resume/input 控制阻塞。 |
+| `blockers` | 可行动的独立阻塞码列表，既可描述未实现控制能力，也可描述 disabled、descriptor/evidence 缺失；它不能把已有实现降写成不存在，也不能把 Mock/synthetic 证据升级成授权。 | 至少包含 `learning_runtime_authorized_paired_evidence_missing`；LearningLoop 的 pause/resume/input 控制已实现并有状态约束测试，当前阻塞主要是授权配对证据、语义 sidecar 和发布决策缺失。 |
 
 三者不得混同：`implemented` 不代表可重复评测，`evaluable` 不代表获得授权，
 `authorized` 也只代表满足 canary 证据门槛，不自动代表 default。当前
