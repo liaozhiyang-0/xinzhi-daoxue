@@ -897,3 +897,23 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - This proves the real-local application/browser path and a no-approval
   terminal variant. It does not replace the Mock approval/recovery evidence,
   semantic review, or production release authorization.
+
+## 49. 2026-08-11 student Workspace real-local LearningLoop path
+
+- A bounded authenticated browser run registered a fresh student identity via
+  `/login?mode=register&next=/student` and followed the real `/student` route,
+  which serves the unified Workspace page. The run used one isolated API
+  process, an isolated SQLite database, Xingchen disabled, and Agent Mocks
+  disabled. The redacted report is under
+  `.local_outputs/runtime_student_browser_acceptance_learning_loop_real_local_20260811_final3/report.json`.
+- The authenticated identity was `student`. The Workspace created the
+  interactive `check_my_work` task, submitted `request_more_hint`, and
+  displayed the answer, teaching-loop, learning-progress, and student Runtime
+  control surfaces. The task routed to `ACADEMIC_PROBLEM_SOLVER` with
+  `result_provider=local_graph` and completed. The LearningLoop used four
+  succeeded nodes, reached `completed`, and explicitly skipped the approval
+  node because this real-local path does not require teacher approval.
+- The run recorded 34 strictly increasing task events, with zero page errors
+  and zero request failures. Student approval was not asserted in this path;
+  the separate authenticated Mock teacher run remains the evidence for
+  approval and recovery authorization.

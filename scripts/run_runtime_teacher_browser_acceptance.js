@@ -20,6 +20,11 @@ const outputDir = path.resolve(
 );
 const providerProfile = process.env.XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE || "mock";
 const useRealLocalProviders = providerProfile === "real_local";
+const identityProfile = process.env.XINZHI_BROWSER_IDENTITY || "admin";
+if (!["admin", "student"].includes(identityProfile)) {
+  throw new Error(`unsupported browser identity profile: ${identityProfile}`);
+}
+const expectedIdentityRole = identityProfile === "student" ? "student" : "admin";
 const scenarioName = process.env.XINZHI_TEACHER_BROWSER_SCENARIO || "lesson_prep";
 const scenarioDefinitions = {
   lesson_prep: {
@@ -57,6 +62,8 @@ if (!scenario) {
 }
 const adminLogin = "runtime_teacher_acceptance_admin";
 const adminPassword = "RuntimeTeacherAcceptance2026!";
+const studentLogin = `runtime_student_acceptance_${process.pid}`;
+const studentPassword = "RuntimeStudentAcceptance2026!";
 
 const runtimeLaunchModes = useRealLocalProviders
   ? `${scenario.agentId}=default`
@@ -76,6 +83,7 @@ const serverEnvironment = {
   TEST_DATABASE_URL: testDatabaseURL,
   AUTH_REQUIRED: "true",
   AUTH_ALLOW_GUEST: "false",
+  AUTH_ALLOW_REGISTRATION: identityProfile === "student" ? "true" : "false",
   DEFAULT_AGENT_PROVIDER: "mock",
   ALLOW_AGENT_MOCKS: useRealLocalProviders ? "false" : "true",
   XINGCHEN_ENABLED: "false",
@@ -118,7 +126,7 @@ async function waitForHealth() {
     } catch {}
     await sleep(500);
   }
-  throw new Error("teacher browser acceptance server did not become ready");
+  throw new Error("authenticated browser acceptance server did not become ready");
 }
 
 function createAdmin() {
@@ -179,8 +187,13 @@ async function readJson(page, url) {
   }, url);
 }
 
-async function waitForRuntimeApproval(page, taskId, observations) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+async function waitForRuntimeApproval(
+  page,
+  taskId,
+  observations,
+  { allowApproval = true, maxAttempts = 240 } = {},
+) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const projection = await readJson(
       page,
       `/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`,
@@ -198,6 +211,9 @@ async function waitForRuntimeApproval(page, taskId, observations) {
     });
     if (["completed", "failed", "cancelled"].includes(task.status)) return task;
     if (projection.status === "waiting_approval") {
+      if (!allowApproval) {
+        throw new Error("student Runtime unexpectedly requires approval");
+      }
       const approve = page.locator("#runtime-task-approve");
       await approve.waitFor({ state: "visible", timeout: 15_000 });
       if (await approve.isDisabled()) throw new Error("teacher approval control is disabled");
@@ -207,7 +223,7 @@ async function waitForRuntimeApproval(page, taskId, observations) {
       await sleep(500);
     }
   }
-  throw new Error("runtime approval did not reach a terminal task state within the bounded wait");
+  throw new Error(`Runtime did not reach a terminal task state within ${maxAttempts} polling attempts`);
 }
 
 async function waitForLearningRuntimeApproval(
@@ -312,8 +328,10 @@ async function collectEvidence(page, taskId) {
 (async () => {
   fs.mkdirSync(outputDir, { recursive: true });
   const report = {
-    profile: "isolated_authenticated_teacher_browser",
+    profile: `isolated_authenticated_${identityProfile}_browser`,
     provider_profile: providerProfile,
+    identity_profile: identityProfile,
+    expected_identity_role: expectedIdentityRole,
     scenario: scenarioName,
     expected_agent_id: scenario.agentId,
     base_url: baseURL,
@@ -337,7 +355,7 @@ async function collectEvidence(page, taskId) {
     );
     report.single_api_pid = server.pid;
     await waitForHealth();
-    createAdmin();
+    if (identityProfile === "admin") createAdmin();
 
     browser = await chromium.launch({ channel: "msedge", headless: true });
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -369,13 +387,32 @@ async function collectEvidence(page, taskId) {
       }
     });
 
-    await page.goto(`${baseURL}/login?next=${encodeURIComponent("/workspace?role=teacher")}`, { waitUntil: "networkidle" });
-    await page.locator('input[name="login"]').fill(adminLogin);
-    await page.locator('input[name="password"]').fill(adminPassword);
+    const nextPath = identityProfile === "student" ? "/student" : "/workspace?role=teacher";
+    const loginPath = identityProfile === "student"
+      ? `/login?mode=register&next=${encodeURIComponent(nextPath)}`
+      : `/login?next=${encodeURIComponent(nextPath)}`;
+    await page.goto(`${baseURL}${loginPath}`, { waitUntil: "networkidle" });
+    await page.locator('input[name="login"]').fill(identityProfile === "student" ? studentLogin : adminLogin);
+    if (identityProfile === "student") {
+      await page.locator('input[name="display_name"]').fill("Runtime Student Acceptance");
+    }
+    await page.locator('input[name="password"]').fill(identityProfile === "student" ? studentPassword : adminPassword);
     await page.locator("#auth-submit").click();
-    await page.waitForURL("**/workspace**", { timeout: 30_000 });
+    await page.waitForURL(
+      (url) => ["/student", "/workspace"].includes(url.pathname),
+      { timeout: 30_000 },
+    );
     await page.locator("#app-sidebar .brand-lockup").waitFor();
-    await page.waitForFunction(() => document.body.dataset.userRole === "admin" || document.body.innerText.includes("管理员"), null, { timeout: 10_000 }).catch(() => {});
+    await page.waitForFunction(
+      async (role) => {
+        const response = await fetch("/api/v1/auth/me");
+        if (!response.ok) return false;
+        const identity = await response.json();
+        return identity.role === role;
+      },
+      expectedIdentityRole,
+      { timeout: 10_000 },
+    );
 
     const capabilityButton = page.locator(`[data-capability="${scenario.capability}"]`);
     await capabilityButton.click();
@@ -392,7 +429,9 @@ async function collectEvidence(page, taskId) {
 
     await page.locator("#runtime-task-controls").waitFor({ state: "visible", timeout: 60_000 });
     await page.screenshot({ path: path.join(outputDir, "teacher-waiting-approval.png"), fullPage: true });
-    await waitForRuntimeApproval(page, report.task_id, report.approval_observations);
+    await waitForRuntimeApproval(page, report.task_id, report.approval_observations, {
+      allowApproval: identityProfile === "admin",
+    });
     await page.waitForFunction(
       () => !document.querySelector("#send-button")?.disabled,
       null,
@@ -409,35 +448,38 @@ async function collectEvidence(page, taskId) {
       for (let attempt = 0; attempt < 60 && !learningControlsLoaded; attempt += 1) await sleep(250);
       if (!learningControlsLoaded) throw new Error("workspace did not refresh LearningLoop runtime controls");
       await page.locator("#runtime-task-controls").waitFor({ state: "visible", timeout: 30_000 });
-      const executionPage = await context.newPage();
-      executionPage.setDefaultTimeout(60_000);
-      executionPage.on("pageerror", (error) => report.page_errors.push(`execution: ${error.message}`));
-      executionPage.on("requestfailed", (request) => report.request_failures.push(`execution: ${request.method()} ${request.url()}`));
-      executionPage.on("response", async (response) => {
-        if (!response.url().includes("/api/v1/learning/runtime/") || !response.url().endsWith("/control")) return;
-        try {
-          const body = await response.json();
-          report.execution_control_responses.push({
-            status: response.status(),
-            accepted: body.accepted === true,
-            action: body.action || null,
-            result_status: body.result?.status || null,
-          });
-        } catch {}
-      });
-      await executionPage.goto(
-        `${baseURL}/debug/execution?task_id=${encodeURIComponent(report.task_id)}`,
-        { waitUntil: "networkidle" },
-      );
-      await executionPage.locator("#execution-console").waitFor({ state: "visible", timeout: 30_000 });
-      await executionPage.locator('button[data-tab-target="runtime"]').click();
+      let executionPage = null;
+      if (identityProfile === "admin") {
+        executionPage = await context.newPage();
+        executionPage.setDefaultTimeout(60_000);
+        executionPage.on("pageerror", (error) => report.page_errors.push(`execution: ${error.message}`));
+        executionPage.on("requestfailed", (request) => report.request_failures.push(`execution: ${request.method()} ${request.url()}`));
+        executionPage.on("response", async (response) => {
+          if (!response.url().includes("/api/v1/learning/runtime/") || !response.url().endsWith("/control")) return;
+          try {
+            const body = await response.json();
+            report.execution_control_responses.push({
+              status: response.status(),
+              accepted: body.accepted === true,
+              action: body.action || null,
+              result_status: body.result?.status || null,
+            });
+          } catch {}
+        });
+        await executionPage.goto(
+          `${baseURL}/debug/execution?task_id=${encodeURIComponent(report.task_id)}`,
+          { waitUntil: "networkidle" },
+        );
+        await executionPage.locator("#execution-console").waitFor({ state: "visible", timeout: 30_000 });
+        await executionPage.locator('button[data-tab-target="runtime"]').click();
+      }
       const learningRuntime = await waitForLearningRuntimeApproval(
         page,
         report.task_id,
         learningRunId,
         report.approval_observations,
-        executionPage,
-        "#runtime-approve",
+        executionPage || page,
+        executionPage ? "#runtime-approve" : "#runtime-task-approve",
       );
       const runtimeStatus = await readJson(
         page,
@@ -454,13 +496,17 @@ async function collectEvidence(page, taskId) {
           answer_visible: await page.locator("#answer-panel").isVisible(),
           teaching_loop_visible: await page.locator("#teaching-loop-panel").isVisible(),
           learning_progress_visible: await page.locator("#learning-progress-panel").isVisible(),
-          execution_runtime_controls_visible: await executionPage.locator("#runtime-controls").isVisible(),
+          execution_runtime_controls_visible: executionPage
+            ? await executionPage.locator("#runtime-controls").isVisible()
+            : await page.locator("#runtime-task-controls").isVisible(),
         },
       };
     }
     report.evidence = await collectEvidence(page, report.task_id);
     await page.screenshot({ path: path.join(outputDir, "teacher-completed.png"), fullPage: true });
-    if (report.evidence.identity.role !== "admin") throw new Error("authenticated browser identity was not admin");
+    if (report.evidence.identity.role !== expectedIdentityRole) {
+      throw new Error(`authenticated browser identity was ${report.evidence.identity.role}, expected ${expectedIdentityRole}`);
+    }
     if (report.evidence.task.status !== "completed") throw new Error(`task ended as ${report.evidence.task.status}: ${report.evidence.task.error_message || "no error message"}`);
     if (report.evidence.task.agent_id !== scenario.agentId) throw new Error(`task routed to ${report.evidence.task.agent_id}, expected ${scenario.agentId}`);
     if (!report.evidence.event_sequences_strictly_increasing) throw new Error("task event sequence is not strictly increasing");
