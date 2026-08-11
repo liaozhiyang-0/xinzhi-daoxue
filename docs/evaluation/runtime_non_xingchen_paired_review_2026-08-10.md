@@ -2290,3 +2290,30 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   integration and was not accompanied by a page failure. Synthetic account
   credentials and test data are not committed. The single API/Worker instance
   is stopped after this acceptance pass.
+
+## 134. 2026-08-11 real Edge evidence-panel regression and fix
+
+- A fresh formal Workspace task reproduced the reported issue before the fix:
+  the answer contained inline `查看证据 S1/S2/S4` references, while the
+  `资料依据` panel incorrectly reported that no evidence was available and
+  showed a zero source count.
+- Root cause: Runtime results stored usable evidence in
+  `structured_result.core_retrieval_summary` (and, for other Runtime shapes,
+  `knowledge.hits` or `evidence_packet.sources`), but terminal presentation
+  only built cards from the legacy workflow context bundle. The frontend
+  renders the panel from `structured.evidence_view`, so valid Runtime evidence
+  was present in the result but never converted into view cards.
+- Fix: `task_presentation.py` now converts the supported Runtime evidence
+  shapes into validated `KnowledgeHit` values, preserves evidence IDs/source
+  references, and derives the same `EvidenceViewItem` cards and counts used by
+  the legacy path. The conversion selects contract fields instead of
+  forwarding Runtime-only fields that the strict `KnowledgeHit` model rejects.
+- Regression coverage now includes both `knowledge.hits` and the actual
+  `core_retrieval_summary` shape. Targeted Ruff, Mypy, and Pytest checks pass
+  (`14 passed`).
+- Real Edge revalidation on a fresh post-fix task displayed `使用 5 条课程资料`
+  and five visible cards (S1-S5), each with `打开资料`. Opening S1 displayed
+  the original read-only course document, chapter path, cited excerpt, and a
+  successful document-page request. Persisted tasks created before this fix
+  can retain their old empty `evidence_view`; they must be rerun to regenerate
+  presentation data.

@@ -102,6 +102,82 @@ def test_learn_presentation_uses_only_validated_evidence() -> None:
     assert evidence[0].role == "cited"
 
 
+def test_runtime_knowledge_result_populates_evidence_view_without_bundle() -> None:
+    definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
+    runtime_hit = hit()
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="CT",
+        intent="explain_concept",
+        answer="电容电压不能突变。[S1]",
+        citations=[runtime_hit.source_ref],
+        evidence_status="sufficient",
+        structured_result={
+            "knowledge": {"hits": [runtime_hit.model_dump(mode="json")]},
+            "verified_evidence_ids": ["S1"],
+        },
+    )
+
+    presentation, summary, evidence = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={"route_source": "runtime"},
+        timings={"total_ms": 120},
+    )
+
+    assert summary.evidence_count == 1
+    assert summary.workflow_evidence_count == 1
+    assert summary.used_evidence_count == 1
+    assert presentation.source_summary == "使用 1 条课程资料"
+    assert evidence[0].evidence_id == "S1"
+    assert evidence[0].used_by_answer is True
+    assert evidence[0].entered_workflow is True
+
+
+def test_runtime_core_retrieval_summary_populates_evidence_view() -> None:
+    definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="iflytek_spark",
+        course_id="CT",
+        intent="explain_concept",
+        answer="电容电压不能突变。[S1]",
+        citations=["kb://CT/课本/基础篇/第七章.md#chunk-1"],
+        evidence_status="sufficient",
+        structured_result={
+            "core_retrieval_summary": [
+                {
+                    "evidence_id": "S1",
+                    "source_ref": "kb://CT/课本/基础篇/第七章.md#chunk-1",
+                    "chapter": "动态电路",
+                    "title": "电容电压连续性",
+                    "excerpt": "电容两端电压不能发生突变。",
+                    "score": "0.91",
+                }
+            ],
+            "verified_evidence_ids": ["S1"],
+        },
+    )
+
+    presentation, summary, evidence = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={"route_source": "runtime"},
+        timings={"total_ms": 120},
+    )
+
+    assert summary.evidence_count == 1
+    assert summary.workflow_evidence_count == 1
+    assert summary.used_evidence_count == 1
+    assert presentation.source_summary == "使用 1 条课程资料"
+    assert evidence[0].title == "电容电压连续性"
+    assert evidence[0].used_by_answer is True
+    assert evidence[0].entered_workflow is True
+
+
 def test_solver_evidence_is_labeled_method_reference_not_answer_basis() -> None:
     definition = AgentRegistry().get("SOLVER_CT_V1")
     result = AgentResult(

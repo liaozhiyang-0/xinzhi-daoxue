@@ -4,6 +4,7 @@ from app.agents import AgentDefinition
 from app.contracts import (
     AgentResult,
     EvidenceViewItem,
+    KnowledgeHit,
     RAGInteractionMode,
     TaskExecutionSummary,
     TaskPresentation,
@@ -54,9 +55,30 @@ def build_task_views(
             for item in bundle.evidence_items
             if item.source_ref in sources
         )
+    verified_ids = result.structured_result.get("verified_evidence_ids", [])
+    if isinstance(verified_ids, list):
+        used_ids.update(str(item) for item in verified_ids if isinstance(item, str))
+    runtime_evidence = _runtime_knowledge_hits(result)
+    evidence_items = (
+        list(bundle.evidence_items)
+        if bundle is not None and bundle.evidence_items
+        else runtime_evidence
+    )
+    if bundle is None and result.provider in {"local", "local_agent"}:
+        sources = set(result.citations)
+        used_ids.update(
+            item.evidence_id
+            for item in evidence_items
+            if item.source_ref in sources
+        )
+    entered_ids = (
+        set(bundle.workflow_evidence_ids)
+        if bundle is not None
+        else {item.evidence_id for item in runtime_evidence}
+    )
     if bundle is not None:
         bundle.used_evidence_ids = sorted(used_ids)
-    evidence_view = _evidence_view(bundle, used_ids, rag_mode)
+    evidence_view = _evidence_view(evidence_items, entered_ids, used_ids, rag_mode)
     external_retrieval = result.structured_result.get("external_retrieval", {})
     external_retrieval = (
         external_retrieval if isinstance(external_retrieval, dict) else {}
@@ -95,8 +117,8 @@ def build_task_views(
         )
     )
     used_count = len(used_ids)
-    evidence_count = len(bundle.evidence_items) if bundle else 0
-    workflow_count = len(bundle.workflow_evidence_ids) if bundle else 0
+    evidence_count = len(evidence_items)
+    workflow_count = len(entered_ids)
     external_items = external_retrieval.get("items", [])
     academic_external_count = sum(
         1
@@ -349,15 +371,13 @@ def build_task_views(
 
 
 def _evidence_view(
-    bundle: WorkflowContextBundle | None,
+    evidence_items: list[KnowledgeHit],
+    entered_ids: set[str],
     used_ids: set[str],
     rag_mode: RAGInteractionMode,
 ) -> list[EvidenceViewItem]:
-    if bundle is None:
-        return []
-    entered = set(bundle.workflow_evidence_ids)
     items: list[EvidenceViewItem] = []
-    for hit in bundle.evidence_items:
+    for hit in evidence_items:
         used = hit.evidence_id in used_ids
         role = (
             "method_reference"
@@ -378,12 +398,78 @@ def _evidence_view(
                 summary=MATH_FORMATTER.process_markdown(hit.content[:320]).markdown,
                 source_ref=hit.source_ref,
                 related_images=hit.related_images,
-                entered_workflow=hit.evidence_id in entered,
+                entered_workflow=hit.evidence_id in entered_ids,
                 used_by_answer=used,
                 role=role,
             )
         )
     return items
+
+
+def _runtime_knowledge_hits(result: AgentResult) -> list[KnowledgeHit]:
+    """Recover evidence cards from a Runtime result without trusting free text."""
+
+    knowledge = result.structured_result.get("knowledge", {})
+    raw_hits = knowledge.get("hits", []) if isinstance(knowledge, dict) else []
+    if not isinstance(raw_hits, list) or not raw_hits:
+        raw_hits = result.structured_result.get("core_retrieval_summary", [])
+    if not isinstance(raw_hits, list) or not raw_hits:
+        evidence_packet = result.structured_result.get("evidence_packet", {})
+        raw_hits = (
+            evidence_packet.get("sources", [])
+            if isinstance(evidence_packet, dict)
+            else []
+        )
+    hits: list[KnowledgeHit] = []
+    seen_ids: set[str] = set()
+    for index, raw_hit in enumerate(raw_hits, start=1):
+        if not isinstance(raw_hit, dict):
+            continue
+        source_ref = str(raw_hit.get("source_ref", ""))
+        evidence_id = str(
+            raw_hit.get("evidence_id")
+            or raw_hit.get("source_id")
+            or f"S{index}"
+        )
+        course_id = str(raw_hit.get("course_id") or result.course_id or "CT")
+        content = str(
+            raw_hit.get("content")
+            or raw_hit.get("excerpt")
+            or raw_hit.get("content_excerpt")
+            or ""
+        )
+        raw_score = raw_hit.get("score")
+        try:
+            score = max(float(raw_score or 0), 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        payload = {
+            "chunk_id": str(raw_hit.get("chunk_id") or ""),
+            "evidence_id": evidence_id,
+            "document_id": str(raw_hit.get("document_id") or ""),
+            "course_id": course_id,
+            "course_name": str(
+                raw_hit.get("course_name") or COURSE_LABELS.get(course_id, course_id)
+            ),
+            "chapter": str(raw_hit.get("chapter") or ""),
+            "section": str(raw_hit.get("section") or ""),
+            "document_path": str(
+                raw_hit.get("document_path") or source_ref or evidence_id
+            ),
+            "title": str(raw_hit.get("title") or raw_hit.get("chapter") or evidence_id),
+            "content_type": str(raw_hit.get("content_type") or "unknown"),
+            "content": content,
+            "score": score,
+            "source_ref": source_ref,
+        }
+        try:
+            hit = KnowledgeHit.model_validate(payload)
+        except (TypeError, ValueError):
+            continue
+        if hit.evidence_id and hit.evidence_id not in seen_ids:
+            hits.append(hit)
+            seen_ids.add(hit.evidence_id)
+    return hits
 
 
 def _execution_steps(
