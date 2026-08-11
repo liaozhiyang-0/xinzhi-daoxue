@@ -1474,3 +1474,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   TaskRunner handoff, and release-preflight group passed `20 tests`, and Ruff
   passed. The corrected test confirms failed Default Runtime does not invoke
   Legacy Provider generation or emit a successful completion event.
+
+## 83. 2026-08-11 readiness and launch authorization alignment
+
+- Readiness inspection and the LearningLoop API projection now receive the
+  same version-bound release-authorization registry used by the launch
+  policy. Structural and semantic evidence remain reported independently, but
+  `canary_release_eligible` is false when the matching human authorization is
+  missing, revoked, or bound to a different Agent, suite, version, plan, or
+  launch mode.
+- Added a regression proving that missing authorization does not hide a
+  semantic evidence pass: the result exposes `semantic_release_eligible=true`
+  while remaining blocked with `release_authorization_missing`.
+- The bounded readiness, cross-entry, API projection, and LearningLoop
+  readiness group passed `30` tests. This change aligns diagnostics with the
+  launch gate; it does not create a real approval record or promote any
+  current Agent.

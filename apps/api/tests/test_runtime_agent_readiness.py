@@ -90,6 +90,7 @@ def _readiness(
         ),
         lifecycle_enabled=True,
         release_registry=release,
+        release_authorization_registry=release_authorization_registry,
         handler_registry=registry,
     )
 
@@ -297,6 +298,24 @@ def test_readiness_accepts_matching_release_artifact(
     assert item.structural_release_eligible is True
     assert item.semantic_release_eligible is True
     assert item.canary_reason == "canary_release_evidence_approved"
+
+
+def test_readiness_blocks_missing_authorization_without_hiding_semantic_pass() -> None:
+    readiness = _readiness(
+        [_RuntimeService()],
+        launch_modes="GENERAL_QUESTION_V1=canary",
+        release_gate_required=True,
+        release_registry=_release_registry(),
+    )
+
+    item = readiness.inspect("GENERAL_QUESTION_V1")
+
+    assert item.structural_release_eligible is True
+    assert item.semantic_release_eligible is True
+    assert item.canary_release_eligible is False
+    assert item.canary_reason == "release_authorization_missing"
+    assert item.status == "blocked"
+    assert item.blockers == ("release_authorization_missing",)
 
 
 def test_readiness_separates_structural_and_semantic_release_gates() -> None:

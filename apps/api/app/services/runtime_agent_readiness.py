@@ -18,6 +18,9 @@ from app.services.runtime_launch_policy import (
     RuntimeLaunchMode,
     RuntimeLaunchPolicy,
 )
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorizationRegistry,
+)
 
 _RELEASE_EVIDENCE_BLOCKERS = frozenset(
     {
@@ -84,6 +87,9 @@ class RuntimeAgentReadinessService:
         *,
         lifecycle_enabled: bool,
         release_registry: RuntimeCanaryReleaseRegistry,
+        release_authorization_registry: (
+            RuntimeReleaseAuthorizationRegistry | None
+        ) = None,
         handler_registry: RuntimeHandlerRegistry | None = None,
         capability_descriptors: Iterable[RuntimeCapabilityDescriptor] = (),
     ) -> None:
@@ -92,6 +98,7 @@ class RuntimeAgentReadinessService:
         self.launch_policy = launch_policy
         self.lifecycle_enabled = lifecycle_enabled
         self.release_registry = release_registry
+        self.release_authorization_registry = release_authorization_registry
         self.handler_registry = handler_registry
         self.capability_descriptors = tuple(capability_descriptors)
 
@@ -169,21 +176,27 @@ class RuntimeAgentReadinessService:
             expected_agent_version=descriptor.agent_version,
             expected_runtime_plan_version=descriptor.version,
         )
-        canary_reason = self.release_registry.reason(
+        canary_reason = self._release_reason(
             descriptor.capability_id,
+            target_mode=RuntimeLaunchMode.CANARY,
             expected_agent_version=descriptor.agent_version,
             expected_runtime_plan_version=descriptor.version,
+            evidence_eligible=semantic_release_eligible,
         )
-        blockers = [] if semantic_release_eligible else [canary_reason]
+        canary_eligible = (
+            semantic_release_eligible
+            and canary_reason == "canary_release_evidence_approved"
+        )
+        blockers = [] if canary_eligible else [canary_reason]
         return {
             "status": (
                 "canary_ready"
-                if semantic_release_eligible
+                if canary_eligible
                 else "runtime_implemented"
             ),
             "structural_release_eligible": structural_release_eligible,
             "semantic_release_eligible": semantic_release_eligible,
-            "canary_release_eligible": semantic_release_eligible,
+            "canary_release_eligible": canary_eligible,
             "canary_reason": canary_reason,
             "blockers": blockers,
         }
@@ -290,18 +303,28 @@ class RuntimeAgentReadinessService:
                 expected_agent_version=definition.version,
                 expected_runtime_plan_version=expected_plan_version,
             )
-        canary_eligible = semantic_eligible
-        canary_reason = (
-            "canary_artifact_version_expectation_missing"
-            if not version_expectations_available
-            else self.release_registry.reason(
+        target_mode = (
+            configured
+            if configured in {RuntimeLaunchMode.CANARY, RuntimeLaunchMode.DEFAULT}
+            else RuntimeLaunchMode.CANARY
+        )
+        canary_eligible = False
+        if not version_expectations_available:
+            canary_reason = "canary_artifact_version_expectation_missing"
+        else:
+            assert expected_plan_version is not None
+            canary_reason = self._release_reason(
                 agent_id,
+                target_mode=target_mode,
                 expected_agent_version=definition.version,
                 expected_runtime_plan_version=expected_plan_version,
+                evidence_eligible=semantic_eligible,
             )
-        )
-        if not version_expectations_available:
-            canary_eligible = False
+        if version_expectations_available:
+            canary_eligible = (
+                semantic_eligible
+                and canary_reason == "canary_release_evidence_approved"
+            )
         if execution_blockers:
             canary_eligible = False
             canary_reason = execution_blockers[0]
@@ -365,6 +388,36 @@ class RuntimeAgentReadinessService:
             recommended_actions=recommended_actions,
             runtime_capabilities=runtime_capabilities,
         )
+
+    def _release_reason(
+        self,
+        agent_id: str,
+        *,
+        target_mode: RuntimeLaunchMode,
+        expected_agent_version: str,
+        expected_runtime_plan_version: str,
+        evidence_eligible: bool,
+    ) -> str:
+        """Return the same evidence + authorization reason as launch policy."""
+
+        if not evidence_eligible:
+            return self.release_registry.reason(
+                agent_id,
+                expected_agent_version=expected_agent_version,
+                expected_runtime_plan_version=expected_runtime_plan_version,
+            )
+        if self.release_authorization_registry is None:
+            return "release_authorization_missing"
+        report = self.release_registry.report(agent_id)
+        if report is None:
+            return "canary_release_evidence_missing"
+        return self.release_authorization_registry.reason(
+            agent_id,
+            suite_id=report.suite_id,
+            launch_mode=target_mode.value,
+            expected_agent_version=expected_agent_version,
+            expected_runtime_plan_version=expected_runtime_plan_version,
+        ) or "canary_release_evidence_approved"
 
     @staticmethod
     def _recommended_actions(

@@ -368,6 +368,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         task_runner.runtime_launch_policy,
         lifecycle_enabled=task_runner.runtime_lifecycle.enabled,
         release_registry=task_runner.runtime_canary_release,
+        release_authorization_registry=task_runner.runtime_release_authorizations,
         handler_registry=runtime_handler_registry,
         capability_descriptors=runtime_capability_descriptors,
     )
