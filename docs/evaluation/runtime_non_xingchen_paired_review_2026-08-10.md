@@ -1504,3 +1504,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   recovery, and replay group passed `23` tests. The Lesson Prep empty-section
   regression now proves one human quality approval resumes the same Runtime
   without entering the adaptive plan-proposal gate.
+
+## 85. 2026-08-11 external research node-order contract refresh
+
+- The core Runtime contract sweep found one stale Task API assertion for
+  `RESEARCH_01_ACADEMIC_SEARCH_V1`. The declared plan and durable execution
+  order are `research.intent -> research.fetch -> research.answer ->
+  research.verify`; the assertion still expected the old answer-first order.
+- The test now follows the declared dependency order. The corrected case
+  passed independently; the surrounding 56-test core contract/Task/SSE sweep
+  had `55` passing cases before this assertion refresh. The test's intentionally
+  unconfigured DashScope path remained fail-closed and was not changed.

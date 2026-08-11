@@ -424,9 +424,9 @@ def test_external_research_runtime_owns_research_path(api, app, monkeypatch) -> 
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
     assert [node["node_id"] for node in runtime["nodes"]] == [
-        "research.answer",
-        "research.fetch",
         "research.intent",
+        "research.fetch",
+        "research.answer",
         "research.verify",
     ]
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])
