@@ -147,8 +147,12 @@ class InternalAgentExecutionService:
             if request.options.get("runtime_allow_structured_fallback") is True
             else None
         )
-        if workflow_agent_id == "TEACH_01_LESSON_PREP_V1":
-            runtime_options = request.options.get("lesson_prep_runtime")
+        runtime_option_key = {
+            "TEACH_01_LESSON_PREP_V1": "lesson_prep_runtime",
+            "RESEARCH_02_ACADEMIC_WRITING_V1": "academic_writing_runtime",
+        }.get(workflow_agent_id)
+        if runtime_option_key is not None:
+            runtime_options = request.options.get(runtime_option_key)
             if (
                 isinstance(runtime_options, dict)
                 and self._runtime_replan_iteration(runtime_options) > 0

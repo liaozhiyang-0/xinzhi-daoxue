@@ -1028,3 +1028,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `runtime_events` capture will make future failed samples distinguish Provider
   node errors from structured-output verification failures instead of relying
   on the generic terminal message.
+
+## 56. 2026-08-11 RESEARCH_02 replan fallback preference
+
+- The shared internal Agent execution boundary now applies the existing
+  configured-route-fallback preference to `RESEARCH_02_ACADEMIC_WRITING_V1`.
+  The first attempt keeps the configured primary route; after a bounded Runtime
+  replan, the next attempt asks the model registry for its fallback alias rather
+  than repeating the primary model. No Provider or credential is hardcoded.
+- A focused regression test verifies the serialized `_prefer_route_fallback`
+  option, while the existing Lesson Prep behavior remains covered. A bounded
+  researcher real-local browser run after the change completed through one plan
+  proposal, recorded 40 strictly increasing events, and had zero page/request
+  failures. The redacted report is under
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_writing_real_local_20260811_fallback_fix1/report.json`.
+- This is a resilience improvement, not proof that the 13-sample baseline
+  stability risk has been eliminated. Repeated post-change samples and
+  semantic-quality review are still required before release authorization.

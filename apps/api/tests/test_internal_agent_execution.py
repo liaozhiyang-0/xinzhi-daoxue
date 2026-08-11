@@ -210,6 +210,30 @@ async def test_lesson_runtime_replan_prefers_configured_route_fallback() -> None
     }
 
 
+@pytest.mark.asyncio
+async def test_academic_writing_replan_prefers_route_fallback() -> None:
+    executor, hub = service()
+    runtime_request = request(Intent.ACADEMIC_WRITING).model_copy(
+        update={
+            "options": {
+                "request_id": "request-writing-replan",
+                "runtime_allow_structured_fallback": True,
+                "academic_writing_runtime": {
+                    "execute": True,
+                    "runtime_replan_iteration": 1,
+                },
+            }
+        }
+    )
+
+    await executor.run("RESEARCH_02_ACADEMIC_WRITING_V1", runtime_request)
+
+    assert hub.extra_options == {
+        "_allow_structured_fallback": True,
+        "_prefer_route_fallback": True,
+    }
+
+
 def test_lesson_formatter_fills_empty_title_for_reviewable_draft() -> None:
     answer, data, _, _ = InternalAgentExecutionService._lesson(
         {
