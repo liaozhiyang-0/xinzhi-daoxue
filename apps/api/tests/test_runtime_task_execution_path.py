@@ -198,6 +198,7 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
             "_scenario_catalog_bound": True,
         },
         intent="data_analysis",
+        user_role="teacher",
     )
     payload.update(
         {
@@ -215,16 +216,15 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]
     assert runtime["status"] == "failed"
-    assert [node["node_id"] for node in runtime["nodes"]] == [
+    nodes = {node["node_id"]: node for node in runtime["nodes"]}
+    assert set(nodes) == {
         "analysis.execute",
         "analysis.prepare",
         "analysis.verify",
-    ]
-    assert [node["status"] for node in runtime["nodes"]] == [
-        "succeeded",
-        "succeeded",
-        "partial",
-    ]
+    }
+    assert nodes["analysis.prepare"]["status"] == "succeeded"
+    assert nodes["analysis.execute"]["status"] == "succeeded"
+    assert nodes["analysis.verify"]["status"] == "partial"
     events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
     assert events.status_code == 200
     assert not any(

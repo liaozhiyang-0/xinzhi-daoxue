@@ -433,6 +433,7 @@ def test_research03_is_lifecycle_candidate_and_learning_loop_is_approve_only() -
     assert execute.depends_on == [prepare.node_id]
     assert verify.handler_id == "research.analysis.verify"
     assert verify.depends_on == [execute.node_id]
+    assert service.runtime_plan_version == "research-v2"
     assert service.supports(RESEARCH_AGENT_ID, request) is True
     assert service.supports(
         RESEARCH_AGENT_ID,

@@ -1302,3 +1302,23 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The check is not a release authorization mechanism and does not execute a
   task. It is intended as a repeatable preflight before later full-path
   validation.
+
+## 72. 2026-08-11 RESEARCH_03 Runtime boundary hardening
+
+- `ResearchAnalysisRuntimeService` now declares the stable
+  `runtime_plan_version=research-v2`, so its capability descriptor and
+  readiness/release evidence can bind to an explicit plan identity instead of
+  falling back to `unversioned`/missing-plan behavior.
+- Removed a duplicate RESEARCH_03 execution path in `TaskRunner`: the shared
+  Runtime execution block owns the durable Run, and the compatibility branch
+  now reuses its result or invokes the local internal executor only when the
+  Runtime was not selected. This prevents a failed/canary handoff from
+  replaying the same durable Run.
+- The focused RESEARCH_03 boundary, descriptor, and contract matrix passed
+  `30 tests`; the real TaskRunner plan-only regression passed `1 test` after
+  aligning the fixture with the scenario's authorized teacher role. The
+  readiness API/readiness service group passed `15 tests`; target Mypy, Ruff,
+  `git diff --check`, and the sensitive-file scan passed.
+- This hardens the migration seam and capability identity. It does not promote
+  RESEARCH_03 to default or Canary: authorized paired evidence, independent
+  semantic review, and human release approval remain absent.

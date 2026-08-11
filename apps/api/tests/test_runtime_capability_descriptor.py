@@ -7,6 +7,7 @@ import pytest
 from app.contracts import AgentRequest
 from app.contracts.learning import LearningActionRequest
 from app.services.learning_progress_runtime import LearningProgressRuntimeService
+from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.runtime_capability_descriptor import (
     LEARNING_PROGRESS_ACTIONS,
     TASK_RUNTIME_ACTIONS,
@@ -162,3 +163,15 @@ def test_real_learning_runtime_services_declare_agent_version() -> None:
         "learning-agent-v1",
         "learning-agent-v1",
     ]
+
+
+def test_research_analysis_runtime_declares_stable_plan_version() -> None:
+    service = ResearchAnalysisRuntimeService(cast(Any, object()), enabled=True)
+
+    descriptor = descriptor_from_task_runtime_service(
+        service, agent_version="1.0"
+    )
+
+    assert descriptor.capability_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+    assert descriptor.version == "research-v2"
+    assert descriptor.agent_version == "1.0"

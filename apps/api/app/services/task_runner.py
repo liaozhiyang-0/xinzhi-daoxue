@@ -1126,32 +1126,10 @@ class TaskRunner:
                                 "科研数据分析 V2 本地执行器未注册"
                             )
                         request = self._with_upstream_elapsed(request, runner_started)
-                        if (
-                            runtime_run is not None
-                            and runtime_launch_decision.should_execute
-                        ):
-                            runtime_result = await self.runtime_boundary.execute(
-                                agent_id,
-                                request,
-                                runtime_run,
-                                context=None,
-                                checkpoint_hook=self._checkpoint_runtime_run,
-                                event_hook=self._append_runtime_event,
-                                control_provider=self._runtime_control_provider,
-                                decision_event_hook=(
-                                    self._append_runtime_decision_event
-                                ),
-                                plan_proposal_provider=(
-                                    self._runtime_plan_proposal_provider
-                                    if (
-                                        self.knowledge_base.settings
-                                        .agent_runtime_plan_proposals_enabled
-                                    )
-                                    else None
-                                ),
-                            )
-                        else:
-                            runtime_result = None
+                        # The shared Runtime block above already executed this
+                        # run when launch policy allowed it. Never execute the
+                        # same durable Run a second time in the legacy
+                        # compatibility branch after a failed/canary handoff.
                         if runtime_result is not None:
                             result = runtime_result
                         else:

@@ -41,6 +41,7 @@ class ResearchAnalysisRuntimeService:
 
     agent_id = "RESEARCH_03_DATA_ANALYSIS_V1"
     runtime_option_key = "research_analysis_v2"
+    runtime_plan_version = "research-v2"
     prepare_node_id = "analysis.prepare"
     execute_node_id = "analysis.execute"
     verify_node_id = "analysis.verify"
