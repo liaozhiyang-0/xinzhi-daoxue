@@ -1541,3 +1541,24 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   it is not a production release claim. Docker queue-profile execution,
   crash/restart fault injection, SSE reconnect across process restart, and
   full paired Runtime evaluation remain outstanding.
+
+## 87. 2026-08-11 Worker crash/restart and SSE restart recovery evidence
+
+- Added a Worker fault-injection regression: the first Worker consumes a task
+  and raises a simulated process-crash exception; a second Worker must use
+  the recovery callback after the queue message is gone. The Worker test file
+  now has `3` passing tests covering dispatch, single-owner rejection, and
+  crash-to-recovery handoff.
+- A real local process smoke used one API and two sequential Worker instances.
+  Worker 1 claimed the task and was stopped after `RUNNING`; after the
+  configured 30-second database lease expired, Worker 2 recovered and
+  completed the same task with `23` ordered events. Evidence is recorded in
+  `.local_outputs/runtime_worker_crash_recovery_20260811/report.json`, and
+  cleanup verified no temporary API/Worker process or port remained.
+- Added a cross-lifespan SSE regression proving that a terminal event stream
+  reconnects from `Last-Event-ID=1` after the first API lifespan exits and a
+  second API lifespan starts; the durable event sequence returns only event
+  `2`.
+- These checks establish local crash/recovery and durable SSE replay, but do
+  not replace production Docker crash testing, frontend browser reconnection,
+  or the remaining paired semantic/release gates.

@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
+from uuid import uuid4
 
 from app.api.v1.tasks import event_stream
 from app.contracts import AgentEventType
+from app.main import create_app
 from app.models import TaskModel, TaskStatus
 from app.repositories import (
     AgentRunRepository,
@@ -15,6 +17,7 @@ from app.repositories import (
 from app.runtime import AgentRun, AgentRunPlan, RuntimeNode
 from app.services.event_service import append_task_event
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
+from fastapi.testclient import TestClient
 
 
 def _parse_sse(content: str) -> list[dict[str, object]]:
@@ -122,6 +125,66 @@ def test_terminal_sse_replay_does_not_wait_for_disconnect_probe(api, app) -> Non
         "task.completed",
     ]
     assert [record["id"] for record in reconnect_records] == [2]
+
+
+def test_sse_reconnect_survives_api_lifespan_restart(settings) -> None:
+    """A reconnect cursor must be sufficient after the first API exits."""
+
+    task_id = f"task-sse-restart-{uuid4().hex}"
+    first_app = create_app(settings)
+
+    with TestClient(first_app) as first_client:
+        session = first_client.post(
+            "/api/v1/sessions",
+            json={"user_id": "user-test", "course_id": "CT", "title": "sse"},
+        ).json()
+
+        async def seed() -> None:
+            async with first_app.state.session_factory() as db:
+                db.add(
+                    TaskModel(
+                        id=task_id,
+                        session_id=session["id"],
+                        user_id="user-test",
+                        course_id="CT",
+                        intent="general_qa",
+                        agent_id="GENERAL_QUESTION_V1",
+                        status=TaskStatus.COMPLETED,
+                        input_content={"text": "restart replay"},
+                    )
+                )
+                await db.flush()
+                await append_task_event(
+                    db,
+                    task_id,
+                    AgentEventType.TASK_QUEUED,
+                    agent_id="GENERAL_QUESTION_V1",
+                )
+                await append_task_event(
+                    db,
+                    task_id,
+                    AgentEventType.TASK_COMPLETED,
+                    agent_id="GENERAL_QUESTION_V1",
+                )
+                await db.commit()
+
+        asyncio.run(seed())
+        full_records = _parse_sse(
+            first_client.get(f"/api/v1/tasks/{task_id}/stream").text
+        )
+        assert [record["id"] for record in full_records] == [1, 2]
+
+    second_app = create_app(settings)
+    with TestClient(second_app) as second_client:
+        reconnect_records = _parse_sse(
+            second_client.get(
+                f"/api/v1/tasks/{task_id}/stream",
+                headers={"Last-Event-ID": "1"},
+            ).text
+        )
+
+    assert [record["id"] for record in reconnect_records] == [2]
+    assert reconnect_records[0]["event"] == "task.completed"
 
 
 def test_concurrent_event_appends_keep_unique_contiguous_sequences(

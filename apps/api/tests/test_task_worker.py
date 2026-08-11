@@ -63,3 +63,53 @@ async def test_worker_refuses_a_second_owner() -> None:
 
     with pytest.raises(RuntimeError, match="already owns"):
         await worker.run(stop_event=asyncio.Event())
+
+
+@pytest.mark.asyncio
+async def test_worker_crash_does_not_block_database_recovery_dispatch() -> None:
+    """A consumed message may disappear; the DB recovery scan must retry it."""
+
+    queue = InMemoryTaskQueue()
+    await queue.publish("task-after-crash")
+
+    class ProcessCrash(RuntimeError):
+        pass
+
+    class CrashingRunner:
+        async def recover_pending_tasks(self) -> int:
+            return 0
+
+        def submit(self, task_id: str) -> bool:
+            raise ProcessCrash(task_id)
+
+    crashing_worker = TaskWorker(
+        CrashingRunner(),  # type: ignore[arg-type]
+        queue,
+        block_timeout_seconds=1,
+        recovery_interval_seconds=5,
+    )
+    with pytest.raises(ProcessCrash, match="task-after-crash"):
+        await crashing_worker.run(stop_event=asyncio.Event())
+    assert await queue.receive(timeout_seconds=0.05) is None
+
+    stop_event = asyncio.Event()
+    recovered: list[str] = []
+
+    class RecoveringRunner:
+        async def recover_pending_tasks(self) -> int:
+            recovered.append("task-after-crash")
+            stop_event.set()
+            return 1
+
+        def submit(self, task_id: str) -> bool:
+            return True
+
+    recovering_worker = TaskWorker(
+        RecoveringRunner(),  # type: ignore[arg-type]
+        queue,
+        block_timeout_seconds=1,
+        recovery_interval_seconds=5,
+    )
+    await asyncio.wait_for(recovering_worker.run(stop_event=stop_event), timeout=2)
+
+    assert recovered == ["task-after-crash"]
