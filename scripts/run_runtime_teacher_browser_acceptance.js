@@ -339,6 +339,7 @@ async function waitForLearningRuntimeApproval(
   observations,
   controlPage = page,
   controlSelector = "#runtime-task-approve",
+  { allowApproval = true } = {},
 ) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const projection = await readJson(
@@ -356,6 +357,12 @@ async function waitForLearningRuntimeApproval(
     });
     if (projection.control_scope === "learning_loop" && projection.status === "waiting_approval") {
       const approve = controlPage.locator(controlSelector);
+      if (!allowApproval) {
+        if (await approve.isVisible().catch(() => false)) {
+          throw new Error("student LearningLoop unexpectedly exposed approval control");
+        }
+        return { runId, projection, pendingApproval: true };
+      }
       await approve.waitFor({ state: "visible", timeout: 15_000 });
       if (await approve.isDisabled()) throw new Error("learning Runtime approval control is disabled");
       await approve.click();
@@ -630,6 +637,7 @@ async function collectEvidence(page, taskId) {
         report.approval_observations,
         executionPage || page,
         executionPage ? "#runtime-approve" : "#runtime-task-approve",
+        { allowApproval: identityProfile !== "student" },
       );
       const runtimeStatus = await readJson(
         page,
@@ -641,6 +649,7 @@ async function collectEvidence(page, taskId) {
         status: runtimeStatus.status,
         run_kind: runtimeStatus.run_kind || null,
         state_version: runtimeStatus.state_version || null,
+        pending_approval: learningRuntime.pendingApproval === true,
         node_statuses: runtimeStatus.node_statuses || [],
         ui: {
           answer_visible: await page.locator("#answer-panel").isVisible(),
@@ -671,8 +680,16 @@ async function collectEvidence(page, taskId) {
         }
       }
     }
-    if (scenario.learningAction && report.learning_runtime?.status !== "completed") {
-      throw new Error(`LearningLoop Runtime ended as ${report.learning_runtime?.status || "unknown"}`);
+    if (scenario.learningAction) {
+      const learningStatus = report.learning_runtime?.status;
+      const studentPending = (
+        identityProfile === "student"
+        && learningStatus === "waiting_approval"
+        && report.learning_runtime?.pending_approval === true
+      );
+      if (learningStatus !== "completed" && !studentPending) {
+        throw new Error(`LearningLoop Runtime ended as ${learningStatus || "unknown"}`);
+      }
     }
     report.status = "completed";
   } catch (error) {

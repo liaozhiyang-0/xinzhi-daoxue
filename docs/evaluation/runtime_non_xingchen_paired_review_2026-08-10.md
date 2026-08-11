@@ -1400,3 +1400,35 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   variable roles allowed the quality gate to proceed; the gate was not
   weakened. No human approval, independent semantic sidecar review, real
   Provider result, or release authorization was performed.
+
+## 79. 2026-08-11 authenticated frontend Runtime acceptance
+
+- The in-app Browser connection was unavailable in this environment because
+  both connection attempts returned `Transport closed`. The repository's
+  bounded Edge/Playwright acceptance harness was therefore run with the
+  bundled Node dependency, one isolated API process per case, isolated SQLite,
+  Xingchen disabled, and the mock Provider explicitly labeled as `mock`.
+- The authenticated administrator Lesson Prep path completed after one
+  visible and enabled approval action. The report is under
+  `.local_outputs/frontend_lesson_prep_acceptance_20260811/report.json` and
+  records 27 strictly ordered events, the three lesson Runtime nodes and the
+  `subagent.execute` child, with zero page errors and zero failed requests.
+- The authenticated administrator LearningLoop path completed both the
+  original solver task and the subsequent teaching interaction. The report is
+  under `.local_outputs/frontend_admin_learning_loop_acceptance_20260811/report.json`.
+  It records 39 strictly ordered events, four successful teaching Runtime
+  nodes, an accepted execution-page approval, and visible answer, teaching-loop,
+  learning-progress, and Runtime-control panels.
+- The authenticated student LearningLoop path now treats a pending
+  cross-role approval as an expected non-terminal UI state rather than trying
+  to approve it as the student. The report is under
+  `.local_outputs/frontend_student_learning_loop_acceptance_20260811_retry/report.json`:
+  the student task completed, the learning action was accepted, the learning
+  Runtime remained `waiting_approval`, the approval control stayed hidden, and
+  the answer/teaching/progress panels were visible. The student's 403 response
+  from the execution-debug endpoint is an expected authorization boundary;
+  page errors and failed requests were both zero.
+- These are authenticated application-wiring and UI-state records, not real
+  Provider, semantic-equivalence, or release evidence. The harness change
+  preserves the distinction between a completed task and a LearningLoop
+  action awaiting an authorized reviewer.
