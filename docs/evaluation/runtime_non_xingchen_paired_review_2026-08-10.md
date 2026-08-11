@@ -1332,3 +1332,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The complete bounded RESEARCH_03 contract group now passes `53 tests`, with
   Ruff passing for the updated test file. This is provider-free contract and
   local-analysis evidence; it is not paired release evidence.
+
+## 74. 2026-08-11 RESEARCH_03 Task boundary smoke
+
+- Added an explicit TaskRunner regression using a synthetic, non-sensitive
+  typed analysis result. The request was accepted asynchronously, completed
+  through `analysis.prepare`, `analysis.execute`, and `analysis.verify`, and
+  returned through the existing Task/debug/event boundaries.
+- The focused RESEARCH_03 Task path passed `2 tests` (plan-only fail-closed and
+  execute/completed) with exactly one internal execution call and no legacy
+  `model_generation` event. This proves application wiring and Runtime
+  ownership only; it does not prove statistical semantic equivalence or
+  release authorization.

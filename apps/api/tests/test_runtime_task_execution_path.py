@@ -7,6 +7,7 @@ from app.contracts import (
     AgentExecutionPlan,
     AgentRequest,
     AgentResult,
+    AgentResultStatus,
     ExecutionTimeBudget,
     ExternalEvidenceItem,
     ExternalRetrievalResult,
@@ -14,6 +15,10 @@ from app.contracts import (
     ExternalSourceType,
 )
 from app.contracts.external_retrieval import ExternalEvidenceSupport
+from app.contracts.research_analysis import (
+    ResearchAnalysisResult,
+    ResearchDataQualityReport,
+)
 from app.runtime import (
     RuntimeCanaryEvidence,
     RuntimeCanaryReport,
@@ -225,6 +230,98 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
     assert nodes["analysis.prepare"]["status"] == "succeeded"
     assert nodes["analysis.execute"]["status"] == "succeeded"
     assert nodes["analysis.verify"]["status"] == "partial"
+    events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
+    assert events.status_code == 200
+    assert not any(
+        event["event_data"].get("stage_id") == "model_generation"
+        for event in events.json()
+    )
+
+
+def test_research_analysis_runtime_completes_through_task_boundary(
+    api, app, monkeypatch
+) -> None:
+    """Exercise the explicit RESEARCH_03 Runtime path through Task/SSE seams."""
+
+    app.state.task_runner.runtime_lifecycle.enabled = True
+    assert app.state.task_runner.research_analysis_runtime is not None
+    app.state.task_runner.research_analysis_runtime.enabled = True
+    assert app.state.task_runner.internal_agents is not None
+    calls = 0
+
+    async def fake_internal_run(
+        agent_id: str,
+        _request: object,
+        _context: object = None,
+    ) -> AgentResult:
+        nonlocal calls
+        calls += 1
+        payload = ResearchAnalysisResult(
+            status="executed",
+            data_quality=ResearchDataQualityReport(status="passed"),
+            design_assessment="synthetic task-boundary fixture",
+        ).model_dump(mode="json")
+        return AgentResult(
+            status=AgentResultStatus.COMPLETED,
+            agent_id=agent_id,
+            provider="local_analysis_v2",
+            answer="Synthetic analysis completed.",
+            structured_result={"analysis_v2": True, "business_data": payload},
+            business_data=payload,
+        )
+
+    monkeypatch.setattr(
+        app.state.task_runner.internal_agents,
+        "run",
+        fake_internal_run,
+    )
+    session = api.create_session()
+    question = "Compare two synthetic groups and report the estimated effect."
+    payload = api.task_payload(
+        session["id"],
+        options={
+            "research_analysis_v2": {
+                "execute": True,
+                "execution_mode": "local",
+                "request": {
+                    "research_question": question,
+                    "analysis_goal": "estimate_effect",
+                    "design": "experimental_comparison",
+                    "estimand": "group A minus group B mean outcome",
+                    "exploratory": True,
+                },
+            },
+            "scenario_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+            "_scenario_catalog_bound": True,
+        },
+        intent="data_analysis",
+        user_role="teacher",
+    )
+    payload.update(
+        {
+            "scene": "dispatch",
+            "scenario_id": "research_data_workbench_v1",
+            "canonical_input": {"text": question},
+        }
+    )
+
+    response = api.client.post("/api/v1/tasks", json=payload)
+    assert response.status_code == 202, response.text
+    completed = api.wait_for_task(response.json()["id"], timeout=15)
+
+    assert completed["status"] == "completed"
+    assert calls == 1
+    debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
+    assert debug.status_code == 200
+    runtime = debug.json()["runtime"]
+    assert runtime["status"] == "completed"
+    nodes = {node["node_id"]: node for node in runtime["nodes"]}
+    assert set(nodes) == {
+        "analysis.prepare",
+        "analysis.execute",
+        "analysis.verify",
+    }
+    assert all(node["status"] == "succeeded" for node in nodes.values())
     events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
     assert events.status_code == 200
     assert not any(
