@@ -1045,3 +1045,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - This is a resilience improvement, not proof that the 13-sample baseline
   stability risk has been eliminated. Repeated post-change samples and
   semantic-quality review are still required before release authorization.
+
+## 57. 2026-08-11 RESEARCH_02 post-fix bounded recheck
+
+- Four valid researcher/RESEARCH_02 `real_local` samples were collected after
+  the replan fallback preference change and aggregated in the diagnostic-only
+  report `.local_outputs/runtime_researcher_academic_writing_stability_postfix_20260811.json`.
+  All 4 completed, for a post-change observed success rate of `1.0`; proposal
+  counts were 0 for 1 sample and 1 for 3 samples.
+- The four reports recorded 27 or 40 strictly increasing events, with zero
+  page errors and zero request failures. The three replans exposed the
+  expected `academic_writing_verification_requires_replan` approval reason;
+  no failed node or Provider error was observed in this bounded sample.
+- Compared with the earlier 13-sample baseline (8/13 completed), this is
+  encouraging resilience evidence for the fallback change, but the sample is
+  small and not a semantic-quality or release decision. More repeated runs,
+  result-content review, and the full paired evaluation remain required.
