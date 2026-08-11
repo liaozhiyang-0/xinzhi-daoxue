@@ -1942,3 +1942,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   collection. It does not change the current LearningLoop release gate: no
   authorized paired suite, semantic sidecar, or human release decision has
   been created.
+
+## 111. 2026-08-11 Lesson Prep approval recovery recheck
+
+- A fresh bounded authenticated browser run used one API process, a temporary
+  SQLite database, the development mock Provider, and the current committed
+  code. The redacted report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_lesson_prep_20260811_quality_gate_recheck/`.
+- The task routed to `TEACH_01_LESSON_PREP_V1`, entered
+  `waiting_approval`, and completed after exactly one accepted approval. Both
+  approval observations reported `plan_proposal_id=null`; no repeated proposal
+  was observed after recovery.
+- The run observed `lesson.observe`, `lesson.execute`, and `lesson.verify`,
+  produced `27` strictly increasing task events, and had zero page errors or
+  failed HTTP requests. This is current mock development/browser evidence; it
+  is not an authorized paired evaluation, semantic quality decision, or release
+  authorization.
