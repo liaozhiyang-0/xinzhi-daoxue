@@ -2260,3 +2260,33 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   prerequisites, not application acceptance results. The formal frontend
   student/teacher/researcher click-through remains pending until the extension
   and native host are restored.
+
+## 133. 2026-08-11 real Edge frontend acceptance after extension installation
+
+- The installed Edge extension and native host passed diagnostics. A single
+  development API/Worker instance was started on `127.0.0.1:8031`; all browser
+  interactions below used the formal frontend in real Microsoft Edge.
+- Student path: the empty-input validation displayed `请输入题目或上传材料`;
+  a circuit question then streamed visible recognition, planning, execution,
+  and Runtime status updates and rendered a completed answer of `1 A`. The UI
+  correctly marked this result as a fallback with `accepted_with_warnings`, so
+  it is not treated as high-confidence semantic evidence.
+- Teacher/admin path: the teacher workspace opened successfully as a guest;
+  a synthetic local administrator account was used for the authorized approval
+  test. Lesson Prep visibly entered `等待人工审批`; submitting `提交审批`
+  displayed the resume toast and the lesson plan subsequently rendered with
+  Runtime status `已完成`. No repeated proposal was visible in the UI. The
+  duplicate-proposal assertion remains covered by the backend E2E report in
+  section 127, rather than inferred from the browser alone.
+- Researcher path: a synthetic local researcher account created through the
+  Admin UI opened the research workspace. `科研前沿检索` completed with a
+  six-paper evidence brief, visible evidence limitations, source identifiers,
+  and `已完成 · 使用后备路径`. After reload, the session remained in the
+  session list and clicking it restored the result and source panel; the page
+  does not auto-select the last session on reload.
+- No application console errors were observed on the student or teacher tabs.
+  The admin/researcher tabs contained only `Could not establish connection.
+  Receiving end does not exist`, which is emitted by the browser extension
+  integration and was not accompanied by a page failure. Synthetic account
+  credentials and test data are not committed. The single API/Worker instance
+  is stopped after this acceptance pass.
