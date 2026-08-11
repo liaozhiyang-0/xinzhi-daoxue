@@ -71,9 +71,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260810-role-aware-scenarios-v1" in page.text
-    assert "workspace.js?v=20260810-role-aware-scenarios-v1" in page.text
-    assert "ui-core.js?v=20260810-role-aware-scenarios-v1" in page.text
+    assert "20260811-workspace-answer-reset-v1" in page.text
+    assert "workspace.js?v=20260811-workspace-answer-reset-v1" in page.text
+    assert "ui-core.js?v=20260811-workspace-answer-reset-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text

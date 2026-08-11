@@ -35,7 +35,7 @@ SECRET_NAMES = (
 )
 COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
-FRONTEND_BUILD_ID = "20260810-role-aware-scenarios-v1"
+FRONTEND_BUILD_ID = "20260811-workspace-answer-reset-v1"
 RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
     "ACADEMIC_PROBLEM_SOLVER": "default",
     "GENERAL_QUESTION_V1": "default",

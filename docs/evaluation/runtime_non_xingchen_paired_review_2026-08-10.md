@@ -2317,3 +2317,26 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   successful document-page request. Persisted tasks created before this fix
   can retain their old empty `evidence_view`; they must be rerun to regenerate
   presentation data.
+
+## 135. 2026-08-11 real Edge multi-domain pass and stale-answer fix
+
+- Student circuit-analysis path: a fresh Workspace task for `10V` in series
+  with `5Ω` completed with a visible `2 A` result, KVL derivation, unit and
+  power checks, Runtime status `已完成`, and the explicit warning that the
+  conclusion had not received full deterministic verification. The persisted
+  task API also reported `completed`, `provider=local_graph`, and one real
+  Spark model call; it was not treated as a fully verified answer.
+- A second task exposed a frontend state issue: while a new task was running,
+  the previous circuit answer remained visible. The cause was
+  `markAnswerPending()` changing only status text while leaving answer,
+  notices, business view, and evidence DOM intact. It now clears those regions
+  before the new task stream begins, and the static resource build ID was
+  advanced to invalidate cached Workspace scripts.
+- Real Edge revalidation after the cache-busting change confirmed that a new
+  task showed `正在组织回答` without the previous circuit or capacitor answer.
+  The completed task then restored the expected three cited course materials.
+- Teacher workspace path: `/teacher` opened in guest mode, CT filtering and
+  `查询指标` completed successfully, and the page rendered course material
+  quality, PDF/OCR review, CT/AE error-template review, and course-asset
+  readiness panels. No student personal data was shown. Protected teacher
+  approval/resume execution remains the next browser pass.

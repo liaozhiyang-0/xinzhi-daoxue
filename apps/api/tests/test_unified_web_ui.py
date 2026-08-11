@@ -107,3 +107,14 @@ def test_demo_assets_and_preflight_script_exist() -> None:
     assert '"start"' in startup
     assert "xzd.ps1" in startup
     assert "team_launcher.py" in (root / "xzd.ps1").read_text(encoding="utf-8")
+
+
+def test_workspace_clears_previous_answer_while_next_task_runs() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'renderMarkdown($("#answer-text"), "");' in script
+    assert '$("#answer-notices").replaceChildren();' in script
+    assert "renderEvidence([], {});" in script

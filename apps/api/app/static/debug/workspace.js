@@ -1960,6 +1960,11 @@ function setBusy(busy) {
 }
 
 function markAnswerPending() {
+  state.lastAnswer = "";
+  renderMarkdown($("#answer-text"), "");
+  $("#answer-notices").replaceChildren();
+  renderBusinessView({}, "", {});
+  renderEvidence([], {});
   $("#context-task-title").textContent = "正在处理当前任务";
   $("#answer-panel").hidden = false;
   $("#answer-status").textContent = "\u6b63\u5728\u6267\u884c";
