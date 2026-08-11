@@ -2179,3 +2179,16 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - Launch policy, Task-to-Runtime handoff, and cross-entry readiness regression
   coverage passed `42` tests. No service was started and no release gate was
   weakened.
+
+## 127. 2026-08-11 Lesson Prep single-case post-fix E2E
+
+- Re-ran the isolated `lesson_prep_runtime_handoff` Legacy/Runtime pair on a
+  single local API instance after the empty-quality-section fix.
+- Both runs completed: `2/2` completed, `0` timeouts, `0` Agent mismatches,
+  and `0` event-order failures. The Runtime run captured exactly one quality
+  approval and finished with `runtime_status=completed`.
+- The Runtime result reported `plan_proposal_count=0` and no
+  `runtime_plan_proposal` event. This is the targeted evidence that the
+  approval no longer causes a duplicate proposal loop for this case.
+- The redacted report is retained under the ignored `.local_outputs/` path;
+  the API instance was stopped immediately after the run.
