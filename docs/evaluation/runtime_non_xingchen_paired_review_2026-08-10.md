@@ -2098,3 +2098,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The change is provider-free and does not widen launch modes. Readiness still
   reports `canary_release_eligible=false` without the complete structural,
   semantic, and authorization chain.
+
+## 121. 2026-08-11 LearningLoop semantic sidecar binding tool
+
+- Added `scripts/collect_learning_runtime_semantic_sidecar.py`. It accepts a
+  redacted LearningLoop pair package, private operator inputs/outputs, and a
+  separately supplied judgement record. It validates case coverage, capability
+  identity, review timezone, redaction status, and the exact judgement schema.
+- The emitted `learning_runtime_semantic_sidecar.v1` stores only input/output
+  SHA-256 values and semantic judgement metadata; supplied student content and
+  action payloads are not serialized. The tool does not call a Provider.
+- This adapter intentionally emits
+  `learning_runtime_development_paired_evidence_only` and
+  `release_ready=false`, even for a human `pass` judgement. A future
+  authorized structural suite must still use the existing generic release
+  intake and preflight before any canary/default decision.
+- Covered by
+  `apps/api/tests/test_learning_runtime_semantic_sidecar.py` (4 passed).
