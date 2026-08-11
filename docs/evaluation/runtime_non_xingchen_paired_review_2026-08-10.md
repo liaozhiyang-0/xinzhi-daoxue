@@ -1974,3 +1974,32 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   stronger paired development evidence for the no-reproposal recovery path, but
   it remains Mock-provider evidence and does not satisfy semantic review or
   release authorization.
+
+## 113. 2026-08-11 Knowledge low-evidence pair boundary
+
+- A single-process pair for `knowledge_capacitor_voltage` completed the Legacy
+  run but the Runtime run ended in `failed` after `knowledge.verify` returned
+  `knowledge_evidence_insufficient`. The report is under
+  `.local_outputs/runtime_authorized_dev_e2e_20260811_knowledge_pair_followup/`.
+- Both traces had strictly increasing events and no Agent mismatch. The Runtime
+  execution itself produced a retrieval-only artifact and a partial verification
+  observation with zero course evidence; it did not create a plan proposal or
+  hide the insufficiency. Legacy currently presents the same degraded result as
+  a completed task, so this is an explicit Legacy/Runtime semantic status
+  difference that remains open for product policy review.
+- This failure is retained as fail-closed evidence, not counted as a Runtime
+  success and not fixed by weakening the verifier.
+
+## 114. 2026-08-11 Academic Search authorized development pair recheck
+
+- A single API process ran one Legacy/Runtime pair for
+  `research_reproducible_evals`. Both runs completed with zero timeouts, Agent
+  mismatches, and event-order failures. The redacted report is under
+  `.local_outputs/runtime_authorized_dev_e2e_20260811_academic_search_pair_followup/`.
+- The Runtime trace used four external-research nodes, retained `10` durable
+  checkpoints, and produced `25` strictly increasing events. It recorded an
+  `external_retrieval.failed` event for the unavailable development retrieval
+  backend, then completed through the declared degraded path with no unresolved
+  Runtime failure codes.
+- This is Mock/local development evidence for `RESEARCH_01_ACADEMIC_SEARCH_V1`;
+  it does not authorize a real Provider, semantic release, or default launch.
