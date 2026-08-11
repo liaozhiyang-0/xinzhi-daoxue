@@ -2041,3 +2041,24 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The packager is evidence governance only. It does not mutate launch modes,
   register authorization, or turn development Mock evidence into canary or
   default-release evidence.
+
+## 117. 2026-08-11 LearningProgress paired recheck
+
+- A fresh serialized single-process run used the same synthetic source Task
+  database to execute `learning_progress_manual_review` through Runtime and
+  then Legacy. Both actions completed with matching routes and strictly
+  increasing events; no API/Worker processes overlapped.
+- The Runtime run used the `learning_progress` Runtime, passed all four nodes
+  (`observe`, `apply`, `verify`, `approval`), transitioned
+  `waiting_approval -> completed` after one approval, and retained `10`
+  checkpoints across `55` ordered task events. Legacy completed the same action
+  without a Runtime run.
+- The redacted pair reports are under
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_runtime_progress_pair_fresh/`
+  and
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_legacy_progress_pair_fresh/`.
+  The structural package is
+  `.local_outputs/learning_runtime_authorized_dev_e2e_20260811_learning_progress_pair_package/learning_runtime_paired_evidence.json`.
+- This confirms the second LearningLoop adapter's development wiring and
+  approval recovery. It remains Mock-provider evidence and does not clear the
+  semantic sidecar or human release-decision gates.
