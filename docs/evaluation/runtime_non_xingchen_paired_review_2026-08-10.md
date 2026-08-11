@@ -1048,19 +1048,36 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 
 ## 57. 2026-08-11 RESEARCH_02 post-fix bounded recheck
 
-- Four valid researcher/RESEARCH_02 `real_local` samples were collected after
+- Six valid researcher/RESEARCH_02 `real_local` samples were collected after
   the replan fallback preference change and aggregated in the diagnostic-only
   report `.local_outputs/runtime_researcher_academic_writing_stability_postfix_20260811.json`.
-  All 4 completed, for a post-change observed success rate of `1.0`; proposal
-  counts were 0 for 1 sample and 1 for 3 samples.
-- The four reports recorded 27 or 40 strictly increasing events, with zero
-  page errors and zero request failures. The three replans exposed the
+  All 6 completed, for a post-change observed success rate of `1.0`; proposal
+  counts were 0 for 1 sample and 1 for 5 samples.
+- The six reports recorded 27 or 40 strictly increasing events, with zero
+  page errors and zero request failures. The five replans exposed the
   expected `academic_writing_verification_requires_replan` approval reason;
   no failed node or Provider error was observed in this bounded sample.
 - Compared with the earlier 13-sample baseline (8/13 completed), this is
   encouraging resilience evidence for the fallback change, but the sample is
   small and not a semantic-quality or release decision. More repeated runs,
   result-content review, and the full paired evaluation remain required.
+
+## 59. 2026-08-11 RESEARCH_02 semantic release boundary
+
+- Provider-free release preflight was run against the existing redacted
+  RESEARCH_02 structural suite and its semantic sidecar, with explicit
+  `agent_version=academic-writing-v1` and
+  `runtime_plan_version=academic-writing-v1`. Structural eligibility passed,
+  but semantic eligibility and release eligibility remained false with the
+  blocking reason `semantic_judge_not_independent`.
+- The review packet shows that the Runtime answer introduced concrete claims
+  about teaching-method score improvement and student-satisfaction
+  significance that were not present in the redacted input. The current
+  sidecar correctly records this as preliminary model review with
+  `decision=needs_review`; it is not an independent human approval.
+- This is a semantic-quality finding, not a reason to weaken the structural
+  contract or auto-promote the Agent. Human or hybrid review of the redacted
+  paired output is still required before any canary/default decision.
 
 ## 58. 2026-08-11 browser acceptance single-instance guard
 
