@@ -1288,3 +1288,17 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   Prep, Assignment Review, Academic Writing, External Research, and the
   wildcard Goal Runtime. LearningLoop remains a separate request/result
   boundary and is exposed through its dedicated readiness projection.
+
+## 71. 2026-08-11 reproducible readiness projection check
+
+- Added `scripts/check_runtime_readiness_projection.py`, a provider-free,
+  read-only check for the Task Agent and LearningLoop readiness endpoints. It
+  verifies the three evidence-state booleans, checks that Task capability
+  projections agree with their Agent projections, and confirms that no
+  Provider execution signal is present.
+- Added four focused unit tests covering the cross-entry contract, mismatched
+  evidence state, Provider execution rejection, and the two-endpoint fetch
+  path. The focused test file passed `4 tests` in `9.50s`; Ruff also passed.
+- The check is not a release authorization mechanism and does not execute a
+  task. It is intended as a repeatable preflight before later full-path
+  validation.
