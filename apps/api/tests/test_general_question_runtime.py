@@ -9,6 +9,8 @@ from app.contracts import (
     AgentResult,
     AgentResultStatus,
     Intent,
+    KnowledgeCourseId,
+    KnowledgeHit,
     RetrievalResult,
 )
 from app.runtime import (
@@ -48,15 +50,36 @@ class FakeInternalAgents:
 
 
 class FakeRetrieval:
-    def __init__(self) -> None:
+    def __init__(self, *, with_hit: bool = False) -> None:
         self.calls = 0
+        self.with_hit = with_hit
 
     def search(self, **kwargs: object) -> RetrievalResult:
         self.calls += 1
+        hits = (
+            [
+                KnowledgeHit(
+                    evidence_id="S1",
+                    course_id=KnowledgeCourseId.CIRCUIT_THEORY,
+                    course_name="电路理论",
+                    chapter="第七章",
+                    document_path="CT/chapter-7.md",
+                    title="电容电压连续性",
+                    content="有限电流条件下，电容电压保持连续。",
+                    content_type="concept",
+                    score=0.9,
+                    source_ref="kb://CT/chapter-7.md#chunk-1",
+                )
+            ]
+            if self.with_hit
+            else []
+        )
         return RetrievalResult(
             query=str(kwargs.get("query_text", "")),
             normalized_query=str(kwargs.get("query_text", "")),
             course_ids=[str(kwargs.get("course_id", "UNKNOWN"))],
+            hits=hits,
+            confidence=0.9 if hits else None,
             latency_ms=3,
             retrieval_trace_id="trace-general-runtime",
             index_version="index-test-v1",
@@ -154,6 +177,32 @@ def test_general_runtime_plan_exposes_typed_subagent_action_boundary() -> None:
     assert nodes[1].target_id == "GENERAL_QUESTION_V1"
     assert nodes[1].depends_on == ["general.observe"]
     assert nodes[2].depends_on == ["general.execute"]
+
+
+def test_general_runtime_retrieval_follows_execution_plan_by_default() -> None:
+    service = GeneralQuestionRuntimeService(
+        FakeInternalAgents([make_result()]),  # type: ignore[arg-type]
+        enabled=True,
+        rag_retrieval=FakeRetrieval(),  # type: ignore[arg-type]
+        retrieval_context=RetrievalContextService(2_000),
+    )
+    request = make_request().model_copy(
+        update={
+            "options": {
+                "general_question_runtime": {"execute": True},
+                "_execution_plan": {"use_rag": True},
+            }
+        }
+    )
+
+    nodes = service.build_plan(request).nodes
+
+    assert [node.node_id for node in nodes] == [
+        "general.observe",
+        "general.retrieve",
+        "general.execute",
+        "general.verify",
+    ]
 
 
 def test_general_runtime_matches_versioned_offline_evaluation_case() -> None:
@@ -285,6 +334,39 @@ def test_general_runtime_can_execute_explicit_retrieval_node() -> None:
     )
     assert result.evidence_status == "insufficient"
     assert result.metrics.retrieval_calls == 1
+
+
+def test_general_runtime_persists_retrieved_hits_for_result_presentation() -> None:
+    fake = FakeInternalAgents([make_result()])
+    retrieval = FakeRetrieval(with_hit=True)
+    service = GeneralQuestionRuntimeService(
+        fake,  # type: ignore[arg-type]
+        enabled=True,
+        rag_retrieval=retrieval,  # type: ignore[arg-type]
+        retrieval_context=RetrievalContextService(2_000),
+    )
+    request = make_request().model_copy(
+        update={
+            "options": {
+                "general_question_runtime": {
+                    "execute": True,
+                    "retrieve": True,
+                }
+            }
+        }
+    )
+    run = AgentRun(
+        run_id="run-general-presentation",
+        task_id=request.task_id,
+        goal="answer with durable evidence",
+        plan=service.build_plan(request),
+    )
+
+    result = asyncio.run(service.run(request, run))
+
+    assert result.structured_result["knowledge"]["hits"][0]["evidence_id"] == "S1"
+    assert fake.last_request is not None
+    assert fake.last_request.options["runtime_retrieved_knowledge_hits"]
 
 
 def test_general_runtime_retrieval_path_emits_ordered_events_and_checkpoints() -> None:

@@ -5,7 +5,12 @@ import inspect
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from app.contracts import AgentRequest, AgentResult, AgentResultStatus
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentResultStatus,
+    KnowledgeHit,
+)
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -251,9 +256,11 @@ class GeneralQuestionRuntimeService:
     @classmethod
     def _retrieval_requested(cls, request: AgentRequest) -> bool:
         runtime_options = request.options.get(cls.runtime_option_key)
-        return (
-            isinstance(runtime_options, dict)
-            and runtime_options.get("retrieve", False) is True
+        if isinstance(runtime_options, Mapping) and "retrieve" in runtime_options:
+            return runtime_options.get("retrieve") is True
+        execution_plan = request.options.get("_execution_plan")
+        return isinstance(execution_plan, Mapping) and bool(
+            execution_plan.get("use_rag", False)
         )
 
     def _validate_retrieval_available(self) -> None:
@@ -381,6 +388,47 @@ class GeneralQuestionRuntimeService:
             }
         )
 
+    def _apply_retrieval_presentation(
+        self, result: AgentResult, request: AgentRequest
+    ) -> AgentResult:
+        """Persist typed-Runtime hits so the task UI can render evidence cards.
+
+        The frozen solver keeps its existing provider contract. Typed business
+        runtimes, however, need to carry the bounded local hits across approval
+        and checkpoint recovery because the presentation layer cannot inspect a
+        live retrieval service after the run has completed.
+        """
+
+        if not self.use_typed_subagent:
+            return result
+        raw_hits = request.options.get("runtime_retrieved_knowledge_hits", [])
+        if not isinstance(raw_hits, list):
+            return result
+        hits: list[dict[str, Any]] = []
+        for raw_hit in raw_hits[:20]:
+            if not isinstance(raw_hit, Mapping):
+                continue
+            try:
+                hit = KnowledgeHit.model_validate(raw_hit)
+            except ValueError:
+                continue
+            hits.append(hit.model_dump(mode="json"))
+        if not hits:
+            return result
+        structured = dict(result.structured_result)
+        knowledge = structured.get("knowledge", {})
+        knowledge = dict(knowledge) if isinstance(knowledge, Mapping) else {}
+        knowledge["hits"] = hits
+        for option_key, knowledge_key in (
+            ("runtime_retrieval_trace_id", "retrieval_trace_id"),
+            ("runtime_retrieval_index_version", "index_version"),
+        ):
+            value = request.options.get(option_key)
+            if value:
+                knowledge[knowledge_key] = str(value)
+        structured["knowledge"] = knowledge
+        return result.model_copy(update={"structured_result": structured})
+
     async def run(
         self,
         request: AgentRequest,
@@ -490,6 +538,10 @@ class GeneralQuestionRuntimeService:
                 options["runtime_retrieval_evidence_ids"] = [
                     hit.evidence_id for hit in packet.evidence if hit.evidence_id
                 ]
+                options["runtime_retrieved_knowledge_hits"] = [
+                    hit.model_dump(mode="json") for hit in packet.evidence
+                ]
+                options["runtime_retrieval_index_version"] = packet.index_version
                 retrieved_context_holder["packet"] = packet
                 request_for_attempt = request_for_attempt.model_copy(
                     update={"options": options}
@@ -907,6 +959,7 @@ class GeneralQuestionRuntimeService:
                 result_holder["result"] = result
         if result is None:
             raise RuntimeNodeError(f"{self.runtime_name}_result_missing")
+        result = self._apply_retrieval_presentation(result, request_for_attempt)
         if (
             run.status.value != "completed"
             and result.status != AgentResultStatus.FAILED

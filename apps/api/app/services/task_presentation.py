@@ -176,6 +176,9 @@ def build_task_views(
     elif result.evidence_status == "partial":
         source_summary = f"补充资料 {evidence_count} 条"
         evidence_message = "当前证据仅覆盖部分回答内容"
+    elif evidence_count:
+        source_summary = f"已检索 {evidence_count} 条课程资料"
+        evidence_message = "资料已进入任务上下文；请在右侧核对具体依据"
     elif rag_mode == RAGInteractionMode.NO_RAG:
         source_summary = "未使用外部材料"
         evidence_message = "本任务未调用课程知识库"

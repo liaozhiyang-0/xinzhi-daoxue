@@ -2396,3 +2396,29 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   passed`), Ruff, JavaScript syntax check, and `git diff --check`. The full
   multi-domain frontend audit remains in progress; the protected research-data
   path remains excluded.
+
+## 138. 2026-08-12 real Edge Lesson Prep retrieval-to-evidence regression fix
+
+- A real authenticated Edge Teacher task reproduced the reported evidence
+  presentation gap: the TEACH_01 registry enabled local RAG, but the completed
+  lesson showed `未使用课程资料` and no evidence cards after approval.
+- Root cause was in the Runtime handoff rather than the course index. The
+  default Runtime request carried `execute` but not an explicit `retrieve`
+  flag, so the typed business Runtime did not create its retrieval node from
+  the immutable execution plan. The typed sub-agent also received no local
+  retrieved context, and the bounded hits were not persisted into the final
+  `AgentResult` for task presentation or checkpoint recovery.
+- The fix makes the general typed Runtime honor `_execution_plan.use_rag`
+  unless an explicit per-runtime `retrieve` value is present; it injects the
+  bounded local context into the internal-agent input; and it stores validated
+  retrieval hits in `structured_result.knowledge.hits`, including trace and
+  index metadata. The frozen solver adapter remains unchanged.
+- Task presentation now distinguishes `已检索 N 条课程资料` from
+  `未使用课程资料` when cards exist but the answer has no explicit citation
+  IDs. This avoids claiming unsupported direct citation while making the
+  available evidence visible for teacher review.
+- Real Edge revalidation completed the authenticated teacher flow: new lesson
+  task, `等待人工审批`, `提交审批`, checkpoint resume, terminal completion,
+  five course evidence cards (S1-S5), and `打开资料` source dialog with the
+  read-only course excerpt. Targeted Runtime and presentation regression tests
+  pass (`27 passed`); the full frontend multi-domain audit remains in progress.
