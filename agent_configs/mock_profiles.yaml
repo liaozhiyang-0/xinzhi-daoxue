@@ -34,11 +34,10 @@ profiles:
     status: success
     answer_text: 开发态学术写作Mock仅提供结构，不生成虚构引用。
     business_data:
-      outline: [研究问题, 方法, 结果, 讨论]
-      draft: ""
-      revision_notes: [补充可核验来源后再撰写]
-      citation_checks: []
-      unsupported_claims: [所有未提供来源的事实性陈述]
+      revised_text: 实验结果表明，该滤波器在给定条件下表现出良好的性能。
+      revision_notes: [将绝对化表述改为有条件的学术表述]
+      citation_check: 需要人工核验引用与事实
+      unsupported_claims: []
 
   research_data_analysis_v1:
     status: success

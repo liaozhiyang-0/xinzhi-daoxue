@@ -133,6 +133,32 @@ def test_uncertain_citation_waits_for_approval_and_recovery_reuses_checkpoint() 
     assert run.nodes["writing.verify"].status.value == RuntimeNodeStatus.SUCCEEDED.value
 
 
+def test_citation_quality_gate_does_not_create_a_replan_proposal() -> None:
+    fake = FakeWritingAgents(
+        [make_result(citation_check="需要人工核验引用与事实")]
+    )
+    service = AcademicWritingRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
+    request = make_request()
+    run = make_run(service, request)
+
+    def unexpected_proposal(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("citation approval must not create a plan proposal")
+
+    with pytest.raises(RuntimeRunSuspended):
+        asyncio.run(
+            service.run(
+                request,
+                run,
+                plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
+            )
+        )
+
+    assert run.status == RuntimeRunStatus.WAITING_APPROVAL
+    assert run.last_decision is not None
+    assert run.last_decision.approval_scope == service.approval_scope
+    assert fake.calls == 1
+
+
 def test_unsupported_claims_wait_for_approval_even_when_citation_check_passes() -> None:
     fake = FakeWritingAgents(
         [make_result(citation_check="passed", unsupported_claims=["claim"])]

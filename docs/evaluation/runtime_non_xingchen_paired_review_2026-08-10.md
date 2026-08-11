@@ -1642,3 +1642,43 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   runtime contract tests passed `3` tests. Compose parsing and whitespace
   validation also passed. This makes the image choice configurable but does
   not claim that a full image build completed in the current network.
+
+## 93. 2026-08-11 Academic Writing approval-loop closure
+
+- A fresh authenticated browser run found a real development-path defect:
+  the Academic Writing Mock still emitted the older `draft`/
+  `citation_checks` shape. The Runtime therefore classified the result as
+  structurally incomplete, proposed two replacement plans, and failed closed
+  after the bounded replan budget. This was an application contract defect,
+  not a browser or SSE failure.
+- The Mock profile now emits the current workflow result contract
+  (`revised_text`, `revision_notes`, `citation_check`, and
+  `unsupported_claims`). Academic Writing also maps a usable citation-review
+  result directly to its human approval scope, so approval restores the
+  checkpoint without creating a `runtime_plan_proposal` or replaying the
+  child Agent.
+- The focused Academic Writing and development-Mock group passed `17` tests
+  after the fix. The workflow contract fixture was updated to the same
+  result fields; no citation is invented and the approval gate remains
+  explicit.
+
+## 94. 2026-08-11 cross-role browser acceptance after Academic Writing fix
+
+- One isolated administrator Academic Writing case completed after one
+  citation approval: `writing.observe`, `writing.execute`,
+  `subagent.execute`, and `writing.verify` were observed; the Runtime used
+  one child run, emitted `27` strictly ordered events, and recorded zero page
+  errors or failed requests. No plan proposal was created.
+- One isolated researcher Academic Writing case completed through the
+  researcher workspace after admin-UI account provisioning, with the same
+  one-approval/no-proposal behavior and zero page/request errors. The
+  researcher role is intentionally denied the teacher debug endpoint (`403`),
+  so its report uses the visible task/SSE evidence rather than privileged
+  debug data.
+- One isolated student LearningLoop case completed the student-facing solver
+  task and showed the teaching interaction panel, answer panel, progress
+  panel, and runtime controls. The follow-up LearningLoop action reached its
+  expected `waiting_approval` state without exposing an approval button to
+  the student. Its debug endpoint `403` is expected role isolation, not a
+  failed student flow. These are mock-provider application-wiring and UI
+  state checks, not semantic or production-provider evidence.

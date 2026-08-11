@@ -135,6 +135,19 @@ class AcademicWritingRuntimeService(GeneralQuestionRuntimeService):
     def _is_valid_result(self, result: AgentResult) -> bool:
         return self._verification_state(result) == "valid"
 
+    def _verification_approval_decision(
+        self, run: AgentRun
+    ) -> RuntimeDecision | None:
+        """Suspend on citation review before the shared loop proposes a replan."""
+
+        if not self._needs_citation_approval(run):
+            return None
+        return RuntimeDecision(
+            action=DecisionAction.REQUEST_APPROVAL,
+            approval_scope=self.approval_scope,
+            reason_codes=["academic_writing_citation_review_required"],
+        )
+
     @classmethod
     def _verification_state(
         cls, result: AgentResult

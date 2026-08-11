@@ -8,6 +8,7 @@ from app.contracts import AgentRequest, Intent, Scene
 from app.core.config import Settings
 from app.main import create_app
 from app.providers.development_mock import MOCK_WARNING, DevelopmentMockProvider
+from app.services.academic_writing_runtime import AcademicWritingRuntimeService
 from fastapi.testclient import TestClient
 
 ACTIVE_WORKFLOW_AGENTS = (
@@ -67,6 +68,25 @@ async def test_lesson_prep_mock_matches_runtime_business_contract(
     assert "formative_assessment" in result.business_data
     assert result.business_data["formative_assessment"] == []
     assert "assessment" not in result.business_data
+
+
+async def test_academic_writing_mock_matches_runtime_business_contract(
+    settings: Settings,
+) -> None:
+    runtime_settings = settings.model_copy(update={"allow_agent_mocks": True})
+    registry = AgentRegistry()
+    provider = DevelopmentMockProvider(runtime_settings, registry)
+
+    result = await provider.run(
+        "RESEARCH_02_ACADEMIC_WRITING_V1",
+        mock_request("RESEARCH_02_ACADEMIC_WRITING_V1", registry),
+    )
+
+    assert result.business_data["revised_text"]
+    assert result.business_data["revision_notes"]
+    assert result.business_data["citation_check"] == "需要人工核验引用与事实"
+    assert result.business_data["unsupported_claims"] == []
+    assert AcademicWritingRuntimeService._verification_state(result) == "approval"
 
 
 async def test_production_forces_mock_off(settings: Settings) -> None:
