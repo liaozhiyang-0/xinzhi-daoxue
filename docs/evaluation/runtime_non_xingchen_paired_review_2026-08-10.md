@@ -989,3 +989,23 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   approval/reproposal regression for this bounded real-local path. It does
   not prove all provider profiles or all Lesson Prep semantic cases are
   release-ready.
+
+## 54. 2026-08-11 RESEARCH_02 researcher retry and stability boundary
+
+- A subsequent bounded real-local run repeated the researcher-facing
+  academic-writing path with one isolated API process and a fresh database.
+  The redacted report is under
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_writing_real_local_20260811_retry7/report.json`.
+- This retry completed through
+  `RESEARCH_02_ACADEMIC_WRITING_V1` with `result_provider=local_agent`. It
+  required one approved `runtime_plan_proposal`, then reached a completed
+  Runtime with 40 strictly increasing events and zero page/request failures.
+- An admin run under the same real-local provider profile also completed with
+  `writing.observe`, `writing.execute`, and `writing.verify` all succeeded; its
+  Debug projection is under
+  `.local_outputs/runtime_admin_browser_acceptance_academic_writing_real_local_20260811_debug/report.json`.
+- Together with the earlier researcher failure in section 51, these runs show
+  intermittent Provider/structured-output stability risk rather than a
+  deterministic researcher authorization or checkpoint-recovery failure. The
+  path remains below semantic-quality and release-authorization sign-off until
+  that stability risk is bounded with repeated evaluation evidence.

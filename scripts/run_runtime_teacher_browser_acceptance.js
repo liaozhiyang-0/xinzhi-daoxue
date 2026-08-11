@@ -325,12 +325,15 @@ async function collectEvidence(page, taskId) {
     readJson(page, `/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`),
   ]);
   let debug = null;
+  let debugError = null;
   try {
     debug = await readJson(
       page,
       `/api/v1/debug/execution/${encodeURIComponent(taskId)}`,
     );
-  } catch {}
+  } catch (error) {
+    debugError = error instanceof Error ? error.message : String(error);
+  }
   const sequences = events.map((event) => Number(event.sequence));
   const runtime = debug?.runtime || {};
   const runtimeNodes = Array.isArray(runtime.observability?.nodes)
@@ -368,6 +371,7 @@ async function collectEvidence(page, taskId) {
     runtime_budget: runtime.budget || null,
     runtime_nodes: runtimeNodes,
     runtime_children: runtimeChildren,
+    debug_error: debugError,
     event_count: events.length,
     event_sequences_strictly_increasing: sequences.every(
       (value, index) => index === 0 || value > sequences[index - 1],
