@@ -78,9 +78,11 @@ class PlanExecutor:
         recovered_replays = await self._recover_inflight(run, selected)
         if recovered_replays is None:
             return run
+        before_prepare = self._checkpoint_fingerprint(run)
         RuntimeStateMachine.mark_ready(run, only_node_ids=selected)
         await self._block_unreachable(run)
-        await self._checkpoint(run)
+        if self._checkpoint_fingerprint(run) != before_prepare:
+            await self._checkpoint(run)
         while True:
             ready = [
                 node_id
@@ -413,6 +415,20 @@ class PlanExecutor:
             return run.nodes[node_id]
         except KeyError as exc:
             raise RuntimeError(f"runtime node state missing: {node_id}") from exc
+
+    @staticmethod
+    def _checkpoint_fingerprint(
+        run: AgentRun,
+    ) -> tuple[RuntimeRunStatus, tuple[tuple[str, RuntimeNodeStatus], ...]]:
+        """Return the state fields relevant to the preparation checkpoint."""
+
+        return (
+            run.status,
+            tuple(
+                (node_id, state.status)
+                for node_id, state in run.nodes.items()
+            ),
+        )
 
     @staticmethod
     def _is_terminal(run: AgentRun) -> bool:

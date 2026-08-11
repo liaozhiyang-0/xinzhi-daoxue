@@ -142,6 +142,7 @@ class AgentRunRepository:
         self,
         run: AgentRun,
         *,
+        model: AgentRunModel | None = None,
         event_sequence: int | None = None,
         expected_state_version: int | None = None,
         provider: str | None = None,
@@ -150,7 +151,8 @@ class AgentRunRepository:
         trace_id: str | None = None,
         terminal_reason: str | None = None,
     ) -> AgentCheckpointModel:
-        model = await self.get(run.run_id, for_update=True)
+        if model is None:
+            model = await self.get(run.run_id, for_update=True)
         if model is None:
             raise ValueError(f"runtime run does not exist: {run.run_id}")
         expected = expected_state_version or run.state_version

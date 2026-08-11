@@ -79,7 +79,7 @@ from app.services.conversation_message_service import ConversationMessageService
 from app.services.evaluation_attachment_cleanup import (
     cleanup_evaluation_attachments,
 )
-from app.services.event_service import append_task_event
+from app.services.event_service import append_task_event, append_task_events
 from app.services.external_research_answer import (
     external_search_view,
     is_academic_search_follow_up,
@@ -3553,14 +3553,8 @@ class TaskRunner:
                     TaskStatus.WAITING_REVIEW,
                 }:
                     task.status = TaskStatus.RUNNING
-            for event_type, data in pending_events:
-                await append_task_event(
-                    db,
-                    run.task_id,
-                    event_type,
-                    data=data,
-                )
-            await repository.save_checkpoint(run)
+            await append_task_events(db, run.task_id, pending_events)
+            await repository.save_checkpoint(run, model=runtime_model)
             proposal_id = run.control_data.get("plan_proposal_id")
             if isinstance(proposal_id, str) and proposal_id:
                 proposal_model = await db.get(

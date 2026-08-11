@@ -1778,3 +1778,32 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   functional/persistence improvement, not a release pass; semantic review and
   human release authorization remain required after the performance blocker
   is resolved.
+
+## 101. 2026-08-11 Runtime query batching and redundant checkpoint removal
+
+- Runtime checkpoint persistence now reuses the already locked
+  `AgentRunModel`, and buffered Task events are allocated as one ordered batch
+  instead of re-reading the Task and maximum event sequence for every event.
+  Existing row-lock and unique-sequence retry behavior remains in place.
+- `PlanExecutor` now skips only a preparation checkpoint whose Run status and
+  every node status are unchanged. Node start, completion, failure, approval,
+  pause, reconciliation, and terminal metric checkpoints remain durable.
+  The focused Runtime contract, parallel recovery, event, and debug tests
+  passed `33` tests after this change.
+
+## 102. 2026-08-11 General Runtime bounded performance evidence after dedupe
+
+- A fresh isolated API process and migrated SQLite database ran three
+  Legacy/Runtime pairs for `general_stack_explanation` (six runs total). All
+  six completed with zero timeouts, zero Agent mismatches, and zero event-order
+  failures. Runtime traces retained `22` ordered events and `8` checkpoints
+  per completed Run.
+- The current sample averaged approximately `175 ms` for Legacy and `535 ms`
+  for Runtime. Runtime control overhead was approximately `94–115 ms`.
+  This is a material improvement over the earlier bounded sample, but it is
+  still above the configured release threshold.
+- The provider-free evidence packager therefore still returns
+  `latency_regression_above_threshold` and
+  `single_pair_latency_regression_above_threshold`. Structural release
+  eligibility, independent semantic review, and human authorization remain
+  closed.
