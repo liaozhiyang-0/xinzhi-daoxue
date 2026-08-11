@@ -1807,3 +1807,21 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `single_pair_latency_regression_above_threshold`. Structural release
   eligibility, independent semantic review, and human authorization remain
   closed.
+
+## 103. 2026-08-11 checkpoint transaction diagnosis and final bounded sample
+
+- A provider-free in-process public-API diagnostic measured the same Runtime
+  path without changing repository code or launch configuration. Control
+  polling averaged `3.674 ms` across three polls, while eight checkpoint
+  transactions averaged `59.111 ms` each (maximum `93.328 ms`). This confirms
+  checkpoint persistence, rather than the control query, is the dominant
+  remaining Runtime overhead.
+- The latest isolated public-API pair repeated the General case three times:
+  six runs completed, with `22` ordered Runtime events and `8` durable
+  checkpoints per Runtime run. The sample averaged approximately `158 ms`
+  for Legacy and `545 ms` for Runtime, with `99–112 ms` Runtime control
+  overhead.
+- Reusing the already locked Task row in the checkpoint transaction is now
+  covered by the existing event/checkpoint tests. The evidence packager still
+  fails closed on the two latency regression reasons; no threshold or semantic
+  release rule was weakened.

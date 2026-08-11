@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentEvent, AgentEventType
 from app.core.errors import NotFoundError
-from app.models import TaskEventModel
+from app.models import TaskEventModel, TaskModel
 from app.repositories import TaskRepository
 
 _EVENT_SEQUENCE_RETRIES = 3
@@ -64,13 +64,16 @@ async def append_task_events(
     events: Sequence[tuple[AgentEventType, dict[str, Any]]],
     *,
     agent_id: str = "",
+    task: TaskModel | None = None,
 ) -> list[TaskEventModel]:
     """Append an ordered event batch with one sequence allocation."""
 
     if not events:
         return []
     repository = TaskRepository(db)
-    if await repository.get(task_id, for_update=True) is None:
+    if task is None:
+        task = await repository.get(task_id, for_update=True)
+    if task is None:
         raise NotFoundError("任务不存在", details={"task_id": task_id})
     for attempt in range(_EVENT_SEQUENCE_RETRIES):
         try:

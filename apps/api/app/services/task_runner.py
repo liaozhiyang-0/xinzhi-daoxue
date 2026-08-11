@@ -3553,7 +3553,12 @@ class TaskRunner:
                     TaskStatus.WAITING_REVIEW,
                 }:
                     task.status = TaskStatus.RUNNING
-            await append_task_events(db, run.task_id, pending_events)
+            await append_task_events(
+                db,
+                run.task_id,
+                pending_events,
+                task=task,
+            )
             await repository.save_checkpoint(run, model=runtime_model)
             proposal_id = run.control_data.get("plan_proposal_id")
             if isinstance(proposal_id, str) and proposal_id:
