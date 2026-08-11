@@ -357,6 +357,12 @@ async def capabilities(request: Request) -> dict[str, Any]:
                 "knowledge_enhanced": False,
             },
             {
+                "id": "academic_search",
+                "label": "科研前沿检索",
+                "available": internal.available("RESEARCH_01_ACADEMIC_SEARCH_V1"),
+                "knowledge_enhanced": False,
+            },
+            {
                 "id": "data_analysis",
                 "label": "数据分析",
                 "available": internal.available("RESEARCH_03_DATA_ANALYSIS_V1"),

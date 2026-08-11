@@ -42,6 +42,11 @@ const scenarioDefinitions = {
     agentId: "RESEARCH_02_ACADEMIC_WRITING_V1",
     prompt: "Rewrite this sentence in rigorous academic language: the experiment shows that the filter works very well. Do not invent measurements or citations.",
   },
+  academic_search: {
+    capability: "academic_search",
+    agentId: "RESEARCH_01_ACADEMIC_SEARCH_V1",
+    prompt: "Retrieve recent academic evidence from the last five years about active learning effects in engineering education, with verifiable sources and explicit evidence limits.",
+  },
   course_qa: {
     capability: "course_qa",
     agentId: "GENERAL_QUESTION_V1",

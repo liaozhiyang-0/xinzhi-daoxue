@@ -955,3 +955,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `failure_category=not_configured`. It still recorded 45 strictly increasing
   events with zero page/request failures. This is an explicit semantic/provider
   quality risk, not evidence that researcher authorization works end to end.
+
+## 52. 2026-08-11 researcher RESEARCH_01 academic-search path
+
+- The Workspace now exposes an explicit `academic_search` capability card and
+  registers the same capability in `/api/v1/capabilities`. Selecting it routes
+  directly to `RESEARCH_01_ACADEMIC_SEARCH_V1`, avoiding intent auto-routing
+  ambiguity in browser acceptance runs.
+- A bounded real-local browser run created a researcher account through the
+  isolated admin UI, logged in using a fresh browser context, created the
+  academic-search task, and completed the Runtime. The redacted report is under
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_search_real_local_20260811/report.json`.
+- The task completed with `result_provider=local_agent`; the Runtime control
+  projection also completed. The run recorded 27 strictly increasing task
+  events, with zero page errors and zero request failures. This verifies the
+  researcher-facing application wiring and result delivery for RESEARCH_01;
+  it is not a publication-quality assessment of retrieved evidence or release
+  authorization.

@@ -20,8 +20,8 @@ const externalProviderLabels = {
   cnki: "中国知网",
   web_json: "网页检索",
 };
-const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_writing: "学术写作", data_analysis: "数据分析" };
-const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_writing: "学术写作", data_analysis: "数据分析" };
+const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_search: "科研前沿检索", academic_writing: "学术写作", data_analysis: "数据分析" };
+const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_search: "科研前沿检索", academic_writing: "学术写作", data_analysis: "数据分析" };
 const ragLabels = { grounded_generation: "课程资料支撑", method_reference: "方法参考", reference_only: "资料参考", user_sources_only: "用户材料", data_context_only: "数据上下文", no_rag: "无需课程检索" };
 const maxMultiImageFiles = 8;
 const researchTabularExtensions = new Set(["csv", "tsv", "json", "xlsx", "parquet"]);

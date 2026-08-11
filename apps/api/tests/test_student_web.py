@@ -46,6 +46,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
         'data-capability="circuit_reasoning" data-intent="solve_problem"',
         'data-capability="lesson_prep" data-intent="lesson_prep"',
         'data-capability="assignment_review" data-intent="assignment_review"',
+        'data-capability="academic_search" data-intent="academic_search"',
         'data-capability="academic_writing" data-intent="academic_writing"',
         'data-capability="data_analysis" data-intent="data_analysis"',
     ):
@@ -53,6 +54,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "专业工作流" not in page.text
     assert "教案设计" in page.text
     assert "作业初审" in page.text
+    assert "科研前沿检索" in page.text
     assert "学术写作" in page.text
     assert "数据分析" in page.text
     assert 'api("/api/v1/tasks"' in script.text
@@ -188,6 +190,7 @@ def test_workspace_capabilities_hide_provider_implementation(client) -> None:
         "academic_problem_solving",
         "lesson_prep",
         "assignment_review",
+        "academic_search",
         "academic_writing",
         "data_analysis",
     }
