@@ -320,6 +320,7 @@ function resetConversation() {
   state.activeTaskWait = null;
   state.taskId = "";
   state.cancelRequested = false;
+  setBusy(false);
   conversationMaterialUrls.forEach((url) => URL.revokeObjectURL(url));
   conversationMaterialUrls = [];
   state.currentTask = null; state.archivedTaskIds.clear(); state.liveProcessSteps.clear();

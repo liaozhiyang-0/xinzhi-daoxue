@@ -118,3 +118,14 @@ def test_workspace_clears_previous_answer_while_next_task_runs() -> None:
     assert 'renderMarkdown($("#answer-text"), "");' in script
     assert '$("#answer-notices").replaceChildren();' in script
     assert "renderEvidence([], {});" in script
+
+
+def test_workspace_new_session_reenables_task_controls() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    reset_start = script.index("function resetConversation()")
+    reset_end = script.index("async function newSession()", reset_start)
+
+    assert "setBusy(false);" in script[reset_start:reset_end]

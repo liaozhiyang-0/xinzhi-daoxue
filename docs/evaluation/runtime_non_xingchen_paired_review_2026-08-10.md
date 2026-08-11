@@ -2340,3 +2340,34 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   quality, PDF/OCR review, CT/AE error-template review, and course-asset
   readiness panels. No student personal data was shown. Protected teacher
   approval/resume execution remains the next browser pass.
+
+## 136. 2026-08-11 real Edge multi-domain continuation and session-state fix
+
+- A synthetic local administrator account was provisioned only for this local
+  acceptance pass. It was used through the formal Edge login page; no password
+  or account artifact was committed.
+- Authorized Teacher Workspace flows completed in real Edge:
+  - Lesson Prep entered `waiting_approval`; `提交审批` resumed the checkpoint,
+    rendered the lesson-plan answer, and ended in `completed`.
+  - Assignment Review required an adaptive plan decision; after
+    `应用恢复计划` it rendered a teacher-review-only draft and explicitly did
+    not issue a formal grade.
+  - Academic Writing required two adaptive plan applications before it
+    completed. The final result displayed the rewrite, citation/fact
+    verification warning, and no invented measurements or citations. The
+    intermediate second proposal is recorded as a Runtime replan observation,
+    not counted as a Lesson Prep quality-gate duplicate.
+  - Academic Search completed after external retrieval and displayed two
+    arXiv evidence items, source identifiers, links, and explicit preprint and
+    evidence-limit warnings in the source panel.
+- Guest Workspace testing exposed a separate UI defect: starting a
+  quality-gated task and then selecting `新建会话` cleared the conversation but
+  left the new session's input and send controls disabled while no cancellable
+  task was attached to the page. `resetConversation()` now explicitly calls
+  `setBusy(false)`, and a static regression test covers this contract.
+- Real Edge revalidation after the patch confirmed both the question textbox
+  and `发送问题` were enabled in the newly created session. The build ID was
+  advanced to invalidate cached Workspace assets.
+- The protected `RESEARCH_03_DATA_ANALYSIS_V1` path was not opened, inspected,
+  or executed. Only the non-protected Academic Search and Academic Writing
+  paths were tested in this continuation.
