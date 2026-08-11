@@ -2062,3 +2062,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - This confirms the second LearningLoop adapter's development wiring and
   approval recovery. It remains Mock-provider evidence and does not clear the
   semantic sidecar or human release-decision gates.
+
+## 118. 2026-08-11 LearningLoop semantic review intake
+
+- The LearningLoop pair packager now emits a dedicated
+  `learning_runtime_semantic_review_intake.v1` section with the four bounded
+  semantic dimensions, a `needs_review` judgement template, and an explicit
+  requirement for separately redacted domain outputs.
+- The teaching and LearningProgress packages were regenerated with
+  `status=pending_independent_review`; they contain no raw action payload,
+  student answer, request snapshot, or Runtime state data. This is an intake
+  template, not a semantic sidecar and not a release authorization.

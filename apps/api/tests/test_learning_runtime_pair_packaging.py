@@ -75,6 +75,13 @@ def test_learning_pair_packaging_is_structural_and_redacted(tmp_path: Path) -> N
     assert report["structural_checks"] == {"passed": True, "reasons": []}
     assert report["release_ready"] is False
     assert report["semantic_review_required"] is True
+    assert report["semantic_review"]["status"] == "pending_independent_review"
+    assert report["semantic_review"]["cases"][0][
+        "raw_action_payload_included"
+    ] is False
+    assert report["semantic_review"]["judgement_template"][
+        "teaching_request_more_hint"
+    ]["decision"] == "needs_review"
     serialized = json.dumps(report, ensure_ascii=False)
     assert "student_answer" not in serialized
     assert report["runtime"]["controls"] == [

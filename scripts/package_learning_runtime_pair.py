@@ -14,6 +14,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+SEMANTIC_DIMENSIONS = (
+    "task_fulfillment",
+    "factual_correctness",
+    "evidence_faithfulness",
+    "safety",
+)
+
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -134,6 +141,39 @@ def _safe_runtime(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _semantic_review_intake(case_id: str) -> dict[str, Any]:
+    """Create a blank, explicitly non-authorizing semantic review intake."""
+
+    return {
+        "schema_version": "learning_runtime_semantic_review_intake.v1",
+        "status": "pending_independent_review",
+        "redaction_status": "redacted",
+        "review_boundary": (
+            "Structural summaries only. An independent reviewer must attach "
+            "separately redacted domain outputs before judging semantics."
+        ),
+        "cases": [
+            {
+                "case_id": case_id,
+                "review_material_required": True,
+                "raw_action_payload_included": False,
+            }
+        ],
+        "judgement_template": {
+            case_id: {
+                "dimensions": {dimension: None for dimension in SEMANTIC_DIMENSIONS},
+                "decision": "needs_review",
+                "judge_type": "human",
+                "rubric_version": "learning-runtime-semantic-v1",
+                "reviewer_ref": "TO_BE_COMPLETED_BY_INDEPENDENT_REVIEWER",
+                "reviewed_at": "TO_BE_COMPLETED_WITH_ISO8601_TIMEZONE",
+                "redaction_status": "redacted",
+                "authorization_ref": "TO_BE_BOUND_TO_SEPARATE_RELEASE_RECORD",
+            }
+        },
+    }
+
+
 def build_pair_report(
     runtime_report: dict[str, Any],
     legacy_report: dict[str, Any],
@@ -199,6 +239,7 @@ def build_pair_report(
         "release_ready": False,
         "semantic_review_required": True,
         "human_release_decision_required": True,
+        "semantic_review": _semantic_review_intake(case_id),
         "blockers": [
             "development_mock_evidence_only",
             "learning_runtime_semantic_sidecar_missing",
