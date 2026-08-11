@@ -2229,3 +2229,18 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The current browser transport retry remains unverified, but the overall
   frontend evidence is therefore `partially verified`, not “no browser
   acceptance”.
+
+## 131. 2026-08-11 release-default audit and final governance regression
+
+- Audited `.env.example`, `Settings`, and the development launcher together:
+  production defaults keep `AGENT_RUNTIME_RELEASE_GATE_REQUIRED=true`, empty
+  launch/evidence/authorization paths fail closed, and the implicit Runtime
+  profile is limited to development/test environments.
+- The final provider-free governance regression passed `118` tests covering
+  canary collection/release evaluation, semantic evidence intake, release
+  authorization, readiness projections, launch policy, UI publication gating,
+  and the single-instance launcher. No API or worker was started for this
+  check.
+- The remaining production decision is intentionally external: an authorized
+  semantic review and a version-bound human release authorization must be
+  supplied before any canary/default promotion.
