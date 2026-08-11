@@ -1856,3 +1856,18 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   not direct inputs to the release-preflight schema; the preflight must use
   the packaged `structural_suites/*.json` artifacts. This distinction is now
   recorded to prevent an operator-level false negative.
+
+## 106. 2026-08-11 post-commit General bounded measurement
+
+- A fresh single-API-process, temporary-SQLite run repeated the General
+  Legacy/Runtime pair three times. All six runs completed with zero timeouts,
+  zero Agent mismatches, and zero event-order failures. Runtime retained
+  `22` ordered events and `8` durable checkpoints per run.
+- The sample measured approximately `199 ms` average Legacy lifecycle time and
+  `564 ms` average Runtime lifecycle time, with Runtime control overhead of
+  `93–104 ms`. Compared with the preceding bounded sample (`158 ms` vs
+  `545 ms`), the event-sequence reuse change does not establish a material
+  latency improvement; the latency release gate remains closed.
+- The result validates persistence and ordering after the optimization, but
+  no performance claim or threshold relaxation is made. The isolated API
+  process and port were released after the run.
