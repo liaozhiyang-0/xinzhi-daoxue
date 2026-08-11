@@ -1841,3 +1841,18 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   report; the retry completed and released its process and port. This is
   frontend/application-wiring evidence with an explicitly mock Provider, not
   semantic-quality or release authorization evidence.
+
+## 105. 2026-08-11 provider-free release preflight recheck
+
+- The correct `structural_suites/*.json` artifacts from the latest four-case
+  evidence package were checked with explicit Agent and Runtime plan versions.
+  Lesson Prep, Assignment Review, and Academic Writing each returned
+  `structural_eligible=true` with one paired case.
+- Those three capabilities remain `release_eligible=false` solely because an
+  independently reviewed semantic sidecar is not present. General Question is
+  still structurally blocked by the measured latency-regression checks. No
+  release threshold, semantic rule, or authorization requirement was relaxed.
+- The generated `runtime_canary_manifest.v2` files are collector manifests,
+  not direct inputs to the release-preflight schema; the preflight must use
+  the packaged `structural_suites/*.json` artifacts. This distinction is now
+  recorded to prevent an operator-level false negative.
