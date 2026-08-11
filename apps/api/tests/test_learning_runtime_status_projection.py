@@ -52,6 +52,12 @@ def test_learning_runtime_status_is_redacted_and_provider_free(api, app) -> None
     assert learning_runtime["run_kind"] == "learning_progress"
     assert learning_runtime["status"] == "completed"
     assert learning_runtime["control_scope"] == "learning_loop"
+    assert learning_runtime["checkpoints"]
+    assert learning_runtime["checkpoints"][-1]["event_sequence"] >= 1
+    assert all(
+        "state_data" not in checkpoint
+        for checkpoint in learning_runtime["checkpoints"]
+    )
     assert "student_answer" not in str(learning_runtime)
     assert "request_snapshot" not in str(learning_runtime)
 

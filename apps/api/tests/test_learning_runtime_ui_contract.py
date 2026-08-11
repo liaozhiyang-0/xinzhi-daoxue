@@ -92,6 +92,8 @@ def test_learning_runtime_ui_renders_status_contract_and_redacted_node_statuses(
     assert '["goal", snapshot.goal]' in script
     assert '["success_criteria", snapshot.success_criteria]' in script
     assert '["state_version", snapshot.state_version]' in script
+    assert '["checkpoint_snapshots", checkpoints.length]' in script
+    assert '["last_event_sequence", latestCheckpoint?.event_sequence]' in script
     assert '["resumable", snapshot.resumable]' in script
     assert '["approval_required", snapshot.approval_required]' in script
     assert "snapshot.node_statuses" in script

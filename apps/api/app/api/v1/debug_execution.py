@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.dependencies import get_db, require_admin
-from app.models import AgentRunModel, AgentRunNodeModel, TaskModel
+from app.models import AgentCheckpointModel, AgentRunModel, AgentRunNodeModel, TaskModel
 from app.repositories import AgentRunRepository
 from app.runtime import AgentRun, build_runtime_observability
 from app.services.learning_loop import LearningLoopService
@@ -77,6 +77,23 @@ def _read_runtime_handoff(run: AgentRunModel | None) -> dict[str, Any]:
     return dict(handoff) if isinstance(handoff, dict) else {}
 
 
+def _checkpoint_summaries(
+    checkpoints: list[AgentCheckpointModel],
+) -> list[dict[str, Any]]:
+    """Expose checkpoint/event correlation without serializing Runtime state."""
+
+    return [
+        {
+            "sequence": checkpoint.sequence,
+            "state_version": checkpoint.state_version,
+            "status": checkpoint.status,
+            "event_sequence": checkpoint.event_sequence,
+            "created_at": checkpoint.created_at.isoformat(),
+        }
+        for checkpoint in checkpoints
+    ]
+
+
 async def _read_learning_runtime_projection(
     request: Request,
     db: AsyncSession,
@@ -107,6 +124,7 @@ async def _read_learning_runtime_projection(
         # execution debug projection. The dedicated status endpoint remains
         # the authoritative error surface for that run.
         return {}
+    checkpoints = await AgentRunRepository(db).list_checkpoints(run.id)
     return {
         "run_id": status.run_id,
         "runtime_id": status.runtime_id,
@@ -120,6 +138,7 @@ async def _read_learning_runtime_projection(
         "node_statuses": [
             node.model_dump(mode="json") for node in status.node_statuses
         ],
+        "checkpoints": _checkpoint_summaries(checkpoints),
     }
 
 
@@ -564,16 +583,7 @@ async def get_execution(
                     }
                     for child in runtime_children
                 ],
-                "checkpoints": [
-                    {
-                        "sequence": checkpoint.sequence,
-                        "state_version": checkpoint.state_version,
-                        "status": checkpoint.status,
-                        "event_sequence": checkpoint.event_sequence,
-                        "created_at": checkpoint.created_at.isoformat(),
-                    }
-                    for checkpoint in runtime_checkpoints
-                ],
+                "checkpoints": _checkpoint_summaries(runtime_checkpoints),
                 "nodes": [
                     {
                         "node_id": node.node_id,

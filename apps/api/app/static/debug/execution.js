@@ -665,6 +665,8 @@ function learningRuntimeStatusSurface(reference) {
     ? learningRuntimeStatus
     : asRecord(reference.snapshot);
   const controls = Array.isArray(snapshot.available_controls) ? snapshot.available_controls : undefined;
+  const checkpoints = Array.isArray(snapshot.checkpoints) ? snapshot.checkpoints : [];
+  const latestCheckpoint = checkpoints.length ? checkpoints[checkpoints.length - 1] : null;
   const status = snapshot.status || snapshot.runtime_status || reference.status;
   return section(
     "LearningLoop Runtime (read-only)",
@@ -681,6 +683,8 @@ function learningRuntimeStatusSurface(reference) {
         ["approval_required", snapshot.approval_required],
         ["control_scope", snapshot.control_scope],
         ["available_controls", controls],
+        ["checkpoint_snapshots", checkpoints.length],
+        ["last_event_sequence", latestCheckpoint?.event_sequence],
       ]),
       el("article", { class: "debug-surface" }, [
         el("h3", { text: "Node statuses" }),

@@ -1926,3 +1926,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `.local_outputs/runtime_researcher_browser_acceptance_academic_search_20260812_current/`.
   These are current mock development/frontend evidence only; they do not
   replace authorized paired traces, semantic review, or release authorization.
+
+## 110. 2026-08-12 LearningLoop checkpoint observability
+
+- The administrator execution-debug projection now includes a redacted
+  checkpoint summary for `teaching_interaction` and `learning_progress` Runs:
+  checkpoint sequence, Runtime state version, status, correlated Task event
+  sequence, and creation time. It deliberately excludes checkpoint
+  `state_data`, request snapshots, and student answers.
+- The LearningLoop status projection and execution-debug UI now surface the
+  snapshot count and latest correlated event sequence. Focused API, redaction,
+  UI-contract, Ruff, Mypy, and JavaScript syntax checks passed after the
+  change; the focused Runtime/debug tests reported `7 passed`.
+- This closes an observability gap for recovery audit and future paired-trace
+  collection. It does not change the current LearningLoop release gate: no
+  authorized paired suite, semantic sidecar, or human release decision has
+  been created.

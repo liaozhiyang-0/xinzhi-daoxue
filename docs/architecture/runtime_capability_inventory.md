@@ -35,6 +35,7 @@
 | canary artifact/semantic evidence 的版本绑定与发布门禁 | `apps/api/app/services/runtime_canary_release.py:20-149`；`docs/evaluation/runtime_evidence_intake_contract.md`；`docs/evaluation/runtime_authorized_paired_trace_release_runbook.md` |
 | RESEARCH_03 Runtime 的 prepare→execute→verify 计划、准备 checkpoint 和恢复边界 | `apps/api/app/services/research_analysis_runtime.py:72-114,148-357,464-805`；`apps/api/tests/test_research03_runtime_boundary.py`；`apps/api/tests/test_research_analysis_runtime.py`；`37b3a88` |
 | LearningLoop 的 Legacy/Teaching/LearningProgress 分流 | `apps/api/app/services/learning_loop.py:91-190` |
+| LearningLoop 管理员调试投影的脱敏 checkpoint/event 关联 | `apps/api/app/api/v1/debug_execution.py:_read_learning_runtime_projection`；`apps/api/tests/test_learning_runtime_status_projection.py` |
 | TeachingInteractionRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/teaching_interaction_runtime.py:42-146` |
 | LearningProgressRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/learning_progress_runtime.py:51-153` |
 | 两类学习动作及领域字段 | `apps/api/app/contracts/learning.py:373-409` |
@@ -122,6 +123,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 - Task readiness 的主键仍来自 Agent Registry；LearningLoop 的 descriptor 只读投影不改变 `LearningActionRequest` 或领域 `supports()` 语义。
 - TaskRunner 仍保留若干业务兼容分支，即使对应 Runtime service 已存在；是否迁移完成不能只看是否创建了 Runtime 类，必须看默认/Canary 入口、结果交接和 Legacy 分支是否有证据。
 - LearningLoop 的 Runtime 结果仍需要以 `LearningActionResponse` 和 `LearningInteractionModel` 完成领域交接，不能直接复用 Task 的通用结果展示合同。
+- 管理员执行调试投影现在同时显示 LearningLoop Run 的 checkpoint 数量、状态版本和最后事件序号；只返回摘要，不返回 `state_data`、请求快照或学生答案，便于恢复审计和后续成对证据采集。
 
 ### RESEARCH_03 当前 Runtime 证据快照
 
