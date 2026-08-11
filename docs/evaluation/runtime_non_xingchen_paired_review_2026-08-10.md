@@ -2087,3 +2087,14 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - The package remains `release_ready=false` until a separately redacted
   semantic sidecar and independent release decision are supplied. No
   development artifact was promoted by this change.
+
+## 120. 2026-08-11 LearningLoop readiness blocker precision
+
+- LearningLoop capability projections no longer append the generic authorized
+  paired-evidence blocker after the structural gate has already passed. They
+  now expose the next concrete gate, such as `semantic_evidence_missing` or
+  `release_authorization_missing`, while retaining the stable paired-evidence
+  blocker for the no-structural-evidence case.
+- The change is provider-free and does not widen launch modes. Readiness still
+  reports `canary_release_eligible=false` without the complete structural,
+  semantic, and authorization chain.

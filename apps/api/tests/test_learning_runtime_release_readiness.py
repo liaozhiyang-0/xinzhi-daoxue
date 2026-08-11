@@ -50,6 +50,52 @@ def test_learning_readiness_reports_versions_and_fails_closed_without_evidence(
     assert capability["canary_reason"] == "canary_release_evidence_missing"
 
 
+def test_learning_readiness_reports_next_gate_after_structural_evidence(
+    app,
+    client,
+) -> None:
+    class StructuralEvidenceRegistry(RuntimeCanaryReleaseRegistry):
+        def structural_eligible(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return True
+
+        def release_eligible(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return True
+
+        def reason(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return "canary_release_evidence_approved"
+
+    app.state.runtime_agent_readiness = SimpleNamespace(
+        capability_descriptors=(
+            SimpleNamespace(
+                domain="learning_loop",
+                capability_id="TEACHING_INTERACTION_V1",
+                runtime_id="teaching_interaction",
+                version="teaching-interaction-v1",
+                agent_version="learning-agent-v1",
+                enabled=True,
+                supported_actions=("request_more_hint",),
+                supports_pause=True,
+                supports_resume=True,
+                supports_approval=True,
+                supports_input=True,
+                control_scope="learning_loop",
+                result_contract="learning_action_response.v1",
+            ),
+        ),
+        release_registry=StructuralEvidenceRegistry(),
+    )
+
+    response = client.get("/api/v1/learning/runtime-readiness")
+
+    assert response.status_code == 200, response.text
+    capability = response.json()["capabilities"][0]
+    assert capability["structural_release_eligible"] is True
+    assert capability["semantic_release_eligible"] is True
+    assert capability["canary_release_eligible"] is False
+    assert capability["canary_reason"] == "release_authorization_missing"
+    assert capability["blockers"] == ["release_authorization_missing"]
+
+
 def test_learning_readiness_uses_shared_release_registry_and_never_executes(
     app,
     client,

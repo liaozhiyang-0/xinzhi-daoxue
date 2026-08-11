@@ -489,7 +489,18 @@ def _project_learning_runtime_descriptor(
     for field_name, blocker in _LEARNING_RUNTIME_BLOCKERS:
         if not supports[field_name]:
             capability_blockers.append(blocker)
-    capability_blockers.append(_LEARNING_RUNTIME_EVIDENCE_BLOCKER)
+    if not canary_release_eligible and structural_release_eligible:
+        # Once the structural suite is valid, expose the next concrete gate
+        # (semantic review or release authorization) instead of claiming the
+        # paired trace itself is missing.
+        if canary_reason and canary_reason not in capability_blockers:
+            capability_blockers.append(canary_reason)
+    elif not canary_release_eligible:
+        # Keep the stable LearningLoop blocker for the common no-suite case,
+        # while also retaining the registry's more specific diagnostic.
+        capability_blockers.append(_LEARNING_RUNTIME_EVIDENCE_BLOCKER)
+        if canary_reason and canary_reason not in capability_blockers:
+            capability_blockers.append(canary_reason)
     if not _descriptor_bool(descriptor, "enabled"):
         capability_blockers.append(_LEARNING_RUNTIME_DISABLED_BLOCKER)
 
