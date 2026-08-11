@@ -2152,3 +2152,13 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - Bundle and multi-case sidecar regression coverage passed `10` tests. This
   expands reproducible evaluation coverage without creating release evidence
   or changing launch modes.
+
+## 125. 2026-08-11 frontend publication-gate behavior regression
+
+- Added a Node-backed behavior test that evaluates the real `agents.js`
+  publication projection in isolation, without an API, Provider, or browser.
+- The test confirms a fully authorized readiness payload is publish-ready and
+  a payload with `release_authorization_missing` is not publish-ready even
+  when structural and semantic evidence are both true.
+- Static UI contract plus behavior coverage passed `11` tests; `node --check`
+  also passed.
