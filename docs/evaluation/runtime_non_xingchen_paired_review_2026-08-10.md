@@ -1009,3 +1009,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   deterministic researcher authorization or checkpoint-recovery failure. The
   path remains below semantic-quality and release-authorization sign-off until
   that stability risk is bounded with repeated evaluation evidence.
+
+## 55. 2026-08-11 RESEARCH_02 repeated browser stability analysis
+
+- The new diagnostic-only analyzer
+  `scripts/analyze_runtime_browser_acceptance.py` excludes harness and identity
+  failures, then aggregates redacted authenticated browser reports without
+  starting a service or making a release decision. The focused analyzer tests
+  passed.
+- Thirteen valid researcher/RESEARCH_02 `real_local` samples were analyzed in
+  `.local_outputs/runtime_researcher_academic_writing_stability_analysis_20260811.json`:
+  8 completed, 5 failed, success rate `0.615385`. All 13 had strictly
+  increasing events and zero page/request failures; the five failures ended
+  with `default Runtime execution did not complete (status=failed)` after two
+  plan proposals. Proposal counts were 0 for 4 samples, 1 for 2, and 2 for 7.
+- This is reproducible stability evidence, not a semantic-quality or release
+  decision. The current sample does not justify default release. Newly added
+  `runtime_events` capture will make future failed samples distinguish Provider
+  node errors from structured-output verification failures instead of relying
+  on the generic terminal message.

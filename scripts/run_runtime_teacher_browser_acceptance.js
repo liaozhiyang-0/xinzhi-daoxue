@@ -336,6 +336,26 @@ async function collectEvidence(page, taskId) {
   }
   const sequences = events.map((event) => Number(event.sequence));
   const runtime = debug?.runtime || {};
+  const runtimeEvents = events
+    .map((event) => {
+      const payload = event.event_data?.data;
+      const data = payload && typeof payload === "object" ? payload : {};
+      return {
+        sequence: Number(event.sequence),
+        event_type: event.event_type || null,
+        runtime_event: data.runtime_event || null,
+        node_id: data.node_id || null,
+        status: data.status || null,
+        error_code: data.error_code || null,
+        reason_codes: Array.isArray(data.reason_codes) ? data.reason_codes : [],
+      };
+    })
+    .filter((event) => (
+      event.runtime_event
+      || event.error_code
+      || event.status === "failed"
+      || event.status === "approval_required"
+    ));
   const runtimeNodes = Array.isArray(runtime.observability?.nodes)
     ? runtime.observability.nodes
       .filter((node) => node && typeof node === "object")
@@ -371,6 +391,7 @@ async function collectEvidence(page, taskId) {
     runtime_budget: runtime.budget || null,
     runtime_nodes: runtimeNodes,
     runtime_children: runtimeChildren,
+    runtime_events: runtimeEvents,
     debug_error: debugError,
     event_count: events.length,
     event_sequences_strictly_increasing: sequences.every(
