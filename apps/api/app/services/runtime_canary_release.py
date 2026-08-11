@@ -227,6 +227,22 @@ class RuntimeCanaryReleaseRegistry:
 
             path = Path(raw_path.strip())
             payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                evidence_fields = {
+                    "schema_version",
+                    "suite_id",
+                    "case_id",
+                    "agent_id",
+                    "agent_version",
+                    "runtime_plan_version",
+                }
+                if not evidence_fields.issubset(payload):
+                    raise ValueError(
+                        "Runtime semantic evidence sidecar must contain one "
+                        "evidence object or an array of evidence objects; "
+                        "received a case-keyed judgement template or other "
+                        "non-sidecar mapping"
+                    )
             raw_evidence = payload if isinstance(payload, list) else [payload]
             if not raw_evidence or not all(
                 isinstance(item, dict) for item in raw_evidence
@@ -337,7 +353,7 @@ class RuntimeCanaryReleaseRegistry:
         ):
             raise ValueError(
                 "Runtime semantic evidence suite_id mismatch for "
-                f"{agent_id}"
+                f"{agent_id}: expected={suite.suite_id}:actual={evidence.suite_id}"
             )
         if evidence.case_id not in {pair.case_id for pair in suite.pairs}:
             raise ValueError(

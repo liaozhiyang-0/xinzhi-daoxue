@@ -282,6 +282,29 @@ def test_from_paths_requires_semantic_coverage_for_every_case(
         )
 
 
+def test_from_paths_rejects_case_keyed_judgement_template(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "judgements-template.json"
+    _write_json(suite_path, _suite().model_dump(mode="json"))
+    _write_json(
+        sidecar_path,
+        {
+            CASE_ID: {
+                "decision": "needs_review",
+                "judge_type": "human",
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="case-keyed judgement template"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "message"),
     [

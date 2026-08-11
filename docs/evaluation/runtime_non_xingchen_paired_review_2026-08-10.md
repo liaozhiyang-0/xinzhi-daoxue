@@ -1213,3 +1213,26 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   quality and independent authorization. RESEARCH_03 was intentionally not
   included in this sweep and remains the final migration/audit stage after the
   other core paths are closed.
+
+## 66. 2026-08-11 semantic sidecar binding diagnostics
+
+- The fail-closed Solver result was traced to an input-shape error, not a
+  Runtime execution failure: the supplied
+  `semantic_review_judgements_template/academic-problem-solver.json` is a
+  case-keyed human-review template. It is not the array of
+  `RuntimeSemanticEvidence` records produced by
+  `scripts/collect_runtime_semantic_evidence.py`, and therefore cannot be
+  passed to release preflight.
+- The Lesson Prep preliminary sidecar is structurally well-shaped, but its
+  `suite_id` is `lesson-real-pair-teach-01-lesson-prep-v1-b1488aaf84dc`, while
+  the authorized structural suite expects
+  `authorized-dev-e2e-teach-01-lesson-prep-v1-354f6d3eb9de`. The binding gate
+  correctly rejects this cross-suite pairing.
+- Runtime release loading now reports the case-keyed-template mistake
+  explicitly and includes expected/actual suite IDs for suite mismatches. A
+  regression test covers the template-shape rejection. No synthetic human
+  approval was created and no release gate was weakened.
+- The focused semantic evidence, canary release, preflight, and evidence-intake
+  tests passed: `72 passed`. These tests are provider-free; they do not turn the
+  existing model-only or mismatched local artifacts into independent semantic
+  approval.
