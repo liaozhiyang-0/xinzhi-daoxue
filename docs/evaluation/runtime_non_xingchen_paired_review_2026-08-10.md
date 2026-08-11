@@ -2162,3 +2162,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   when structural and semantic evidence are both true.
 - Static UI contract plus behavior coverage passed `11` tests; `node --check`
   also passed.
+
+## 126. 2026-08-11 development launch-mode and capability audit
+
+- Audited the development launch profile against the registered non-Xingchen
+  Task Runtime services. The default list covers the active solver, general
+  question, local retrieval, teaching, academic search, and academic writing
+  Runtime adapters.
+- Confirmed that `LEARN_01_KNOWLEDGE_QA_V1` remains the cloud/legacy registry
+  identity while `LEARN_01_LOCAL_RETRIEVAL_V1` is the local Runtime fallback;
+  the distinction is reflected in the existing routing and Runtime tests and
+  is not a launch-mode defect.
+- Confirmed that `RESEARCH_03_DATA_ANALYSIS_V1` is not part of the implicit
+  development launch profile. Its protected migration remains explicit and
+  was not inspected or changed in this audit.
+- Launch policy, Task-to-Runtime handoff, and cross-entry readiness regression
+  coverage passed `42` tests. No service was started and no release gate was
+  weakened.
