@@ -1,5 +1,6 @@
 const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 
@@ -8,6 +9,10 @@ const { chromium } = require("playwright");
 const root = path.resolve(__dirname, "..");
 const python = path.join(root, ".venv", "Scripts", "python.exe");
 const port = process.env.XINZHI_TEACHER_BROWSER_PORT || "8022";
+const portNumber = Number.parseInt(port, 10);
+if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+  throw new Error(`invalid browser acceptance port: ${port}`);
+}
 const baseURL = `http://127.0.0.1:${port}`;
 const testDatabasePath = path.join(
   os.tmpdir(),
@@ -125,8 +130,36 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function assertPortAvailable() {
+  await new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    const closeProbe = (error) => {
+      probe.close(() => {
+        if (error) reject(error);
+        else resolve();
+      });
+    };
+    probe.once("error", (error) => {
+      if (error.code === "EADDRINUSE") {
+        closeProbe(new Error(
+          `browser acceptance port ${port} is already in use; `
+          + "choose a free port instead of attaching to an existing service",
+        ));
+        return;
+      }
+      closeProbe(error);
+    });
+    probe.listen({ host: "127.0.0.1", port: portNumber }, () => closeProbe());
+  });
+}
+
 async function waitForHealth() {
   for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (server && server.exitCode !== null) {
+      throw new Error(
+        `browser acceptance API exited before becoming ready (code=${server.exitCode})`,
+      );
+    }
     try {
       const response = await fetch(`${baseURL}/api/v1/health`);
       if (response.ok) return;
@@ -424,6 +457,7 @@ async function collectEvidence(page, taskId) {
   };
   let browser;
   try {
+    await assertPortAvailable();
     server = spawn(
       python,
       ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port],

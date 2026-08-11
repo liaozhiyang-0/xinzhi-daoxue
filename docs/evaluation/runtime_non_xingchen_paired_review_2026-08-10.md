@@ -1061,3 +1061,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   encouraging resilience evidence for the fallback change, but the sample is
   small and not a semantic-quality or release decision. More repeated runs,
   result-content review, and the full paired evaluation remain required.
+
+## 58. 2026-08-11 browser acceptance single-instance guard
+
+- `scripts/run_runtime_teacher_browser_acceptance.js` now validates that its
+  requested loopback port is free before spawning Uvicorn, and checks that the
+  child process remains alive while waiting for health. This prevents a stale
+  API from satisfying the health check and receiving a new acceptance run.
+- A bounded conflict smoke test occupied port `8050`; the harness failed
+  closed with an explicit `port ... is already in use` error and did not spawn
+  an API. A normal mock Lesson Prep run on free port `8051` then completed with
+  27 strictly increasing events and zero page/request failures; the port was
+  released afterward.
