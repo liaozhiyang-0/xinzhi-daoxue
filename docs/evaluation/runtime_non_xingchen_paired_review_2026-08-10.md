@@ -972,3 +972,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   researcher-facing application wiring and result delivery for RESEARCH_01;
   it is not a publication-quality assessment of retrieved evidence or release
   authorization.
+
+## 53. 2026-08-11 Lesson Prep approval recovery recheck
+
+- A bounded real-local browser run rechecked the Lesson Prep path after the
+  empty-section quality-gate change, using one isolated API process, an
+  isolated SQLite database, Xingchen disabled, and Agent Mocks disabled. The
+  redacted report is under
+  `.local_outputs/runtime_lesson_prep_browser_acceptance_real_local_20260811_retry/report.json`.
+- The task routed to `TEACH_01_LESSON_PREP_V1`, reached exactly one
+  `waiting_approval` quality checkpoint, and completed after approval with
+  `result_provider=local_agent`. No `runtime_plan_proposal` was created; the
+  Runtime finished at iteration `0`.
+- The run recorded 27 strictly increasing task events, with zero page errors
+  and zero request failures. This closes the previously observed empty-field
+  approval/reproposal regression for this bounded real-local path. It does
+  not prove all provider profiles or all Lesson Prep semantic cases are
+  release-ready.
