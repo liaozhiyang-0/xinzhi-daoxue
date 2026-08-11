@@ -1079,6 +1079,28 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   contract or auto-promote the Agent. Human or hybrid review of the redacted
   paired output is still required before any canary/default decision.
 
+## 60. 2026-08-11 student LearningLoop browser recheck
+
+- A fresh bounded real-local browser run exercised the student account,
+  problem-solving task, teaching interaction, and learning-progress UI on a
+  new isolated port. The redacted report is under
+  `.local_outputs/runtime_student_browser_acceptance_learning_loop_real_local_20260811_postfix1/report.json`.
+- The task completed through `ACADEMIC_PROBLEM_SOLVER` with
+  `result_provider=local_graph`, 34 strictly increasing events, and zero page
+  or request failures. The LearningLoop Runtime completed at checkpoint
+  `state_version=11`; `teaching.feedback.observe`, `apply`, and `verify` all
+  succeeded while the approval node was skipped.
+- The browser evidence confirms the answer, teaching loop, learning progress,
+  and execution Runtime controls were visible. This verifies one student
+  application path, but does not authorize the broader Runtime release or
+  replace independent semantic review.
+- The related student Web/API tests were executed in bounded groups with
+  coverage disabled: 4 static/resource tests, 3 context/follow-up tests, and
+  2 image/TaskRunner tests passed, in addition to the isolated-database test
+  (10/10 selected tests passed). A single combined coverage invocation exceeded
+  its 180-second limit, so the grouped results are the reproducible evidence;
+  the combined command is not reported as passed.
+
 ## 58. 2026-08-11 browser acceptance single-instance guard
 
 - `scripts/run_runtime_teacher_browser_acceptance.js` now validates that its
