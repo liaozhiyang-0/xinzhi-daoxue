@@ -158,6 +158,45 @@ def test_research03_pair_case_omits_business_candidate_from_legacy_request() -> 
     assert runtime_request["request"] == case.runtime_request
 
 
+def test_research03_runtime_request_binds_uploaded_manifest() -> None:
+    case = next(
+        item
+        for item in MODULE.CASES
+        if item.case_id == "research_data_analysis_runtime_handoff"
+    )
+    client = _TaskClient()
+    manifest = {
+        "dataset_id": "fixture",
+        "version": "v1",
+        "format": "csv",
+        "checksum_sha256": "a" * 64,
+        "row_count": 4,
+        "column_count": 3,
+        "authorized": True,
+        "contains_sensitive_data": False,
+        "source_ref": "attachment:file-1",
+    }
+    request = {**case.runtime_request, "data_manifest": manifest}
+
+    MODULE.create_task(
+        client,
+        "http://test/api/v1",
+        "user-1",
+        "session-1",
+        case,
+        "runtime",
+        attachments=[{"file_id": "file-1"}],
+        runtime_request=request,
+    )
+
+    assert client.payload is not None
+    options = client.payload["options"]
+    assert isinstance(options, dict)
+    runtime_options = options["research_analysis_v2"]
+    assert isinstance(runtime_options, dict)
+    assert runtime_options["request"]["data_manifest"] == manifest
+
+
 def test_runtime_failure_diagnostics_distinguish_child_failure_from_proposals() -> None:
     diagnostics = MODULE.runtime_failure_diagnostics(
         {

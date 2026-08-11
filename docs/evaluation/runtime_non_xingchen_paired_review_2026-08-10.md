@@ -1376,3 +1376,27 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `model_generation` event. This proves application wiring and Runtime
   ownership only; it does not prove statistical semantic equivalence or
   release authorization.
+
+## 78. 2026-08-11 RESEARCH_03 synthetic public-Task paired probe
+
+- Added a bounded paired-harness case,
+  `research_data_analysis_runtime_handoff`, using the same synthetic four-row,
+  three-column CSV for Legacy and Runtime. The harness uploads only this
+  non-sensitive fixture, binds a redaction-safe attachment reference and typed
+  variable manifest, and keeps the business candidate opt-in to Runtime only.
+- In one in-process `TestClient` application with isolated SQLite and external
+  Providers disabled, both the Legacy and Runtime public Task paths completed
+  and matched the expected `RESEARCH_03_DATA_ANALYSIS_V1` Agent. The Runtime
+  produced `21` strictly ordered events, `3` Runtime nodes, and `12`
+  checkpoints; the Legacy path produced `17` strictly ordered events. Runtime
+  used `local_analysis_v2` with zero Provider calls; Legacy used a Provider
+  explicitly marked `mock`.
+- The offline paired analyzer found one usable sample and no input issues, but
+  reported `requires_investigation=true` for single-sample latency overhead
+  (Runtime lifecycle `531 ms` versus Legacy `170 ms`). This is diagnostic
+  evidence only and must not be interpreted as a performance claim.
+- The first probe failed closed because the synthetic request omitted the
+  treatment variable role. Adding the declared `group` treatment and `outcome`
+  variable roles allowed the quality gate to proceed; the gate was not
+  weakened. No human approval, independent semantic sidecar review, real
+  Provider result, or release authorization was performed.

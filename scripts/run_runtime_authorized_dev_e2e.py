@@ -43,6 +43,7 @@ class E2ECase:
     intent: str
     question: str
     runtime_request: dict[str, Any] | None = None
+    dataset_csv: str | None = None
 
 
 CASES: tuple[E2ECase, ...] = (
@@ -129,8 +130,33 @@ CASES: tuple[E2ECase, ...] = (
             "design": "experimental_comparison",
             "estimand": "group A minus group B mean outcome",
             "unit_of_analysis": "one row per participant",
+            "variables": [
+                {
+                    "name": "participant",
+                    "role": "identifier",
+                    "dtype": "string",
+                },
+                {
+                    "name": "group",
+                    "role": "treatment",
+                    "dtype": "string",
+                    "allowed_values": ["A", "B"],
+                },
+                {
+                    "name": "outcome",
+                    "role": "outcome",
+                    "dtype": "numeric",
+                },
+            ],
             "exploratory": True,
         },
+        dataset_csv=(
+            "participant,group,outcome\n"
+            "p1,A,10\n"
+            "p2,A,12\n"
+            "p3,B,7\n"
+            "p4,B,8\n"
+        ),
     ),
 )
 
@@ -253,6 +279,8 @@ def create_task(
     session_id: str,
     case: E2ECase,
     mode: RunMode,
+    attachments: list[dict[str, Any]] | None = None,
+    runtime_request: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     options: dict[str, Any] = {"debug_agent_id": case.agent_id}
     # ``*_runtime`` options use execute=False as a legacy opt-out.  The
@@ -260,8 +288,9 @@ def create_task(
     # V2 candidate request, so Legacy pairs must omit it entirely.
     if mode == "runtime" or case.runtime_option_key.endswith("_runtime"):
         runtime_options: dict[str, Any] = {"execute": mode == "runtime"}
-        if case.runtime_request is not None:
-            runtime_options["request"] = case.runtime_request
+        request_payload = runtime_request or case.runtime_request
+        if request_payload is not None:
+            runtime_options["request"] = request_payload
         options[case.runtime_option_key] = runtime_options
     response = client.post(
         f"{base_url}/tasks",
@@ -272,6 +301,7 @@ def create_task(
             "course_id": case.course_id,
             "intent": case.intent,
             "canonical_input": {"question": case.question},
+            "attachments": attachments or [],
             "options": options,
         },
     )
@@ -367,10 +397,20 @@ def await_task(
                 and approval_attempt_count < MAX_AUTO_APPROVALS
             ):
                 proposal_decision = proposal is not None
+                proposal_id = (
+                    str(proposal["proposal_id"])
+                    if proposal_decision and proposal
+                    else None
+                )
+                expected_state_version = (
+                    proposal["state_version"]
+                    if proposal_decision and proposal
+                    else projection.get("state_version")
+                )
                 approval = client.post(
                     (
                         f"{base_url}/tasks/{task_id}/runtime-plan-proposals/"
-                        f"{proposal['proposal_id']}/decision"
+                        f"{proposal_id}/decision"
                         if proposal_decision
                         else f"{base_url}/tasks/{task_id}/approve"
                     ),
@@ -383,7 +423,7 @@ def await_task(
                         {
                             "decision": "approved",
                             "reason": "authorized development E2E control test",
-                            "expected_state_version": proposal["state_version"],
+                            "expected_state_version": expected_state_version,
                         }
                         if proposal_decision
                         else {
@@ -408,16 +448,8 @@ def await_task(
                                 else "approve_conflict"
                             ),
                             "runtime_run_id": runtime_run_id,
-                            "proposal_id": (
-                                proposal.get("proposal_id")
-                                if proposal_decision
-                                else None
-                            ),
-                            "state_version": (
-                                proposal.get("state_version")
-                                if proposal_decision
-                                else projection.get("state_version")
-                            ),
+                            "proposal_id": proposal_id,
+                            "state_version": expected_state_version,
                             "actor": "anonymous_development_test",
                         }
                     )
@@ -431,16 +463,8 @@ def await_task(
                                 else "approve"
                             ),
                             "runtime_run_id": runtime_run_id,
-                            "proposal_id": (
-                                proposal.get("proposal_id")
-                                if proposal_decision
-                                else None
-                            ),
-                            "state_version": (
-                                proposal.get("state_version")
-                                if proposal_decision
-                                else projection.get("state_version")
-                            ),
+                            "proposal_id": proposal_id,
+                            "state_version": expected_state_version,
                             "actor": "anonymous_development_test",
                         }
                     )
@@ -667,6 +691,57 @@ def result_summary(
     }
 
 
+def upload_case_dataset(
+    client: Any,
+    *,
+    base_url: str,
+    user_id: str,
+    case: E2ECase,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Upload one synthetic dataset and return its redaction-safe task ref."""
+
+    if case.dataset_csv is None:
+        return [], None
+    response = client.post(
+        f"{base_url}/files",
+        data={"purpose": "generic"},
+        files={
+            "upload": (
+                f"{case.case_id}.csv",
+                case.dataset_csv.encode("utf-8"),
+                "text/csv",
+            )
+        },
+        params={"user_id": user_id},
+    )
+    response.raise_for_status()
+    file_payload = cast(dict[str, Any], response.json())
+    attachment = {
+        key: file_payload[key]
+        for key in (
+            "id",
+            "filename",
+            "content_type",
+            "size_bytes",
+            "storage_key",
+            "checksum_sha256",
+        )
+    }
+    attachment["file_id"] = attachment.pop("id")
+    manifest = {
+        "dataset_id": f"{case.case_id}-synthetic",
+        "version": "v1",
+        "format": "csv",
+        "checksum_sha256": file_payload["checksum_sha256"],
+        "row_count": 4,
+        "column_count": 3,
+        "authorized": True,
+        "contains_sensitive_data": False,
+        "source_ref": f"attachment:{file_payload['id']}",
+    }
+    return [attachment], manifest
+
+
 def run_one(
     client: Any,
     *,
@@ -683,7 +758,27 @@ def run_one(
     session_id = make_session(
         client, base_url, user_id, case, mode, sample_id
     )
-    created = create_task(client, base_url, user_id, session_id, case, mode)
+    attachments, manifest = upload_case_dataset(
+        client,
+        base_url=base_url,
+        user_id=user_id,
+        case=case,
+    )
+    runtime_request = (
+        {**case.runtime_request, "data_manifest": manifest}
+        if case.runtime_request is not None and manifest is not None
+        else case.runtime_request
+    )
+    created = create_task(
+        client,
+        base_url,
+        user_id,
+        session_id,
+        case,
+        mode,
+        attachments=attachments,
+        runtime_request=runtime_request,
+    )
     task_id = str(created["id"])
     terminal, observed_wait_ms, control_actions = await_task(
         client,
