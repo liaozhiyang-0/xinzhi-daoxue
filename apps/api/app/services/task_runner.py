@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.exc import OperationalError
@@ -143,6 +144,8 @@ from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
+RuntimePendingEvent = tuple[AgentEventType, dict[str, Any]]
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -257,6 +260,7 @@ class TaskRunner:
                 session_factory,
                 internal_agents,
                 development_mock_provider=development_mock_provider,
+                checkpoint_hook=self._checkpoint_runtime_run,
             )
             if internal_agents is not None
             else None
@@ -405,6 +409,9 @@ class TaskRunner:
         self._post_tasks: dict[str, asyncio.Task[None]] = {}
         self._research_tasks: dict[str, asyncio.Task[None]] = {}
         self._summary_locks: dict[str, asyncio.Lock] = {}
+        self._runtime_event_buffers: dict[
+            str, list[RuntimePendingEvent]
+        ] = {}
         self._shutting_down = False
         self.execution_owner = f"local-{uuid4().hex[:12]}"
 
@@ -2051,6 +2058,8 @@ class TaskRunner:
             if lease_task is not None:
                 lease_task.cancel()
                 await asyncio.gather(lease_task, return_exceptions=True)
+            if runtime_run is not None:
+                self._runtime_event_buffers.pop(runtime_run.run_id, None)
 
     async def _lease_heartbeat(self, task_id: str) -> None:
         lease_seconds = self.knowledge_base.settings.task_lease_seconds
@@ -3473,6 +3482,10 @@ class TaskRunner:
     async def _checkpoint_runtime_run(self, run: AgentRun) -> None:
         """Persist a Runtime snapshot from the long-running worker context."""
 
+        event_buffer = getattr(self, "_runtime_event_buffers", {}).get(
+            run.run_id, []
+        )
+        pending_events = list(event_buffer)
         async with self.session_factory() as db:
             repository = AgentRunRepository(db)
             runtime_model = await repository.get(run.run_id, for_update=True)
@@ -3540,6 +3553,13 @@ class TaskRunner:
                     TaskStatus.WAITING_REVIEW,
                 }:
                     task.status = TaskStatus.RUNNING
+            for event_type, data in pending_events:
+                await append_task_event(
+                    db,
+                    run.task_id,
+                    event_type,
+                    data=data,
+                )
             await repository.save_checkpoint(run)
             proposal_id = run.control_data.get("plan_proposal_id")
             if isinstance(proposal_id, str) and proposal_id:
@@ -3557,6 +3577,14 @@ class TaskRunner:
                     # approval CAS token aligned with that latest snapshot.
                     proposal_model.state_version = run.state_version
             await db.commit()
+        if pending_events:
+            current_buffer = getattr(self, "_runtime_event_buffers", {}).get(
+                run.run_id
+            )
+            if current_buffer is not None:
+                del current_buffer[: len(pending_events)]
+                if not current_buffer:
+                    self._runtime_event_buffers.pop(run.run_id, None)
 
     async def _runtime_control_provider(
         self, run: AgentRun
@@ -3609,14 +3637,11 @@ class TaskRunner:
     ) -> None:
         event_type, data = to_task_event(event, run, node_id)
         data["runtime_event"] = event
-        async with self.session_factory() as db:
-            await append_task_event(
-                db,
-                run.task_id,
-                event_type,
-                data=data,
-            )
-            await db.commit()
+        buffers = getattr(self, "_runtime_event_buffers", None)
+        if buffers is None:
+            buffers = {}
+            self._runtime_event_buffers = buffers
+        buffers.setdefault(run.run_id, []).append((event_type, data))
 
     async def _append_runtime_decision_event(
         self, run: AgentRun, decision: RuntimeDecision
@@ -3638,14 +3663,11 @@ class TaskRunner:
             data["user_prompt"] = decision.user_prompt
         if decision.approval_scope:
             data["approval_scope"] = decision.approval_scope
-        async with self.session_factory() as db:
-            await append_task_event(
-                db,
-                run.task_id,
-                event_type,
-                data=data,
-            )
-            await db.commit()
+        buffers = getattr(self, "_runtime_event_buffers", None)
+        if buffers is None:
+            buffers = {}
+            self._runtime_event_buffers = buffers
+        buffers.setdefault(run.run_id, []).append((event_type, data))
 
     async def _mark_cancelled(
         self, db: AsyncSession, task_id: str, reason: str

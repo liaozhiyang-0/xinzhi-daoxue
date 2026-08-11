@@ -133,20 +133,20 @@ class RuntimeController:
                     node_ids=decision.node_ids,
                 )
                 if agent_run.status.value == "completed":
-                    await self._checkpoint(agent_run)
+                    await self._checkpoint_after_executor(agent_run)
                     return agent_run
                 if (
                     agent_run.status.value == "failed"
                     and self.replan_provider is None
                 ):
-                    await self._checkpoint(agent_run)
+                    await self._checkpoint_after_executor(agent_run)
                     return agent_run
                 if agent_run.status.value in {
                     "waiting_input",
                     "waiting_approval",
                     "paused",
                 }:
-                    await self._checkpoint(agent_run)
+                    await self._checkpoint_after_executor(agent_run)
                     return agent_run
                 continue
             await self._checkpoint(agent_run)
@@ -180,6 +180,19 @@ class RuntimeController:
         if self.checkpoint_hook is None:
             return
         await _resolve(self.checkpoint_hook(agent_run))
+
+    async def _checkpoint_after_executor(self, agent_run: AgentRun) -> None:
+        """Keep a fallback checkpoint for executors without persistence.
+
+        Production Runtime wires the same checkpoint boundary into both the
+        controller and PlanExecutor.  The executor has already persisted the
+        terminal/waiting transition, so repeating it here only adds a durable
+        snapshot and transaction.  Standalone callers that provide a
+        controller-only hook retain the older safety behavior.
+        """
+
+        if self.executor.checkpoint_hook is None:
+            await self._checkpoint(agent_run)
 
     async def _emit_decision(
         self, agent_run: AgentRun, decision: RuntimeDecision

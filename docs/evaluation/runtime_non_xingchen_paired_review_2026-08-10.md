@@ -1744,3 +1744,37 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - No launch mode, release registry, or semantic gate was weakened. The next
   valid step is an independently reviewed, same-suite semantic sidecar plus a
   version-bound human release decision.
+
+## 99. 2026-08-11 Runtime event persistence and checkpoint deduplication
+
+- Runtime task events are now buffered per Run and flushed in the following
+  checkpoint transaction. A focused SQLite regression proves that three
+  ordered Runtime events and their checkpoint correlation are persisted with
+  one database commit; the event sequence remains `1, 2, 3`.
+- Typed child Runs now use the parent TaskRunner checkpoint boundary, so child
+  events are not stranded in process memory. The suspension-only event emitted
+  after the controller checkpoint receives a final child checkpoint as well.
+  The change preserves parent/child lineage and approval/recovery behavior;
+  the focused control, child-run, Runtime contract, and observability tests
+  passed `37` tests after the checkpoint deduplication change.
+- The RuntimeController no longer repeats a terminal/waiting checkpoint that
+  PlanExecutor has already persisted. Standalone callers that provide only a
+  controller checkpoint hook retain a fallback checkpoint.
+
+## 100. 2026-08-11 General Runtime post-optimization pair and release gate
+
+- A fresh isolated API process and migrated SQLite database ran three
+  Legacy/Runtime pairs for `general_stack_explanation` (six runs total).
+  All six completed with zero timeouts, zero Agent mismatches, and zero event
+  order failures. Runtime traces contain `22` ordered events and `11` durable
+  checkpoints per run; the child Run events are present again.
+- The current bounded sample averaged approximately `152 ms` for Legacy and
+  `686 ms` for Runtime. Runtime control overhead remained approximately
+  `146–169 ms`, so the performance gate still reports
+  `latency_regression_above_threshold` and
+  `single_pair_latency_regression_above_threshold`.
+- The evidence packager therefore correctly marks
+  `GENERAL_QUESTION_V1` structurally ineligible for release. This is a real
+  functional/persistence improvement, not a release pass; semantic review and
+  human release authorization remain required after the performance blocker
+  is resolved.

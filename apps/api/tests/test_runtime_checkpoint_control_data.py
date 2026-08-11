@@ -3,15 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from app.contracts import RuntimeReconciliationSubmission
+from app.contracts import AgentEventType, RuntimeReconciliationSubmission
 from app.core.config import Settings
 from app.database.base import Base
 from app.models import SessionModel, TaskModel, TaskStatus
 from app.providers.mock import MockAgentProvider
-from app.repositories import AgentRunRepository
+from app.repositories import AgentRunRepository, TaskRepository
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
+    DecisionAction,
+    RuntimeDecision,
     RuntimeNode,
     RuntimeNodeStatus,
     RuntimeRunStatus,
@@ -20,6 +22,7 @@ from app.runtime import (
 from app.services.runtime_child_run import RuntimeChildRunService
 from app.services.task_control_service import TaskControlService
 from app.services.task_runner import TaskRunner
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
@@ -198,6 +201,74 @@ async def test_pause_checkpoint_preserves_runtime_state_and_consumes_stale_appro
             assert "approved" not in restored.control_data
             assert "approval_scope" not in restored.control_data
     finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_runtime_events_flush_with_the_following_checkpoint_transaction(
+    tmp_path: Any,
+) -> None:
+    engine, session_factory = await _open_database(
+        tmp_path,
+        task_id="runtime-event-batch",
+        task_status=TaskStatus.RUNNING,
+    )
+    commit_count = 0
+
+    def count_commit(_connection: Any) -> None:
+        nonlocal commit_count
+        commit_count += 1
+
+    event.listen(engine.sync_engine, "commit", count_commit)
+    try:
+        run = _run(
+            "runtime-event-batch-run",
+            "runtime-event-batch",
+            status=RuntimeRunStatus.RUNNING,
+            control_data={},
+        )
+        async with session_factory() as session:
+            await AgentRunRepository(session).create(
+                run,
+                agent_id="RUNTIME_TEST",
+                provider="mock",
+            )
+            await session.commit()
+
+        commit_count = 0
+        runner = object.__new__(TaskRunner)
+        runner.session_factory = session_factory
+        await runner._append_runtime_event("node_started", run, "runtime.node")
+        await runner._append_runtime_event("node_completed", run, "runtime.node")
+        await runner._append_runtime_decision_event(
+            run,
+            RuntimeDecision(
+                action=DecisionAction.REQUEST_APPROVAL,
+                approval_scope="runtime.node",
+                reason_codes=["test_approval"],
+            ),
+        )
+        await runner._checkpoint_runtime_run(run)
+
+        async with session_factory() as session:
+            events = await TaskRepository(session).list_events(
+                "runtime-event-batch"
+            )
+            checkpoints = await AgentRunRepository(session).list_checkpoints(
+                run.run_id
+            )
+
+        assert [item.event_type for item in events] == [
+            AgentEventType.PLAN_NODE_STARTED.value,
+            AgentEventType.PLAN_NODE_COMPLETED.value,
+            AgentEventType.AGENT_PROGRESS.value,
+        ]
+        assert [item.sequence for item in events] == [1, 2, 3]
+        assert checkpoints[-1].event_sequence == 3
+        assert commit_count == 1
+        assert run.run_id not in runner._runtime_event_buffers
+    finally:
+        event.remove(engine.sync_engine, "commit", count_commit)
         await engine.dispose()
 
 

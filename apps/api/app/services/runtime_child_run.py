@@ -46,11 +46,13 @@ class RuntimeChildRunService:
         *,
         development_mock_provider: Any | None = None,
         after_batch_hook: RuntimeBatchHook | None = None,
+        checkpoint_hook: Callable[[AgentRun], Any] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.internal_agents = internal_agents
         self.development_mock_provider = development_mock_provider
         self.after_batch_hook = after_batch_hook
+        self.checkpoint_hook = checkpoint_hook
 
     async def execute(
         self,
@@ -179,6 +181,10 @@ class RuntimeChildRunService:
                 await _resolve_event(
                     event_hook("node_suspended", child_run, "subagent.execute")
                 )
+                # The suspension event is emitted after the controller's last
+                # checkpoint.  Persist it with the suspended child snapshot so
+                # a buffered TaskRunner event cannot outlive the child Run.
+                await self._checkpoint(child_run)
             raise RuntimeNodeSuspended(child_run.status)
         if child_run.status in {
             RuntimeRunStatus.COMPLETED,
@@ -281,6 +287,11 @@ class RuntimeChildRunService:
             return child_run
 
     async def _checkpoint(self, run: AgentRun) -> None:
+        if self.checkpoint_hook is not None:
+            result = self.checkpoint_hook(run)
+            if inspect.isawaitable(result):
+                await result
+            return
         async with self.session_factory() as db:
             await AgentRunRepository(db).save_checkpoint(run)
             await db.commit()
