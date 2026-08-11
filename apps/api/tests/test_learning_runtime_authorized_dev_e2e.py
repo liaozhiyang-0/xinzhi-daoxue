@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from scripts.run_learning_runtime_authorized_dev_e2e import (
+    checkpoint_event_summary,
     event_summary,
     redact,
     runtime_summary,
+    safe_checkpoint_summaries,
     selected_cases,
 )
 
@@ -74,3 +76,48 @@ def test_learning_e2e_runtime_summary_keeps_only_safe_node_fields() -> None:
             "error_code": "",
         },
     ]
+
+
+def test_learning_e2e_checkpoint_summary_excludes_private_state() -> None:
+    checkpoints = safe_checkpoint_summaries(
+        [
+            {
+                "sequence": 1,
+                "state_version": 3,
+                "status": "waiting_approval",
+                "event_sequence": 12,
+                "created_at": "2026-08-12T10:00:00+08:00",
+                "state_data": {"student_answer": "must-not-be-copied"},
+            },
+            {
+                "sequence": 2,
+                "state_version": 4,
+                "status": "completed",
+                "event_sequence": 18,
+                "created_at": "2026-08-12T10:00:01+08:00",
+            },
+        ]
+    )
+
+    assert checkpoints == [
+        {
+            "sequence": 1,
+            "state_version": 3,
+            "status": "waiting_approval",
+            "event_sequence": 12,
+            "created_at": "2026-08-12T10:00:00+08:00",
+        },
+        {
+            "sequence": 2,
+            "state_version": 4,
+            "status": "completed",
+            "event_sequence": 18,
+            "created_at": "2026-08-12T10:00:01+08:00",
+        },
+    ]
+    assert checkpoint_event_summary(checkpoints) == {
+        "count": 2,
+        "strictly_increasing": True,
+        "first_event_sequence": 12,
+        "last_event_sequence": 18,
+    }

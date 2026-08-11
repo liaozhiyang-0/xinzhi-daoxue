@@ -359,6 +359,54 @@ def runtime_summary(status: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def safe_checkpoint_summaries(value: Any) -> list[dict[str, Any]]:
+    """Keep only redacted checkpoint/event correlation fields."""
+
+    if not isinstance(value, list):
+        return []
+    summaries: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        sequence = item.get("sequence")
+        state_version = item.get("state_version")
+        event_sequence = item.get("event_sequence")
+        if not all(
+            isinstance(number, int) and number >= 0
+            for number in (sequence, state_version, event_sequence)
+        ):
+            continue
+        status = item.get("status")
+        created_at = item.get("created_at")
+        summaries.append(
+            {
+                "sequence": sequence,
+                "state_version": state_version,
+                "status": status if isinstance(status, str) else "",
+                "event_sequence": event_sequence,
+                "created_at": created_at if isinstance(created_at, str) else "",
+            }
+        )
+    return summaries
+
+
+def checkpoint_event_summary(checkpoints: list[dict[str, Any]]) -> dict[str, Any]:
+    sequences = [
+        int(item["event_sequence"])
+        for item in checkpoints
+        if isinstance(item.get("event_sequence"), int)
+    ]
+    return {
+        "count": len(checkpoints),
+        "strictly_increasing": all(
+            sequences[index] < sequences[index + 1]
+            for index in range(len(sequences) - 1)
+        ),
+        "first_event_sequence": sequences[0] if sequences else None,
+        "last_event_sequence": sequences[-1] if sequences else None,
+    }
+
+
 def run_one(
     client: Any,
     *,
@@ -387,6 +435,8 @@ def run_one(
     )
     action: dict[str, Any] = {}
     runtime: dict[str, Any] = {}
+    checkpoints: list[dict[str, Any]] = []
+    checkpoint_capture = "not_applicable"
     controls: list[dict[str, Any]] = []
     if task.get("status") == "completed":
         action = learning_action(client, base_url, task_id, user_id, case, sample_id)
@@ -401,6 +451,26 @@ def run_one(
                 timeout_seconds=timeout_seconds,
                 auto_approve_dev=auto_approve_dev,
             )
+            checkpoint_capture = "unavailable"
+            debug_response = client.get(f"{base_url}/debug/execution/{task_id}")
+            if debug_response.status_code == 200:
+                debug_payload = debug_response.json()
+                learning_projection = (
+                    debug_payload.get("learning_runtime")
+                    if isinstance(debug_payload, dict)
+                    else None
+                )
+                if isinstance(learning_projection, dict):
+                    projected_run_id = learning_projection.get("run_id")
+                    if projected_run_id in {None, run_id}:
+                        checkpoints = safe_checkpoint_summaries(
+                            learning_projection.get("checkpoints")
+                        )
+                        checkpoint_capture = "captured"
+                    else:
+                        checkpoint_capture = "run_mismatch"
+            else:
+                checkpoint_capture = f"http_{debug_response.status_code}"
     events_response = client.get(
         f"{base_url}/tasks/{task_id}/events", params={"after": 0}
     )
@@ -412,6 +482,7 @@ def run_one(
     write_json(artifact_dir / "task.json", task)
     write_json(artifact_dir / "learning_action.json", action)
     write_json(artifact_dir / "runtime_status.json", runtime)
+    write_json(artifact_dir / "checkpoints.json", checkpoints)
     write_json(artifact_dir / "events.json", events)
     expected_runtime = mode == "runtime"
     observed_runtime = bool(action.get("runtime_run_id"))
@@ -428,6 +499,8 @@ def run_one(
         "action_status": action.get("status"),
         "runtime": runtime_summary(runtime),
         "runtime_status_history": runtime.get("status_history", []),
+        "checkpoint_capture": checkpoint_capture,
+        "checkpoints": checkpoint_event_summary(checkpoints),
         "result_status": result_status,
         "controls": controls,
         "events": event_summary(events),
