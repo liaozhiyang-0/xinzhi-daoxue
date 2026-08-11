@@ -1901,3 +1901,28 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   the LearningLoop path. It remains mock development evidence and does not
   authorize a canary/default release; the LearningLoop paired structural suite,
   semantic sidecar, and release decision are still missing.
+
+## 109. 2026-08-12 current core-entry browser coverage
+
+- Two additional isolated authenticated administrator runs completed against
+  the current committed code with one API process and a temporary SQLite
+  database per run. Assignment Review completed as
+  `TEACH_02_ASSIGNMENT_REVIEW_V1` after one approval, with three succeeded
+  Runtime nodes and `27` strictly increasing task events. Course QA completed
+  as `LEARN_01_LOCAL_RETRIEVAL_V1`, with `19` strictly increasing events and
+  succeeded `knowledge.execute` and `knowledge.verify` nodes. Both runs had
+  zero page errors and zero failed HTTP requests.
+- An isolated authenticated researcher run completed Academic Search as
+  `RESEARCH_01_ACADEMIC_SEARCH_V1`, with four succeeded research nodes and
+  `25` strictly increasing task events. Its attempt to read the administrator
+  execution-debug endpoint returned HTTP `403`; this is recorded as the
+  intended researcher/admin authorization boundary, not as a task failure.
+  The business task and Runtime control projection completed normally, with
+  zero page errors and zero failed HTTP requests.
+- Reports are stored under
+  `.local_outputs/runtime_teacher_browser_acceptance_assignment_review_20260812_current/`,
+  `.local_outputs/runtime_teacher_browser_acceptance_course_qa_20260812_current/`,
+  and
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_search_20260812_current/`.
+  These are current mock development/frontend evidence only; they do not
+  replace authorized paired traces, semantic review, or release authorization.
