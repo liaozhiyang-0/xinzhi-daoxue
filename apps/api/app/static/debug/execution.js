@@ -961,7 +961,7 @@ async function executeLearningRuntimeControl(action = "approve", inputData = nul
       body: JSON.stringify({
         action,
         expected_state_version: expectedStateVersion,
-        data,
+        ...(action === "input" ? { data } : {}),
         idempotency_key: `execution_${action}_${crypto.randomUUID()}`,
       }),
     });

@@ -36,7 +36,8 @@ def test_learning_runtime_ui_renders_backend_control_contract_and_actions() -> N
         "function learningRuntimeControlActionAvailable(projection, action)"
         in script
     )
-    assert "function learningRuntimeApproveAvailable(reference, projection)" in script
+    assert "function learningRuntimeControlStateVersion(projection)" in script
+    assert "function learningRuntimeControlEntry(projection, action)" in script
     assert 'status === "waiting_approval"' in script
     assert "entry?.available === true" in script
     assert "function learningRuntimeStatusSurface(reference)" in script
@@ -54,8 +55,9 @@ def test_learning_runtime_ui_renders_backend_control_contract_and_actions() -> N
         "inputData = null)"
         in script
     )
-    assert 'action: "approve"' in script
+    assert 'function executeLearningRuntimeControl(action = "approve", ' in script
     assert "expected_state_version: expectedStateVersion" in script
+    assert '...(action === "input" ? { data } : {})' in script
     assert 'idempotency_key: `execution_${action}_${crypto.randomUUID()}`' in script
     assert "loadLearningRuntimeStatus(execution, true)" in script
     assert "loadLearningRuntimeControls(execution, true)" in script
@@ -99,7 +101,7 @@ def test_learning_runtime_ui_renders_status_contract_and_redacted_node_statuses(
 def test_learning_runtime_ui_keeps_legacy_task_controls_separate() -> None:
     script = _read_script()
 
-    assert "const isLearningLoop = inline != null" in script
+    assert "const isLearningLoop = hasInlineLearningRuntime" in script
     assert "const learningReference = learningRuntimeReference(data)" in script
     assert "/api/v1/tasks/${encodeURIComponent(id)}/${action}${query}" in script
     assert 'panel.dataset.learningRuntime = "false"' in script

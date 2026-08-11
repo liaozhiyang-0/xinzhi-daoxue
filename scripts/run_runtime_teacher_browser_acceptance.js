@@ -210,7 +210,14 @@ async function waitForRuntimeApproval(page, taskId, observations) {
   throw new Error("runtime approval did not reach a terminal task state within the bounded wait");
 }
 
-async function waitForLearningRuntimeApproval(page, taskId, runId, observations) {
+async function waitForLearningRuntimeApproval(
+  page,
+  taskId,
+  runId,
+  observations,
+  controlPage = page,
+  controlSelector = "#runtime-task-approve",
+) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const projection = await readJson(
       page,
@@ -222,11 +229,11 @@ async function waitForLearningRuntimeApproval(page, taskId, runId, observations)
       runtime_status: projection.status,
       control_scope: projection.control_scope,
       runtime_run_id: runId,
-      approve_visible: await page.locator("#runtime-task-approve").isVisible().catch(() => false),
-      approve_enabled: await page.locator("#runtime-task-approve").isEnabled().catch(() => false),
+      approve_visible: await controlPage.locator(controlSelector).isVisible().catch(() => false),
+      approve_enabled: await controlPage.locator(controlSelector).isEnabled().catch(() => false),
     });
     if (projection.control_scope === "learning_loop" && projection.status === "waiting_approval") {
-      const approve = page.locator("#runtime-task-approve");
+      const approve = controlPage.locator(controlSelector);
       await approve.waitFor({ state: "visible", timeout: 15_000 });
       if (await approve.isDisabled()) throw new Error("learning Runtime approval control is disabled");
       await approve.click();
@@ -316,6 +323,7 @@ async function collectEvidence(page, taskId) {
     evidence: null,
     learning_runtime: null,
     learning_control_responses: [],
+    execution_control_responses: [],
     page_errors: [],
     request_failures: [],
     status: "failed",
@@ -401,11 +409,35 @@ async function collectEvidence(page, taskId) {
       for (let attempt = 0; attempt < 60 && !learningControlsLoaded; attempt += 1) await sleep(250);
       if (!learningControlsLoaded) throw new Error("workspace did not refresh LearningLoop runtime controls");
       await page.locator("#runtime-task-controls").waitFor({ state: "visible", timeout: 30_000 });
+      const executionPage = await context.newPage();
+      executionPage.setDefaultTimeout(60_000);
+      executionPage.on("pageerror", (error) => report.page_errors.push(`execution: ${error.message}`));
+      executionPage.on("requestfailed", (request) => report.request_failures.push(`execution: ${request.method()} ${request.url()}`));
+      executionPage.on("response", async (response) => {
+        if (!response.url().includes("/api/v1/learning/runtime/") || !response.url().endsWith("/control")) return;
+        try {
+          const body = await response.json();
+          report.execution_control_responses.push({
+            status: response.status(),
+            accepted: body.accepted === true,
+            action: body.action || null,
+            result_status: body.result?.status || null,
+          });
+        } catch {}
+      });
+      await executionPage.goto(
+        `${baseURL}/debug/execution?task_id=${encodeURIComponent(report.task_id)}`,
+        { waitUntil: "networkidle" },
+      );
+      await executionPage.locator('button[data-tab-target="runtime"]').click();
+      await executionPage.locator("#runtime-approve").waitFor({ state: "visible", timeout: 30_000 });
       const learningRuntime = await waitForLearningRuntimeApproval(
         page,
         report.task_id,
         learningRunId,
         report.approval_observations,
+        executionPage,
+        "#runtime-approve",
       );
       const runtimeStatus = await readJson(
         page,
@@ -422,6 +454,7 @@ async function collectEvidence(page, taskId) {
           answer_visible: await page.locator("#answer-panel").isVisible(),
           teaching_loop_visible: await page.locator("#teaching-loop-panel").isVisible(),
           learning_progress_visible: await page.locator("#learning-progress-panel").isVisible(),
+          execution_runtime_controls_visible: await executionPage.locator("#runtime-controls").isVisible(),
         },
       };
     }

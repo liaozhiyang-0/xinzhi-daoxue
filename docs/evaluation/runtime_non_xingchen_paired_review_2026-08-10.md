@@ -762,6 +762,23 @@ $env:XINZHI_TEACHER_BROWSER_PROVIDER_PROFILE = 'real_local'
 node scripts\run_runtime_teacher_browser_acceptance.js
 ```
 
+## 47. 2026-08-11 execution debug LearningLoop control parity
+
+- The execution debug page now uses the same LearningLoop control request
+  contract as the Workspace: `data` is sent only for `input`; approval,
+  pause, and resume send the action and current `state_version` without an
+  empty data object.
+- The focused UI contract suite is green at 18/18 after synchronizing stale
+  assertions with the current capability-driven implementation.
+- The authenticated browser harness also opens `/debug/execution` for the
+  LearningLoop scenario and approves from the execution page itself. The
+  bounded report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_execution_debug_20260811/report.json`.
+  It records one HTTP 200 accepted approval, a completed four-node
+  `teaching_interaction` run, visible execution controls, 39 strictly
+  increasing task events, and zero page/request failures. This remains Mock
+  development evidence, not semantic or release authorization.
+
 ## 43. 2026-08-11 semantic release gate hardening
 
 - Model-only semantic judgements remain accepted as diagnostic sidecars, which
