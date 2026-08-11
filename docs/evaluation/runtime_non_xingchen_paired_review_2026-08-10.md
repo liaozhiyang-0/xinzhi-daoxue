@@ -1263,3 +1263,17 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - Regression coverage passed `29 tests`, plus Ruff, Mypy, and Node syntax
   checks. The change is additive and provider-free; it does not alter launch
   policy or promote any capability.
+
+## 69. 2026-08-11 readiness projection HTTP verification
+
+- A single isolated test API on port `8066` was started with SQLite, all
+  external Provider integrations disabled, and no Agent mocks used for the
+  readiness requests. `GET /api/v1/agents/runtime-readiness` returned
+  `provider_called=false` and exposed the three evidence fields on both the
+  Agent projection and the top-level capability projection.
+- `GET /api/v1/learning/runtime-readiness` exposed the same structural,
+  semantic, and Canary fields for LearningLoop capabilities. The observed
+  values remained false because no release evidence was configured.
+- The local browser-control plugin disconnected during initialization, so no
+  visual browser acceptance is claimed for `/debug/agents`. The isolated API
+  process was stopped and port `8066` was released afterward.
