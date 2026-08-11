@@ -1682,3 +1682,49 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   the student. Its debug endpoint `403` is expected role isolation, not a
   failed student flow. These are mock-provider application-wiring and UI
   state checks, not semantic or production-provider evidence.
+
+## 95. 2026-08-11 bounded Legacy/Runtime pair after approval-loop fix
+
+- A single isolated API process using a temporary SQLite database ran the
+  `lesson_prep_runtime_handoff` and `academic_writing_runtime_handoff` cases
+  in both Legacy and Runtime modes, for four total runs. All four completed,
+  with zero Agent mismatches and zero event-order failures.
+- The Legacy runs emitted `18` and `21` ordered events respectively. The
+  Runtime runs each emitted `27` ordered events, reached three Runtime nodes,
+  used `13` durable checkpoints, and recorded one explicit approval with zero
+  plan proposals. This confirms the corrected quality gate in the public Task
+  API path, not only in unit tests or the browser harness.
+- The run used the development Mock Provider and automatic development-only
+  approval. It is therefore a Runtime handoff/recovery regression, not a
+  semantic-quality, external-provider, or release-authorization result.
+- The paired-evaluation CLI now normalizes either a host URL or an explicit
+  `/api/v1` URL, with a regression test for both forms. This removes an
+  operator-only 404 footgun without changing the public API contract.
+
+## 96. 2026-08-11 Docker queue-worker build boundary rechecked
+
+- `docker compose config --quiet` remained valid and the existing Postgres,
+  Redis, MinIO, and Qdrant infrastructure containers remained healthy.
+- A single `docker compose --profile queue-worker build --pull=false
+  --progress=plain queue-worker` attempt was bounded at `180` seconds. It
+  produced no queue-worker image and no application container was started.
+  The exact Compose/buildx client processes were stopped afterward; Docker
+  Desktop and infrastructure containers were left running.
+- The reproducible build contract (small context, CPU Torch default,
+  BuildKit pip cache, and explicit Torch override arguments) is in place, but
+  the current machine still cannot prove a complete image build. This remains
+  a deployment-environment dependency/download gate, not a release pass.
+
+## 97. 2026-08-11 provider-free release preflight boundary
+
+- The Lesson Prep release preflight accepted the Agent and Runtime plan
+  versions and marked the structural suite eligible, but rejected the
+  available semantic material because the sidecar was bound to a different
+  suite and the release authorization was not present.
+- The existing Academic Writing semantic material is explicitly a model
+  preliminary review (`judge_type=model`, `decision=needs_review`) and the
+  generated human template remains incomplete. It cannot be promoted to an
+  independent semantic pass or release authorization.
+- No launch mode, release registry, or semantic gate was weakened. The next
+  valid step is an independently reviewed, same-suite semantic sidecar plus a
+  version-bound human release decision.

@@ -119,6 +119,18 @@ def test_pair_modes_rotates_pair_order_without_changing_single_mode_runs() -> No
     assert MODULE.pair_modes("runtime", "alternate", 5) == ("runtime",)
 
 
+def test_api_root_accepts_host_or_explicit_api_v1_url() -> None:
+    assert MODULE.api_root("http://127.0.0.1:8066") == (
+        "http://127.0.0.1:8066/api/v1"
+    )
+    assert MODULE.api_root("http://127.0.0.1:8066/") == (
+        "http://127.0.0.1:8066/api/v1"
+    )
+    assert MODULE.api_root("http://127.0.0.1:8066/api/v1/") == (
+        "http://127.0.0.1:8066/api/v1"
+    )
+
+
 def test_research03_pair_case_omits_business_candidate_from_legacy_request() -> None:
     case = next(
         item

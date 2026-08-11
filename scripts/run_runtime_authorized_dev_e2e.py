@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit, urlunsplit
 
 RunMode = Literal["legacy", "runtime"]
 PairOrder = Literal["legacy-first", "runtime-first", "alternate"]
@@ -234,7 +235,18 @@ def selected_cases(requested: list[str]) -> tuple[E2ECase, ...]:
 
 
 def api_root(base_url: str) -> str:
-    return base_url.rstrip("/")
+    """Normalize a host URL or an explicit ``/api/v1`` root."""
+
+    value = base_url.strip().rstrip("/")
+    if not value:
+        raise ValueError("base URL must not be empty")
+    parsed = urlsplit(value)
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/api/v1"
+    elif path != "/api/v1" and not path.endswith("/api/v1"):
+        path = f"{path}/api/v1"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
 
 
 def pair_modes(
