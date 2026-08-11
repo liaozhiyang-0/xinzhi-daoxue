@@ -9,6 +9,34 @@ from app.runtime import AgentRun
 from apps.api.tests.phase3_helpers import learning_action, submit_power
 
 
+def test_disabled_learning_progress_runtime_falls_back_without_runtime_run(
+    api, app
+) -> None:
+    """Legacy LearningLoop actions must not create a disabled Runtime run."""
+
+    app.state.learning_progress_runtime.enabled = False
+    session = api.create_session()
+    task = submit_power(
+        api,
+        session["id"],
+        student_attempt={"raw_text": "P=20", "final_answer": "20"},
+    )
+
+    response = learning_action(
+        api,
+        task["id"],
+        "submit_attempt_revision",
+        key="learning-progress-legacy-fallback-0001",
+        answer="P=20 W",
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body.get("runtime_run_id") is None
+    assert body.get("runtime_status") == ""
+
+
 def test_phase3_revision_uses_durable_learning_progress_runtime(api, app) -> None:
     app.state.learning_progress_runtime.enabled = True
     session = api.create_session()
