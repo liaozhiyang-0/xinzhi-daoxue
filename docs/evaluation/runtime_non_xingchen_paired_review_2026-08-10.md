@@ -917,3 +917,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   and zero request failures. Student approval was not asserted in this path;
   the separate authenticated Mock teacher run remains the evidence for
   approval and recovery authorization.
+
+## 50. 2026-08-11 RESEARCH_02 academic-writing browser path
+
+- A bounded authenticated browser run exercised the visible Workspace
+  academic-writing capability with one isolated API process, an isolated
+  SQLite database, Xingchen disabled, Agent Mocks disabled, and the
+  `RESEARCH_02_ACADEMIC_WRITING_V1=default` local Runtime profile. The redacted
+  report is under
+  `.local_outputs/runtime_research02_browser_acceptance_academic_writing_real_local_20260811/report.json`.
+- The authenticated admin task completed through
+  `RESEARCH_02_ACADEMIC_WRITING_V1` with `result_provider=local_agent`. The
+  Runtime projection completed with `writing.observe`, `writing.execute`, and
+  `writing.verify` succeeded; the execution node also produced a completed
+  child run with a persisted state version.
+- The browser observed 27 strictly increasing task events, zero page errors,
+  and zero request failures. This is real-local application/browser evidence
+  for RESEARCH_02 Runtime ownership and result delivery. It is not semantic
+  approval of the rewritten text, external-provider equivalence, or production
+  release authorization.
