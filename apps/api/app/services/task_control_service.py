@@ -31,6 +31,7 @@ from app.services.evaluation_attachment_cleanup import (
     cleanup_evaluation_attachments,
 )
 from app.services.event_service import append_task_event
+from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from app.services.task_creation_service import TaskCreationService
 
 RETRYABLE_FAILURES = {
@@ -138,7 +139,37 @@ class TaskControlService:
                 AgentEventType.CANCEL_REQUESTED,
                 agent_id=task.agent_id,
             )
-        if task.status == TaskStatus.QUEUED:
+        if task.status in {
+            TaskStatus.CREATED,
+            TaskStatus.QUEUED,
+            TaskStatus.WAITING_USER,
+            TaskStatus.WAITING_REVIEW,
+        }:
+            runtime_repository = AgentRunRepository(self.db)
+            runtime_model = await runtime_repository.get_for_task(
+                task.id, for_update=True
+            )
+            if runtime_model is not None:
+                runtime = await runtime_repository.restore(runtime_model.id)
+                if runtime is not None and runtime.status not in {
+                    RuntimeRunStatus.COMPLETED,
+                    RuntimeRunStatus.FAILED,
+                    RuntimeRunStatus.CANCELLED,
+                }:
+                    now = datetime.now(UTC)
+                    runtime.control_request = ""
+                    runtime.control_data = {}
+                    runtime.completed_at = now
+                    runtime.updated_at = now
+                    await RuntimeRunLifecycleService(enabled=True).finalize(
+                        self.db,
+                        task_id=task.id,
+                        status=RuntimeRunStatus.CANCELLED,
+                        provider=self.provider.provider_name,
+                        error_code="cancelled",
+                        terminal_reason="task cancelled",
+                        run=runtime,
+                    )
             task.status = TaskStatus.CANCELLED
             now = datetime.now(UTC)
             task.completed_at = now
@@ -153,7 +184,7 @@ class TaskControlService:
             message = await ConversationMessageService(self.db).append_terminal_failure(
                 task,
                 status=MessageStatus.CANCELLED,
-                reason="task cancelled",
+                reason="任务已取消",
             )
             task.assistant_message_id = message.id if message is not None else None
         await self.provider.cancel(task.id)

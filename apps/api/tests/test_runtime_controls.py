@@ -165,6 +165,81 @@ def test_pause_resume_and_approval_are_durable_controls(tmp_path) -> None:
     asyncio.run(scenario())
 
 
+def test_cancel_waiting_approval_is_durable(tmp_path) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{tmp_path / 'runtime-cancel.db'}"
+        )
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        settings = Settings(app_env="test", _env_file=None)
+
+        async with session_factory() as session:
+            session.add(
+                SessionModel(
+                    id="session-cancel",
+                    user_id="user-cancel",
+                    course_id="CT",
+                )
+            )
+            session.add(
+                TaskModel(
+                    id="task-cancel",
+                    session_id="session-cancel",
+                    user_id="user-cancel",
+                    course_id="CT",
+                    intent="general_qa",
+                    agent_id="GENERAL_QUESTION_V1",
+                    status=TaskStatus.WAITING_REVIEW,
+                    input_content={"canonical_input": {"text": "cancel"}},
+                )
+            )
+            await session.flush()
+            run = AgentRun(
+                run_id="runtime-cancel",
+                task_id="task-cancel",
+                goal="cancel waiting approval",
+                plan=AgentRunPlan(
+                    plan_id="runtime-cancel-plan",
+                    goal="cancel waiting approval",
+                    nodes=[
+                        RuntimeNode(
+                            node_id="runtime.execute",
+                            node_type="provider",
+                            handler_id="provider.general_question",
+                        )
+                    ],
+                ),
+                status=RuntimeRunStatus.WAITING_APPROVAL,
+                control_data={"approval_scope": "runtime.plan"},
+            )
+            repository = AgentRunRepository(session)
+            await repository.create(
+                run,
+                agent_id="GENERAL_QUESTION_V1",
+                provider="mock",
+            )
+            await session.commit()
+
+            controls = TaskControlService(session, MockAgentProvider(), settings)
+            cancelled = await controls.cancel("task-cancel")
+            assert cancelled.status == TaskStatus.CANCELLED
+            assert cancelled.cancellation_requested is True
+
+        async with session_factory() as session:
+            restored = await AgentRunRepository(session).restore("runtime-cancel")
+            assert restored is not None
+            assert restored.status == RuntimeRunStatus.CANCELLED
+            assert restored.control_request == ""
+            assert restored.control_data == {}
+            assert restored.completed_at is not None
+
+        await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_task_controls_can_target_a_child_run(tmp_path) -> None:
     async def scenario() -> None:
         engine = create_async_engine(
