@@ -1958,3 +1958,19 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   failed HTTP requests. This is current mock development/browser evidence; it
   is not an authorized paired evaluation, semantic quality decision, or release
   authorization.
+
+## 112. 2026-08-11 Lesson Prep authorized development pair recheck
+
+- A single API process with an isolated temporary SQLite database ran one
+  Legacy/Runtime pair for `lesson_prep_runtime_handoff`. Both runs completed;
+  the pair summary recorded `2/2` completed, zero timeouts, zero Agent
+  mismatches, and zero event-order failures. The redacted report is under
+  `.local_outputs/runtime_authorized_dev_e2e_20260811_lesson_prep_pair_after_browser_recheck/`.
+- The Runtime run completed after exactly one quality-gate approval. Its
+  control record had `proposal_id=null`, the redacted failure diagnostics
+  reported zero plan proposals, and the persisted Runtime projection contained
+  `10` checkpoints for `lesson.observe`, `lesson.execute`, and `lesson.verify`.
+- The Runtime trace contained `27` strictly increasing task events. This is
+  stronger paired development evidence for the no-reproposal recovery path, but
+  it remains Mock-provider evidence and does not satisfy semantic review or
+  release authorization.
