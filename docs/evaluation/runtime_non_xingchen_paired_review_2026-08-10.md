@@ -2459,3 +2459,27 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   `\\]` residue in the evidence summary/source match, no standalone divider
   paragraphs in the source dialog, and correctly rendered KaTeX formulas in the
   read-only source window. The full multi-domain audit remains in progress.
+
+## 143. 2026-08-12 real Edge cross-course routing and evidence-gallery cleanup
+
+- A real Edge student run selected `模拟电子技术` but routed a concept question
+  containing “引用课程资料” to `GENERAL_QUESTION_V1`, showing no course evidence.
+  The persisted task confirmed `course_id=AE` but `intent=general_qa` and
+  `agent_id=GENERAL_QUESTION_V1`.
+- The deterministic router now treats an explicit supported course plus a
+  learning-shaped unknown intent as a course-knowledge route. Stronger solver,
+  teaching, writing, data-analysis, and research recognitions remain evaluated
+  before this fallback. A direct regression covers the AE prompt and expects
+  `LEARN_01_LOCAL_RETRIEVAL_V1` with `explain_concept`.
+- Real Edge revalidation completed the same AE question and a separate DE
+  trigger question. Both showed `知识问答 · <course>`, three course evidence
+  items, inspectable S1-S3 references, and no generic no-RAG presentation.
+- The same AE run exposed unrelated global textbook images and inline `---`
+  caption noise. The Workspace now renders only images explicitly attached to
+  the current evidence cards and normalizes divider noise in captions. The
+  fallback evidence message no longer contradicts the visible citation cards.
+- Guest Academic Search also completed with five external paper sources,
+  source links, and evidence-limit warnings. The formal Teacher dashboard
+  loaded successfully, but approval controls correctly remained unavailable to
+  the guest identity; a real teacher account is still required to complete the
+  approval-click path. The protected research-data Runtime remains excluded.

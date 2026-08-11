@@ -486,7 +486,9 @@ function presentationFor(task, result) {
     provider_label: "本地安全后备",
     fallback_message: messages[reason] || "云端主能力本次未完成，已切换到本地安全后备结果。",
     source_summary: count ? `已检索 ${count} 条课程资料` : raw.source_summary,
-    evidence_message: count ? "资料检索已完成，但后备结果未将其声明为直接生成依据" : raw.evidence_message,
+    evidence_message: count
+      ? (raw.evidence_message || "课程资料检索已完成；当前回答由本地后备模型生成，请打开证据原文复核")
+      : raw.evidence_message,
   };
 }
 
@@ -625,6 +627,7 @@ function cleanEvidenceExcerpt(value) {
 function cleanEvidenceCaption(value) {
   return String(value || "")
     .replace(/\\(?:\]|\))/gu, "")
+    .replace(/-{3,}/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
 }
@@ -906,6 +909,20 @@ function renderExternalPapers(items) {
     ]),
     ...items.map(externalPaperCard),
   ]);
+}
+
+function evidenceRelatedImages(evidence, candidates) {
+  const attached = evidence.flatMap((item) => item.related_images || []);
+  const attachedKeys = new Set(
+    attached.map((item) => String(item.resource_uri || "").trim()).filter(Boolean),
+  );
+  if (!attachedKeys.size) return [];
+  const merged = [...attached, ...candidates];
+  return [...new Map(
+    merged
+      .filter((item) => attachedKeys.has(String(item.resource_uri || "").trim()))
+      .map((item) => [item.resource_uri, { ...item, caption: cleanEvidenceCaption(item.caption) }]),
+  ).values()];
 }
 
 function renderEvidence(items, presentation, relatedImages = [], externalItems = []) {
@@ -1454,11 +1471,12 @@ function renderResult(task) {
   if (structured.teaching?.teaching_mode === "check_my_work") notices.push({ status: "warning", text: structured.teaching.diagnostic_scope });
   if (structured.student_attempt_review?.feedback?.length) notices.push({ status: "", text: structured.student_attempt_review.feedback.join("；") });
   $("#answer-notices").replaceChildren(...notices.map((item) => el("div", { class: `notice ${item.status}`, text: item.text })));
-  const relatedImages = [
+  const relatedImageCandidates = [
     ...(structured.related_images || []),
     ...(result.related_images || []),
     ...(structured.knowledge?.images || []),
   ];
+  const relatedImages = evidenceRelatedImages(evidence, relatedImageCandidates);
   const executionSteps = presentation.execution_steps?.length
     ? presentation.execution_steps
     : intentPlanSteps(structured.intent_plan);

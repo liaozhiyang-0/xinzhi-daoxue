@@ -206,7 +206,10 @@ def build_task_views(
         evidence_message = "本回答有直接课程资料支持"
     elif fallback and evidence_count:
         source_summary = f"已检索 {evidence_count} 条课程资料"
-        evidence_message = "资料检索已完成，但后备结果未将其声明为直接生成依据"
+        evidence_message = (
+            "课程资料检索已完成；当前回答由本地后备模型生成，"
+            "当前证据卡片可作为可核对依据，请打开原文复核"
+        )
     elif result.evidence_status == "partial":
         source_summary = f"补充资料 {evidence_count} 条"
         evidence_message = "当前证据仅覆盖部分回答内容"

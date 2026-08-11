@@ -296,6 +296,47 @@ class TaskRouter:
             )
             if general_decision is not None:
                 return general_decision
+        explicit_course = request.course_id.upper().strip()
+        course_learning_intents = {
+            Intent.GENERAL_QA.value,
+            Intent.EXPLAIN_CONCEPT.value,
+            Intent.FOLLOW_UP_QUESTION.value,
+            Intent.SUMMARIZE_KNOWLEDGE.value,
+            Intent.LEARNING_ADVICE.value,
+            Intent.CHECK_SIMPLE_STEP.value,
+        }
+        if (
+            request.intent == Intent.UNKNOWN
+            and explicit_course
+            and explicit_course not in {"AUTO", "UNKNOWN"}
+            and course_id == explicit_course
+            and recognition.intent in course_learning_intents
+        ):
+            decision = self._decision_for_target(
+                "LEARN_01_KNOWLEDGE_QA_V1",
+                request,
+                course_id=course_id,
+                intent=(
+                    Intent.SUMMARIZE_KNOWLEDGE.value
+                    if recognition.intent == Intent.SUMMARIZE_KNOWLEDGE.value
+                    else Intent.EXPLAIN_CONCEPT.value
+                ),
+                input_type=input_type,
+                confidence=max(recognition.confidence, 0.80),
+            )
+            return decision.model_copy(
+                update={
+                    "reason": "用户已选择课程，学习型问题进入课程知识路由",
+                    "route_source": "local_course_context",
+                    "reason_codes": course_reasons
+                    + ["explicit_course_learning_context"],
+                    "local_confidence": recognition.confidence,
+                    "route_confidence": max(recognition.confidence, 0.80),
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": [decision.agent_id],
+                }
+            )
         general_qa_problem_override = (
             request.intent == Intent.GENERAL_QA
             and "domain_contract:academic_problem_language"

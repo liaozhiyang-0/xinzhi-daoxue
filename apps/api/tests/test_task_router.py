@@ -40,6 +40,34 @@ def test_ct_solve_routes_to_solver() -> None:
     assert decision.provider_required is False
 
 
+def test_explicit_course_unknown_learning_question_routes_to_course_knowledge() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-route",
+            "user_id": "user-route",
+            "scene": "learning",
+            "course_id": "AE",
+            "intent": "unknown",
+            "canonical_input": {
+                "text": (
+                    "请解释负反馈为什么能改善放大器性能，并引用模拟电子技术课程资料。"
+                )
+            },
+            "options": {"allow_cloud": False, "use_local_rag": True},
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.intent == "explain_concept"
+    assert decision.course_id == "AE"
+    assert decision.retrieval_required is True
+    assert decision.route_source == "local_course_context"
+    assert "explicit_course_learning_context" in decision.reason_codes
+
+
 def test_solver_hybrid_fallback_routes_when_cloud_is_allowed_but_unconfigured() -> None:
     task_request = request("CT", "solve_problem").model_copy(
         update={

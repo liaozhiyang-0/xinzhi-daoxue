@@ -364,7 +364,7 @@ def test_lesson_fallback_keeps_retrieved_materials_visible_but_not_cited() -> No
     )
 
     assert presentation.source_summary == "已检索 1 条课程资料"
-    assert "未将其声明为直接生成依据" in presentation.evidence_message
+    assert "后备模型生成" in presentation.evidence_message
     assert "格式校验未通过" in presentation.fallback_message
     assert presentation.provider_label == "本地安全后备"
     assert summary.used_evidence_count == 0
