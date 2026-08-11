@@ -27,6 +27,7 @@ from app.runtime.semantic_evidence import (  # noqa: E402
 
 SIDECAR_SCHEMA_VERSION = "learning_runtime_semantic_sidecar.v1"
 PAIR_SCHEMA_VERSION = "learning_runtime_paired_evidence.v1"
+BUNDLE_SCHEMA_VERSION = "learning_runtime_paired_evidence_bundle.v1"
 JUDGEMENT_FIELDS = frozenset(
     {
         "dimensions",
@@ -60,8 +61,9 @@ def _read_pair_identity(
     agent_id: str,
     agent_version: str,
     runtime_plan_version: str,
-) -> tuple[str, dict[str, str]]:
-    if pair_package.get("schema_version") != PAIR_SCHEMA_VERSION:
+) -> tuple[list[str], dict[str, str]]:
+    schema_version = pair_package.get("schema_version")
+    if schema_version not in {PAIR_SCHEMA_VERSION, BUNDLE_SCHEMA_VERSION}:
         raise ValueError("pair package schema_version is invalid")
     if pair_package.get("evidence_kind") != "development_paired":
         raise ValueError("LearningLoop sidecar requires development_paired evidence")
@@ -73,7 +75,38 @@ def _read_pair_identity(
     if pair_package.get("release_ready") is not False:
         raise ValueError("development pair package must remain release_ready=false")
 
-    case_id = _require_string(pair_package.get("case_id"), "pair package case_id")
+    if schema_version == PAIR_SCHEMA_VERSION:
+        case_ids = [
+            _require_string(pair_package.get("case_id"), "pair package case_id")
+        ]
+    else:
+        raw_case_ids = pair_package.get("case_ids")
+        if not isinstance(raw_case_ids, list) or not raw_case_ids:
+            raise ValueError("pair bundle case_ids must be a non-empty list")
+        case_ids = [
+            _require_string(value, "pair bundle case_id") for value in raw_case_ids
+        ]
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("pair bundle case_ids must be unique")
+        raw_cases = pair_package.get("cases")
+        if not isinstance(raw_cases, list) or len(raw_cases) != len(case_ids):
+            raise ValueError("pair bundle cases must cover every case_id")
+        observed_case_ids: list[str] = []
+        for index, raw_case in enumerate(raw_cases):
+            if not isinstance(raw_case, Mapping):
+                raise ValueError(f"pair bundle case {index} must be an object")
+            observed_case_ids.append(
+                _require_string(raw_case.get("case_id"), "pair bundle case_id")
+            )
+            case_checks = raw_case.get("structural_checks")
+            if not isinstance(case_checks, Mapping) or case_checks.get(
+                "passed"
+            ) is not True:
+                raise ValueError(
+                    f"pair bundle case {index} structural checks must pass"
+                )
+        if set(observed_case_ids) != set(case_ids):
+            raise ValueError("pair bundle cases do not match case_ids")
     raw_identity = pair_package.get("capability_identity")
     if not isinstance(raw_identity, Mapping):
         raise ValueError("pair package capability_identity is missing")
@@ -103,15 +136,18 @@ def _read_pair_identity(
             "pair package capability identity does not match the supplied "
             "release identity"
         )
-    return case_id, identity
+    return case_ids, identity
 
 
-def _require_single_case(
-    value: Mapping[str, Any], *, label: str, case_id: str
-) -> Any:
-    if set(value) != {case_id}:
-        raise ValueError(f"{label} must contain exactly case_id={case_id}")
-    return value[case_id]
+def _require_cases(
+    value: Mapping[str, Any], *, label: str, case_ids: list[str]
+) -> dict[str, Any]:
+    expected = set(case_ids)
+    if set(value) != expected:
+        raise ValueError(
+            f"{label} must contain exactly case_ids={sorted(expected)!r}"
+        )
+    return {case_id: value[case_id] for case_id in case_ids}
 
 
 def _reviewed_at(value: Any, *, case_id: str) -> datetime:
@@ -193,29 +229,32 @@ def collect_sidecar(
     agent_version: str,
     runtime_plan_version: str,
 ) -> dict[str, Any]:
-    case_id, identity = _read_pair_identity(
+    case_ids, identity = _read_pair_identity(
         pair_package,
         agent_id=agent_id,
         agent_version=agent_version,
         runtime_plan_version=runtime_plan_version,
     )
-    input_payload = _require_single_case(inputs, label="inputs", case_id=case_id)
-    output_payload = _require_single_case(
-        outputs, label="outputs", case_id=case_id
+    input_payloads = _require_cases(inputs, label="inputs", case_ids=case_ids)
+    output_payloads = _require_cases(
+        outputs, label="outputs", case_ids=case_ids
     )
-    judgement = _require_single_case(
-        judgements, label="judgements", case_id=case_id
+    judgement_payloads = _require_cases(
+        judgements, label="judgements", case_ids=case_ids
     )
-    evidence = _build_evidence(
-        suite_id=suite_id,
-        case_id=case_id,
-        agent_id=agent_id,
-        agent_version=agent_version,
-        runtime_plan_version=runtime_plan_version,
-        input_payload=input_payload,
-        output_payload=output_payload,
-        judgement=judgement,
-    )
+    evidence = [
+        _build_evidence(
+            suite_id=suite_id,
+            case_id=case_id,
+            agent_id=agent_id,
+            agent_version=agent_version,
+            runtime_plan_version=runtime_plan_version,
+            input_payload=input_payloads[case_id],
+            output_payload=output_payloads[case_id],
+            judgement=judgement_payloads[case_id],
+        )
+        for case_id in case_ids
+    ]
     return {
         "schema_version": SIDECAR_SCHEMA_VERSION,
         "evidence_kind": "development_paired",
@@ -225,7 +264,7 @@ def collect_sidecar(
             "source": "declared_runtime_contract",
             "authorization_status": "not_authorized",
         },
-        "cases": [evidence.model_dump(mode="json")],
+        "cases": [item.model_dump(mode="json") for item in evidence],
         "structural_release_eligible": False,
         "semantic_release_eligible": False,
         "canary_release_eligible": False,

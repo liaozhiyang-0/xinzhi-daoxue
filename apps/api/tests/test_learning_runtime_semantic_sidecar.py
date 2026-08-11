@@ -86,6 +86,48 @@ def test_learning_sidecar_hashes_payloads_and_never_serializes_them() -> None:
     assert "runtime private answer" not in serialized
 
 
+def test_learning_sidecar_binds_every_case_in_a_pair_bundle() -> None:
+    second_case = "teaching_request_more_hint_followup"
+    bundle = {
+        "schema_version": "learning_runtime_paired_evidence_bundle.v1",
+        "evidence_kind": "development_paired",
+        "case_ids": [CASE_ID, second_case],
+        "capability_identity": {
+            **IDENTITY,
+            "source": "declared_runtime_contract",
+            "authorization_status": "not_authorized",
+        },
+        "cases": [
+            {"case_id": CASE_ID, "structural_checks": {"passed": True}},
+            {"case_id": second_case, "structural_checks": {"passed": True}},
+        ],
+        "structural_checks": {"passed": True, "reasons": []},
+        "release_ready": False,
+    }
+    report = collect_sidecar(
+        pair_package=bundle,
+        inputs={CASE_ID: {"prompt": "one"}, second_case: {"prompt": "two"}},
+        outputs={
+            CASE_ID: {"legacy": {"answer": "one"}, "runtime": {"answer": "one"}},
+            second_case: {
+                "legacy": {"answer": "two"},
+                "runtime": {"answer": "two"},
+            },
+        },
+        judgements={CASE_ID: _judgement(), second_case: _judgement()},
+        suite_id="learning-dev-suite-bundle-001",
+        agent_id=IDENTITY["capability_id"],
+        agent_version=IDENTITY["agent_version"],
+        runtime_plan_version=IDENTITY["runtime_plan_version"],
+    )
+
+    assert [item["case_id"] for item in report["cases"]] == [
+        CASE_ID,
+        second_case,
+    ]
+    assert report["release_ready"] is False
+
+
 def test_learning_sidecar_rejects_identity_mismatch() -> None:
     with pytest.raises(ValueError, match="capability identity"):
         collect_sidecar(

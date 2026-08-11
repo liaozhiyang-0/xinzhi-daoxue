@@ -2114,7 +2114,7 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   authorized structural suite must still use the existing generic release
   intake and preflight before any canary/default decision.
 - Covered by
-  `apps/api/tests/test_learning_runtime_semantic_sidecar.py` (5 passed).
+  `apps/api/tests/test_learning_runtime_semantic_sidecar.py` (6 passed).
 
 ## 122. 2026-08-11 frontend publication-gate status correction
 
@@ -2137,3 +2137,18 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   step visible without weakening the existing generic release gate.
 - Registry and preflight regression coverage passed `29` tests. No launch mode
   or release authorization was changed.
+
+## 124. 2026-08-11 multi-case LearningLoop evaluation bundle
+
+- Added `scripts/package_learning_runtime_pair_bundle.py`, which combines
+  repeated single-case reports into a stable
+  `learning_runtime_paired_evidence_bundle.v1` artifact. It rejects mismatched
+  report counts, duplicate case IDs, identity drift, and any case whose
+  structural package check fails.
+- The semantic sidecar binder now accepts either the existing single-case
+  package or the bundle and requires inputs, Legacy/Runtime outputs, and
+  judgements to cover every case exactly. It still emits hashes and review
+  metadata only, with `release_ready=false` for the development bundle.
+- Bundle and multi-case sidecar regression coverage passed `10` tests. This
+  expands reproducible evaluation coverage without creating release evidence
+  or changing launch modes.
