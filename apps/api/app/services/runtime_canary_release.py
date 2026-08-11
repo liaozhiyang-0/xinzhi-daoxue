@@ -238,6 +238,13 @@ class RuntimeCanaryReleaseRegistry:
             path = Path(raw_path.strip())
             payload = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(payload, dict):
+                if payload.get("schema_version") == (
+                    "learning_runtime_semantic_sidecar.v1"
+                ):
+                    raise ValueError(
+                        "LearningLoop development semantic sidecar is not an "
+                        "authorized Runtime semantic sidecar"
+                    )
                 evidence_fields = {
                     "schema_version",
                     "suite_id",

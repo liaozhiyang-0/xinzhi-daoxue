@@ -2125,3 +2125,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - Added a static UI contract assertion and `node --check` validation for the
   browser bundle. The page remains read-only and does not call a readiness
   endpoint or mutate launch configuration.
+
+## 123. 2026-08-11 release preflight rejects LearningLoop development sidecars
+
+- The shared `RuntimeCanaryReleaseRegistry` now recognizes
+  `learning_runtime_semantic_sidecar.v1` and rejects it explicitly as a
+  development-only sidecar. It cannot be interpreted as a generic authorized
+  Runtime semantic sidecar.
+- `check_runtime_release_preflight.py` reports the stable blocker
+  `semantic_development_evidence_not_authorized`, making the required next
+  step visible without weakening the existing generic release gate.
+- Registry and preflight regression coverage passed `29` tests. No launch mode
+  or release authorization was changed.

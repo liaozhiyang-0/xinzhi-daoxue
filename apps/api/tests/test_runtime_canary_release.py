@@ -333,6 +333,28 @@ def test_from_paths_rejects_case_keyed_judgement_template(
         )
 
 
+def test_from_paths_rejects_learning_development_sidecar_as_release_evidence(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "suite.json"
+    sidecar_path = tmp_path / "learning-development-sidecar.json"
+    _write_json(suite_path, _suite().model_dump(mode="json"))
+    _write_json(
+        sidecar_path,
+        {
+            "schema_version": "learning_runtime_semantic_sidecar.v1",
+            "evidence_kind": "development_paired",
+            "release_ready": False,
+        },
+    )
+
+    with pytest.raises(ValueError, match="not an authorized Runtime"):
+        RuntimeCanaryReleaseRegistry.from_paths(
+            f"{AGENT_ID}={suite_path}",
+            semantic_paths=f"{AGENT_ID}={sidecar_path}",
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "message"),
     [

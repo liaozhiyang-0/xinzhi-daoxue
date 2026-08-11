@@ -70,6 +70,8 @@ def _error_code(exc: BaseException, *, semantic: bool) -> str:
         )
     if isinstance(exc, ValueError):
         detail = str(exc).lower()
+        if "development semantic sidecar" in detail:
+            return "semantic_development_evidence_not_authorized"
         if "input hash binding mismatch" in detail:
             return "semantic_input_hash_mismatch"
         if "input hash binding missing" in detail:

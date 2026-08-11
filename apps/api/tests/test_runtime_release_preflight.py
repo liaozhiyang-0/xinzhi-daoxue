@@ -222,6 +222,44 @@ def test_preflight_complete_synthetic_evidence_passes_without_provider(
     assert payload["blocking_reasons"] == []
 
 
+def test_preflight_reports_learning_development_sidecar_as_not_authorized(
+    tmp_path: Path,
+) -> None:
+    suite_path = tmp_path / "synthetic-suite.json"
+    sidecar_path = tmp_path / "learning-development-sidecar.json"
+    _write(suite_path, _suite().model_dump(mode="json"))
+    _write(
+        sidecar_path,
+        {
+            "schema_version": "learning_runtime_semantic_sidecar.v1",
+            "evidence_kind": "development_paired",
+            "release_ready": False,
+        },
+    )
+
+    result = _run(
+        "--agent-id",
+        AGENT_ID,
+        "--suite",
+        str(suite_path),
+        "--semantic-sidecar",
+        str(sidecar_path),
+        "--expected-agent-version",
+        AGENT_VERSION,
+        "--expected-runtime-plan-version",
+        PLAN_VERSION,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode != 0
+    assert payload["structural_eligible"] is True
+    assert payload["semantic_eligible"] is False
+    assert payload["release_eligible"] is False
+    assert payload["blocking_reasons"] == [
+        "semantic_development_evidence_not_authorized"
+    ]
+
+
 def test_preflight_rejects_model_only_semantic_pass(
     tmp_path: Path,
 ) -> None:
