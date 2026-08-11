@@ -937,6 +937,15 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   approval of the rewritten text, external-provider equivalence, or production
   release authorization.
 
+## 75. 2026-08-11 RESEARCH_03 readiness projection identity
+
+- The API projection test now asserts that the RESEARCH_03 capability exposes
+  `version=research-v2` and that `runtime_plan_available` follows the
+  descriptor's explicit `enabled` state. The test environment keeps this
+  candidate disabled by default, so readiness remains fail-closed while the
+  capability identity is still observable and version-bound.
+- The focused capability projection test passed `1 test`; Ruff also passed.
+
 ## 51. 2026-08-11 researcher approval boundary and remaining quality risk
 
 - Runtime approval is now role- and Agent-scoped: a `researcher` may approve
