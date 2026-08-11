@@ -30,6 +30,10 @@ from app.runtime.semantic_evidence import (
 )
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
+from app.services.runtime_release_authorization import (
+    RuntimeReleaseAuthorization,
+    RuntimeReleaseAuthorizationRegistry,
+)
 from app.services.task_runner import TaskRunner
 from pydantic import AnyHttpUrl, TypeAdapter
 
@@ -136,6 +140,26 @@ def _passing_runtime_release_registry(
     return RuntimeCanaryReleaseRegistry(
         {agent_id: report},
         semantic_evidence={agent_id: semantic},
+    )
+
+
+def _passing_runtime_release_authorization(
+    *, agent_id: str, agent_version: str, runtime_plan_version: str
+) -> RuntimeReleaseAuthorizationRegistry:
+    suite_id = f"{agent_id.casefold()}-runtime-task-api-release"
+    return RuntimeReleaseAuthorizationRegistry(
+        {
+            agent_id: RuntimeReleaseAuthorization(
+                agent_id=agent_id,
+                suite_id=suite_id,
+                agent_version=agent_version,
+                runtime_plan_version=runtime_plan_version,
+                launch_mode="default",
+                authorization_ref="task-api-release-authorization-fixture",
+                approver_ref="task-api-release-reviewer-fixture",
+                approved_at=datetime(2026, 8, 10, tzinfo=UTC),
+            )
+        }
     )
 
 
@@ -779,6 +803,11 @@ def test_general_question_runtime_default_launch_mode_requires_no_runtime_option
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "GENERAL_QUESTION_V1=default",
         release_registry=runner.runtime_canary_release,
+        release_authorization_registry=_passing_runtime_release_authorization(
+            agent_id=definition.agent_id,
+            agent_version=definition.version,
+            runtime_plan_version=runtime_plan_version,
+        ),
         release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True
@@ -878,6 +907,11 @@ def test_local_retrieval_runtime_default_launch_owns_learning_task(
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "LEARN_01_LOCAL_RETRIEVAL_V1=default",
         release_registry=runner.runtime_canary_release,
+        release_authorization_registry=_passing_runtime_release_authorization(
+            agent_id=definition.agent_id,
+            agent_version=definition.version,
+            runtime_plan_version=runtime_plan_version,
+        ),
         release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True
@@ -939,6 +973,11 @@ def test_lesson_prep_runtime_default_launch_uses_registry_plan(api, app) -> None
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "TEACH_01_LESSON_PREP_V1=default",
         release_registry=runner.runtime_canary_release,
+        release_authorization_registry=_passing_runtime_release_authorization(
+            agent_id=definition.agent_id,
+            agent_version=definition.version,
+            runtime_plan_version=runtime_plan_version,
+        ),
         release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True
@@ -1004,6 +1043,11 @@ def test_lesson_empty_quality_section_uses_one_approval_without_reproposal(
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "TEACH_01_LESSON_PREP_V1=default",
         release_registry=runner.runtime_canary_release,
+        release_authorization_registry=_passing_runtime_release_authorization(
+            agent_id=definition.agent_id,
+            agent_version=definition.version,
+            runtime_plan_version=runtime_plan_version,
+        ),
         release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True
@@ -1110,6 +1154,11 @@ def test_assignment_review_runtime_default_launch_uses_registry_plan(
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "TEACH_02_ASSIGNMENT_REVIEW_V1=default",
         release_registry=runner.runtime_canary_release,
+        release_authorization_registry=_passing_runtime_release_authorization(
+            agent_id=definition.agent_id,
+            agent_version=definition.version,
+            runtime_plan_version=runtime_plan_version,
+        ),
         release_gate_required=True,
     )
     runner.runtime_lifecycle.enabled = True

@@ -1490,3 +1490,17 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   readiness group passed `30` tests. This change aligns diagnostics with the
   launch gate; it does not create a real approval record or promote any
   current Agent.
+
+## 84. 2026-08-11 release-gated Task API recovery fixture alignment
+
+- The recovery/plan-proposal integration sweep exposed one stale test fixture
+  that manually enabled `release_gate_required=true` without supplying the
+  matching version-bound authorization registry. The Runtime correctly stayed
+  fail-closed, so the test never reached its intended Lesson Prep quality gate.
+- The fixture now binds the same Agent, suite, version, Runtime plan, and
+  `default` launch mode as the structural/semantic release fixture. No
+  production authorization policy was weakened.
+- The bounded shutdown-recovery, plan-proposal, checkpoint-control, parallel
+  recovery, and replay group passed `23` tests. The Lesson Prep empty-section
+  regression now proves one human quality approval resumes the same Runtime
+  without entering the adaptive plan-proposal gate.
