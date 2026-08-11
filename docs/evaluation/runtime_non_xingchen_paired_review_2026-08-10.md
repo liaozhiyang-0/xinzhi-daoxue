@@ -2422,3 +2422,11 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   five course evidence cards (S1-S5), and `打开资料` source dialog with the
   read-only course excerpt. Targeted Runtime and presentation regression tests
   pass (`27 passed`); the full frontend multi-domain audit remains in progress.
+## 139. 2026-08-12 real Edge multi-domain audit continuation and review-status rendering fix
+
+- Real Edge student coverage completed for Circuit Theory, Analog Electronics, and Digital Electronics knowledge questions. Each answer completed with course evidence indicators and inspectable source references.
+- The frozen Circuit Solver path completed a numerical circuit task and kept its method-reference-only boundary; it did not present solver output as a cloud-backed course citation.
+- Guest Academic Search completed with six paper evidence items, DOI/source links, and explicit evidence-limit warnings. Guest Academic Writing correctly stopped at `waiting_approval` without exposing an approval control.
+- Authorized Teacher Assignment Review completed after approval and displayed five course evidence cards, teacher-only feedback, and the non-grading notice. Authorized Academic Writing also completed after approval and displayed a cautious rewrite plus fact/citation verification warnings.
+- The Assignment Review result exposed a frontend defect where the business field `人工复核` rendered the raw boolean `true`. `businessValueText()` now maps review booleans to `需要人工复核` or `无需人工复核`; the Workspace build ID and static regression expectations were advanced accordingly.
+- Post-patch real Edge revalidation showed `需要人工复核`, no standalone raw `true`, successful approval recovery, and terminal completion. The complete frontend audit and protected research-data path remain unfinished/excluded.

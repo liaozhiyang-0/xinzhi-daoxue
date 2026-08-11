@@ -71,9 +71,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260811-workspace-evidence-entities-v1" in page.text
-    assert "workspace.js?v=20260811-workspace-evidence-entities-v1" in page.text
-    assert "ui-core.js?v=20260811-workspace-evidence-entities-v1" in page.text
+    assert "20260812-workspace-business-values-v1" in page.text
+    assert "workspace.js?v=20260812-workspace-business-values-v1" in page.text
+    assert "ui-core.js?v=20260812-workspace-business-values-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -91,6 +91,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "/content?user_id=" in script.text
     assert "initializeResizablePanels()" in script.text
     assert "businessSectionAlreadyInAnswer" in script.text
+    assert "需要人工复核" in script.text
     assert "historyRequestSequence" in script.text
     assert "renderedAssistantTaskIds" in script.text
     assert "taskId === restoredTask?.id" in script.text

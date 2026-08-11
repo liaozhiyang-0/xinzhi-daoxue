@@ -1750,6 +1750,19 @@ function businessSectionAlreadyInAnswer(answer, section) {
   return values.length > 0 && values.every((value) => normalizedAnswer.includes(value));
 }
 
+function businessValueText(key, value) {
+  const booleanLabels = {
+    review_required: { true: "需要人工复核", false: "无需人工复核" },
+    manual_review_required: { true: "需要人工复核", false: "无需人工复核" },
+    human_review_required: { true: "需要人工复核", false: "无需人工复核" },
+  };
+  if (typeof value === "boolean" && booleanLabels[key]) {
+    return booleanLabels[key][String(value)];
+  }
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return String(value ?? "");
+}
+
 function businessSectionText(section) {
   if (section.key === "analysis_status") {
     return {
@@ -1771,10 +1784,10 @@ function businessSectionText(section) {
   }
   if (section.content && typeof section.content === "object") {
     return Object.entries(section.content)
-      .map(([key, value]) => `- ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+      .map(([key, value]) => `- ${key}: ${businessValueText(key, value)}`)
       .join("\n");
   }
-  return String(section.content ?? "");
+  return businessValueText(section.key, section.content);
 }
 
 function researchBriefView(brief = {}) {
