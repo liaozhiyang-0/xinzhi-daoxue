@@ -2192,3 +2192,25 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   approval no longer causes a duplicate proposal loop for this case.
 - The redacted report is retained under the ignored `.local_outputs/` path;
   the API instance was stopped immediately after the run.
+
+## 128. 2026-08-11 non-protected Runtime paired evaluation after fix
+
+- Re-ran the seven non-protected Task Runtime cases as alternating
+  Legacy/Runtime pairs: general question, local retrieval, solver, academic
+  search, Lesson Prep, assignment review, and academic writing.
+- All `14/14` runs completed with `0` timeouts, `0` Agent mismatches, and `0`
+  event-order failures. Every result reported `runtime_status=completed` and
+  `plan_proposal_count=0`; the two quality-review cases recorded one approval
+  each where required.
+- `RESEARCH_03_DATA_ANALYSIS_V1` was intentionally excluded from this batch;
+  its protected source and dedicated tests remain outside this migration
+  slice. The API instance was stopped after the report was written.
+
+## 129. 2026-08-11 browser acceptance attempt
+
+- The API was started on the isolated development port for a frontend
+  acceptance pass, but the in-app browser transport closed during browser
+  initialization before any page interaction. No browser result is claimed.
+- The API instance was stopped after the failed connection attempt. Existing
+  static/UI behavior tests remain the available frontend evidence; a real
+  browser pass is still pending until the browser connection is available.
