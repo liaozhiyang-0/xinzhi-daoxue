@@ -946,6 +946,20 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   capability identity is still observable and version-bound.
 - The focused capability projection test passed `1 test`; Ruff also passed.
 
+## 76. 2026-08-11 RESEARCH_03 paired-run harness registration
+
+- Extended `scripts/run_runtime_authorized_dev_e2e.py` with the controlled
+  `research_data_analysis_runtime_handoff` case and its explicit typed request
+  payload. The case is configuration-driven and uses only synthetic,
+  non-sensitive research metadata.
+- The harness now treats the `research_analysis_v2` business option correctly:
+  Runtime mode includes the explicit candidate request, while Legacy mode
+  omits that option so the pair cannot accidentally execute the candidate
+  Runtime. The harness regression suite passed `7 tests` and Ruff passed.
+- This only makes future paired collection reproducible. No real RESEARCH_03
+  pair was run in this step, and no release evidence or default launch was
+  created.
+
 ## 51. 2026-08-11 researcher approval boundary and remaining quality risk
 
 - Runtime approval is now role- and Agent-scoped: a `researcher` may approve

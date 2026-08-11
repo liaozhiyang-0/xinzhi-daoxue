@@ -42,6 +42,7 @@ class E2ECase:
     course_id: str
     intent: str
     question: str
+    runtime_request: dict[str, Any] | None = None
 
 
 CASES: tuple[E2ECase, ...] = (
@@ -112,6 +113,24 @@ CASES: tuple[E2ECase, ...] = (
             "请根据一个关于电路理论实验教学的脱敏研究问题，"
             "给出论文提纲、待核实的论断和引用检查清单。"
         ),
+    ),
+    E2ECase(
+        case_id="research_data_analysis_runtime_handoff",
+        agent_id="RESEARCH_03_DATA_ANALYSIS_V1",
+        runtime_option_key="research_analysis_v2",
+        course_id="CT",
+        intent="data_analysis",
+        question="Compare two synthetic groups and report the estimated effect.",
+        runtime_request={
+            "research_question": (
+                "Compare two synthetic groups and report the estimated effect."
+            ),
+            "analysis_goal": "estimate_effect",
+            "design": "experimental_comparison",
+            "estimand": "group A minus group B mean outcome",
+            "unit_of_analysis": "one row per participant",
+            "exploratory": True,
+        },
     ),
 )
 
@@ -235,6 +254,15 @@ def create_task(
     case: E2ECase,
     mode: RunMode,
 ) -> dict[str, Any]:
+    options: dict[str, Any] = {"debug_agent_id": case.agent_id}
+    # ``*_runtime`` options use execute=False as a legacy opt-out.  The
+    # RESEARCH_03 business option is different: its presence is the explicit
+    # V2 candidate request, so Legacy pairs must omit it entirely.
+    if mode == "runtime" or case.runtime_option_key.endswith("_runtime"):
+        runtime_options: dict[str, Any] = {"execute": mode == "runtime"}
+        if case.runtime_request is not None:
+            runtime_options["request"] = case.runtime_request
+        options[case.runtime_option_key] = runtime_options
     response = client.post(
         f"{base_url}/tasks",
         json={
@@ -244,10 +272,7 @@ def create_task(
             "course_id": case.course_id,
             "intent": case.intent,
             "canonical_input": {"question": case.question},
-            "options": {
-                "debug_agent_id": case.agent_id,
-                case.runtime_option_key: {"execute": mode == "runtime"},
-            },
+            "options": options,
         },
     )
     response.raise_for_status()

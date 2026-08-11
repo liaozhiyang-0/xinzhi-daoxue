@@ -50,6 +50,23 @@ class _ProposalClient:
         )
 
 
+class _TaskResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return {"id": "task-1"}
+
+
+class _TaskClient:
+    def __init__(self) -> None:
+        self.payload: dict[str, object] | None = None
+
+    def post(self, _url: str, *, json: dict[str, object]) -> _TaskResponse:
+        self.payload = json
+        return _TaskResponse()
+
+
 def test_e2e_runner_selects_pending_plan_proposal_before_side_effect_approval() -> None:
     proposal = MODULE.pending_plan_proposal(
         _ProposalClient(),
@@ -100,6 +117,45 @@ def test_pair_modes_rotates_pair_order_without_changing_single_mode_runs() -> No
     assert MODULE.pair_modes("both", "runtime-first", 0) == ("runtime", "legacy")
     assert MODULE.pair_modes("legacy", "alternate", 5) == ("legacy",)
     assert MODULE.pair_modes("runtime", "alternate", 5) == ("runtime",)
+
+
+def test_research03_pair_case_omits_business_candidate_from_legacy_request() -> None:
+    case = next(
+        item
+        for item in MODULE.CASES
+        if item.case_id == "research_data_analysis_runtime_handoff"
+    )
+
+    legacy_client = _TaskClient()
+    MODULE.create_task(
+        legacy_client,
+        "http://test/api/v1",
+        "user-1",
+        "session-1",
+        case,
+        "legacy",
+    )
+    assert legacy_client.payload is not None
+    legacy_options = legacy_client.payload["options"]
+    assert isinstance(legacy_options, dict)
+    assert "research_analysis_v2" not in legacy_options
+
+    runtime_client = _TaskClient()
+    MODULE.create_task(
+        runtime_client,
+        "http://test/api/v1",
+        "user-1",
+        "session-1",
+        case,
+        "runtime",
+    )
+    assert runtime_client.payload is not None
+    runtime_options = runtime_client.payload["options"]
+    assert isinstance(runtime_options, dict)
+    runtime_request = runtime_options["research_analysis_v2"]
+    assert isinstance(runtime_request, dict)
+    assert runtime_request["execute"] is True
+    assert runtime_request["request"] == case.runtime_request
 
 
 def test_runtime_failure_diagnostics_distinguish_child_failure_from_proposals() -> None:
