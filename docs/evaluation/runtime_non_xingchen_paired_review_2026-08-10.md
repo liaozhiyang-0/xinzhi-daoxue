@@ -1322,3 +1322,13 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - This hardens the migration seam and capability identity. It does not promote
   RESEARCH_03 to default or Canary: authorized paired evidence, independent
   semantic review, and human release approval remain absent.
+
+## 73. 2026-08-11 RESEARCH_03 verification-contract refresh
+
+- Updated the verification-contract tests to consume the current three-node
+  `prepare -> execute -> verify` Runtime shape. The previous tests still
+  unpacked the pre-prepare two-node helper result and failed before checking
+  verification semantics.
+- The complete bounded RESEARCH_03 contract group now passes `53 tests`, with
+  Ruff passing for the updated test file. This is provider-free contract and
+  local-analysis evidence; it is not paired release evidence.

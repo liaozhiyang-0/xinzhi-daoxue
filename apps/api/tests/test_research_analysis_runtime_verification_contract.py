@@ -131,7 +131,7 @@ def test_non_executed_analysis_never_completes_runtime(
     with pytest.raises(RuntimeNodeError, match="runtime ended with failed"):
         asyncio.run(service.run(request, run))
 
-    _execute_id, verify_id = service._current_node_ids(run)
+    _prepare_id, _execute_id, verify_id = service._current_node_ids(run)
     verification = run.nodes[verify_id].observation
     assert run.status == RuntimeRunStatus.FAILED
     assert run.nodes[verify_id].status == RuntimeNodeStatus.PARTIAL
@@ -151,7 +151,7 @@ def test_executed_analysis_passes_typed_runtime_verification() -> None:
 
     result = asyncio.run(service.run(request, run))
 
-    _execute_id, verify_id = service._current_node_ids(run)
+    _prepare_id, _execute_id, verify_id = service._current_node_ids(run)
     verification = run.nodes[verify_id].observation
     assert result.status == AgentResultStatus.COMPLETED
     assert run.status == RuntimeRunStatus.COMPLETED
@@ -175,7 +175,7 @@ def test_needs_review_waits_for_review_instead_of_completing() -> None:
 
     assert suspended.value.status == RuntimeRunStatus.WAITING_APPROVAL
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
-    _execute_id, verify_id = service._current_node_ids(run)
+    _prepare_id, _execute_id, verify_id = service._current_node_ids(run)
     verification = run.nodes[verify_id].observation
     assert verification is not None
     assert verification.facts["passed"] is False
@@ -194,7 +194,7 @@ def test_invalid_analysis_payload_fails_closed() -> None:
     with pytest.raises(RuntimeNodeError, match="runtime ended with failed"):
         asyncio.run(service.run(request, run))
 
-    _execute_id, verify_id = service._current_node_ids(run)
+    _prepare_id, _execute_id, verify_id = service._current_node_ids(run)
     assert run.status == RuntimeRunStatus.FAILED
     assert run.nodes[verify_id].error_code == "analysis_result_contract_invalid"
 
@@ -217,6 +217,6 @@ def test_missing_analysis_marker_fails_closed() -> None:
     with pytest.raises(RuntimeNodeError, match="runtime ended with failed"):
         asyncio.run(service.run(request, run))
 
-    _execute_id, verify_id = service._current_node_ids(run)
+    _prepare_id, _execute_id, verify_id = service._current_node_ids(run)
     assert run.status == RuntimeRunStatus.FAILED
     assert run.nodes[verify_id].error_code == "analysis_result_contract_invalid"
