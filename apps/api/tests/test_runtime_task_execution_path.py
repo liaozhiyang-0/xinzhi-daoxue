@@ -349,8 +349,8 @@ def test_general_question_runtime_path_uses_registry_plan(api, app) -> None:
     runtime = debug.json()["runtime"]
     assert runtime["status"] == "completed"
     assert [node["node_id"] for node in runtime["nodes"]] == [
-        "general.execute",
         "general.observe",
+        "general.execute",
         "general.verify",
     ]
     observability = runtime["observability"]
@@ -653,8 +653,8 @@ def test_general_question_runtime_auto_candidate_uses_default_route(api, app) ->
     runtime = debug.json()["runtime"]
     assert runtime["status"] == "completed"
     assert [node["node_id"] for node in runtime["nodes"]] == [
-        "general.execute",
         "general.observe",
+        "general.execute",
         "general.verify",
     ]
     events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")

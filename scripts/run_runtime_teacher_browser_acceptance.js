@@ -35,31 +35,54 @@ const scenarioDefinitions = {
   lesson_prep: {
     capability: "lesson_prep",
     agentId: "TEACH_01_LESSON_PREP_V1",
+    runtimeNodeIds: ["lesson.observe", "lesson.execute", "lesson.verify"],
     prompt: "Design a privacy-safe circuit-theory lesson on Kirchhoff laws with learning goals, formative assessment, and teacher review points.",
   },
   assignment_review: {
     capability: "assignment_review",
     agentId: "TEACH_02_ASSIGNMENT_REVIEW_V1",
+    runtimeNodeIds: [
+      "assignment.observe",
+      "assignment.execute",
+      "assignment.verify",
+    ],
     prompt: "Review this anonymized assignment response: a 10V source in series with a 5 ohm resistor has student answer I=10/5=2A. Identify correct parts, risks, and feedback.",
   },
   academic_writing: {
     capability: "academic_writing",
     agentId: "RESEARCH_02_ACADEMIC_WRITING_V1",
+    runtimeNodeIds: ["writing.observe", "writing.execute", "writing.verify"],
     prompt: "Rewrite this sentence in rigorous academic language: the experiment shows that the filter works very well. Do not invent measurements or citations.",
   },
   academic_search: {
     capability: "academic_search",
     agentId: "RESEARCH_01_ACADEMIC_SEARCH_V1",
+    runtimeNodeIds: [
+      "research.intent",
+      "research.fetch",
+      "research.answer",
+      "research.verify",
+    ],
     prompt: "Retrieve recent academic evidence from the last five years about active learning effects in engineering education, with verifiable sources and explicit evidence limits.",
   },
   course_qa: {
     capability: "course_qa",
-    agentId: "GENERAL_QUESTION_V1",
+    // The workspace card is explicitly local-knowledge enhanced. The
+    // knowledge route therefore resolves to the retrieval Runtime rather
+    // than the generic answer adapter.
+    agentId: "LEARN_01_LOCAL_RETRIEVAL_V1",
+    runtimeNodeIds: ["knowledge.execute", "knowledge.verify"],
     prompt: "Explain why capacitor voltage cannot change instantaneously, using a concise course-grounded explanation.",
   },
   learning_loop: {
     capability: "circuit_reasoning",
     agentId: "ACADEMIC_PROBLEM_SOLVER",
+    runtimeNodeIds: [
+      "solver.observe",
+      "solver.retrieve",
+      "solver.execute",
+      "solver.verify",
+    ],
     prompt: "A 10V source is connected in series with a 5 ohm resistor. Check my calculation and guide me through the circuit current.",
     teachingMode: "check_my_work",
     studentAttempt: "I = 10 / 5 = 2 A",
@@ -637,6 +660,17 @@ async function collectEvidence(page, taskId) {
     if (report.evidence.task.status !== "completed") throw new Error(`task ended as ${report.evidence.task.status}: ${report.evidence.task.error_message || "no error message"}`);
     if (report.evidence.task.agent_id !== scenario.agentId) throw new Error(`task routed to ${report.evidence.task.agent_id}, expected ${scenario.agentId}`);
     if (!report.evidence.event_sequences_strictly_increasing) throw new Error("task event sequence is not strictly increasing");
+    if (scenario.runtimeNodeIds) {
+      const observedRuntimeNodeIds = new Set([
+        ...report.evidence.runtime_nodes.map((node) => node.node_id),
+        ...report.evidence.runtime_events.map((event) => event.node_id),
+      ]);
+      for (const nodeId of scenario.runtimeNodeIds) {
+        if (!observedRuntimeNodeIds.has(nodeId)) {
+          throw new Error(`Runtime node ${nodeId} was not observed`);
+        }
+      }
+    }
     if (scenario.learningAction && report.learning_runtime?.status !== "completed") {
       throw new Error(`LearningLoop Runtime ended as ${report.learning_runtime?.status || "unknown"}`);
     }

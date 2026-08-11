@@ -2,33 +2,37 @@ const { spawn, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const {
+  assertPortAvailable,
+  parseBrowserPort,
+  waitForSpawnedHealth,
+} = require("./browser_server_guard");
 
 const root = path.resolve(__dirname, "..");
 const python = path.join(root, ".venv", "Scripts", "python.exe");
 const port = process.env.XINZHI_BROWSER_PORT || "8021";
+const portNumber = parseBrowserPort(port, "browser acceptance");
 const baseURL = `http://127.0.0.1:${port}`;
 const testDatabasePath = path.join(
   os.tmpdir(),
   `xinzhi-browser-acceptance-${process.pid}.db`,
 );
 const testDatabaseURL = `sqlite+aiosqlite:///${testDatabasePath.replaceAll("\\", "/")}`;
-const server = spawn(python, ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port], {
-  cwd: root,
-  windowsHide: true,
-  stdio: "ignore",
-  env: { ...process.env, APP_ENV: "test", TEST_DATABASE_URL: testDatabaseURL, DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", IFLYTEK_SPARK_ENABLED: "false", DASHSCOPE_ENABLED: "false", SPARK_ENABLED: "false", OVERALL_ROUTING_ENABLED: "false", RAG_ENABLED: "false", RAG_WARMUP_ON_STARTUP: "false", RESEARCH_KNOWLEDGE_ENABLED: "false", RESEARCH_KNOWLEDGE_MAINTENANCE_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
-});
+let server = null;
 
-async function ready() {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try { const response = await fetch(`${baseURL}/api/v1/health`); if (response.ok) return; } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error("browser acceptance server did not become ready");
+async function startServer() {
+  await assertPortAvailable(portNumber, "browser acceptance");
+  server = spawn(python, ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port], {
+    cwd: root,
+    windowsHide: true,
+    stdio: "ignore",
+    env: { ...process.env, APP_ENV: "test", TEST_DATABASE_URL: testDatabaseURL, DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", IFLYTEK_SPARK_ENABLED: "false", DASHSCOPE_ENABLED: "false", SPARK_ENABLED: "false", OVERALL_ROUTING_ENABLED: "false", RAG_ENABLED: "false", RAG_WARMUP_ON_STARTUP: "false", RESEARCH_KNOWLEDGE_ENABLED: "false", RESEARCH_KNOWLEDGE_MAINTENANCE_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
+  });
+  await waitForSpawnedHealth({ server, baseURL, label: "browser acceptance" });
 }
 
 async function stopServer() {
-  if (server.exitCode === null && !server.killed) {
+  if (server && server.exitCode === null && !server.killed) {
     const exited = new Promise((resolve) => server.once("exit", resolve));
     server.kill();
     await Promise.race([
@@ -49,7 +53,7 @@ async function stopServer() {
 
 (async () => {
   try {
-    await ready();
+    await startServer();
     const preflight = spawnSync(python, [path.join(root, "scripts", "demo_cli.py"), "preflight", "--base-url", baseURL], {
       cwd: root, windowsHide: true, stdio: "inherit", env: process.env,
     });

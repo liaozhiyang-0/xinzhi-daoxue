@@ -3,10 +3,16 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
+const {
+  assertPortAvailable,
+  parseBrowserPort,
+  waitForSpawnedHealth,
+} = require("./browser_server_guard");
 
 const root = path.resolve(__dirname, "..");
 const python = path.join(root, ".venv", "Scripts", "python.exe");
 const port = process.env.XINZHI_MULTIMODAL_BROWSER_PORT || "8035";
+const portNumber = parseBrowserPort(port, "multimodal browser acceptance");
 const baseURL = `http://127.0.0.1:${port}`;
 const databasePath = path.join(os.tmpdir(), `xinzhi-multimodal-browser-${process.pid}.db`);
 const materialPath = path.join(os.tmpdir(), `xinzhi-multimodal-browser-${process.pid}.txt`);
@@ -32,11 +38,7 @@ const serverEnv = {
   RERANKER_ENABLED: "false",
   MINIO_ENDPOINT: "127.0.0.1:1",
 };
-const server = spawn(
-  python,
-  ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port],
-  { cwd: root, windowsHide: true, stdio: "ignore", env: serverEnv },
-);
+let server = null;
 const checks = [];
 const browserErrors = [];
 
@@ -46,14 +48,13 @@ function assert(condition, message) {
 }
 
 async function waitForServer() {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    try {
-      const response = await fetch(`${baseURL}/api/v1/health`);
-      if (response.ok) return;
-    } catch (_error) {}
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error("multimodal browser acceptance server did not become ready");
+  await assertPortAvailable(portNumber, "multimodal browser acceptance");
+  server = spawn(
+    python,
+    ["-m", "uvicorn", "app.main:app", "--app-dir", "apps/api", "--host", "127.0.0.1", "--port", port],
+    { cwd: root, windowsHide: true, stdio: "ignore", env: serverEnv },
+  );
+  await waitForSpawnedHealth({ server, baseURL, label: "multimodal browser acceptance", attempts: 60 });
 }
 
 function bootstrapAdmin() {
@@ -141,7 +142,7 @@ async function run() {
     console.error(error.stack || error.message);
     process.exitCode = 1;
   } finally {
-    if (server.exitCode === null && !server.killed) server.kill();
+    if (server && server.exitCode === null && !server.killed) server.kill();
     for (const target of [databasePath, `${databasePath}-shm`, `${databasePath}-wal`, materialPath]) {
       try { fs.rmSync(target, { force: true }); } catch (_error) {}
     }

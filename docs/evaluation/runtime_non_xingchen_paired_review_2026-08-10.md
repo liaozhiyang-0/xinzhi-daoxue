@@ -1127,3 +1127,89 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   an API. A normal mock Lesson Prep run on free port `8051` then completed with
   27 strictly increasing events and zero page/request failures; the port was
   released afterward.
+
+## 62. 2026-08-11 student/admin course QA Runtime recheck
+
+- The first student browser probe exposed a stale harness expectation:
+  `course_qa` was expected to route to `GENERAL_QUESTION_V1`, while the
+  workspace capability is explicitly local-knowledge enhanced and correctly
+  routes to `LEARN_01_LOCAL_RETRIEVAL_V1`.
+- After correcting the scenario expectation, the student run completed with
+  19 strictly increasing events and zero page/request failures. The student
+  account received HTTP 403 from the admin-only execution debug endpoint, so
+  its `runtime_nodes` projection was empty; the event stream still contained
+  successful `knowledge.execute` and `knowledge.verify` Runtime events.
+- An independent bounded admin browser recheck completed on port `8058`.
+  It recorded `knowledge.execute` and `knowledge.verify` as succeeded,
+  `result_provider=iflytek_spark`, 19 strictly increasing events, and no page
+  or request failures. The Provider label describes the local knowledge
+  generation backend; the Runtime execution identity is established by the
+  persisted run and node evidence.
+- The acceptance harness now requires both knowledge Runtime node IDs for this
+  scenario, so a future route that only matches the Agent ID but bypasses the
+  Runtime will fail closed.
+
+## 63. 2026-08-11 researcher Academic Search browser recheck
+
+- A fresh bounded real-local browser run used the authenticated researcher
+  workspace and routed to `RESEARCH_01_ACADEMIC_SEARCH_V1`. The redacted
+  report is under
+  `.local_outputs/runtime_researcher_browser_acceptance_academic_search_real_local_20260811_probe1/report.json`.
+- The task completed with `result_provider=local_agent`; the event stream
+  recorded successful `research.intent`, `research.fetch`, `research.answer`,
+  and `research.verify` Runtime nodes. It contained 27 strictly increasing
+  events and zero page/request failures.
+- The researcher account received HTTP 403 from the admin-only execution
+  debug endpoint, so the admin projection was unavailable in this report.
+  The persisted task event stream still provides direct node-level Runtime
+  evidence for the authenticated user path.
+- The browser acceptance harness now requires all four Academic Search node
+  IDs when this scenario is selected, preventing a route-only false positive.
+- The same node-level assertion mechanism is now declared for the Lesson Prep,
+  Assignment Review, Academic Writing, and student solver scenarios; optional
+  replan nodes remain allowed while the stable base graph must be observed.
+
+## 64. 2026-08-11 browser launcher and Workspace SSE recheck
+
+- The three remaining browser launchers (`run_web_ui_browser_acceptance.js`,
+  `auth_management_browser_acceptance.js`, and
+  `multimodal_browser_acceptance.js`) now share a port/child-health guard with
+  the Runtime acceptance harness. Each checks the requested loopback port
+  before spawning Uvicorn and verifies that the spawned child is alive while
+  waiting for `/api/v1/health`.
+- A bounded conflict smoke occupied ports `8062`, `8063`, and `8064` in turn;
+  all three launchers rejected the run with the explicit `already in use`
+  error and did not attach to the occupied service.
+- The existing student Workspace browser acceptance completed on isolated port
+  `8065`: preflight passed `19/19`, 17 screenshots were produced across CT/AE/DE
+  answers, evidence/context views, execution debug, dark theme, presentation,
+  and 390px mobile layout. The run reported zero browser errors and the
+  observed last answer render time was `4.0 ms`. The screenshots are retained
+  under `.local_outputs/web_ui_browser_acceptance_20260811/`.
+- SSE/Runtime UI regression tests passed as a focused group: 21 tests covering
+  database sequence order, `Last-Event-ID` replay, terminal replay,
+  concurrent appends, Runtime node order, plan-proposal events, Workspace
+  controls, and the debug UI contract.
+- This improves local product confidence for Task/SSE/UI boundaries, but does
+  not replace the still-missing full paired Legacy/Runtime release suite or
+  independent semantic approval.
+
+## 65. 2026-08-11 non-RESEARCH_03 release preflight matrix
+
+- A provider-free preflight sweep was run with explicit Agent and Runtime plan
+  versions against the existing redacted structural suites. All seven
+  non-RESEARCH_03 candidates had `structural_eligible=true`:
+  `GENERAL_QUESTION_V1`, `LEARN_01_LOCAL_RETRIEVAL_V1`,
+  `RESEARCH_01_ACADEMIC_SEARCH_V1`, `ACADEMIC_PROBLEM_SOLVER`,
+  `TEACH_01_LESSON_PREP_V1`, `TEACH_02_ASSIGNMENT_REVIEW_V1`, and
+  `RESEARCH_02_ACADEMIC_WRITING_V1`.
+- None was release-eligible. General Question, Local Retrieval, Academic
+  Search, Assignment Review, and Academic Writing were blocked by
+  `semantic_judge_not_independent` because their sidecars were model-only.
+  Solver and Lesson Prep were blocked by `semantic_sidecar_binding_invalid`
+  for the supplied preliminary/template materials; these are not silently
+  promoted to release evidence.
+- This matrix separates Runtime execution/structural parity from semantic
+  quality and independent authorization. RESEARCH_03 was intentionally not
+  included in this sweep and remains the final migration/audit stage after the
+  other core paths are closed.
