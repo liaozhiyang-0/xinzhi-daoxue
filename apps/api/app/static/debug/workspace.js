@@ -1055,6 +1055,22 @@ function runtimeTaskControlEntry(action) {
   return controls.find((item) => item?.action === action) || null;
 }
 
+const messageStatusLabels = {
+  created: "已创建",
+  queued: "排队中",
+  running: "运行中",
+  waiting_user: "等待补充信息",
+  waiting_review: "等待审核",
+  completed: "已完成",
+  failed: "执行失败",
+  cancelled: "已取消",
+};
+
+function messageStatusText(status) {
+  const key = String(status || "").toLowerCase();
+  return messageStatusLabels[key] || status || "任务消息";
+}
+
 function runtimeApprovalAllowed() {
   const role = String(state.userRole || "").toLowerCase();
   if (["teacher", "admin"].includes(role)) return true;
@@ -1620,7 +1636,7 @@ async function loadSessionHistory() {
         const taskId = message.source_task_id || "";
         if (taskId && (taskId === restoredTask?.id || renderedAssistantTaskIds.has(taskId))) return;
         const body = el("div", { class: "message-body" }, [
-          el("span", { class: "message-meta", text: message.status === "completed" ? "已完成" : message.status }),
+          el("span", { class: "message-meta", text: messageStatusText(message.status) }),
           el("div", { class: "markdown-view" }),
         ]);
         renderMarkdown(body.lastElementChild, message.content_text);

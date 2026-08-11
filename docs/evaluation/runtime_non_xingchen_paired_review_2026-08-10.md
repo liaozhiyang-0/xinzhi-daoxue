@@ -2437,3 +2437,8 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - Real Edge testing exposed a durable cancellation defect: stopping a task at waiting_approval only set cancellation_requested, so reopening the session restored the old checkpoint. TaskControlService.cancel() now finalizes non-running Runtime checkpoints and waiting Task states as cancelled, clears control data, and writes the terminal cancellation message.
 - The new persistence regression test passed (1 passed). After the patch, Edge confirmed stop, reload, and session reopen remain terminal; the UI shows 任务已取消 and no longer shows raw task cancelled or the old approval checkpoint.
 - The protected RESEARCH_03_DATA_ANALYSIS_V1 path remains excluded from this audit. Full product-level frontend coverage and release sign-off remain unfinished.
+## 141. 2026-08-12 persisted cancellation status presentation
+
+- A follow-up real Edge refresh exposed a presentation leak in persisted assistant messages: the terminal status appeared as raw English cancelled even though the task was correctly cancelled.
+- The Workspace now maps persisted message statuses through messageStatusText() and advances the cache-busted build ID to 20260812-workspace-message-status-v1. The static Workspace contract test passed (1 passed in the targeted run output).
+- Real Edge validation after the cancellation fix showed the user-facing terminal message 任务已取消, with no raw task cancelled text and no restored approval checkpoint. The full audit remains in progress.
