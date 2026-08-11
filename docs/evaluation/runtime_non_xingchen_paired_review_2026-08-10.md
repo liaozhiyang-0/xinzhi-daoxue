@@ -1562,3 +1562,23 @@ node scripts\run_runtime_teacher_browser_acceptance.js
 - These checks establish local crash/recovery and durable SSE replay, but do
   not replace production Docker crash testing, frontend browser reconnection,
   or the remaining paired semantic/release gates.
+
+## 88. 2026-08-11 frontend contract and deployment verification boundary
+
+- The bounded static frontend/API contract group passed `19` tests, covering
+  student Runtime controls, debug execution reconnect wiring, workspace
+  controls, OpenAPI exposure, and the `Last-Event-ID` API contract. These are
+  source/HTTP contract checks, not browser visual acceptance.
+- `docker compose config --quiet` passed. A bounded
+  `docker compose --profile queue-worker build queue-worker` attempt did not
+  complete within `180` seconds, so no Docker image-build or container-runtime
+  success is claimed; no queue-worker container was started.
+- The in-app browser control transport returned `Transport closed` during
+  setup. Browser interaction and screenshot evidence therefore remain
+  unverified in this run; no browser result is inferred from the static tests.
+- During a local launcher check, the environment exposed two same-command
+  launcher/Uvicorn process chains on port `8000`; the exact project process
+  tree was stopped before any UI work continued. The repository's launcher
+  lock tests still pass, but this observed duplicate-start behavior requires
+  a separate launcher-process audit before claiming single-instance startup
+  in every shell invocation.
