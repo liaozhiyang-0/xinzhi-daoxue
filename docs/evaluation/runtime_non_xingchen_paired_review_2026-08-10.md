@@ -1882,3 +1882,22 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   earlier event-sequence query was not the limiting factor.
 - No asynchronous or non-durable checkpoint shortcut was introduced. Runtime
   recovery semantics and the release latency gate remain unchanged.
+
+## 108. 2026-08-12 current LearningLoop browser recheck
+
+- A fresh isolated authenticated browser run used one API process, a temporary
+  SQLite database, the mock Provider, and the current committed code. The
+  student-facing `learning_loop` scenario completed its initial
+  `ACADEMIC_PROBLEM_SOLVER` task and then completed the
+  `teaching_interaction` Runtime after one accepted approval from the
+  execution-debug page.
+- The run observed the four teaching nodes
+  (`teaching.feedback.observe`, `apply`, `verify`, and `approval`), showed the
+  answer, teaching-loop, learning-progress, and execution-control panels, and
+  produced `39` strictly increasing task events with zero page errors or
+  failed HTTP requests. The redacted report is under
+  `.local_outputs/runtime_teacher_browser_acceptance_learning_loop_20260812_current/`.
+- This confirms current frontend/application wiring and approval recovery for
+  the LearningLoop path. It remains mock development evidence and does not
+  authorize a canary/default release; the LearningLoop paired structural suite,
+  semantic sidecar, and release decision are still missing.
