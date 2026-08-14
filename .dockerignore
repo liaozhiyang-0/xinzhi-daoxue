@@ -1,6 +1,8 @@
 .git
 .venv
 .env
+.env.example
+.env.server.example
 .local_inputs
 .local_outputs
 **/__pycache__
