@@ -32,7 +32,7 @@
 
 在 `development`/`test` 环境中，普通 `start` 和双击启动入口默认由非星辰 Agent Runtime 接管已迁移的原应用路径（目标、计划、节点 checkpoint、SSE 事件以及暂停/审批/恢复控制仍沿用原 Task API）。可使用 `--legacy` 或将 `AGENT_RUNTIME_DEFAULT_ENABLED=false` 关闭这个隐式默认以诊断 Legacy；显式配置的 `AGENT_RUNTIME_LAUNCH_MODES` 仍优先。生产环境不会启用这个隐式默认，仍需通过发布证据门禁显式配置。
 
-业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。文字分类、检索改写、知识回答和专业解题优先使用科大讯飞 Spark，Qwen 主要承担视觉任务、结构化归一化和模型故障兜底。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`、`ENABLE_XINGCHEN_FALLBACK=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true`，并在需要时显式启用星辰回退，才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
+业务请求默认采用本地优先策略：Supervisor、内部 Agent、本地 RAG 和多学科求解器可完成时不会调用星辰工作流。文字分类、检索改写、知识回答和专业解题优先使用 Qwen，Spark 仅作为显式配置的备用 Provider；Qwen 视觉模型承担图片/电路题，Qwen 快速模型承担分类、改写和结构化任务。默认配置 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`、`ENABLE_XINGCHEN_FALLBACK=false`；只有受控调试或调用方显式传入 `options.allow_cloud=true`，并在需要时显式启用星辰回退，才允许星辰调用。普通启动不要添加 `--with-cloud`，该参数会在启动后执行一次真实云端 Preflight。
 
 PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docker、更新代码或重新克隆仓库不会重新创建数据库。`stop` 只停止容器，不删除数据。启动成功后打开：
 
@@ -60,7 +60,7 @@ PostgreSQL、Redis、MinIO 和 Qdrant 使用固定命名数据卷；重启 Docke
 .\xzd.cmd start -Reload                  # 开发热重载
 ```
 
-真实星辰凭据只填写在各自机器的 `.env` 中；Git 只保存空值模板 [.env.example](.env.example)。本地教材、向量索引、上传文件和模型缓存均被 Git 忽略。完整组员说明见 [团队快速使用指南](docs/deployment/team_quick_start.md)。
+真实星辰凭据只填写在各自机器的 `.env` 中；Git 只保存空值模板 [.env.example](.env.example)。本地教材、向量索引、上传文件和模型缓存均被 Git 忽略。完整组员说明见 [团队快速使用指南](docs/deployment/team_quick_start.md)；服务器说明见 [生产服务器部署](docs/deployment/server_production.md)。
 
 ## 当前技术栈
 
@@ -71,7 +71,7 @@ API 与任务编排：Python 3.11+ / FastAPI / 进程内非阻塞 TaskRunner
 文件存储：MinIO（开发环境允许本地回退）
 迁移：SQLAlchemy 2 / Alembic
 调试界面：FastAPI 静态 HTML / CSS / JavaScript
-部署：Docker Compose
+部署：Docker Compose（本地使用 `docker-compose.yml`，服务器使用 `docker-compose.server.yml` 覆盖）
 检索：BGE dense + BM25 sparse + SigLIP2 visual + Qdrant + RRF + BGE reranker
 ```
 

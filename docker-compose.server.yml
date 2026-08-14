@@ -1,0 +1,78 @@
+name: xinzhi-daoxue
+
+# Production overlay. Keep the development compose file unchanged so local
+# single-process startup remains available. Use this file together with
+# docker-compose.yml and the `server` profile on a deployment host.
+services:
+  postgres:
+    ports: !reset []
+    restart: always
+
+  redis:
+    ports: !reset []
+    restart: always
+
+  minio:
+    ports: !reset []
+    restart: always
+
+  qdrant:
+    ports: !reset []
+    restart: always
+
+  api:
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      AUTH_REQUIRED: "true"
+      AUTH_ALLOW_REGISTRATION: "false"
+      AUTH_ALLOW_GUEST: "false"
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_SAME_SITE: lax
+      TASK_EXECUTOR_MODE: redis
+      ALLOW_MOCK_FALLBACK: "false"
+      ALLOW_AGENT_MOCKS: "false"
+      ENABLE_DEBUG_API: "false"
+      RAG_DEBUG_ENABLED: "false"
+      LOCAL_STORAGE_FALLBACK: "false"
+      LANGGRAPH_CHECKPOINT_ENABLED: "false"
+      LANGGRAPH_CHECKPOINT_BACKEND: disabled
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
+      IFLYTEK_SPARK_ENABLED: "false"
+      ENABLE_SPARK_REASONER: "false"
+      DASHSCOPE_ENABLED: "true"
+      ENABLE_QWEN_TEXT_FAST: "true"
+      ENABLE_QWEN_VISION_FAST: "true"
+      ENABLE_QWEN_VISION_PRIMARY: "true"
+      QWEN_MAX_CONCURRENCY: ${QWEN_MAX_CONCURRENCY:-4}
+    ports: !override
+      - "${SERVER_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    restart: always
+
+  queue-worker:
+    # Keep the base profile for compatibility and add a dedicated production
+    # profile so `--profile server` starts exactly one worker.
+    profiles: ["queue-worker", "server"]
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      AUTH_REQUIRED: "true"
+      TASK_EXECUTOR_MODE: redis
+      ALLOW_MOCK_FALLBACK: "false"
+      ALLOW_AGENT_MOCKS: "false"
+      ENABLE_DEBUG_API: "false"
+      RAG_DEBUG_ENABLED: "false"
+      LOCAL_STORAGE_FALLBACK: "false"
+      LANGGRAPH_CHECKPOINT_ENABLED: "false"
+      LANGGRAPH_CHECKPOINT_BACKEND: disabled
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
+      IFLYTEK_SPARK_ENABLED: "false"
+      ENABLE_SPARK_REASONER: "false"
+      DASHSCOPE_ENABLED: "true"
+      ENABLE_QWEN_TEXT_FAST: "true"
+      ENABLE_QWEN_VISION_FAST: "true"
+      ENABLE_QWEN_VISION_PRIMARY: "true"
+      QWEN_MAX_CONCURRENCY: ${QWEN_MAX_CONCURRENCY:-4}
+    restart: always

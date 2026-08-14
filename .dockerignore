@@ -15,7 +15,6 @@
 *.log
 *.xingchen.raw.yml
 *.xingchen.raw.yaml
-.git
 .github
 .venv
 .codex
@@ -36,8 +35,6 @@ local_storage
 *.coverage.*
 *.db-*
 *.log
-local_storage
-archive_legacy
 数电
 模电
 电路理论
