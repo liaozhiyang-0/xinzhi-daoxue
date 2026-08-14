@@ -539,3 +539,58 @@ def test_context_packet_statuses_conflicts_and_cross_course_filtering() -> None:
     assert cross_course.evidence_status == "insufficient"
     assert not cross_course.evidence
     assert any("跨课程" in warning for warning in cross_course.warnings)
+
+
+def test_context_packet_drops_only_highly_overlapping_same_section_chunks() -> None:
+    def hit(chunk_id: str, source_ref: str, chapter: str, content: str) -> KnowledgeHit:
+        return KnowledgeHit(
+            chunk_id=chunk_id,
+            document_id="DOC_CT",
+            course_id="CT",
+            course_name="鐢佃矾鐞嗚",
+            title=chapter,
+            chapter=chapter,
+            document_path="chapter.md",
+            content_type="formula",
+            content=content,
+            score=10,
+            source_ref=source_ref,
+        )
+
+    overlapping = hit(
+        "one",
+        "kb://CT/chapter.md#chunk-1",
+        "1.5.2 KCL",
+        "KCL states current balance at a node. i1+i2-i3=0."
+        " The same chapter explains node equations.",
+    )
+    continuation = hit(
+        "two",
+        "kb://CT/chapter.md#chunk-2",
+        "1.5.2 KCL",
+        "The same chapter explains node equations. i1+i2=i3."
+        " Independent node equations follow.",
+    )
+    independent = hit(
+        "three",
+        "kb://CT/chapter.md#chunk-3",
+        "10.5.1 Node analysis",
+        "Node analysis writes KCL equations to solve node voltages.",
+    )
+    result = RetrievalResult(
+        query="KCL node analysis",
+        normalized_query="KCL node analysis",
+        course_ids=["CT"],
+        hits=[overlapping, continuation, independent],
+        confidence=0.9,
+        latency_ms=0,
+    )
+
+    packet = RetrievalContextService(2000).build(
+        result, course_id="CT", intent="general_qa"
+    )
+
+    assert [item.source_ref for item in packet.evidence] == [
+        overlapping.source_ref,
+        independent.source_ref,
+    ]

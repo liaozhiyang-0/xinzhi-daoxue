@@ -1,11 +1,66 @@
-from app.contracts.agent import AgentRequest
+from types import SimpleNamespace
+
+from app.contracts.agent import AgentRequest, Intent
 from app.contracts.external_retrieval import (
     ExternalEvidenceItem,
+    ExternalRetrievalIntentDecision,
+    ExternalRetrievalPolicy,
     ExternalRetrievalResult,
     ExternalSourceType,
 )
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
 from app.services.task_runner import TaskRunner
+
+
+def _external_policy_runner() -> TaskRunner:
+    runner = TaskRunner.__new__(TaskRunner)
+    runner.external_search = object()
+    runner.knowledge_base = SimpleNamespace(
+        settings=SimpleNamespace(external_retrieval_enabled=True)
+    )
+    return runner
+
+
+def test_plain_academic_writing_does_not_use_agent_allowlist_as_web_intent() -> None:
+    runner = _external_policy_runner()
+    request = AgentRequest(
+        session_id="session-writing",
+        user_id="user-writing",
+        intent=Intent.ACADEMIC_WRITING,
+        canonical_input={
+            "text": "请将实验说明改写为严谨学术表达，不要补充数据或引用。"
+        },
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=["academic"],
+        intent_allowlist=["academic_writing"],
+    )
+    decision = ExternalRetrievalIntentDecision(
+        decision="retrieve",
+        category="agent_intent",
+        reason_codes=["allowlisted_agent_intent"],
+    )
+
+    assert runner._external_retrieval_allowed(policy, request, decision) is False
+
+
+def test_academic_writing_citation_intent_still_allows_external_retrieval() -> None:
+    runner = _external_policy_runner()
+    request = AgentRequest(
+        session_id="session-writing-citation",
+        user_id="user-writing-citation",
+        intent=Intent.ACADEMIC_WRITING,
+        canonical_input={"text": "请改写并提供支持该论断的论文引用。"},
+    )
+    policy = ExternalRetrievalPolicy(enabled=True, source_scopes=["academic"])
+    decision = ExternalRetrievalIntentDecision(
+        decision="retrieve",
+        category="citation",
+        reason_codes=["citation_request"],
+    )
+
+    assert runner._external_retrieval_allowed(policy, request, decision) is True
 
 
 def test_task_runner_only_accepts_bound_scenario_evidence_policy() -> None:

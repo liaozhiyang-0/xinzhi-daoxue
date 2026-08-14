@@ -249,7 +249,7 @@ def test_taskrunner_resume_uses_checkpointed_request_and_plan(api, app) -> None:
     )
 
 
-def test_failed_default_runtime_cannot_be_masked_by_legacy_completion(api, app) -> None:
+def test_frozen_data_analysis_cannot_reach_runtime_or_legacy(api, app) -> None:
     runner = app.state.task_runner
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "RESEARCH_03_DATA_ANALYSIS_V1=default"
@@ -294,22 +294,7 @@ def test_failed_default_runtime_cannot_be_masked_by_legacy_completion(api, app) 
             }
         )
         response = api.client.post("/api/v1/tasks", json=payload)
-        assert response.status_code == 202, response.text
-        failed = api.wait_for_task(response.json()["id"], timeout=15)
+        assert response.status_code == 409, response.text
+        assert "冻结" in response.json()["detail"]
     finally:
         runner.provider.run = original_provider_run  # type: ignore[method-assign]
-
-    assert failed["status"] == "failed"
-    debug = api.client.get(f"/api/v1/debug/execution/{failed['id']}")
-    assert debug.status_code == 200
-    runtime = debug.json()["runtime"]
-    assert runtime["launch_decision"]["mode"] == "default"
-    assert runtime["status"] == "failed"
-    assert runtime["handoff"].get("status") != "legacy_fallback"
-    events = api.client.get(f"/api/v1/tasks/{failed['id']}/events")
-    assert events.status_code == 200
-    event_data = [event["event_data"] for event in events.json()]
-    assert not any(data.get("type") == "task.completed" for data in event_data)
-    assert not any(
-        data.get("stage_id") == "model_generation" for data in event_data
-    )

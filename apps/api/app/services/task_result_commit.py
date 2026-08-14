@@ -38,6 +38,11 @@ def ensure_terminal_success(
             "only completed AgentResult values may enter terminal commit",
             details={"result_status": result.status.value},
         )
+    if not result.answer.strip():
+        raise TaskTerminalCommitError(
+            "empty AgentResult answer cannot enter terminal commit",
+            details={"result_status": result.status.value, "reason": "empty_answer"},
+        )
     if runtime_run is not None and runtime_run.status in {
         RuntimeRunStatus.FAILED,
         RuntimeRunStatus.CANCELLED,

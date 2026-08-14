@@ -40,15 +40,27 @@ def run() -> dict[str, object]:
         ROOT / "evaluation" / "cases" / "commercial_scenarios"
     ).load_all()
     catalog = ScenarioCatalog(ROOT / "config" / "scenarios.yaml")
+    all_scenarios = catalog.list(enabled_only=False)
+    scenarios_by_id = {item.id: item for item in all_scenarios}
     registry = AgentRegistry()
     settings = Settings(app_env="test")
     router = TaskRouter(registry, settings)
     preflight = ScenarioPreflightService()
     timings: list[int] = []
     rows: list[dict[str, object]] = []
+    skipped_disabled_scenarios: list[str] = []
 
     for case in cases:
         scenario_id = str(case.task_options["scenario_id"])
+        scenario = scenarios_by_id.get(scenario_id)
+        if scenario is None:
+            raise ValueError(
+                "commercial case references unknown scenario: "
+                f"{scenario_id}"
+            )
+        if not scenario.enabled:
+            skipped_disabled_scenarios.append(scenario_id)
+            continue
         role = UserRole(str(case.task_options.get("user_role", "student")))
         request = AgentRequest(
             session_id=f"preflight-{case.case_id}",
@@ -66,7 +78,6 @@ def run() -> dict[str, object]:
         decision = router.route(bound)
         elapsed_us = (perf_counter_ns() - started) / 1_000
         timings.append(int(elapsed_us * 1_000))
-        scenario = catalog.get(scenario_id)
         readiness = preflight.check(
             scenario,
             registry=registry,
@@ -107,6 +118,8 @@ def run() -> dict[str, object]:
     return {
         "valid": passed == len(rows),
         "case_count": len(rows),
+        "catalog_case_count": len(cases),
+        "skipped_disabled_scenarios": sorted(set(skipped_disabled_scenarios)),
         "route_passed_count": passed,
         "route_only_passed_count": route_passed,
         "course_passed_count": course_passed,

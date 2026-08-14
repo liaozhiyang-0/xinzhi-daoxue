@@ -199,7 +199,7 @@ def test_runtime_resume_restores_serialized_execution_plan() -> None:
 def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generation(
     api, app
 ) -> None:
-    """A plan-only Runtime candidate cannot claim completion or use Legacy."""
+    """Frozen data analysis rejects new work before Runtime or Legacy runs."""
 
     app.state.task_runner.runtime_lifecycle.enabled = True
     assert app.state.task_runner.research_analysis_runtime is not None
@@ -237,29 +237,8 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
         }
     )
     response = api.client.post("/api/v1/tasks", json=payload)
-    assert response.status_code == 202, response.text
-    completed = api.wait_for_task(response.json()["id"], timeout=15)
-
-    assert completed["status"] == "failed"
-    debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
-    assert debug.status_code == 200
-    runtime = debug.json()["runtime"]
-    assert runtime["status"] == "failed"
-    nodes = {node["node_id"]: node for node in runtime["nodes"]}
-    assert set(nodes) == {
-        "analysis.execute",
-        "analysis.prepare",
-        "analysis.verify",
-    }
-    assert nodes["analysis.prepare"]["status"] == "succeeded"
-    assert nodes["analysis.execute"]["status"] == "succeeded"
-    assert nodes["analysis.verify"]["status"] == "partial"
-    events = api.client.get(f"/api/v1/tasks/{completed['id']}/events")
-    assert events.status_code == 200
-    assert not any(
-        event["event_data"].get("stage_id") == "model_generation"
-        for event in events.json()
-    )
+    assert response.status_code == 409, response.text
+    assert "冻结" in response.json()["detail"]
 
 
 def test_research_analysis_runtime_completes_through_task_boundary(
@@ -1016,6 +995,7 @@ def test_lesson_prep_runtime_default_launch_uses_registry_plan(api, app) -> None
     assert runtime["launch_decision"]["source"] == "configured_launch_mode"
     assert [node["node_id"] for node in runtime["nodes"]] == [
         "lesson.observe",
+        "lesson.retrieve",
         "lesson.execute",
         "lesson.verify",
     ]
@@ -1197,6 +1177,7 @@ def test_assignment_review_runtime_default_launch_uses_registry_plan(
     assert runtime["launch_decision"]["source"] == "configured_launch_mode"
     assert [node["node_id"] for node in runtime["nodes"]] == [
         "assignment.observe",
+        "assignment.retrieve",
         "assignment.execute",
         "assignment.verify",
     ]

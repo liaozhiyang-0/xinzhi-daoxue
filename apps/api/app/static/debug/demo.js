@@ -20,15 +20,19 @@ function formatReadinessMessage(value) {
 }
 
 function scenarioTheme(scenario, index) {
-  const prompt = scenario.demo_steps?.[0] || scenario.summary;
-  const audience = scenario.roles?.find((role) => ["student", "teacher", "researcher"].includes(role)) || "student";
-  const href = `/workspace?scenario_id=${encodeURIComponent(scenario.id)}&role=${encodeURIComponent(audience)}&prompt=${encodeURIComponent(prompt)}`;
+  const demoCase = scenario.demo_cases?.[0] || {};
+  const prompt = demoCase.prompt || scenario.summary;
+  const href = `/workspace?prompt=${encodeURIComponent(prompt)}&intent=${encodeURIComponent(scenario.intents?.[0] || "unknown")}&course=${encodeURIComponent(demoCase.course || "AUTO")}`;
   return {
     number: String(index + 1).padStart(2, "0"),
     title: scenario.name,
     goal: `${scenario.summary} 客户：${scenario.commercialization.buyer}`,
-    duration: `${scenario.demo_steps?.length || 0} 个可操作演示`,
-    capability: scenario.agent_id,
+    prompt,
+    businessContext: demoCase.business_context || scenario.summary,
+    expectedOutput: demoCase.expected_output || [],
+    reviewBoundary: demoCase.review_boundary || "需要人工复核",
+    duration: `${(demoCase.expected_output || []).length} 项结构化输出`,
+    capability: demoCase.expected_agent || scenario.agent_id,
     value: scenario.commercialization.value_capture,
     readiness: "预检中",
     readinessDetail: "正在读取运行配置",
@@ -65,10 +69,16 @@ function themeCard(theme) {
     el("span", { class: "demo-number", text: theme.number }),
     el("h2", { text: theme.title }),
     el("p", { text: theme.goal }),
+    el("p", { class: "demo-business-context", text: `业务背景：${theme.businessContext}` }),
+    el("details", {}, [
+      el("summary", { text: "查看完整示例问题" }),
+      el("p", { class: "demo-prompt", text: theme.prompt }),
+    ]),
     el("dl", {}, [
-      el("div", {}, [el("dt", { text: "执行步骤" }), el("dd", { text: theme.duration })]),
+      el("div", {}, [el("dt", { text: "输出契约" }), el("dd", { text: `${theme.duration}：${theme.expectedOutput.join("、")}` })]),
       el("div", {}, [el("dt", { text: "能力绑定" }), el("dd", { text: theme.capability })]),
       el("div", {}, [el("dt", { text: "价值闭环" }), el("dd", { text: theme.value })]),
+      el("div", {}, [el("dt", { text: "人工边界" }), el("dd", { text: theme.reviewBoundary })]),
       el("div", {}, [el("dt", { text: "运行预检" }), el("dd", { text: theme.readiness })]),
     ]),
     el("small", { class: "demo-readiness-detail", text: theme.readinessDetail }),
@@ -122,7 +132,7 @@ async function loadLastTrace() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "demo", title: "演示中心", description: "六个商业化场景与独立演示路径" });
+  initShell({ page: "demo", title: "演示中心", description: "五个商业化场景与结构化演示路径" });
   if (presentation) $("#presentation-link").hidden = true;
   $("#check-last-trace").addEventListener("click", loadLastTrace);
   loadScenarios();

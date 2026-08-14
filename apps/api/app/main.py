@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
@@ -20,7 +20,7 @@ from app.agents.internal import InternalAgentHub
 from app.api.v1.health import health as health_endpoint
 from app.api.v1.router import api_router
 from app.capabilities import default_capability_registry
-from app.core.config import Settings, get_settings
+from app.core.config import PROJECT_ROOT, Settings, get_settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, reset_request_id, set_request_id
 from app.courses import default_course_registry
@@ -106,6 +106,8 @@ from app.tools import default_tool_registry
 
 logger = logging.getLogger(__name__)
 DEBUG_ROOT = Path(__file__).resolve().parent / "static" / "debug"
+QUESTION_BANK_IMAGE_ROOT = PROJECT_ROOT / "evaluation" / "cache" / "storage"
+ANALOG_OPAMP_IMAGE_NAME = "模电测试集_图2.1.1_运算放大器电路.jpg"
 
 
 async def _research_maintenance_loop(
@@ -561,6 +563,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(api_router, prefix="/api/v1")
     app.add_api_route("/health", health_endpoint, methods=["GET"], tags=["health"])
+
+    @app.get(
+        "/debug-assets/question-bank/analog-opamp.jpg",
+        include_in_schema=False,
+    )
+    async def analog_opamp_question_image() -> FileResponse:
+        matches = tuple(QUESTION_BANK_IMAGE_ROOT.rglob(ANALOG_OPAMP_IMAGE_NAME))
+        if not matches:
+            raise HTTPException(status_code=404, detail="本地模电题库图片不存在")
+        return FileResponse(
+            matches[0],
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     app.mount("/debug-assets", StaticFiles(directory=DEBUG_ROOT), name="debug-assets")
 
     @app.get("/", include_in_schema=False)

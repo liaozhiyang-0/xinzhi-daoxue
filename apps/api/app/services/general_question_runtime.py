@@ -427,6 +427,7 @@ class GeneralQuestionRuntimeService:
             if value:
                 knowledge[knowledge_key] = str(value)
         structured["knowledge"] = knowledge
+        structured["knowledge_hit_count"] = len(hits)
         return result.model_copy(update={"structured_result": structured})
 
     async def run(
@@ -527,6 +528,7 @@ class GeneralQuestionRuntimeService:
                         retrieval,
                         course_id=request_for_attempt.course_id,
                         intent=request_for_attempt.intent.value,
+                        query_override=self._question(request_for_attempt),
                     )
                 except Exception as exc:
                     raise RuntimeNodeError(
@@ -959,6 +961,11 @@ class GeneralQuestionRuntimeService:
                 result_holder["result"] = result
         if result is None:
             raise RuntimeNodeError(f"{self.runtime_name}_result_missing")
+        # The first execution result is held in memory through verification,
+        # so the verify handler may not restore it from a durable observation.
+        # Apply the same retrieval metadata in both paths before the result is
+        # projected into the task presentation payload.
+        result = self._apply_retrieval_metadata(result, run)
         result = self._apply_retrieval_presentation(result, request_for_attempt)
         if (
             run.status.value != "completed"

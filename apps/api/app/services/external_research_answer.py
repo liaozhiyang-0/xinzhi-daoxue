@@ -124,7 +124,92 @@ RESEARCH_TOPIC_FAMILIES = {
         "stretchable electronics",
         "electronic skin",
     ),
+    "electronics_education": (
+        "电子信息",
+        "电子信息课程",
+        "电子信息工程",
+        "电子工程",
+        "电气工程",
+        "电子技术课程",
+        "电子信息专业",
+        "电子信息类",
+        "electronics engineering",
+        "electrical engineering",
+        "engineering education",
+        "electronics education",
+        "electronics course",
+        "electrical engineering education",
+        "arduino",
+        "circuit design",
+        "circuit theory",
+        "analog electronics",
+        "digital electronics",
+        "signal processing",
+        "telecommunications",
+        "embedded systems",
+        "computer engineering",
+    ),
 }
+ACTIVE_LEARNING_ENGINEERING_EDUCATION_TERMS = (
+    "\u4e3b\u52a8\u5b66\u4e60",
+    "\u5de5\u7a0b\u6559\u80b2",
+    "\u5de5\u7a0b\u6559\u5b66",
+    "\u5de5\u79d1\u6559\u80b2",
+    "active learning",
+    "engineering education",
+    "engineering teaching",
+    "engineering pedagogy",
+    "stem education",
+)
+ACTIVE_LEARNING_TERMS = (
+    "\u4e3b\u52a8\u5b66\u4e60",
+    "active learning",
+)
+ACTIVE_LEARNING_EQUIVALENT_TERMS = (
+    "\u95ee\u9898\u5bfc\u5411\u5b66\u4e60",
+    "\u9879\u76ee\u5f0f\u5b66\u4e60",
+    "\u63a2\u7a76\u5f0f\u5b66\u4e60",
+    "\u534f\u4f5c\u5b66\u4e60",
+    "problem-based learning",
+    "project-based learning",
+    "inquiry-based learning",
+    "collaborative learning",
+)
+ENGINEERING_EDUCATION_EVIDENCE_TERMS = (
+    "\u5de5\u7a0b",
+    "\u5de5\u79d1",
+    "engineering",
+    "stem",
+    "computer science education",
+    "electrical engineering",
+    "electronics engineering",
+)
+COMPOUND_TOPIC_TERM_GROUPS = (
+    ("\u91cf\u5b50", "quantum"),
+    ("\u73ca\u745a", "coral"),
+)
+ELECTRONICS_EDUCATION_REQUEST_TERMS = (
+    "电子信息",
+    "电子工程",
+    "电气工程",
+    "电子技术",
+    "electronics engineering",
+    "electrical engineering",
+    "electronics course",
+    "electrical engineering education",
+)
+EDUCATION_CONTEXT_TERMS = (
+    "课程",
+    "教育",
+    "教学",
+    "辅导",
+    "学习",
+    "course",
+    "education",
+    "teaching",
+    "tutoring",
+    "learning",
+)
 AI_METHOD_TERMS = (
     "artificial intelligence",
     "ai-based",
@@ -269,11 +354,40 @@ def filter_research_evidence(
     """Drop evidence that explicitly belongs to a different known domain."""
 
     requested = research_topic_families(query)
-    if not requested:
-        return items
+    normalized_query = " ".join(query.casefold().split())
+    electronics_education_request = (
+        any(term in normalized_query for term in ELECTRONICS_EDUCATION_REQUEST_TERMS)
+        and any(term in normalized_query for term in EDUCATION_CONTEXT_TERMS)
+    )
+    active_learning_engineering_request = (
+        any(
+            term.casefold() in normalized_query
+            for term in ACTIVE_LEARNING_TERMS
+        )
+        and any(
+            term.casefold() in normalized_query
+            for term in ENGINEERING_EDUCATION_EVIDENCE_TERMS
+        )
+        and any(
+            term.casefold() in normalized_query
+            for term in EDUCATION_CONTEXT_TERMS
+        )
+    )
+    required_compound_topic_groups = [
+        group
+        for group in COMPOUND_TOPIC_TERM_GROUPS
+        if any(term.casefold() in normalized_query for term in group)
+    ]
+    if not requested and not electronics_education_request:
+        if (
+            not active_learning_engineering_request
+            and not required_compound_topic_groups
+        ):
+            return items
     filtered: list[ExternalEvidenceItem] = []
     for item in items:
         evidence_text = f"{item.title}\n{item.content_excerpt}"
+        normalized_evidence = evidence_text.casefold()
         evidence_families = research_topic_families(evidence_text)
         if evidence_families and requested.isdisjoint(evidence_families):
             continue
@@ -281,7 +395,6 @@ def filter_research_evidence(
             # A flexible/wearable paper may mention AI as an incidental tool.
             # Keep it out of a broad AI frontier answer unless the evidence
             # materially discusses an AI method in its title or abstract.
-            normalized_evidence = evidence_text.casefold()
             method_hits = sum(
                 term in normalized_evidence for term in AI_METHOD_TERMS
             )
@@ -289,6 +402,26 @@ def filter_research_evidence(
                 continue
             if method_hits == 0:
                 continue
+        if electronics_education_request:
+            if not any(
+                term in normalized_evidence
+                for term in RESEARCH_TOPIC_FAMILIES["electronics_education"]
+            ):
+                continue
+        if active_learning_engineering_request:
+            if not any(
+                term.casefold() in normalized_evidence
+                for term in (*ACTIVE_LEARNING_TERMS, *ACTIVE_LEARNING_EQUIVALENT_TERMS)
+            ) or not any(
+                term.casefold() in normalized_evidence
+                for term in ENGINEERING_EDUCATION_EVIDENCE_TERMS
+            ):
+                continue
+        if any(
+            not any(term.casefold() in normalized_evidence for term in group)
+            for group in required_compound_topic_groups
+        ):
+            continue
         filtered.append(item)
     return filtered
 

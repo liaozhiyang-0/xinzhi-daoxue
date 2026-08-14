@@ -10,8 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 # ruff: noqa: E402
-from app.evaluation.loader import EvaluationCaseLoader
-from app.services.scenario_catalog import ScenarioCatalog
+from app.evaluation.loader import (  # type: ignore[import-untyped]
+    EvaluationCaseLoader,
+)
+from app.services.scenario_catalog import ScenarioCatalog  # type: ignore[import-untyped]
 
 
 CASE_DOCS = {
@@ -28,15 +30,30 @@ def validate() -> dict[str, object]:
         ROOT / "evaluation" / "cases" / "commercial_scenarios"
     ).load_all()
     catalog = ScenarioCatalog(ROOT / "config" / "scenarios.yaml")
-    scenarios = catalog.list()
+    all_scenarios = catalog.list(enabled_only=False)
+    scenarios = [item for item in all_scenarios if item.enabled]
     expected_ids = {item.id for item in scenarios}
     actual_ids: set[str] = set()
+    skipped_disabled_ids: list[str] = []
     for case in cases:
         scenario_id = str(case.task_options.get("scenario_id", ""))
         if scenario_id in actual_ids:
             raise ValueError(f"duplicate commercial scenario case: {scenario_id}")
+        scenario = next(
+            (item for item in all_scenarios if item.id == scenario_id),
+            None,
+        )
+        if scenario is None:
+            raise ValueError(
+                "commercial case references unknown scenario: "
+                f"{scenario_id}"
+            )
+        if not scenario.enabled:
+            # A frozen scenario remains documented and auditable, but must not
+            # be treated as an enabled commercial execution path.
+            skipped_disabled_ids.append(scenario_id)
+            continue
         actual_ids.add(scenario_id)
-        scenario = catalog.get(scenario_id)
         if case.expected_agent != scenario.agent_id:
             raise ValueError(f"{case.case_id}: expected_agent does not match scenario")
         if case.provenance.source_type != "synthetic":
@@ -61,7 +78,7 @@ def validate() -> dict[str, object]:
             )
         ):
             raise ValueError(f"{case.case_id}: commercialization plan incomplete")
-    if len(cases) != 6 or actual_ids != expected_ids:
+    if actual_ids != expected_ids:
         raise ValueError(
             f"commercial scenario coverage mismatch: expected={sorted(expected_ids)} "
             f"actual={sorted(actual_ids)}"
@@ -76,8 +93,10 @@ def validate() -> dict[str, object]:
         raise ValueError(f"commercial case documents missing: {missing_docs}")
     return {
         "valid": True,
-        "case_count": len(cases),
+        "case_count": len(actual_ids),
+        "catalog_case_count": len(cases),
         "scenario_ids": sorted(actual_ids),
+        "skipped_disabled_scenarios": sorted(set(skipped_disabled_ids)),
         "all_synthetic": True,
         "manual_review_required": True,
     }

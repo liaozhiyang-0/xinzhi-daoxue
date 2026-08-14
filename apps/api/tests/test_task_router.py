@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 from app.agents import AgentRegistry, TaskRouter
-from app.contracts import AgentRequest, AttachmentRef, RouteStatus
+from app.contracts import AgentRequest, AttachmentRef, Intent, RouteStatus
 from app.core.config import Settings
 
 
@@ -105,8 +105,13 @@ def test_unconfigured_provider_without_local_contract_is_not_selected() -> None:
 
     decision = TaskRouter(AgentRegistry(), settings).route(task_request)
 
-    assert decision.agent_id == "UNRESOLVED"
-    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert decision.agent_id == "GENERAL_MODEL_FALLBACK_V1"
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.fallback_used is True
+    assert any(
+        code in decision.reason_codes
+        for code in ("target_agent_unavailable", "route_unavailable")
+    )
 
 
 def test_disabled_xingchen_agent_is_not_kept_by_local_only_routing() -> None:
@@ -127,7 +132,9 @@ def test_disabled_xingchen_agent_is_not_kept_by_local_only_routing() -> None:
         )
     )
 
-    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id == "GENERAL_MODEL_FALLBACK_V1"
+    assert decision.fallback_used is True
     assert decision.agent_id != primary.agent_id
 
 
@@ -170,6 +177,29 @@ def test_data_analysis_accepts_tabular_attachment_input() -> None:
 
     assert decision.route_status == RouteStatus.SELECTED
     assert decision.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+
+
+def test_text_document_attachment_remains_text_compatible() -> None:
+    task_request = request("CT", "solve_problem").model_copy(
+        update={
+            "attachments": [
+                AttachmentRef(
+                    file_id="file-note",
+                    filename="task-note.txt",
+                    content_type="text/plain",
+                    size_bytes=32,
+                    storage_key="local:task-note.txt",
+                    ingestion_status="ready",
+                    extracted_text="已解析的题目补充说明",
+                )
+            ]
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
 
 
 def test_research_analysis_v2_stays_local_without_model_keys() -> None:
@@ -387,6 +417,27 @@ def test_research_follow_up_preserves_unknown_previous_course() -> None:
 
     assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     assert decision.course_id == "UNKNOWN"
+
+
+def test_research_workflow_does_not_inherit_learning_session_course() -> None:
+    task_request = AgentRequest(
+        session_id="session-research-course-boundary",
+        user_id="user-research-course-boundary",
+        course_id="AUTO",
+        intent=Intent.ACADEMIC_SEARCH,
+        canonical_input={"text": "检索近五年关于主动学习对工程教育效果的学术证据。"},
+        options={
+            "active_course": "CT",
+            "previous_course": "CT",
+            "allow_cloud": False,
+        },
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert decision.course_id == "UNKNOWN"
+    assert "research_workflow_neutral_course" in decision.reason_codes
 
 
 def test_cross_domain_topic_overrides_stale_explicit_course_hint() -> None:

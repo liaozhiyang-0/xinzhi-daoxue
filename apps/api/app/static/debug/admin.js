@@ -247,6 +247,44 @@ function renderAdminTasks(items) {
   $("#admin-task-table").replaceChildren(table);
 }
 
+async function appendAdminTaskApproval(target, taskId) {
+  const action = el("button", {
+    class: "button primary",
+    type: "button",
+    text: "\u63d0\u4ea4\u5ba1\u6279",
+    onclick: () => approveAdminTask(taskId),
+  });
+  target.querySelector(".section-heading")?.append(action);
+}
+
+async function approveAdminTask(taskId) {
+  const target = $("#admin-task-detail");
+  const confirm = el("div", { class: "notice warning", role: "alert" }, [
+    el("span", { text: "\u8bf7\u518d\u6b21\u70b9\u51fb\u4ee5\u786e\u8ba4\u5ba1\u6279\uff1b\u4efb\u52a1\u5c06\u4ece\u65ad\u70b9\u7ee7\u7eed\u6267\u884c\u3002" }),
+    el("button", { class: "button primary", type: "button", text: "\u786e\u8ba4\u5ba1\u6279", onclick: () => submitAdminTaskApproval(taskId, confirm) }),
+    el("button", { class: "text-button", type: "button", text: "\u53d6\u6d88", onclick: () => confirm.remove() }),
+  ]);
+  target.prepend(confirm);
+}
+
+async function submitAdminTaskApproval(taskId, confirmation) {
+  confirmation.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    const task = await api(`/api/v1/tasks/${encodeURIComponent(taskId)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    toast(`\u5ba1\u6279\u5df2\u63d0\u4ea4\uff0c\u5f53\u524d\u72b6\u6001\uff1a${task.status}`);
+    await loadAdminTasks();
+    await loadAdminTaskDetail(taskId);
+  } catch (error) {
+    toast(error.message || "\u5ba1\u6279\u5931\u8d25", "failed");
+    confirmation.remove();
+    await loadAdminTaskDetail(taskId);
+  }
+}
+
 async function loadAdminTaskDetail(taskId) {
   const target = $("#admin-task-detail");
   target.hidden = false;
@@ -254,6 +292,30 @@ async function loadAdminTaskDetail(taskId) {
   try {
     const data = await api(`/api/v1/debug/execution/${encodeURIComponent(taskId)}`);
     target.replaceChildren(el("div", { class: "section-heading" }, [el("h3", { text: `任务详情 · ${taskId}` }), el("button", { class: "text-button", type: "button", text: "关闭", onclick: () => { target.hidden = true; } })]), el("pre", { class: "code-view", text: JSON.stringify(data, null, 2) }));
+    const rawDetail = target.querySelector("pre.code-view");
+    rawDetail?.remove();
+    const taskSummary = data.task || {};
+    const runtimeSummary = data.runtime || {};
+    const eventSummary = Array.isArray(data.events) ? data.events : [];
+    const evidenceCount = Array.isArray(data.retrieval?.final_evidence)
+      ? data.retrieval.final_evidence.length
+      : 0;
+    const eventNumbers = eventSummary.map((item) => Number(item.sequence));
+    const eventOrderOk = eventNumbers.every((value, index) => value === index + 1);
+    const summary = el("div", { class: "admin-task-summary" }, [
+      el("p", { text: `状态：${taskSummary.status || "unknown"} · ${taskSummary.course_id || ""} / ${taskSummary.intent || ""}` }),
+      el("p", { text: `Agent：${taskSummary.agent_id || ""} · Runtime：${runtimeSummary.plan_version || "未进入 Runtime"}` }),
+      el("p", { text: `证据 ${evidenceCount} 条 · 事件 ${eventSummary.length} 条 · 序号连续：${eventOrderOk ? "是" : "否"}` }),
+    ]);
+    target.append(summary, el("button", {
+      class: "text-button",
+      type: "button",
+      text: "查看完整执行链",
+      onclick: () => target.append(el("pre", { class: "code-view", text: JSON.stringify(data, null, 2) })),
+    }));
+    if (currentPrincipal?.role === "admin" && data.task?.status === "waiting_review") {
+      await appendAdminTaskApproval(target, taskId);
+    }
   } catch (error) {
     target.replaceChildren(el("p", { class: "error-state", text: error.message }));
   }

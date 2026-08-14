@@ -132,6 +132,44 @@ def _degraded_external_result(query: str) -> ExternalRetrievalResult:
     )
 
 
+def _electronics_scope_result(query: str) -> ExternalRetrievalResult:
+    direct = ExternalEvidenceItem(
+        evidence_id="electronics-education",
+        source_type=ExternalSourceType.ACADEMIC_PAPER,
+        provider="fake",
+        source_ref="doi:10.1000/electronics-education",
+        title="AI tutoring in electrical engineering education",
+        canonical_url=TypeAdapter(AnyHttpUrl).validate_python(
+            "https://example.org/electronics-education"
+        ),
+        content_excerpt=(
+            "An intelligent tutoring system in an electrical engineering course "
+            "with circuit design exercises."
+        ),
+        retrieved_at=datetime.now(UTC),
+    )
+    unrelated = ExternalEvidenceItem(
+        evidence_id="nursing-education",
+        source_type=ExternalSourceType.ACADEMIC_PAPER,
+        provider="fake",
+        source_ref="doi:10.1000/nursing-education",
+        title="ChatGPT in nursing education",
+        canonical_url=TypeAdapter(AnyHttpUrl).validate_python(
+            "https://example.org/nursing-education"
+        ),
+        content_excerpt="Large language models in nursing education and training.",
+        retrieved_at=datetime.now(UTC),
+    )
+    return ExternalRetrievalResult(
+        query=query,
+        normalized_query=query,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+        items=[direct, unrelated],
+        provider_status={"fake": "completed"},
+        approved_count=2,
+    )
+
+
 @pytest.mark.asyncio
 async def test_external_retrieval_execution_service_owns_provider_orchestration(
 ) -> None:
@@ -163,6 +201,39 @@ async def test_external_retrieval_execution_service_owns_provider_orchestration(
 
     assert result.status == "completed"
     assert result.items[0].evidence_id == "paper-001"
+
+
+@pytest.mark.asyncio
+async def test_external_retrieval_execution_filters_cross_discipline_evidence() -> None:
+    class FakeSearch:
+        async def search(self, query: str, **_: object) -> ExternalRetrievalResult:
+            return _electronics_scope_result(query)
+
+    service = ExternalRetrievalExecutionService(
+        settings=Settings(app_env="test", _env_file=None),  # type: ignore[call-arg]
+        external_search=FakeSearch(),  # type: ignore[arg-type]
+        external_fetcher=None,
+        external_paper_reviewer=None,
+        external_search_planner=None,
+    )
+    request = AgentRequest(
+        task_id="external-filter-task",
+        session_id="external-filter-session",
+        user_id="external-filter-user",
+        canonical_input={
+            "text": "请检索电子信息课程智能辅导效果的近期研究",
+        },
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+
+    result = await service.retrieve(request, policy)
+
+    assert [item.evidence_id for item in result.items] == ["electronics-education"]
+    assert result.approved_count == 1
+    assert "cross-topic evidence was removed before display" in result.warnings
 
 
 @pytest.mark.asyncio

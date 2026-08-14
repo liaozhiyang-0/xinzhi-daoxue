@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from app.agents.internal import InternalAgentHub
@@ -22,6 +24,7 @@ from app.contracts.research import (
     ResearchSourceGroup,
     ResearchSourceKind,
 )
+from app.services.academic_search_planner import relative_freshness_days
 from app.services.external_research_answer import (
     external_search_view,
     filter_research_evidence,
@@ -29,6 +32,11 @@ from app.services.external_research_answer import (
 from app.services.research_knowledge import ResearchKnowledgeService
 
 logger = logging.getLogger(__name__)
+_RELATIVE_DATE_WINDOW_PATTERN = re.compile(
+    r"近(?:\d+|[一二三四五六七八九十几]+)\s*年|近年|最近|近期|"
+    r"recent|latest|last\s+(?:few|several|\d+)\s+years",
+    flags=re.IGNORECASE,
+)
 
 
 class ResearchFrontierService:
@@ -198,7 +206,19 @@ class ResearchFrontierService:
             )
             brief = ResearchBriefDraft.model_validate(internal.structured_result)
             brief = self._sanitize_brief(brief, evidence)
-            model_metadata = self._execution_metadata(internal)
+            if self._brief_exceeds_requested_date_scope(question, brief):
+                logger.warning(
+                    "research_brief_date_scope_exceeded task_id=%s; "
+                    "using evidence fallback",
+                    request.task_id,
+                )
+                brief = self._fallback_brief(question, intent, evidence, external)
+                model_metadata = {
+                    **self._execution_metadata(internal),
+                    "status": "fallback_date_scope",
+                }
+            else:
+                model_metadata = self._execution_metadata(internal)
         except Exception:
             logger.warning(
                 "research_brief_generation_failed task_id=%s",
@@ -379,6 +399,42 @@ class ResearchFrontierService:
                 "timeline": timeline,
             }
         )
+
+    @staticmethod
+    def _brief_exceeds_requested_date_scope(
+        question: str, brief: ResearchBriefDraft
+    ) -> bool:
+        """Reject generated date claims outside the user-requested window."""
+
+        normalized = "\n".join(
+            [
+                brief.executive_summary,
+                *(item.claim for item in brief.key_findings),
+                *(item.why_it_matters for item in brief.key_findings),
+                *(item.note for item in brief.source_landscape),
+                *(item.date_label for item in brief.timeline),
+                *(item.event for item in brief.timeline),
+                *brief.open_questions,
+                *brief.next_steps,
+                *brief.limitations,
+            ]
+        )
+        years = {int(value) for value in re.findall(r"20\d{2}", normalized)}
+        if not years:
+            return False
+        explicit_years = sorted(
+            {int(value) for value in re.findall(r"20\d{2}", question)}
+        )
+        if len(explicit_years) >= 2:
+            return any(
+                year < explicit_years[0] or year > explicit_years[-1]
+                for year in years
+            )
+        if not _RELATIVE_DATE_WINDOW_PATTERN.search(question):
+            return False
+        now = datetime.now(UTC)
+        start = now - timedelta(days=relative_freshness_days(question))
+        return any(year < start.year or year > now.year for year in years)
 
     @classmethod
     def _fallback_brief(

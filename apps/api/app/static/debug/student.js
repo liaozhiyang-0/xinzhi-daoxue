@@ -65,15 +65,83 @@ function imageUrl(uri) {
   const rest = uri.slice(11); const slash = rest.indexOf("/"); if (slash < 0) return "";
   return `/api/v1/knowledge/images/${encodeURIComponent(rest.slice(0, slash))}/${rest.slice(slash + 1).split("/").map(encodeURIComponent).join("/")}`;
 }
+function externalSourceUrl(item) {
+  const direct = String(item?.url || item?.canonical_url || item?.source_ref || "").trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const doi = String(item?.doi || direct.match(/^(?:doi:)?(10\.\d{4,9}\/\S+)$/i)?.[1] || "")
+    .replace(/^https?:\/\/doi\.org\//i, "")
+    .replace(/^doi:/i, "");
+  if (doi) return `https://doi.org/${encodeURIComponent(doi)}`;
+  const arxiv = String(item?.arxiv_id || direct.match(/^arxiv:(.+)$/i)?.[1] || "")
+    .replace(/^https?:\/\/arxiv\.org\/(?:abs|pdf)\//i, "")
+    .replace(/^arxiv:/i, "")
+    .replace(/\.pdf$/i, "");
+  return arxiv ? `https://arxiv.org/abs/${encodeURIComponent(arxiv)}` : "";
+}
+function studentSourceIdentityKeys(item) {
+  const keys = [];
+  const evidenceId = String(item?.evidence_id || "").trim().toLowerCase();
+  if (evidenceId) keys.push(`evidence:${evidenceId}`);
+  const sourceRef = String(item?.source_ref || item?.source_uri || "").trim().toLowerCase();
+  if (sourceRef) keys.push(`source:${sourceRef}`);
+  const url = String(externalSourceUrl(item) || "")
+    .trim()
+    .toLowerCase()
+    .replace(/#.*$/, "")
+    .replace(/\/$/, "");
+  if (url) keys.push(`url:${url}`);
+  if (sourceRef && !url) keys.push(`source:${sourceRef}`);
+  if (!keys.length) {
+    const title = String(item?.title || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (title) keys.push(`title:${title}`);
+  }
+  return keys;
+}
+function mergeStudentSources(...groups) {
+  const seen = new Set();
+  return groups.flatMap((group) => Array.isArray(group) ? group : []).filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const keys = studentSourceIdentityKeys(item);
+    if (!keys.length || keys.some((key) => seen.has(key))) return false;
+    keys.forEach((key) => seen.add(key));
+    return true;
+  });
+}
 function sourceCard(hit, course) {
   const card = el("article", { class: "source-card" });
-  card.append(el("div", { class: "source-card-heading" }, [el("strong", { text: hit.title || hit.chapter || "课程资料" }), badge("ready", hit.course_id || course || "课程")]), el("p", { text: hit.snippet || hit.text_preview || hit.chapter || "已用于本次回答的课程证据。" }));
+  const sourceRef = String(hit.source_ref || hit.source_uri || "").trim();
+  const isLocal = sourceRef.startsWith("kb://");
+  const externalUrl = isLocal ? "" : externalSourceUrl(hit);
+  const provider = String(hit.provider || "").trim().toLowerCase();
+  const isMock = hit.metadata?.mock === true || provider === "mock" || provider === "development_mock";
+  const sourceType = isLocal
+    ? "本地课程资料"
+    : isMock
+      ? "开发态 Mock · 非真实来源"
+      : externalUrl
+        ? "外部来源 · 请打开原文核验"
+        : "来源路径不可用";
+  const heading = el("div", { class: "source-card-heading" }, [
+    el("strong", { text: hit.title || hit.chapter || "课程资料" }),
+    badge("ready", isLocal ? (hit.course_id || course || "课程") : (hit.source_type || "外部来源")),
+  ]);
+  const excerpt = el("div", { class: "source-card-excerpt" });
+  renderMarkdown(excerpt, hit.snippet || hit.content_excerpt || hit.text_preview || hit.content || hit.chapter || "已用于本次回答的课程证据。", { preserveRaw: true });
+  card.append(heading, excerpt, el("small", { class: isMock ? "source-provenance mock" : "source-provenance", text: sourceType }));
   const meta = [hit.chapter, hit.content_type].filter(Boolean).join(" · "); if (meta) card.append(el("small", { text: meta }));
-  if (hit.source_ref || hit.source_uri) card.append(el("code", { class: "source-ref", text: hit.source_ref || hit.source_uri }));
+  if (externalUrl) {
+    card.append(el("a", { class: "source-open", href: externalUrl, target: "_blank", rel: "noopener noreferrer", text: "打开原文" }));
+  } else if (sourceRef) {
+    card.append(el("code", { class: "source-ref", text: sourceRef }));
+  } else {
+    card.append(el("small", { text: "无法打开原文" }));
+  }
   return card;
 }
 function renderResult(task) {
-  const result = task.result_content || {}; const structured = result.structured_result || {}; const knowledge = structured.knowledge || {}; const hits = knowledge.hits || result.citations || [];
+  const result = task.result_content || {}; const structured = result.structured_result || {}; const knowledge = structured.knowledge || {}; const hits = Array.isArray(knowledge.hits) ? knowledge.hits : result.citations || [];
+  const externalItems = Array.isArray(structured.external_retrieval?.items) ? structured.external_retrieval.items : [];
+  const sources = mergeStudentSources(hits, externalItems);
   state.lastAnswer = result.math_content?.markdown || result.structured_result?.math_content?.markdown || result.answer || task.error_message || "未返回回答";
   $("#answer-panel").hidden = false; $("#answer-agent").textContent = task.agent_id || "统一运行框架";
   const statusBadge = badge(task.status === "completed" ? (result.fallback_used ? "degraded" : "success") : "failed", task.status === "completed" ? (result.fallback_used ? "降级完成" : "已完成") : "未完成");
@@ -86,8 +154,8 @@ function renderResult(task) {
   if (result.fallback_used) notices.push({ status: "degraded", text: `云端服务暂不可用，本次回答由本地知识库生成。${result.fallback_reason ? ` 原因：${result.fallback_reason}` : ""}` });
   (result.warnings || []).filter((item) => !String(item).includes("mock_result")).forEach((item) => notices.push({ status: "warning", text: item }));
   $("#answer-notices").replaceChildren(...notices.map((item) => el("div", { class: `notice ${item.status}`, text: item.text })));
-  $("#source-summary").textContent = `参考课程资料 ${hits.length}`;
-  $("#source-list").replaceChildren(...(hits.length ? hits.map((hit) => sourceCard(hit, task.course_id)) : [el("div", { class: "empty-state", text: "本次回答没有可展示的课程资料来源。" })]));
+  $("#source-summary").textContent = `资料依据 ${sources.length}`;
+  $("#source-list").replaceChildren(...(sources.length ? sources.map((hit) => sourceCard(hit, task.course_id)) : [el("div", { class: "empty-state", text: "本次回答没有可展示的资料依据。" })]));
   const images = $("#show-images").checked ? (result.related_images || []) : [];
   $("#related-images").replaceChildren(...images.map((item) => { const src = imageUrl(item.resource_uri); return src ? el("figure", { class: "image-thumbnail" }, [el("img", { src, alt: item.caption || "相关教材图片", loading: "lazy" }), el("figcaption", { text: item.caption || "相关教材图片" })]) : null; }).filter(Boolean));
   $("#answer-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });

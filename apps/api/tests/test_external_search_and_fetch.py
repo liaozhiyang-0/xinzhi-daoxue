@@ -27,6 +27,7 @@ from app.providers.retrieval.web import (
 )
 from app.services.external_research_answer import (
     external_search_view,
+    filter_research_evidence,
     is_academic_search_follow_up,
     is_academic_search_request,
     is_academic_writing_source_follow_up,
@@ -452,6 +453,110 @@ def test_academic_search_answer_exposes_link_and_abstract_view() -> None:
     ) == "electronics engineering information technology"
 
 
+def test_electronics_course_research_filters_cross_discipline_evidence() -> None:
+    direct = _item("https://example.org/electronics-education-paper").model_copy(
+        update={
+            "evidence_id": "electronics-education",
+            "title": "AI tutoring in electrical engineering education",
+            "content_excerpt": (
+                "This study evaluates an intelligent tutoring system in an "
+                "electrical engineering course with circuit design exercises."
+            ),
+        }
+    )
+    unrelated = _item("https://example.org/nursing-education-paper").model_copy(
+        update={
+            "evidence_id": "nursing-education",
+            "title": "ChatGPT in nursing education",
+            "content_excerpt": (
+                "This review studies large language models in nursing education "
+                "and clinical training."
+            ),
+        }
+    )
+
+    filtered = filter_research_evidence(
+        "请检索电子信息课程智能辅导效果的近期研究",
+        [direct, unrelated],
+    )
+
+    assert [item.evidence_id for item in filtered] == ["electronics-education"]
+
+
+def test_active_learning_engineering_education_filters_degraded_candidates() -> None:
+    direct = _item("https://example.org/engineering-active-learning").model_copy(
+        update={
+            "evidence_id": "engineering-active-learning",
+            "title": "Active learning in engineering education",
+            "content_excerpt": (
+                "This study evaluates problem-based learning activities in "
+                "an engineering "
+                "course and reports learning outcomes."
+            ),
+        }
+    )
+    unrelated = _item("https://example.org/nursing-active-learning").model_copy(
+        update={
+            "evidence_id": "nursing-active-learning",
+            "title": "Active learning in nursing education",
+            "content_excerpt": (
+                "This study evaluates active learning in nursing education and "
+                "clinical training."
+            ),
+        }
+    )
+
+    filtered = filter_research_evidence(
+        "Find recent academic evidence on the effects of active learning in "
+        "engineering education.",
+        [direct, unrelated],
+    )
+
+    assert [item.evidence_id for item in filtered] == ["engineering-active-learning"]
+
+
+def test_active_learning_drops_unsupported_topics() -> None:
+    adjacent = _item("https://example.org/engineering-ai").model_copy(
+        update={
+            "evidence_id": "engineering-ai",
+            "title": "Generative AI in engineering classrooms",
+            "content_excerpt": (
+                "This engineering education paper discusses generative AI but "
+                "focuses on prompt design and does not evaluate a teaching "
+                "intervention or student learning outcomes."
+            ),
+        }
+    )
+
+    filtered = filter_research_evidence(
+        "Find recent academic evidence on the effects of active learning in "
+        "engineering education.",
+        [adjacent],
+    )
+
+    assert filtered == []
+
+
+def test_compound_topic_requires_each_explicit_topic_term() -> None:
+    item = _item("https://example.org/quantum-education").model_copy(
+        update={
+            "evidence_id": "quantum-education",
+            "title": "Quantum computing education",
+            "content_excerpt": (
+                "This paper studies active learning in engineering education, "
+                "but it focuses on quantum computing rather than the requested topic."
+            ),
+        }
+    )
+
+    filtered = filter_research_evidence(
+        "Find evidence on active learning in quantum coral engineering education.",
+        [item],
+    )
+
+    assert filtered == []
+
+
 def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) -> None:
     class FakeSearch:
         async def search(self, query: str, **_: object) -> ExternalRetrievalResult:
@@ -479,6 +584,9 @@ def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) 
     structured = completed["result_content"]["structured_result"]
     assert completed["agent_id"] == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     assert structured["external_search_view"][0]["url"] == "https://example.org/paper"
+    assert structured["external_retrieval"]["items"][0]["canonical_url"] == (
+        "https://example.org/paper"
+    )
     assert structured["external_citation_validation"]["status"] == "passed"
 
     events = client.get(f"/api/v1/tasks/{task['id']}/events").json()

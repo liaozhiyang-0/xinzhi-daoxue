@@ -77,6 +77,31 @@ def test_supervisor_routes_switching_regulator_to_analog_knowledge_base() -> Non
     assert "local_rag_primary" in prepared.route.reason_codes
 
 
+def test_task_router_keeps_analog_concept_question_on_knowledge_route() -> None:
+    registry = AgentRegistry()
+    decision = TaskRouter(
+        registry, Settings(app_env="test", rag_enabled=False, _env_file=None)
+    ).route(
+        AgentRequest(
+            session_id="session-analog-concept",
+            user_id="user-analog-concept",
+            course_id=CourseCode.AE.value,
+            intent="unknown",
+            canonical_input={
+                "text": (
+                    "\u8bf7\u89e3\u91ca\u5171\u5c04\u6781\u653e\u5927\u7535\u8def\u4e2d"
+                    "\u7535\u538b\u589e\u76ca\u7684\u4e3b\u8981\u5f71\u54cd\u56e0\u7d20，"
+                    "\u5e76\u8bf4\u660e\u5982\u4f55\u5224\u65ad\u662f\u5426\u5931\u771f"
+                )
+            },
+        )
+    )
+
+    assert decision.course_id == CourseCode.AE.value
+    assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+
+
 def test_supervisor_preserves_teaching_route_when_local_rag_is_enabled() -> None:
     prepared = supervisor().prepare(
         AgentRequestV2(
@@ -123,6 +148,37 @@ def test_task_router_recognizes_knowledge_language_without_supervisor() -> None:
 
     assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert decision.course_id == CourseCode.AE.value
+    assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
+
+
+def test_task_router_keeps_concept_question_on_knowledge_route_after_course_switch(
+) -> None:
+    router = TaskRouter(
+        AgentRegistry(), Settings(app_env="test", rag_enabled=False, _env_file=None)
+    )
+    decision = router.route(
+        AgentRequest(
+            session_id="session-router-course-switch",
+            user_id="user-router-course-switch",
+            course_id="AE",
+            intent="unknown",
+            canonical_input={
+                "text": (
+                    "\u8bf7\u89e3\u91ca\u5171\u5c04\u6781\u653e\u5927\u7535\u8def\u4e2d\u7535\u538b\u589e\u76ca\u7684\u4e3b\u8981\u5f71\u54cd\u56e0\u7d20\uff0c"
+                    "\u5e76\u8bf4\u660e\u5982\u4f55\u5224\u65ad\u662f\u5426\u5931\u771f\u3002"
+                )
+            },
+            options={
+                "previous_agent": "LEARN_01_LOCAL_RETRIEVAL_V1",
+                "previous_intent": "explain_concept",
+                "previous_course": "CT",
+                "course_context_reset": True,
+                "allow_cloud": False,
+            },
+        )
+    )
+
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
     assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
 
 

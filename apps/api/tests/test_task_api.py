@@ -28,6 +28,7 @@ def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:
     payload = api.task_payload(
         session["id"],
         intent="lesson_prep",
+        user_role="teacher",
     )
     payload.update(
         {
@@ -104,21 +105,15 @@ def test_research_analysis_v2_api_persists_sanitized_provenance(api) -> None:
         }
     }
 
-    created = api.create_task(session["id"], options=options, intent="data_analysis")
-    completed = api.wait_for_task(created["id"])
-
-    assert completed["agent_id"] == "RESEARCH_03_DATA_ANALYSIS_V1"
-    provenance = completed["result_content"]["business_data"]["provenance"]
-    assert provenance["dataset"]["dataset_id"] == "api-provenance-test"
-    assert provenance["dataset"]["checksum_sha256"] == "0" * 64
-    assert provenance["dataset"]["source_ref_included"] is False
-    assert "api-provenance-test.csv" not in str(provenance)
-    business_data = completed["result_content"]["business_data"]
-    assert business_data["plan"]["estimand"] == (
-        "treatment minus control mean outcome"
+    response = api.client.post(
+        "/api/v1/tasks",
+        json=api.task_payload(
+            session["id"], options=options, intent="data_analysis"
+        ),
     )
-    assert business_data["provenance"]["unit_of_analysis"] == "one row"
-    assert business_data["evidence_ids"] == ["method-api-contract"]
+    assert response.status_code == 409, response.text
+    assert "数据分析功能当前已冻结" in response.text
+    return
 
 
 def test_research_analysis_v2_executes_uploaded_csv_attachment(api, client) -> None:
@@ -195,20 +190,8 @@ def test_research_analysis_v2_executes_uploaded_csv_attachment(api, client) -> N
         }
     )
     response = api.client.post("/api/v1/tasks", json=payload)
-    assert response.status_code == 202, response.text
-    created = response.json()
-    completed = api.wait_for_task(created["id"], timeout=15)
-
-    assert completed["status"] == "completed"
-    assert completed["provider"] == "local_analysis_v2"
-    assert completed["result_content"]["business_data"]["status"] == "executed"
-    assert completed["result_content"]["structured_result"]["analysis_v2"] is True
-    assert "分析步骤" not in completed["result_content"]["answer"]
-    assert "复现要求" not in completed["result_content"]["answer"]
-    assert "先说结论" in completed["result_content"]["answer"]
-    assert "95%" in completed["result_content"]["answer"]
-    assert "随机分配" in completed["result_content"]["answer"]
-    assert "no_p_value_is_reported" not in completed["result_content"]["answer"]
+    assert response.status_code == 409, response.text
+    assert "数据分析功能当前已冻结" in response.text
 
 
 def test_research_analysis_v2_text_only_scenario_stays_local_plan(api) -> None:
@@ -241,12 +224,5 @@ def test_research_analysis_v2_text_only_scenario_stays_local_plan(api) -> None:
         }
     )
     response = api.client.post("/api/v1/tasks", json=payload)
-    assert response.status_code == 202, response.text
-    completed = api.wait_for_task(response.json()["id"], timeout=15)
-
-    assert completed["provider"] == "local_analysis_v2"
-    assert completed["result_content"]["structured_result"]["analysis_v2"] is True
-    assert completed["result_content"]["business_data"]["status"] == (
-        "insufficient_data"
-    )
-    assert "该工作流尚未发布" not in completed["result_content"]["answer"]
+    assert response.status_code == 409, response.text
+    assert "数据分析功能当前已冻结" in response.text

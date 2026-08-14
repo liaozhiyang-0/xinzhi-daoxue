@@ -21,7 +21,7 @@ from app.core.errors import (
 )
 from app.observability import ModelTracer
 from app.providers.llm import BaseModelProvider
-from app.services.model_registry import ModelRegistry
+from app.services.model_registry import ModelRegistry, ModelRoute
 from app.services.model_service import ModelService
 from pydantic import BaseModel
 
@@ -113,10 +113,16 @@ def service(
     qwen: FakeProvider,
 ) -> tuple[ModelService, ModelTracer]:
     tracer = ModelTracer()
+    registry = ModelRegistry(settings)
+    registry._routes["test_spark_primary"] = ModelRoute(
+        task_type="test_spark_primary",
+        primary="spark_reasoner",
+        fallback="qwen_vision_primary",
+    )
     return (
         ModelService(
             settings,
-            ModelRegistry(settings),
+            registry,
             {"iflytek_spark": spark, "dashscope": qwen},
             tracer,
         ),
@@ -133,7 +139,7 @@ def test_registry_loads_models_and_routes() -> None:
         "qwen_vision_fast",
         "qwen_text_fast",
     }
-    assert registry.get_route("knowledge_answer").primary == "spark_reasoner"
+    assert registry.get_route("knowledge_answer").primary == "qwen_text_fast"
     for task_type in (
         "course_classification",
         "intent_classification",
@@ -145,7 +151,7 @@ def test_registry_loads_models_and_routes() -> None:
         "lesson_prep",
         "assignment_review",
     ):
-        assert registry.get_route(task_type).primary == "spark_reasoner"
+        assert registry.get_route(task_type).primary.startswith("qwen_")
     for task_type in (
         "general_question_answer",
         "data_analysis_explanation",
@@ -167,7 +173,7 @@ def test_registry_loads_models_and_routes() -> None:
     assert academic_vision.options["high_resolution"] is True
     complex_solver = registry.get_route("academic_problem_solving")
     assert complex_solver.primary == "qwen_vision_primary"
-    assert complex_solver.fallback == "spark_reasoner"
+    assert complex_solver.fallback == "qwen_vision_fast"
     assert registry.errors == []
 
 
@@ -186,7 +192,7 @@ async def test_rate_limit_retries_once() -> None:
     gateway, tracer = service(settings, spark, qwen)
 
     result = await gateway.generate_for_task(
-        "knowledge_answer", messages=[{"role": "user", "content": "q"}]
+        "test_spark_primary", messages=[{"role": "user", "content": "q"}]
     )
 
     assert result.content == "ok"
@@ -209,7 +215,7 @@ async def test_authentication_does_not_retry_but_uses_fallback() -> None:
     )
     gateway, tracer = service(settings, spark, qwen)
 
-    result = await gateway.generate_for_task("knowledge_answer", messages=[])
+    result = await gateway.generate_for_task("test_spark_primary", messages=[])
 
     assert result.provider == "dashscope"
     assert spark.calls == 1
@@ -228,7 +234,7 @@ async def test_timeout_retries_then_falls_back() -> None:
     )
     gateway, _ = service(Settings(model_max_retries=1, _env_file=None), spark, qwen)
 
-    result = await gateway.generate_for_task("knowledge_answer", messages=[])
+    result = await gateway.generate_for_task("test_spark_primary", messages=[])
 
     assert result.provider == "dashscope"
     assert spark.calls == 2
@@ -257,7 +263,7 @@ async def test_structured_output_error_does_not_call_fallback() -> None:
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
     with pytest.raises(StructuredOutputError):
-        await gateway.generate_json_for_task("lesson_prep", messages=[])
+        await gateway.generate_json_for_task("test_spark_primary", messages=[])
 
     assert spark.calls == 1
     assert qwen.calls == 0
@@ -284,7 +290,7 @@ async def test_runtime_opt_in_allows_structured_output_fallback() -> None:
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
     result = await gateway.generate_json_for_task(
-        "lesson_prep",
+        "test_spark_primary",
         messages=[],
         extra_options={"_allow_structured_fallback": True},
     )
@@ -356,7 +362,7 @@ async def test_fallback_response_includes_failed_attempt_usage() -> None:
     )
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
-    result = await gateway.generate_for_task("knowledge_answer", messages=[])
+    result = await gateway.generate_for_task("test_spark_primary", messages=[])
 
     assert result.usage is not None
     assert result.usage.total_tokens == 20
@@ -390,8 +396,8 @@ async def test_provider_unavailable_opens_short_lived_model_circuit() -> None:
         qwen,
     )
 
-    first = await gateway.generate_for_task("knowledge_answer", messages=[])
-    second = await gateway.generate_for_task("knowledge_answer", messages=[])
+    first = await gateway.generate_for_task("test_spark_primary", messages=[])
+    second = await gateway.generate_for_task("test_spark_primary", messages=[])
 
     assert first.provider == second.provider == "dashscope"
     assert spark.calls == 1
@@ -415,10 +421,10 @@ async def test_preferred_route_alias_reuses_successful_fallback_model() -> None:
     gateway, _ = service(Settings(_env_file=None), spark, qwen)
 
     result = await gateway.generate_for_task(
-        "knowledge_answer",
+        "test_spark_primary",
         messages=[],
         extra_options={
-            "_preferred_route_alias": "qwen_text_fast",
+            "_preferred_route_alias": "qwen_vision_primary",
             "_allow_route_fallback": False,
         },
     )

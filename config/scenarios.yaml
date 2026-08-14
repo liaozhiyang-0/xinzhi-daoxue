@@ -25,6 +25,18 @@ scenarios:
     primary_value_metric: 备课资料整理耗时与来源覆盖率
     evidence_requirements: [课程目标对齐记录, 来源引用与页码, 教师复核记录]
     demo_steps: [D1目标对齐, D2课堂流程, D3形成性评价, D4来源审查, D5课程资产复用, D6拒绝自动发布]
+    demo_cases:
+      - id: lesson-design
+        role: teacher
+        course: CT
+        prompt: >-
+          我下周要给大二电子信息专业讲授电路理论中的节点电压法。请根据课程目标和可核验的课程资料，设计一份 50 分钟课堂方案：先写 3 个可观察的学习目标，再安排导入、概念讲解、带解例题、分层练习和出口条；列出学生最容易混淆的参考节点、支路电流方向和符号约定；为基础、达标、挑战三层学生各给一道练习；每个关键判断标注资料依据或明确说明资料不足；最后列出必须由教师复核的内容，并禁止自动发布未经审核的课件。
+        expected_agent: TEACH_01_LESSON_PREP_V1
+        expected_output: [learning_objectives, lesson_flow, common_misconceptions, differentiated_practice, evidence, review_boundary]
+        business_context: 教师需要把一节具体课程从目标、讲解、练习到复核点组织成可审核的备课草稿。
+        evidence_requirements: [课程目标或章节资料, 公式与例题来源, 资料页码或可追溯链接]
+        review_boundary: 教师必须复核目标与课程标准、公式和例题条件、分层练习难度以及所有发布内容；系统不得自动发布。
+        acceptance_conditions: [路由到 TEACH_01_LESSON_PREP_V1, 输出包含目标流程练习证据和复核边界, 资料不足时明确标注, 连续两次结构契约一致]
     enabled: true
 
   - id: assessment_diagnosis_v1
@@ -52,6 +64,18 @@ scenarios:
     primary_value_metric: 批改周转时间与首错定位一致性
     evidence_requirements: [标准答案或评分规则, 步骤级诊断, 教师抽检记录]
     demo_steps: [D1首错定位, D2分层提示, D3连锁错误, D4保留正确步骤, D5批次抽检, D6拒绝自动定分]
+    demo_cases:
+      - id: assignment-diagnosis
+        role: teacher
+        course: CT
+        prompt: >-
+          请诊断下面这份电路理论作业答案，目标不是直接给总分，而是找出学生第一次导致后续结论失效的关键错误。题目：含 2 个节点和 3 条支路的直流电阻网络，已知电阻与电流方向，要求用节点电压法求两节点电压。学生步骤：1）把参考节点选在左侧节点；2）在右侧节点写成 (V-12)/2 + V/4 - 3 = 0；3）整理得到 V=12；4）因此左侧节点电压也是 12V。请保留其中正确的建模步骤，解释首错与错误传播，分别给基础和进阶学生各一条提示，并生成一道只改变一个参数的验证题；缺少标准答案或评分规则的地方必须明确标为待教师复核。
+        expected_agent: TEACH_02_ASSIGNMENT_REVIEW_V1
+        expected_output: [first_error, error_cause, preserved_correct_steps, tiered_hints, verification_problem, evidence, review_boundary]
+        business_context: 教师需要对单份作答做步骤级首错诊断，并把反馈转成下一次可验证的学习任务。
+        evidence_requirements: [题目原文, 标准答案或评分规则, 公式和错误类型依据]
+        review_boundary: 系统只做初审和反馈建议，不自动定分；教师需要确认首错、分值影响和验证题是否等价。
+        acceptance_conditions: [路由到 TEACH_02_ASSIGNMENT_REVIEW_V1, 首错与后续错误分开, 正确步骤未被覆盖, 缺资料时进入人工复核, 连续两次结构契约一致]
     enabled: true
 
   - id: student_learning_path_v1
@@ -79,6 +103,18 @@ scenarios:
     primary_value_metric: 学习路径完成率与知识点掌握证据覆盖率
     evidence_requirements: [历史作答证据, 推荐理由, 复测结果]
     demo_steps: [D1证据摘要, D2先修路径, D3复测更新, D4教师干预, D5跨主题隔离, D6拒绝能力判定]
+    demo_cases:
+      - id: learning-path
+        role: student
+        course: CT
+        prompt: >-
+          我最近三次电路理论练习中，KCL 选择题分别得分 80、60、40 分；涉及参考方向的题目经常把支路电流符号写反，但电阻串并联化简基本正确。请根据这些答题证据识别最可能的薄弱知识点，不要把一次错误当成能力定论；制定一个为期 7 天、每天不超过 25 分钟的分阶段学习路径，说明每一天的先修关系、练习目标和完成证据，并安排至少两道用于验证是否真正改善的任务。如果证据不足以支持某个判断，请明确说明并把需要教师介入的节点列出来。
+        expected_agent: LEARN_01_LOCAL_RETRIEVAL_V1
+        expected_output: [evidence_summary, weak_knowledge_points, prerequisite_path, staged_plan, verification_tasks, evidence, review_boundary]
+        business_context: 学生需要把多次作答证据转成可执行、可复测且不越权的个性化学习计划。
+        evidence_requirements: [历史作答记录, 知识点与先修关系资料, 复测结果]
+        review_boundary: 学习建议不能替代正式能力认定；教师可调整路径、阈值和干预点，系统必须区分证据与推测。
+        acceptance_conditions: [路由到 LEARN_01_LOCAL_RETRIEVAL_V1, 薄弱点有证据对应, 计划包含复测任务, 无证据时明确缺口, 连续两次结构契约一致]
     enabled: true
 
   - id: research_frontier_radar_v1
@@ -107,6 +143,18 @@ scenarios:
     primary_value_metric: 文献筛选与证据简报产出耗时
     evidence_requirements: [文献唯一标识, 结论来源, 检索时间与局限性]
     demo_steps: [D1研究问题范围, D2学术证据表, D3开放问题, D4检索时间边界, D5导出引用简报, D6无证据时拒答]
+    demo_cases:
+      - id: research-brief
+        role: researcher
+        course: CT
+        prompt: >-
+          请为“2022-01-01 至 2025-12-31 期间，面向低功耗边缘设备的神经网络推理优化”制作科研前沿证据简报。先把问题拆成模型压缩、量化、编译器/运行时和硬件协同四个子方向；筛选与问题真正相关的论文，优先返回 DOI 或 arXiv 标识、发布日期、方法和主要证据；区分论文结论与推测，说明每条证据对应哪个子问题；最后总结仍未解决的开放问题和检索范围局限。任何没有可靠来源支持的 DOI、网页或定量结论都不要生成，并明确写出资料不足之处。
+        expected_agent: RESEARCH_01_ACADEMIC_SEARCH_V1
+        expected_output: [research_scope, evidence_table, doi_or_arxiv, evidence_summary, open_questions, limitations, review_boundary]
+        business_context: 研究人员需要在限定时间窗内把多方向检索结果整理为可追溯、可复核的证据简报。
+        evidence_requirements: [论文标题摘要和发布日期, DOI 或 arXiv 原标识, 检索时间与来源链接]
+        review_boundary: 研究人员必须打开原文核对关键结论、时间范围和标识；系统不得把未通过相关性审核的候选论文当作证据。
+        acceptance_conditions: [路由到 RESEARCH_01_ACADEMIC_SEARCH_V1, 时间窗和子方向被保留, 引用字段完整对应, 无证据时明确拒答, 连续两次结构契约一致]
     enabled: true
 
   - id: research_data_workbench_v1
@@ -134,7 +182,7 @@ scenarios:
     primary_value_metric: 分析方案复现成功率与研究迭代耗时
     evidence_requirements: [数据质量检查, 可执行代码或公式, 方法与局限性]
     demo_steps: [D1仅数据字典, D2数据质量检查, D3已有结果解释, D4可执行代码, D5方法选择, D6无数据不出结论]
-    enabled: true
+    enabled: false
 
   - id: department_knowledge_governance_v1
     version: "1.0"
@@ -161,4 +209,16 @@ scenarios:
     primary_value_metric: 资料入库到可检索发布的周期与引用完整率
     evidence_requirements: [资产版本, 质量审查结果, 发布审批与访问控制]
     demo_steps: [D1资产清单, D2来源审查, D3版本冲突, D4审批发布, D5发布后检索, D6权限与回滚]
+    demo_cases:
+      - id: knowledge-governance
+        role: teacher
+        course: CT
+        prompt: >-
+          请检查 CT 课程知识库中准备发布的一组课程资产：讲义《节点电压法》v3、练习题包《直流网络》v2、教师修订说明 v1。请按资产清单逐项核对版本号、来源、最近审批状态和可追溯链接；找出讲义 v3 与练习题包 v2 之间可能的版本冲突，列出会阻塞发布的问题、需要补齐的审批或权限信息，并给出发布前、发布后和回滚后的检查清单。只能依据输入中提供的资产记录，缺失字段必须标记为未知，不能把建议当作已完成审批。
+        expected_agent: LEARN_01_KNOWLEDGE_QA_V1
+        expected_output: [asset_inventory, version_conflicts, source_audit, approval_status, publication_blockers, traceability_links, review_boundary]
+        business_context: 学院管理员需要在课程资产发布前完成版本、来源、审批、权限和回滚治理。
+        evidence_requirements: [资产清单与版本记录, 来源和审批记录, 可访问的追溯链接]
+        review_boundary: 只有授权教师或管理员可以批准发布和回滚；系统只输出治理检查结果，不代替审批，也不把未知状态标为通过。
+        acceptance_conditions: [路由到 LEARN_01_KNOWLEDGE_QA_V1, 版本来源审批阻塞项分别列出, 链接字段不张冠李戴, 缺失资料明确提示, 连续两次结构契约一致]
     enabled: true

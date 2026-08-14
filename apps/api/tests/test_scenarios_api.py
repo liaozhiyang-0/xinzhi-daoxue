@@ -8,20 +8,21 @@ def test_scenario_catalog_endpoint_lists_and_filters(client: TestClient) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 6
+    assert len(payload) == 5
     assert {item["id"] for item in payload} >= {
         "faculty_course_copilot_v1",
         "assessment_diagnosis_v1",
     }
     assert all(item["evidence_policy"]["manual_review_required"] for item in payload)
-    assert all(len(item["demo_steps"]) >= 6 for item in payload)
+    assert all(len(item["demo_cases"]) == 1 for item in payload)
+    assert all(len(item["demo_cases"][0]["prompt"]) >= 80 for item in payload)
+    assert all(item["demo_cases"][0]["expected_agent"] for item in payload)
 
 
-def test_scenario_catalog_endpoint_returns_detail(client: TestClient) -> None:
+def test_frozen_data_analysis_scenario_is_not_exposed(client: TestClient) -> None:
     response = client.get("/api/v1/scenarios/research_data_workbench_v1")
 
-    assert response.status_code == 200
-    assert response.json()["agent_id"] == "RESEARCH_03_DATA_ANALYSIS_V1"
+    assert response.status_code == 404
 
 
 def test_scenario_evidence_review_endpoint_returns_review_state(
@@ -81,10 +82,9 @@ def test_scenario_readiness_endpoint_batches_all_scenarios(
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 6
+    assert len(payload) == 5
     assert {item["scenario_id"] for item in payload} >= {
         "faculty_course_copilot_v1",
-        "research_data_workbench_v1",
     }
     assert all(item["evidence_review_required"] for item in payload)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.agents.registry import AgentDefinition, AgentRegistry, RoutingRule
@@ -20,6 +21,7 @@ from app.services.intent_recognition import IntentRecognitionService
 from app.services.request_materials import RequestMaterialExtractor
 
 GENERAL_QUESTION_AGENT_ID = "GENERAL_QUESTION_V1"
+GENERAL_MODEL_FALLBACK_AGENT_ID = "GENERAL_MODEL_FALLBACK_V1"
 
 BUSINESS_AGENTS = (
     "LEARN_01_KNOWLEDGE_QA_V1",
@@ -423,7 +425,11 @@ class TaskRouter:
                     "secondary_intents": scored.secondary_intents,
                     "requires_pipeline": scored.requires_pipeline,
                     "candidate_agents": candidates,
-                    "reason_codes": course_reasons + best.reason_codes,
+                    "reason_codes": list(
+                        dict.fromkeys(
+                            course_reasons + best.reason_codes + decision.reason_codes
+                        )
+                    ),
                     "local_confidence": confidence,
                     "availability": self._availability(
                         best.agent_id, course_id, input_type, intent
@@ -484,6 +490,20 @@ class TaskRouter:
         )
         if general_decision is not None:
             return general_decision
+        generic_fallback = self._generic_model_fallback_decision(
+            request=request,
+            course_id=course_id,
+            input_type=input_type,
+            original_agent_id=None,
+            confidence=confidence,
+            reason=(
+                "专用能力路由不可用，已进入一次性通用模型兜底"
+            ),
+            reason_codes=course_reasons + ["route_unavailable"],
+            material_extraction=material.model_dump(mode="json"),
+        )
+        if generic_fallback is not None:
+            return generic_fallback
         return RouteDecision(
             agent_id="UNRESOLVED",
             scene=request.scene.value,
@@ -623,6 +643,50 @@ class TaskRouter:
                 "inferred_user_role": request.user_role.value,
                 "visited_agents": [general.agent_id],
             }
+        )
+
+    def _generic_model_fallback_decision(
+        self,
+        *,
+        request: AgentRequest,
+        course_id: str,
+        input_type: str,
+        original_agent_id: str | None,
+        confidence: float,
+        reason: str,
+        reason_codes: list[str],
+        material_extraction: dict[str, Any] | None = None,
+    ) -> RouteDecision | None:
+        """Build the only route allowed to invoke the generic fallback model."""
+
+        if input_type != "text":
+            return None
+        try:
+            fallback = self.registry.get(GENERAL_MODEL_FALLBACK_AGENT_ID)
+        except KeyError:
+            return None
+        if not fallback.enabled or not self.registry.is_runtime_available(
+            fallback.agent_id, self.settings
+        ):
+            return None
+        return RouteDecision(
+            agent_id=fallback.agent_id,
+            scene=fallback.scene,
+            course_id=course_id,
+            intent=Intent.GENERAL_QA.value,
+            route_status=RouteStatus.SELECTED,
+            reason=reason,
+            retrieval_required=False,
+            provider_required=False,
+            route_source="generic_model_fallback",
+            route_confidence=max(0.0, min(1.0, confidence)),
+            fallback_used=True,
+            original_agent_id=original_agent_id,
+            reason_codes=reason_codes,
+            local_confidence=max(0.0, min(1.0, confidence)),
+            material_extraction=dict(material_extraction or {}),
+            inferred_user_role=request.user_role.value,
+            visited_agents=[fallback.agent_id],
         )
 
     def _candidate_models(
@@ -885,6 +949,15 @@ class TaskRouter:
         # prevents a new AI/TCP question from inheriting the previous course.
         if IntentRecognitionService.is_cross_domain_topic(text):
             return "UNKNOWN", ["topic_outside_course", "course_hint_overridden"]
+        # Research workflows are not course-grounded tasks.  Do not let a
+        # durable learning-session course (for example CT) leak into an
+        # academic-search request submitted from the research capability card.
+        if request.intent in {
+            Intent.ACADEMIC_SEARCH,
+            Intent.ACADEMIC_WRITING,
+            Intent.DATA_ANALYSIS,
+        }:
+            return "UNKNOWN", ["research_workflow_neutral_course"]
         if explicit in {
             "CT",
             "AE",
@@ -1226,6 +1299,21 @@ class TaskRouter:
         knowledge_hits = [
             token for token in knowledge_markers if token.casefold() in text.casefold()
         ]
+        knowledge_intent_override = bool(knowledge_hits) and not (
+            any(char.isdigit() for char in text)
+            or "=" in text
+            or any(
+                token in text
+                for token in (
+                    "\u5b8c\u6574",
+                    "\u5217\u65b9\u7a0b",
+                    "\u6c42\u89e3",
+                    "\u6c42\u6570\u503c",
+                    "\u5df2\u77e5",
+                    "\u7ed9\u5b9a",
+                )
+            )
+        )
         non_knowledge_score = max(
             (
                 score
@@ -1236,9 +1324,21 @@ class TaskRouter:
         )
         if (
             knowledge_hits
-            and non_knowledge_score < 0.60
-            and scores.get("LEARN_01_KNOWLEDGE_QA_V1", 0.0) == 0.0
-            and not str(request.options.get("previous_agent", "")).strip()
+            and (
+                knowledge_intent_override
+                or (
+                    non_knowledge_score < 0.60
+                    and scores.get("LEARN_01_KNOWLEDGE_QA_V1", 0.0) == 0.0
+                )
+            )
+            # A clear concept/explanation request must be allowed to leave a
+            # previous task family.  Otherwise a prior local retrieval or
+            # solver run suppresses the knowledge candidate and can leave the
+            # request on the generic fallback route after a course switch.
+            and (
+                not str(request.options.get("previous_agent", "")).strip()
+                or knowledge_intent_override
+            )
         ):
             add(
                 "LEARN_01_KNOWLEDGE_QA_V1",
@@ -1327,6 +1427,7 @@ class TaskRouter:
             and has_academic_target
             and not is_assignment_review
             and not is_lesson_design
+            and not knowledge_intent_override
         ):
             add(
                 "ACADEMIC_PROBLEM_SOLVER",
@@ -1513,6 +1614,27 @@ class TaskRouter:
         return ""
 
     @staticmethod
+    def _is_tabular_attachment(item: Any) -> bool:
+        """Treat only structured tables as data-file input.
+
+        Uploaded text/PDF/Word documents are hydrated into the canonical
+        prompt before routing and remain compatible with text-capable Agents.
+        """
+
+        content_type = str(getattr(item, "content_type", "")).casefold()
+        if content_type in {
+            "text/csv",
+            "text/tab-separated-values",
+            "application/json",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.apache.parquet",
+        }:
+            return True
+        suffix = Path(str(getattr(item, "filename", ""))).suffix.casefold()
+        return suffix in {".csv", ".tsv", ".json", ".xls", ".xlsx", ".parquet"}
+
+    @staticmethod
     def _input_type(request: AgentRequest) -> str:
         has_text = any(
             isinstance(request.canonical_input.get(key), str)
@@ -1528,6 +1650,13 @@ class TaskRouter:
             item
             for item in request.attachments
             if not item.content_type.startswith("image/")
+            and TaskRouter._is_tabular_attachment(item)
+        ]
+        document_files = [
+            item
+            for item in request.attachments
+            if not item.content_type.startswith("image/")
+            and not TaskRouter._is_tabular_attachment(item)
         ]
         if images and data_files:
             return "mixed"
@@ -1539,6 +1668,8 @@ class TaskRouter:
             return "single_image"
         if data_files:
             return "text_and_data_file" if has_text else "data_file"
+        if document_files:
+            return "text"
         if has_text:
             return "text"
         if request.attachments:
@@ -1596,6 +1727,20 @@ class TaskRouter:
             ):
                 source = "local_only" if local_only else "local_degraded"
             else:
+                generic_fallback = self._generic_model_fallback_decision(
+                    request=request,
+                    course_id=course_id,
+                    input_type=input_type,
+                    original_agent_id=primary.agent_id,
+                    confidence=0.0,
+                    reason=(
+                        "目标 Agent 不可用，已进入一次性通用模型兜底: "
+                        f"{primary.agent_id}"
+                    ),
+                    reason_codes=["target_agent_unavailable"],
+                )
+                if generic_fallback is not None:
+                    return generic_fallback
                 return RouteDecision(
                     agent_id="UNRESOLVED",
                     scene=primary.scene,
@@ -1680,6 +1825,20 @@ class TaskRouter:
                 local_only
                 and self.registry.has_local_execution_contract(primary.agent_id)
             ):
+                generic_fallback = self._generic_model_fallback_decision(
+                    request=request,
+                    course_id=request.course_id.upper(),
+                    input_type=self._input_type(request),
+                    original_agent_id=primary.agent_id,
+                    confidence=0.0,
+                    reason=(
+                        "目标 Agent 不可用，已进入一次性通用模型兜底: "
+                        f"{primary.agent_id}"
+                    ),
+                    reason_codes=["target_agent_unavailable"],
+                )
+                if generic_fallback is not None:
+                    return generic_fallback
                 return RouteDecision(
                     agent_id="UNRESOLVED",
                     scene=rule.scene,

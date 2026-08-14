@@ -49,8 +49,8 @@ def test_academic_reasoning_routes_by_problem_complexity() -> None:
     standard_route = registry.get_route("academic_problem_solving_simple")
 
     assert complex_route.primary == "qwen_vision_primary"
-    assert complex_route.fallback == "spark_reasoner"
-    assert standard_route.primary == "spark_reasoner"
+    assert complex_route.fallback == "qwen_vision_fast"
+    assert standard_route.primary == "qwen_vision_fast"
     assert standard_route.fallback == "qwen_vision_primary"
 
 

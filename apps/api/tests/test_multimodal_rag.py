@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.contracts import KnowledgeHit, RetrievalContextPacket
+from app.contracts import KnowledgeHit, RetrievalContextPacket, RetrievalResult
 from app.core.config import Settings
 from app.services.citation_validator import CitationValidator
 from app.services.knowledge_base import KnowledgeBaseService
@@ -207,6 +207,157 @@ def test_multimodal_rrf_text_to_image_image_to_image_and_rerank(
     assert image_result.hits[0].chunk_id == "ct-1"
     assert not service.search(query_text="电容", course_id="DE").hits
     service.close()
+
+
+def test_visual_parent_retrieval_respects_content_type_policy(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path)
+    store = store_for(config)
+    store.ensure_collections(4, 4, recreate=True)
+    text = DeterministicFakeTextEmbeddingProvider()
+    image = DeterministicFakeImageEmbeddingProvider()
+    store.upsert_text(
+        [
+            {
+                "chunk_id": "allowed",
+                "document_id": "doc",
+                "course_id": "CT",
+                "chapter": "chapter",
+                "title": "allowed",
+                "content_type": "concept",
+                "text": "capacitor concept",
+                "source_uri": "kb://CT/allowed",
+                "relative_path": "chapter.md",
+                "checksum": "x",
+                "parent_section": "chapter",
+            },
+            {
+                "chunk_id": "blocked",
+                "document_id": "doc",
+                "course_id": "CT",
+                "chapter": "chapter",
+                "title": "blocked",
+                "content_type": "waveform",
+                "text": "capacitor waveform",
+                "source_uri": "kb://CT/blocked",
+                "relative_path": "chapter.md",
+                "checksum": "x",
+                "parent_section": "chapter",
+            },
+        ],
+        text.embed_documents(["capacitor concept", "capacitor waveform"]),
+    )
+
+    class ParentOnlyStore:
+        def __init__(self, wrapped: QdrantVectorStoreAdapter) -> None:
+            self.wrapped = wrapped
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self.wrapped, name)
+
+        def search_text(self, *args: object, **kwargs: object) -> list[object]:
+            return []
+
+        def search_images(self, *args: object, **kwargs: object) -> list[object]:
+            return [
+                type(
+                    "ImageHit",
+                    (),
+                    {
+                        "item_id": "image",
+                        "score": 1.0,
+                        "payload": {
+                            "image_id": "image",
+                            "course_id": "CT",
+                            "parent_chunk_id": "blocked",
+                            "resource_uri": "kb-image://CT/image",
+                        },
+                    },
+                )()
+            ]
+
+    service = RAGRetrievalService(
+        config,
+        KnowledgeBaseService(config),
+        text,
+        image,
+        DeterministicFakeReranker(),
+        ParentOnlyStore(store),
+    )
+    result = service.search(
+        query_text="capacitor",
+        course_id="CT",
+        content_types=("concept",),
+        include_images=True,
+        image_top_k=1,
+    )
+
+    assert all(hit.content_type == "concept" for hit in result.hits)
+    service.close()
+    store.close()
+
+
+def test_disabled_rag_still_applies_agent_content_type_policy(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path).model_copy(update={"rag_enabled": False})
+    hits = [
+        KnowledgeHit(
+            evidence_id="concept-1",
+            course_id="CT",
+            course_name="电路理论",
+            document_path="chapter.md",
+            title="concept",
+            content_type="concept",
+            content="capacitor concept",
+            score=1.0,
+            source_ref="kb://CT/concept",
+        ),
+        KnowledgeHit(
+            evidence_id="waveform-1",
+            course_id="CT",
+            course_name="电路理论",
+            document_path="chapter.md",
+            title="waveform",
+            content_type="waveform",
+            content="capacitor waveform",
+            score=0.9,
+            source_ref="kb://CT/waveform",
+        ),
+    ]
+
+    class LexicalOnly:
+        def search_result(
+            self,
+            _query: str,
+            _course_ids: list[str],
+            _top_k: int | None,
+        ) -> RetrievalResult:
+            return RetrievalResult(
+                query="capacitor",
+                normalized_query="capacitor",
+                course_ids=["CT"],
+                hits=hits,
+                latency_ms=0,
+                retrieval_mode="sparse_bm25_v1",
+            )
+
+    service = RAGRetrievalService(
+        config,
+        LexicalOnly(),
+        None,
+        None,
+        None,
+        None,
+    )
+    result = service.search(
+        query_text="capacitor",
+        course_id="CT",
+        content_types=("concept",),
+    )
+
+    assert [hit.evidence_id for hit in result.hits] == ["concept-1"]
 
 
 def test_retrieval_warmup_loads_enabled_models_before_first_query(

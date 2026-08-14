@@ -14,7 +14,6 @@
     ] },
     { group: "管理", items: [
       { id: "admin", href: "/admin", label: "管理总览", short: "管" },
-      { id: "teacher", href: "/teacher", label: "教师工作台", short: "师" },
     ] },
     { group: "演示", items: [
       { id: "demo", href: "/demo", label: "演示中心", short: "演" },
@@ -324,6 +323,31 @@
     target.append(document.createTextNode(value || ""));
   }
 
+  function latexStructureSafe(latex) {
+    const value = String(latex || "");
+    if (!value || value.length > 2400) return false;
+    let braceDepth = 0;
+    let escaped = false;
+    for (const character of value) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (character === "\\") {
+        escaped = true;
+      } else if (character === "{") {
+        braceDepth += 1;
+      } else if (character === "}") {
+        braceDepth -= 1;
+        if (braceDepth < 0) return false;
+      }
+    }
+    if (braceDepth !== 0) return false;
+    const leftCount = (value.match(/\\left\b/gu) || []).length;
+    const rightCount = (value.match(/\\right\b/gu) || []).length;
+    return leftCount === rightCount;
+  }
+
   function renderLatex(source, display = false, inlineHost = false) {
     const latex = String(source || "").trim();
     const outer = el(display && !inlineHost ? "div" : "span", {
@@ -333,10 +357,28 @@
     const fallback = () => {
       outer.classList.add("math-render-error");
       outer.dataset.latexFallback = "true";
-      outer.replaceChildren(el("code", { class: "math-latex-fallback", text: latex || "空公式" }));
+      const readable = latex
+        .replace(/\$\$?/gu, "")
+        .replace(/\\(?:\[|\]|\(|\))/gu, "")
+        .replace(/\\_/gu, "_")
+        .replace(/\\_/gu, "_")
+        .replace(/\\(?:mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, "$1")
+        .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)([A-Za-z]+)/gu, "$1")
+        .replace(/\\(?:pm|leq|geq|neq)\b/gu, (command) => ({ "\\pm": " ± ", "\\leq": " ≤ ", "\\geq": " ≥ ", "\\neq": " ≠ " }[command] || " "))
+        .replace(/\\(?:pm|leq|geq|neq)\b/gu, (command) => ({ "\\pm": " ± ", "\\leq": " ≤ ", "\\geq": " ≥ ", "\\neq": " ≠ " }[command] || " "))
+        .replace(/\\(?:times|cdot)/gu, " × ")
+        .replace(/\\(?:frac|dfrac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/gu, "$1/$2")
+        .replace(/\\(?:left|right|tag|limits|mathop)\b/gu, "")
+        .replace(/\\[A-Za-z]+/gu, "")
+        .replace(/[_^]+/gu, " ")
+        .replace(/[_^]+/gu, " ")
+        .replace(/[{}]/gu, "")
+        .replace(/\s{2,}/gu, " ")
+        .trim();
+      outer.replaceChildren(el("code", { class: "math-latex-fallback", text: latex || "(empty formula)" }));
     };
     const dangerous = /\\(?:input|include|write|openout|read|usepackage|documentclass|newcommand|def|href)\b/;
-    if (!latex || dangerous.test(latex) || !window.katex?.render) {
+    if (!latex || !latexStructureSafe(latex) || dangerous.test(latex) || !window.katex?.render) {
       fallback();
       return outer;
     }
@@ -369,6 +411,67 @@
     return -1;
   }
 
+  function normalizeLooseInlineLatex(source) {
+    const value = String(source || "");
+    if (!/\\(?:[A-Za-z]+|\[|\(|\]|\))/.test(value) || /(?:\\\[|\\\(|\$\$)/.test(value)) return value;
+    return value
+      .replace(/\\(?:mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)([A-Za-z]+)/gu, "$1")
+      .replace(/\\(?:mathop|limits|left|right|tag|displaystyle)\b/gu, "")
+      .replace(/\\(?:sum|prod)\b/gu, "Σ")
+      .replace(/\\(?:sim)\b/gu, "∼")
+      .replace(/\\(?:infty)\b/gu, "∞")
+      .replace(/\\(?:times|cdot)\b/gu, " × ")
+      .replace(/\\(?:frac|dfrac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/gu, "$1/$2")
+      .replace(/\\(?:[A-Za-z]+|\[|\]|\(|\))/gu, "")
+      .replace(/[{}]/gu, "")
+      .replace(/\s{2,}/gu, " ");
+  }
+
+  function firstCjkIndex(value) {
+    const match = String(value || "").search(/[\u4e00-\u9fff]/u);
+    return match === -1 ? String(value || "").length : match;
+  }
+
+  function normalizeLooseDisplayMath(source) {
+    const lines = String(source || "").replace(/\r/g, "").split("\n");
+    const normalized = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const marker = line.indexOf("\\[");
+      if (marker === -1) {
+        normalized.push(line);
+        continue;
+      }
+      const suffix = line.slice(marker + 2);
+      if (suffix.includes("\\]")) {
+        normalized.push(line);
+        continue;
+      }
+      const prefix = line.slice(0, marker).trimEnd();
+      const firstCjk = firstCjkIndex(suffix);
+      const formulaLines = [];
+      const trailing = firstCjk < suffix.length ? suffix.slice(firstCjk) : "";
+      formulaLines.push(firstCjk < suffix.length ? suffix.slice(0, firstCjk) : suffix);
+      let nextIndex = index + 1;
+      let closed = false;
+      while (!trailing && nextIndex < lines.length) {
+        const next = lines[nextIndex];
+        const trimmed = next.trim();
+        if (trimmed === "\\]") { closed = true; nextIndex += 1; break; }
+        if (/[\u4e00-\u9fff]/u.test(next) && formulaLines.some((item) => item.trim())) break;
+        formulaLines.push(next);
+        nextIndex += 1;
+      }
+      if (prefix) normalized.push(prefix);
+      normalized.push("$$", ...formulaLines, "$$");
+      if (trailing) normalized.push(trailing);
+      index = closed ? nextIndex - 1 : nextIndex - 1;
+    }
+    return normalized.join("\n");
+  }
+
   function safeMarkdownUrl(value, { image = false } = {}) {
     const raw = String(value || "").trim().replace(/^<|>$/g, "");
     if (!raw || /[\u0000-\u001f]/.test(raw)) return "";
@@ -384,11 +487,20 @@
     return "";
   }
 
-  function appendRichInline(node, source) {
-    const text = String(source || "");
+  function appendRichInline(node, source, options = {}) {
+    const text = options.preserveRaw ? String(source || "") : normalizeLooseInlineLatex(source);
     let plain = "";
     const flush = () => { if (plain) { node.append(document.createTextNode(plain)); plain = ""; } };
     for (let index = 0; index < text.length;) {
+      if (text.startsWith("**", index)) {
+        const end = text.indexOf("**", index + 2);
+        if (end !== -1) {
+          flush();
+          node.append(el("strong", { text: text.slice(index + 2, end) }));
+          index = end + 2;
+          continue;
+        }
+      }
       if (text[index] === "`") {
         const end = text.indexOf("`", index + 1);
         if (end !== -1) {
@@ -442,6 +554,10 @@
         if (end !== -1) {
           flush(); node.append(renderLatex(text.slice(index + 2, end), true, true)); index = end + 2; continue;
         }
+        const looseEnd = firstCjkIndex(text.slice(index + 2)) + index + 2;
+        if (!options.preserveRaw && looseEnd > index + 2) {
+          flush(); node.append(renderLatex(text.slice(index + 2, looseEnd), true, true)); index = looseEnd; continue;
+        }
       }
       if (text.startsWith("$$", index)) {
         const end = findInlineMathEnd(text, index + 2, "$$");
@@ -453,6 +569,10 @@
         const end = findInlineMathEnd(text, index + 2, "\\)");
         if (end !== -1) {
           flush(); node.append(renderLatex(text.slice(index + 2, end))); index = end + 2; continue;
+        }
+        const looseEnd = firstCjkIndex(text.slice(index + 2)) + index + 2;
+        if (!options.preserveRaw && looseEnd > index + 2) {
+          flush(); node.append(renderLatex(text.slice(index + 2, looseEnd))); index = looseEnd; continue;
         }
       }
       if (text[index] === "$" && text[index + 1] !== "$" && text[index - 1] !== "\\") {
@@ -473,13 +593,13 @@
     return value.split(/(?<!\\)\|/).map((cell) => cell.trim().replace(/\\\|/g, "|"));
   }
 
-  function renderTable(lines) {
+  function renderTable(lines, options = {}) {
     const table = el("table", { class: "markdown-table" });
     const head = el("thead"); const body = el("tbody");
     const headers = splitTableRow(lines[0]);
-    head.append(el("tr", {}, headers.map((cell) => appendRichInline(el("th"), cell))));
+    head.append(el("tr", {}, headers.map((cell) => appendRichInline(el("th"), cell, options))));
     lines.slice(2).forEach((line) => {
-      body.append(el("tr", {}, splitTableRow(line).map((cell) => appendRichInline(el("td"), cell))));
+      body.append(el("tr", {}, splitTableRow(line).map((cell) => appendRichInline(el("td"), cell, options))));
     });
     table.append(head, body);
     return el("div", { class: "table-wrap" }, table);
@@ -500,9 +620,23 @@
     renderMarkdown(target, recovered);
   }
 
-  function renderMarkdown(target, source) {
+  function isStandaloneMathLine(line) {
+    const value = String(line || "").trim();
+    if (!value || /[\u4e00-\u9fff]/u.test(value)) return false;
+    return (
+      /\\[A-Za-z]+/.test(value)
+      || /[A-Za-z]\s*[_^]\s*[A-Za-z0-9{]/u.test(value)
+      || /[A-Za-z0-9}]\s*=\s*[A-Za-z0-9{]/u.test(value)
+    );
+  }
+
+  function renderMarkdown(target, source, options = {}) {
     target.replaceChildren();
-    const lines = String(source || "").replace(/\r/g, "").split("\n");
+    const normalizedSource = String(source || "");
+    const boundedSource = normalizedSource.length > 120000
+      ? `${normalizedSource.slice(0, 120000)}\n\n[内容过长，已截断；请打开原文查看完整资料]`
+      : normalizedSource;
+    const lines = (options.preserveRaw ? boundedSource : normalizeLooseDisplayMath(boundedSource)).split("\n");
     let code = null; let list = null;
     const flushList = () => { if (list) { target.append(list); list = null; } };
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -511,23 +645,35 @@
       if (code) { code.firstChild.append(document.createTextNode(`${line}\n`)); continue; }
       if (!line.trim()) { flushList(); continue; }
       const trimmed = line.trim();
+      if (isStandaloneMathLine(trimmed)) {
+        flushList();
+        target.append(renderLatex(trimmed, true));
+        continue;
+      }
       const blockStart = trimmed.startsWith("$$") ? "$$" : trimmed.startsWith("\\[") ? "\\[" : "";
       if (blockStart) {
         flushList();
         const blockEnd = blockStart === "$$" ? "$$" : "\\]";
         let formula = trimmed.slice(blockStart.length);
+        const rawMathLines = [line];
         const sameLineEnd = formula.indexOf(blockEnd);
-        if (sameLineEnd !== -1) formula = formula.slice(0, sameLineEnd);
+        let closed = sameLineEnd !== -1;
+        if (closed) formula = formula.slice(0, sameLineEnd);
         else {
           const formulaLines = [formula];
           while (lineIndex + 1 < lines.length) {
             lineIndex += 1;
             const next = lines[lineIndex];
+            rawMathLines.push(next);
             const end = next.indexOf(blockEnd);
-            if (end !== -1) { formulaLines.push(next.slice(0, end)); break; }
+            if (end !== -1) { formulaLines.push(next.slice(0, end)); closed = true; break; }
             formulaLines.push(next);
           }
           formula = formulaLines.join("\n");
+        }
+        if (options.preserveRaw && !closed) {
+          target.append(el("p", {}, [document.createTextNode(rawMathLines.join("\n"))]));
+          continue;
         }
         const markdownInsideMath = /(?:^|\n)\s*(?:[-*]\s+|#{1,6}\s+|>\s+)|\*\*[^*]+\*\*|\[S\d+\]/.test(formula);
         if (markdownInsideMath) renderRecoveredMathBlock(target, formula);
@@ -543,16 +689,16 @@
           lineIndex += 1;
         }
         lineIndex -= 1;
-        target.append(renderTable(tableLines));
+        target.append(renderTable(tableLines, options));
         continue;
       }
       const heading = line.match(/^(#{1,4})\s+(.+)$/);
-      if (heading) { flushList(); target.append(appendRichInline(el(`h${Math.min(heading[1].length + 1, 5)}`), heading[2])); continue; }
+      if (heading) { flushList(); target.append(appendRichInline(el(`h${Math.min(heading[1].length + 1, 5)}`), heading[2], options)); continue; }
       const item = line.match(/^[-*]\s+(.+)$/);
-      if (item) { if (!list) list = el("ul"); list.append(appendRichInline(el("li"), item[1])); continue; }
+      if (item) { if (!list) list = el("ul"); list.append(appendRichInline(el("li"), item[1], options)); continue; }
       flushList();
-      if (line.startsWith("> ")) target.append(appendRichInline(el("blockquote"), line.slice(2)));
-      else target.append(appendRichInline(el("p"), line));
+      if (line.startsWith("> ")) target.append(appendRichInline(el("blockquote"), line.slice(2), options));
+      else target.append(appendRichInline(el("p"), line, options));
     }
     flushList(); if (code) target.append(code);
   }

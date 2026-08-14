@@ -33,7 +33,7 @@ entries:
   - bug_id: "BUG-20260809-002"
     kind: "contract_bug"
     severity: "P1"
-    status: "observed"
+    status: "resolved"
     title: "Contest package manifest disagrees with the enforced demo evidence boundary"
     detected_at: "2026-08-09"
     detected_by: "codex-read-only-quality-audit"
@@ -56,7 +56,7 @@ entries:
     suggested_fix: "按现有审计和提交材料的安全边界，将 manifest 的 demo_cases_included 与运行时声明统一；若要保留 true，必须先同步审计规则和证据政策。"
     regression_test: "audit_readiness_consistency.py and contest package validation"
     verification_command: ".\\.venv\\Scripts\\python.exe scripts\\audit_readiness_consistency.py"
-    resolved_at: null
+    resolved_at: "2026-08-14"
     notes: "当前文档说明演示案例仍为负责人待补材料，不能把 synthetic/demo 当作正式竞赛证据。"
 
   - bug_id: "BUG-20260809-003"

@@ -1,9 +1,6 @@
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
 const scenarioId = params.get("scenario_id") || "";
-const requestedWorkspaceRole = ["student", "teacher", "researcher"].includes(params.get("role"))
-  ? params.get("role")
-  : "student";
 const courseLabels = {
   CT: "电路理论",
   AE: "模拟电子技术",
@@ -64,39 +61,15 @@ const state = {
   showArchived: false,
   liveProcessSteps: new Map(),
   intentOverride: params.get("intent") || "",
+  activeScenarioId: scenarioId,
   userRole: "student",
 };
 let identityReady = Promise.resolve();
-let scenarioRoles = null;
-let scenarioRoleRequest = Promise.resolve();
 localStorage.setItem("xinzhi_student_user", state.userId);
 
 function effectiveWorkspaceRole(identity) {
   const role = String(identity?.role || "").trim().toLowerCase();
-  return ["student", "teacher", "researcher", "admin"].includes(role)
-    ? role
-    : "student";
-}
-
-async function loadScenarioRolePolicy() {
-  if (!scenarioId) return null;
-  try {
-    const scenario = await api(`/api/v1/scenarios/${encodeURIComponent(scenarioId)}`);
-    scenarioRoles = Array.isArray(scenario.roles) ? scenario.roles : [];
-  } catch (_error) {
-    scenarioRoles = [];
-  }
-  return scenarioRoles;
-}
-
-function scenarioRoleAllowed() {
-  return !scenarioId || scenarioRoles === null || scenarioRoles.includes(state.userRole);
-}
-
-function scenarioRoleMessage() {
-  if (scenarioRoleAllowed()) return "";
-  const roles = scenarioRoles.join("、") || requestedWorkspaceRole;
-  return `当前场景仅允许 ${roles} 角色。请使用已获授权的账号登录后继续。`;
+  return role === "admin" ? "admin" : "student";
 }
 
 function selectedCourse() {
@@ -111,7 +84,7 @@ function researchAnalysisQuestionDetected(text = "") {
 function researchAnalysisV2Enabled(text = "") {
   const question = text || $("#question-input")?.value || "";
   return params.get("analysis_v2") === "1"
-    || scenarioId === "research_data_workbench_v1"
+    || state.activeScenarioId === "research_data_workbench_v1"
     || state.intentOverride === "data_analysis"
     || researchAnalysisQuestionDetected(question);
 }
@@ -316,6 +289,14 @@ async function ensureSession(force = false) {
 function resetConversation() {
   state.historyRequestSequence += 1;
   state.runSequence += 1;
+  // Follow-up context belongs to the previous task.  Keeping it across a
+  // fresh session can silently inject the previous intent into the next
+  // POST, so a new question is routed as its own request.
+  pendingLearningFollowUp = null;
+  // A capability card sets an intent override for the current draft only.
+  // Clear it when starting a fresh session so the next prompt is routed by
+  // its own capability selection instead of inheriting the previous route.
+  state.intentOverride = "";
   state.activeTaskWait?.cancel();
   state.activeTaskWait = null;
   state.taskId = "";
@@ -328,8 +309,19 @@ function resetConversation() {
   runtimeLearningTaskId = "";
   runtimeTaskControls = null;
   state.lastQuestion = ""; state.lastAnswer = "";
+  state.activeCourse = "AUTO";
+  localStorage.removeItem("xinzhi_student_course");
+  const questionInput = $("#question-input");
+  if (questionInput) questionInput.value = "";
+  const courseSelect = $("#course-select");
+  if (courseSelect) courseSelect.value = "AUTO";
+  const teachingMode = $("#teaching-mode");
+  if (teachingMode) teachingMode.value = "direct_answer";
+  const studentAttemptInput = $("#student-attempt-input");
+  if (studentAttemptInput) studentAttemptInput.value = "";
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
   $("#context-task-title").textContent = "等待提问";
+  updateResearchAnalysisPanel();
   $("#teaching-loop-panel").hidden = true;
   $("#learning-progress-panel").hidden = true;
   state.activeMemoryIds.clear();
@@ -465,15 +457,43 @@ function resultForTask(task) {
   };
 }
 
+function taskHasRenderableAnswer(task, result = resultForTask(task)) {
+  const structured = result?.structured_result || {};
+  const mathContent = result?.math_content || structured.math_content;
+  return Boolean(String(mathContent?.markdown || result?.answer || "").trim());
+}
+
 function presentationFor(task, result) {
   const structured = result.structured_result || {};
   const summary = structured.execution_summary || {};
   const raw = structured.presentation || legacyPresentation(task, result);
   const fallback = Boolean(summary.fallback || result.fallback_used);
+  if (task?.status === "cancelled") {
+    return {
+      ...raw,
+      status_label: "已停止",
+      requires_review: false,
+      generation_complete: false,
+      answer_quality_status: "cancelled",
+      answer_quality_message: "本次任务已停止，未生成新回答。",
+      evidence_message: "本次任务已停止，未生成新的资料依据。",
+    };
+  }
+  if (!fallback && task?.status === "completed" && !taskHasRenderableAnswer(task, result)) {
+    return {
+      ...raw,
+      status_label: "结果异常",
+      requires_review: true,
+      answer_quality_message: "任务已记录为完成，但没有返回可展示的回答；请重新提问或联系管理员复核。",
+    };
+  }
   if (!fallback) return raw;
   const reason = summary.fallback_reason || result.fallback_reason || "";
   const count = Number(summary.evidence_count || 0);
   const messages = {
+    route_unavailable: "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。",
+    target_agent_unavailable: "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。",
+    runtime_execution_failed: "这是通用模型回答；Runtime 执行失败，专业 Agent 未完成本次任务。",
     cloud_opt_out: "已按本地优先策略处理，本次未调用星辰工作流。",
     xingchen_response_parse_error: "云端结果格式校验未通过，本次已切换到本地安全后备结果。",
     provider_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
@@ -495,8 +515,34 @@ function presentationFor(task, result) {
 function displayAnswer(task, result) {
   const structured = result.structured_result || {};
   const mathContent = result.math_content || structured.math_content;
-  const answer = mathContent?.markdown || result.answer || task.error_message || "未返回回答";
-  if (answer === "云端工作流暂不可用，已返回本地结构化模板。") {
+  if (
+    task?.intent === "data_analysis"
+    && task?.status === "failed"
+    && !task?.result_content
+  ) {
+    return [
+      "## 数据分析尚未执行",
+      "",
+      "本次仅完成入口预检，未读取或计算原始数据。请先补充研究设计、数据清单和授权信息，再进入质量门禁。",
+    ].join("\n");
+  }
+  const answer = mathContent?.markdown || result.answer || task.error_message || "";
+  if (!answer.trim() && task?.status === "cancelled") {
+    return [
+      "## 任务已停止",
+      "",
+      "本次任务已停止，未生成新回答；不会把空结果当作有效答案。",
+    ].join("\n");
+  }
+  if (!answer.trim() && task?.status === "completed") {
+    return [
+      "## 结果需要复核",
+      "",
+      "任务已记录为完成，但没有返回可展示的回答。请重新提问；系统不会把空结果当作有效答案。",
+    ].join("\n");
+  }
+  const safeAnswer = answer || "未返回回答";
+  if (safeAnswer === "云端工作流暂不可用，已返回本地结构化模板。") {
     return [
       "## 历史任务说明",
       "",
@@ -505,7 +551,7 @@ function displayAnswer(task, result) {
       "请点击“重新提问”使用新版的本地可编辑教案框架；已检索资料仍可在右侧查看。",
     ].join("\n");
   }
-  return answer;
+  return safeAnswer;
 }
 
 function archiveTaskAnswer(task) {
@@ -608,6 +654,33 @@ function documentPageStatus(page) {
 function cleanEvidenceExcerpt(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
+  const cleanRawLatexFragments = (line) => {
+    if (!/[\\{}]/u.test(line)) return line;
+    return line
+      .replace(/\\(?:mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)([A-Za-z]+)/gu, "$1")
+      .replace(/\\(?:times|cdot)/gu, " × ")
+      .replace(/\\(?:frac|dfrac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/gu, "$1/$2")
+      .replace(/\\(?:;|,|!|:)/gu, " ")
+      .replace(/(?:^|\s)(?:t?hrm|mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, " $1")
+      .replace(/\{([A-Za-z](?:\s*[A-Za-z0-9]){0,3})\}/gu, "$1")
+      .replace(/\{(-?(?:\d+(?:\.\d+)?|\.\d+))\}/gu, "$1")
+      .replace(/[{}]/gu, "")
+      .replace(/\s{2,}/gu, " ");
+  };
+  const cleanInlineFormulaArtifacts = (line) => {
+    let cleaned = line.replace(/^\s*(?:(?:\\\]|\\\))\s*)+/u, "");
+    cleaned = cleaned
+      .replace(/\\(?:\]|\))/gu, "")
+      .replace(/\\(?:\(|\[)/gu, "")
+      .replace(/\\(?:left|right|begin|end)\b(?:\{[^}]*\})?/gu, "");
+    return cleaned;
+  };
+  const cleanMarkdownImageLinks = (text) => text.replace(
+    /!\[([^\]]*)\]\((?:<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/gu,
+    (_match, alt) => String(alt || "").trim(),
+  );
   const isOrphanFormulaLine = (line) => {
     const text = line.trim();
     if (!text) return true;
@@ -618,10 +691,14 @@ function cleanEvidenceExcerpt(value) {
       || (text.includes("\\right") && !text.includes("\\left"))
       || (text.includes("\\]") && !text.includes("\\["));
   };
-  const lines = raw.split(/\r?\n/u);
+  const lines = cleanMarkdownImageLinks(raw).split(/\r?\n/u);
   while (lines.length && isOrphanFormulaLine(lines[0])) lines.shift();
-  const cleaned = lines.filter((line) => !["--", "---", "\\]", "\\)"].includes(line.trim())).join("\n").trim();
-  return cleaned || "该资料片段的公式未完整落在检索片段内，请打开原文查看。";
+  const cleaned = lines
+    .filter((line) => !["--", "---", "\\]", "\\)"].includes(line.trim()))
+    .map((line) => cleanRawLatexFragments(cleanInlineFormulaArtifacts(line)))
+    .join("\n")
+    .trim();
+  return cleaned || raw;
 }
 
 function cleanEvidenceCaption(value) {
@@ -630,6 +707,12 @@ function cleanEvidenceCaption(value) {
     .replace(/-{3,}/gu, " ")
     .replace(/\s+/gu, " ")
     .trim();
+}
+
+function evidenceDisplayExcerpt(value) {
+  // Source-anchor cleanup must not alter the user-facing evidence card.
+  // Keep the retrieved fragment intact when formula parsing is unavailable.
+  return String(value || "").trim();
 }
 
 function isOrphanFormulaLineForDocument(text) {
@@ -642,10 +725,73 @@ function isOrphanFormulaLineForDocument(text) {
 }
 
 function cleanKnowledgeDocumentContent(value) {
-  return String(value || "").split(/\r?\n/u).filter((line) => {
+  const htmlParser = new DOMParser();
+  const htmlImageMarkdown = (markup) => {
+    const image = htmlParser.parseFromString(markup, "text/html").querySelector("img");
+    if (!image) return "";
+    const source = image.getAttribute("src") || "";
+    const alt = image.getAttribute("alt") || image.getAttribute("title") || "课程资料图片";
+    return source ? `![${alt}](${source})` : alt;
+  };
+  const htmlTableMarkdown = (markup) => {
+    const table = htmlParser.parseFromString(markup, "text/html").querySelector("table");
+    if (!table) return "";
+    const rows = all("tr", table).map((row) => [...row.children]
+      .filter((cell) => ["TH", "TD"].includes(cell.tagName))
+      .map((cell) => cell.textContent.replace(/\s+/gu, " ").trim().replace(/\|/gu, "\\|"))
+      .filter((cell) => cell.length));
+    if (!rows.length) return "";
+    const width = Math.max(...rows.map((row) => row.length));
+    const padded = rows.map((row) => [...row, ...Array(Math.max(0, width - row.length)).fill("")]);
+    const row = (cells) => `| ${cells.join(" | ")} |`;
+    return [row(padded[0]), row(padded[0].map(() => "---")), ...padded.slice(1).map(row)].join("\n");
+  };
+  let normalized = String(value || "")
+    .replace(/<img\b[^>]*>/giu, (markup) => htmlImageMarkdown(markup))
+    .replace(/<table\b[\s\S]*?<\/table>/giu, (markup) => htmlTableMarkdown(markup))
+    .replace(/<br\s*\/?>/giu, "\n")
+    .replace(/<\/(?:p|div|section|article|li|ul|ol|h[1-6])\s*>/giu, "\n")
+    .replace(/<[^>]+>/gu, "");
+  normalized = htmlParser.parseFromString(normalized, "text/html").body.textContent || normalized;
+  return normalized.split(/\r?\n/u).filter((line) => {
     const text = line.trim();
     return !text || !isOrphanFormulaLineForDocument(text);
+  }).map((line) => {
+    let cleaned = line.replace(/^\s*(?:(?:\\\]|\\\))\s*)+/u, "");
+    return cleaned
+      .replace(/\\(?:\]|\))/gu, "")
+      .replace(/\\(?:\(|\[)/gu, "")
+      .replace(/\\(?:left|right|begin|end)\b(?:\{[^}]*\})?/gu, "")
+      .replace(/\\(?:mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)\s*\{([^{}]*)\}/gu, "$1")
+      .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)([A-Za-z]+)/gu, "$1")
+      .replace(/\\(?:times|cdot)/gu, " × ")
+      .replace(/\\(?:frac|dfrac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/gu, "$1/$2")
+      .replace(/\\(?:;|,|!|:)/gu, " ")
+      .replace(/(?:^|\s)(?:t?hrm|mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, " $1")
+      .replace(/\{([A-Za-z](?:\s*[A-Za-z0-9]){0,3})\}/gu, "$1")
+      .replace(/\{(-?(?:\d+(?:\.\d+)?|\.\d+))\}/gu, "$1")
+      .replace(/[{}]/gu, "")
+      .replace(/\s{2,}/gu, " ");
   }).join("\n");
+}
+
+function preserveKnowledgeDocumentContent(value) {
+  const htmlParser = new DOMParser();
+  const imageMarkdown = (markup) => {
+    const image = htmlParser.parseFromString(markup, "text/html").querySelector("img");
+    if (!image) return "";
+    const source = image.getAttribute("src") || "";
+    const alt = image.getAttribute("alt") || image.getAttribute("title") || "课程资料图片";
+    return source ? `![${alt}](${source})` : alt;
+  };
+  let normalized = String(value || "")
+    .replace(/<img\b[^>]*>/giu, (markup) => imageMarkdown(markup))
+    .replace(/<br\s*\/?>/giu, "\n")
+    .replace(/<\/(?:p|div|section|article|li|ul|ol|h[1-6])\s*>/giu, "\n")
+    .replace(/<[^>]+>/gu, "");
+  normalized = htmlParser.parseFromString(normalized, "text/html").body.textContent || normalized;
+  return normalized;
 }
 
 async function loadEvidenceDocumentPage(item, offset = null) {
@@ -687,11 +833,12 @@ async function loadEvidenceDocumentPage(item, offset = null) {
     renderMarkdown(
       content,
       rewriteKnowledgeDocumentImages(
-        cleanKnowledgeDocumentContent(
+        preserveKnowledgeDocumentContent(
         page.content || "这部分原文没有可显示的文本。",
         ),
         page,
       ),
+      { preserveRaw: true },
     );
     all("img.markdown-image", content).forEach((image) => {
       image.addEventListener("click", () => openImage(
@@ -704,6 +851,11 @@ async function loadEvidenceDocumentPage(item, offset = null) {
       }, { once: true });
     });
     content.classList.remove("loading");
+    const fallbackCount = all(".math-latex-fallback", content).length;
+    if (fallbackCount > 0) {
+      note.textContent = `原文中有 ${fallbackCount} 个公式按原始文本保留，未丢失内容；可结合上下文核对原文。`;
+      note.hidden = false;
+    }
     previous.disabled = page.previous_offset == null;
     next.disabled = page.next_offset == null;
     $("#document-page-status").textContent = documentPageStatus(page);
@@ -738,7 +890,7 @@ async function openEvidenceDocument(item) {
   $("#document-dialog-title").textContent = item.title || item.chapter || "课程资料";
   $("#document-dialog-meta").textContent = [courseLabels[item.course_id] || item.course_name, item.chapter, item.section].filter(Boolean).join(" · ");
   const match = $("#document-dialog-match");
-  const summary = cleanEvidenceExcerpt(item.summary);
+  const summary = evidenceDisplayExcerpt(item.summary);
   match.hidden = !summary;
   if (summary) {
     renderMarkdown($("#document-dialog-match-content"), summary);
@@ -767,14 +919,41 @@ function openImage(src, caption) {
   $("#image-dialog").showModal();
 }
 
+function evidenceExternalUrl(item) {
+  const direct = String(item?.url || item?.canonical_url || item?.source_ref || "").trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const doiValue = String(item?.doi || direct.match(/^(?:doi:)?(10\.\d{4,9}\/\S+)$/i)?.[1] || "")
+    .replace(/^https?:\/\/doi\.org\//i, "")
+    .replace(/^doi:/i, "");
+  if (doiValue) return `https://doi.org/${encodeURIComponent(doiValue)}`;
+  const arxivValue = String(item?.arxiv_id || direct.match(/^arxiv:(.+)$/i)?.[1] || "")
+    .replace(/^https?:\/\/arxiv\.org\/(?:abs|pdf)\//i, "")
+    .replace(/^arxiv:/i, "")
+    .replace(/\.pdf$/i, "");
+  if (arxivValue) return `https://arxiv.org/abs/${encodeURIComponent(arxivValue)}`;
+  return "";
+}
+
 function evidenceCard(item) {
   const role = item.role === "method_reference" ? "方法参考" : item.used_by_answer ? "已引用" : item.entered_workflow ? "进入上下文" : "补充阅读";
   const card = el("article", { class: "evidence-card", "data-evidence-id": item.evidence_id, role: "button", tabindex: "0", "aria-label": `打开资料：${item.title || item.chapter || "课程资料"}` });
   const summary = el("div", { class: "evidence-summary" });
-  renderMarkdown(summary, cleanEvidenceExcerpt(item.summary) || "本条资料没有可展示摘要。");
+    renderMarkdown(summary, evidenceDisplayExcerpt(item.summary) || "本条资料没有可展示摘要。", { preserveRaw: true });
+  const isLocalKnowledge = String(item.source_ref || "").startsWith("kb://");
+  const externalUrl = isLocalKnowledge ? "" : evidenceExternalUrl(item);
+  const sourceLabel = isLocalKnowledge
+    ? "本地只读资料"
+    : externalUrl
+      ? "外部来源 · 请打开原文核验"
+      : "来源路径不可用";
+  const sourceAction = isLocalKnowledge
+    ? el("button", { type: "button", class: "evidence-open", text: "打开资料" })
+    : externalUrl
+      ? el("a", { class: "evidence-open external-paper-open", href: externalUrl, target: "_blank", rel: "noopener noreferrer", text: "打开原文" })
+      : el("small", { text: "无法打开原文" });
   const actions = el("div", { class: "evidence-card-actions" }, [
-    el("small", { text: item.source_ref ? "本地只读资料" : "来源路径不可用" }),
-    el("button", { type: "button", class: "evidence-open", text: "打开资料" }),
+    el("small", { text: sourceLabel }),
+    sourceAction,
   ]);
   card.append(
     el("div", { class: "evidence-card-header" }, [el("span", { class: "evidence-id", text: item.evidence_id }), el("span", { class: "evidence-role", text: role })]),
@@ -790,13 +969,18 @@ function evidenceCard(item) {
   }
   card.append(actions);
   const open = () => { focusEvidence(item.evidence_id); void openEvidenceDocument(item); };
-  actions.lastElementChild.addEventListener("click", (event) => { event.stopPropagation(); open(); });
-  card.addEventListener("click", (event) => { if (!event.target.closest(".evidence-images")) open(); });
+  if (isLocalKnowledge) {
+    actions.lastElementChild.addEventListener("click", (event) => { event.stopPropagation(); open(); });
+  }
+  card.addEventListener("click", (event) => {
+    if (!event.target.closest(".evidence-images") && !event.target.closest("a") && isLocalKnowledge) open();
+  });
   card.addEventListener("keydown", (event) => {
     if (event.target !== card) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      open();
+      if (isLocalKnowledge) open();
+      else if (externalUrl) window.open(externalUrl, "_blank", "noopener,noreferrer");
     }
   });
   return card;
@@ -848,12 +1032,88 @@ function relatedImageCard(images) {
 function decodeHtmlEntities(value) {
   let decoded = String(value || "");
   for (let pass = 0; pass < 2; pass += 1) {
-    const probe = document.createElement("textarea");
-    probe.innerHTML = decoded;
-    if (probe.value === decoded) break;
-    decoded = probe.value;
+    const probe = new DOMParser().parseFromString(decoded, "text/html").body.textContent || "";
+    if (probe === decoded) break;
+    decoded = probe;
   }
   return decoded;
+}
+
+function externalEvidenceUrl(item) {
+  const direct = String(item.url || item.canonical_url || item.source_ref || "").trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const doi = String(item.doi || "").trim().replace(/^https?:\/\/doi\.org\//i, "");
+  if (doi) return `https://doi.org/${encodeURIComponent(doi)}`;
+  const arxiv = String(item.arxiv_id || "").trim().replace(/^arxiv:/i, "");
+  if (arxiv) return `https://arxiv.org/abs/${encodeURIComponent(arxiv)}`;
+  return "";
+}
+
+function externalEvidenceIdentityKeys(item) {
+  const keys = [];
+  const evidenceId = String(item.evidence_id || "").trim().toLowerCase();
+  if (evidenceId) keys.push(`evidence:${evidenceId}`);
+  const doi = String(item.doi || "")
+    .trim()
+    .replace(/^https?:\/\/doi\.org\//i, "")
+    .replace(/^doi:/i, "")
+    .toLowerCase();
+  if (doi) keys.push(`doi:${doi}`);
+  const arxiv = String(item.arxiv_id || "")
+    .trim()
+    .replace(/^https?:\/\/arxiv\.org\/(?:abs|pdf)\//i, "")
+    .replace(/^arxiv:/i, "")
+    .replace(/\.pdf$/i, "")
+    .toLowerCase();
+  if (arxiv) keys.push(`arxiv:${arxiv}`);
+  const url = String(externalEvidenceUrl(item) || "")
+    .trim()
+    .toLowerCase()
+    .replace(/#.*$/, "")
+    .replace(/\/$/, "");
+  if (url) keys.push(`url:${url}`);
+  const sourceRef = String(item.source_ref || item.source_uri || "")
+    .trim()
+    .toLowerCase();
+  if (sourceRef && !url && !doi && !arxiv) keys.push(`source:${sourceRef}`);
+  if (!keys.length) {
+    const title = String(item.title || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (title) keys.push(`title:${title}`);
+  }
+  return keys;
+}
+
+function normalizedExternalItems(items) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object").map((item) => {
+    const url = externalEvidenceUrl(item);
+    const abstract = item.abstract || item.content_excerpt || item.excerpt || "";
+    return { ...item, url, abstract };
+  }).filter((item) => {
+    const keys = externalEvidenceIdentityKeys(item);
+    if (!keys.length || keys.some((key) => seen.has(key))) return false;
+    keys.forEach((key) => seen.add(key));
+    return true;
+  });
+}
+
+function externalItemsForDisplay(structured) {
+  const view = Array.isArray(structured?.external_search_view) ? structured.external_search_view : [];
+  const retrieval = Array.isArray(structured?.external_retrieval?.items) ? structured.external_retrieval.items : [];
+  // The canonical retrieval packet is the source of truth.  The compact view
+  // is retained only for legacy tasks that predate external_retrieval.items;
+  // mixing both projections can show stale titles or citations after refresh.
+  return normalizedExternalItems(retrieval.length ? retrieval : view);
+}
+
+function externalEvidenceDateLabel(item) {
+  const explicit = String(item.date_label || "").trim();
+  if (explicit) return explicit;
+  const raw = String(item.updated_at || item.published_at || "").trim();
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
 }
 
 function externalPaperCard(item) {
@@ -870,14 +1130,19 @@ function externalPaperCard(item) {
   } catch (_) {
     safeUrl = "";
   }
+  const dateLabel = externalEvidenceDateLabel(item);
   const metadata = [
-    item.date_label ? `发表/更新 ${item.date_label}` : "时间未知",
+    dateLabel ? `发表/更新 ${dateLabel}` : "时间未知",
     externalProviderLabels[item.provider] || item.provider || "学术来源",
     item.venue,
     item.citation_count != null ? `被引 ${item.citation_count} 次` : "引用数据未提供",
   ].filter(Boolean).join(" · ");
   const authors = Array.isArray(item.authors) ? item.authors.filter(Boolean).join(", ") : "";
-  const abstract = decodeHtmlEntities(item.abstract || "暂无摘要，建议打开原文查看。");
+  const abstract = decodeHtmlEntities(item.abstract || item.content_excerpt || "暂无摘要，建议打开原文查看。");
+  const providerName = String(item.provider || "").trim().toLowerCase();
+  const isMockSource = item.metadata?.mock === true
+    || providerName === "mock"
+    || providerName === "development_mock";
   const title = safeUrl
     ? el("a", { href: safeUrl, target: "_blank", rel: "noopener noreferrer", text: item.title || "未命名论文" })
     : el("span", { text: item.title || "未命名论文" });
@@ -891,6 +1156,10 @@ function externalPaperCard(item) {
     ]),
     el("h3", {}, title),
     el("small", { class: "external-paper-meta", text: metadata }),
+    el("small", {
+      class: isMockSource ? "external-paper-provenance mock" : "external-paper-provenance",
+      text: isMockSource ? "开发态 Mock · 非真实来源" : "外部来源 · 请打开原文核验",
+    }),
     authors ? el("p", { class: "external-paper-authors", text: authors }) : null,
     el("p", { class: "external-paper-abstract", text: abstract }),
     el("div", { class: "external-paper-footer" }, [
@@ -901,13 +1170,14 @@ function externalPaperCard(item) {
 }
 
 function renderExternalPapers(items) {
-  if (!items?.length) return null;
+  const normalized = normalizedExternalItems(items);
+  if (!normalized.length) return null;
   return el("section", { class: "external-results" }, [
     el("div", { class: "external-results-heading" }, [
-      el("strong", { text: `外部科研证据 ${items.length} 条 · 已通过相关性审核` }),
+      el("strong", { text: `外部科研证据 ${normalized.length} 条 · 已通过相关性审核` }),
       el("span", { text: "论文、报道和会议线索均需打开原文核验" }),
     ]),
-    ...items.map(externalPaperCard),
+    ...normalized.map(externalPaperCard),
   ]);
 }
 
@@ -927,6 +1197,7 @@ function evidenceRelatedImages(evidence, candidates) {
 
 function renderEvidence(items, presentation, relatedImages = [], externalItems = []) {
   state.evidence = items || [];
+  $("#source-summary").textContent = `参考课程资料 ${state.evidence.length}`;
   const cards = state.evidence.map(evidenceCard);
   const imageCard = relatedImageCard(relatedImages);
   if (imageCard) cards.push(imageCard);
@@ -1052,6 +1323,7 @@ function renderContextUsage(result = {}) {
 }
 
 function renderInfo(task, result, summary, presentation, renderMs = 0) {
+  const externalEvidenceCount = externalItemsForDisplay(result.structured_result).length;
   const scenarioReview = result.structured_result?.scenario_evidence_review || {};
   const scenarioReviewStatus = scenarioReview.status === "approved"
     ? "证据审查通过"
@@ -1062,14 +1334,21 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
         : scenarioReview.status === "pending_manual_review"
           ? "等待人工复核"
           : "未执行场景审查";
-  const collaboration = result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
+  const collaboration = result.structured_result?.answer_mode === "generic_model"
+    ? "通用模型回答"
+    : result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
   const rows = [
     ["完成能力", presentation.title || summary.agent_label || "智能任务"],
     ["协作方式", collaboration],
     ["课程", courseLabels[task.course_id] || task.course_id],
     ["任务类型", intentLabels[task.intent] || "自动识别"],
     ["知识增强", ragLabels[summary.rag_mode] || "按需启用"],
-    ["资料使用", `${summary.used_evidence_count || 0} / ${summary.evidence_count || 0} 条`],
+    [
+      externalEvidenceCount ? "外部证据" : "资料使用",
+      externalEvidenceCount
+        ? `${externalEvidenceCount} 条`
+        : `${summary.used_evidence_count || 0} / ${summary.evidence_count || 0} 条`,
+    ],
     ["结果检查", summary.citation_status === "passed" ? "通过" : summary.citation_status === "failed" ? "需要复核" : "已完成结构检查"],
     ["场景证据审查", scenarioReviewStatus],
     ["答案质量", presentation.answer_quality_status === "checked" ? "已检查" : presentation.requires_review ? "需要复核" : "未检查"],
@@ -1086,6 +1365,55 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
 
 function legacyPresentation(task, result) {
   const fallback = Boolean(result.fallback_used); const mock = result.provider === "mock" || result.mock_used;
+  const knowledge = result.structured_result?.knowledge || {};
+  if (result.structured_result?.answer_mode === "generic_model" || task?.agent_id === "GENERAL_MODEL_FALLBACK_V1") {
+    return {
+      title: "通用模型回答",
+      status_label: "通用模型回答",
+      source_summary: "未使用可核验资料依据",
+      provider_label: "通用模型回答",
+      fallback_message: "这是通用模型回答，不代表专业 Agent 已完成任务。",
+      evidence_message: "资料不可用时未生成课程、科研引用或外部链接。",
+      answer_quality_status: "generic_model",
+      answer_quality_message: "请人工核对后再使用；本次回答不能替代专业 Agent 结果。",
+      requires_review: true,
+      generation_complete: true,
+      execution_steps: [{ label: "通用模型兜底", status: "completed" }],
+    };
+  }
+  if (
+    task?.status === "failed"
+    && (knowledge.evidence_status || result.evidence_status) === "insufficient"
+  ) {
+    return {
+      title: `知识问答 · ${courseLabels[task.course_id] || task.course_id}`,
+      status_label: "课程依据不足",
+      source_summary: `课程资料 ${knowledge.hits?.length || knowledge.evidence_count || 0}`,
+      provider_label: "本地知识库检索",
+      fallback_message: "本次未形成可核验的正式结论。",
+      evidence_message: "当前课程资料不足，系统已阻止不相关片段作为回答依据。请补充课程范围、关键词或资料后重试。",
+      answer_quality_status: "needs_review",
+      answer_quality_message: "任务未通过证据核验；下面内容仅用于说明缺口，不能视为已核对答案。",
+      requires_review: true,
+      generation_complete: false,
+      execution_steps: [{ label: "课程证据核验", status: "failed" }],
+    };
+  }
+  if (task?.intent === "data_analysis" && task?.status === "failed") {
+    return {
+      title: `${taskLabels.data_analysis} · ${courseLabels[task.course_id] || task.course_id}`,
+      status_label: "未执行 · 数据边界",
+      source_summary: "研究设计待完善",
+      provider_label: "受控数据分析入口",
+      fallback_message: "",
+      evidence_message: "当前仅完成研究设计入口预检；没有授权数据时不会执行原始数据分析。",
+      answer_quality_status: "needs_review",
+      answer_quality_message: "任务未执行，不代表分析结论失败；请先完成研究设计和数据授权门禁。",
+      requires_review: true,
+      generation_complete: false,
+      execution_steps: [{ label: "研究设计与数据授权门禁", status: "failed" }],
+    };
+  }
   return {
     title: `${taskLabels[task.intent] || "专业任务"} · ${courseLabels[task.course_id] || task.course_id}`,
     status_label: mock ? "开发演示" : fallback ? "降级完成" : "已完成",
@@ -1433,7 +1761,7 @@ function renderResult(task) {
   const presentation = presentationFor(task, result);
   const summary = structured.execution_summary || {};
   const evidence = structured.evidence_view || [];
-  const externalItems = structured.external_search_view || structured.external_retrieval?.items || [];
+  const externalItems = externalItemsForDisplay(structured);
   state.lastAnswer = displayAnswer(task, result);
   state.currentTask = task;
   prepareTaskFeedback(task);
@@ -1676,12 +2004,31 @@ async function loadSessionHistory() {
     if (!isCurrent()) return;
     if (!messages.length) return;
 
+    // A completed task can be committed after the user message but before the
+    // assistant message is visible to a refreshed browser.  The message list
+    // is therefore not a sufficient recovery index.  Ask the session task
+    // history for the newest task and hydrate it through the owned task API so
+    // result presentation and evidence use the same full payload as live SSE.
+    let latestSessionTask = null;
+    try {
+      const taskHistory = await api(`/api/v1/sessions/${sessionId}/tasks?limit=50`);
+      const latestSummary = Array.isArray(taskHistory) ? taskHistory.at(-1) : null;
+      if (latestSummary?.id) latestSessionTask = await api(ownedTaskUrl(latestSummary.id));
+    } catch (_error) {
+      latestSessionTask = null;
+    }
+
     const latestAssistantTask = [...messages].reverse().find((item) => item.role === "assistant" && item.source_task_id);
     let restoredTask = null;
-    if (latestAssistantTask) {
+    if (latestSessionTask && ["completed", "failed", "cancelled"].includes(latestSessionTask.status)) {
+      restoredTask = latestSessionTask;
+    } else if (latestAssistantTask) {
       try {
         const candidate = await api(ownedTaskUrl(latestAssistantTask.source_task_id));
-        if (isCurrent() && candidate.status === "completed") restoredTask = candidate;
+        if (
+          isCurrent()
+          && ["completed", "failed", "cancelled"].includes(candidate.status)
+        ) restoredTask = candidate;
       } catch (_error) {
         restoredTask = null;
       }
@@ -1701,7 +2048,12 @@ async function loadSessionHistory() {
           el("span", { class: "message-meta", text: messageStatusText(message.status) }),
           el("div", { class: "markdown-view" }),
         ]);
-        renderMarkdown(body.lastElementChild, message.content_text);
+        renderMarkdown(
+          body.lastElementChild,
+          message.content_text?.trim()
+            ? message.content_text
+            : "## 结果需要复核\n\n任务已记录，但没有返回可展示的回答；请重新提问。",
+        );
         $("#messages").append(el("article", { class: "conversation-message assistant", "data-task-id": taskId }, [
           el("span", { class: "message-role", text: "芯智导学" }), body,
         ]));
@@ -1715,8 +2067,12 @@ async function loadSessionHistory() {
     });
     const latest = messages[messages.length - 1];
     state.lastQuestion = [...messages].reverse().find((item) => item.role === "user")?.content_text || "";
-    if (latest.role === "user" && latest.source_task_id) {
-      const latestTask = await api(ownedTaskUrl(latest.source_task_id));
+    const latestTask = latestSessionTask || (
+      latest.role === "user" && latest.source_task_id
+        ? await api(ownedTaskUrl(latest.source_task_id))
+        : null
+    );
+    if (latestTask) {
       if (!isCurrent()) return;
       const resumableStatuses = [
         "created",
@@ -1732,6 +2088,7 @@ async function loadSessionHistory() {
           renderRuntimeCheckpoint(latestTask);
         } else {
           setBusy(true);
+          markAnswerPending();
           try {
             const finishedTask = await waitForTask(latestTask.id, requestSequence);
             if (finishedTask && isCurrent()) renderResult(finishedTask);
@@ -1741,7 +2098,11 @@ async function loadSessionHistory() {
         }
       }
     }
-    if (restoredTask && isCurrent()) renderResult(restoredTask);
+    if (restoredTask && isCurrent()) {
+      renderResult(restoredTask);
+      setBusy(false);
+      state.taskId = "";
+    }
   } catch (error) {
     if (!isCurrent()) return;
     try {
@@ -2005,6 +2366,21 @@ function appendMaterialFiles(files) {
   pendingMaterialFiles = combined;
 }
 
+async function attachExampleImage(button) {
+  const imageSrc = button.dataset.imageSrc;
+  if (!imageSrc) return;
+  const response = await fetch(imageSrc);
+  if (!response.ok) throw new Error("示例题图片暂时无法读取");
+  const blob = await response.blob();
+  const file = new File(
+    [blob],
+    button.dataset.imageName || "analog-opamp-question.jpg",
+    { type: blob.type || "image/jpeg" },
+  );
+  appendMaterialFiles([file]);
+  showMaterialPreview(selectedMaterialFiles());
+}
+
 async function uploadMaterials() {
   const files = selectedMaterialFiles(); if (!files.length) return [];
   validateMaterialFiles(files);
@@ -2022,11 +2398,13 @@ function attachmentRef(file) { return { file_id: file.id, filename: file.filenam
 async function waitForTask(id, runSequence) {
   state.liveProcessSteps.clear();
   return new Promise((resolve, reject) => {
-    let settled = false; let pollTimer = null; let controlRefreshTimer = null; const events = new EventSource(`/api/v1/tasks/${id}/stream`);
+    let settled = false; let pollTimer = null; let terminalPollTimer = null; let controlRefreshTimer = null; let longWaitTimer = null; const waitStartedAt = performance.now(); const events = new EventSource(`/api/v1/tasks/${id}/stream`);
     const cleanup = () => {
       events.close();
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (terminalPollTimer) { clearInterval(terminalPollTimer); terminalPollTimer = null; }
       if (controlRefreshTimer) { clearInterval(controlRefreshTimer); controlRefreshTimer = null; }
+      if (longWaitTimer) { clearInterval(longWaitTimer); longWaitTimer = null; }
       if (state.activeTaskWait?.runSequence === runSequence) state.activeTaskWait = null;
     };
     const cancel = () => { if (settled) return; settled = true; cleanup(); resolve(null); };
@@ -2073,6 +2451,16 @@ async function waitForTask(id, runSequence) {
     controlRefreshTimer = setInterval(() => {
       if (!settled) void refreshRuntimeTaskControls(id);
     }, 900);
+    longWaitTimer = setInterval(() => {
+      if (!settled) renderLongWaitNotice(performance.now() - waitStartedAt);
+    }, 5000);
+    // The stream may stay open without delivering a terminal event when the
+    // worker finishes between SSE heartbeats. Keep task completion independent
+    // from the EventSource lifecycle so the UI cannot spin after the API has
+    // already persisted a terminal result.
+    terminalPollTimer = setInterval(() => {
+      if (!settled) void finish();
+    }, 1200);
     events.onerror = () => {
       if (settled) return;
       // Keep EventSource open so the browser retries the same stream and
@@ -2110,6 +2498,27 @@ function markAnswerPending() {
   $("#answer-status").textContent = "\u6b63\u5728\u6267\u884c";
   $("#answer-title").textContent = "\u6b63\u5728\u7ec4\u7ec7\u56de\u7b54";
   $("#answer-source-chip").textContent = "\u7b49\u5f85\u672c\u8f6e\u7ed3\u679c";
+}
+
+function renderLongWaitNotice(elapsedMs) {
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  if (elapsedSeconds < 15 || !$("#answer-panel") || $("#answer-panel").hidden) return;
+  const waitingLabel = elapsedSeconds >= 60
+    ? "模型响应较慢，仍会自动完成"
+    : "正在等待模型响应";
+  const waitingMessage = elapsedSeconds >= 60
+    ? `已等待 ${elapsedSeconds} 秒；任务仍在后台运行，页面会自动接收结果。`
+    : "任务已提交，模型正在生成结果，请不要重复提交。";
+  $("#answer-title").textContent = waitingLabel;
+  $("#answer-source-chip").textContent = waitingMessage;
+  const runningStep = [...state.liveProcessSteps.values()].find(
+    (step) => step.status === "running" || step.status === "started",
+  );
+  if (runningStep) {
+    runningStep.label = waitingLabel;
+    runningStep.detail = waitingMessage;
+    renderProcess([...state.liveProcessSteps.values()]);
+  }
 }
 
 function renderRuntimeCheckpoint(task) {
@@ -2150,11 +2559,6 @@ function markAnswerCancelled() {
 async function submit(event) {
   event.preventDefault(); if (state.taskId) return;
   await identityReady;
-  await scenarioRoleRequest;
-  if (!scenarioRoleAllowed()) {
-    $("#form-error").textContent = scenarioRoleMessage();
-    return;
-  }
   const runSequence = state.runSequence + 1;
   state.runSequence = runSequence;
   state.cancelRequested = false;
@@ -2191,7 +2595,7 @@ async function submit(event) {
     const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
     const researchAnalysis = buildResearchAnalysisV2(question, materials);
     if (researchAnalysis) options.research_analysis_v2 = researchAnalysis;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: state.userRole, scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: scenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
+    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: state.userRole, scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: state.activeScenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
     state.taskId = task.id; state.currentTask = task; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
@@ -2416,8 +2820,10 @@ async function loadCapabilities() {
       const feature = features.get(button.dataset.capability);
       if (!feature) return;
       button.classList.toggle("capability-unavailable", !feature.available);
+      button.disabled = !feature.available;
+      button.setAttribute("aria-disabled", String(!feature.available));
       const stateLabel = button.querySelector(".capability-state");
-      if (stateLabel) stateLabel.textContent = feature.available ? (feature.knowledge_enhanced ? "本地资料增强" : "内部 Agent 就绪") : "配置后可用";
+      if (stateLabel) stateLabel.textContent = feature.frozen ? "已冻结" : feature.available ? (feature.knowledge_enhanced ? "本地资料增强" : "内部 Agent 就绪") : "配置后可用";
     });
   } catch (error) {
     all("[data-capability] .capability-state").forEach((node) => { node.textContent = "状态待确认"; });
@@ -2425,7 +2831,7 @@ async function loadCapabilities() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "workspace", title: "智能任务工作台", description: "内部 Agent 与本地课程资料协同", context: "自动编排 · 本地知识增强", audience: requestedWorkspaceRole });
+  initShell({ page: "workspace", title: "智能任务工作台", description: "统一问题输入与自动调度", context: "自动识别 · 本地知识增强", audience: "student" });
   applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels();
   identityReady = initIdentityGate({ next: `${location.pathname}${location.search}` }).then((identity) => {
     state.userRole = effectiveWorkspaceRole(identity);
@@ -2449,9 +2855,20 @@ window.addEventListener("DOMContentLoaded", () => {
     });
     return identity;
   });
-  scenarioRoleRequest = identityReady.then(loadScenarioRolePolicy);
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
-  all("[data-prompt]").forEach((button) => button.addEventListener("click", () => { $("#question-input").value = button.dataset.prompt; $("#course-select").value = button.dataset.course || "AUTO"; state.intentOverride = button.dataset.intent || ""; updateResearchAnalysisPanel(); updateShell(); autoGrow(); $("#question-input").focus(); }));
+  all("[data-prompt]").forEach((button) => button.addEventListener("click", async () => {
+    $("#question-input").value = button.dataset.prompt;
+    $("#course-select").value = button.dataset.course || "AUTO";
+    state.intentOverride = button.dataset.intent || "";
+    state.activeScenarioId = "";
+    $("#form-error").textContent = "";
+    try {
+      await attachExampleImage(button);
+    } catch (error) {
+      $("#form-error").textContent = error.message;
+    }
+    updateResearchAnalysisPanel(); updateShell(); autoGrow(); $("#question-input").focus();
+  }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));
   $("#student-form").addEventListener("submit", submit);
   $("#submit-task-feedback").addEventListener("click", () => submitTaskFeedback());

@@ -10,7 +10,8 @@ def test_admin_and_login_pages_are_available(client: TestClient) -> None:
     assert "/debug-assets/admin.css" in admin.text
     assert "admin.css?v=20260804-feature-switch-v2" in admin.text
     assert "/debug-assets/admin.js" in admin.text
-    assert "admin.js?v=20260810-role-aware-scenarios-v1" in admin.text
+    assert "admin.js?v=20260813-admin-task-approval-v4" in admin.text
+    assert 'name="login" type="text"' in admin.text
     assert 'data-admin-module-target="settings"' in admin.text
     assert 'id="admin-feature-settings"' in admin.text
     assert 'option value="researcher"' in admin.text
@@ -35,4 +36,15 @@ def test_admin_feature_switch_contract(client: TestClient) -> None:
     assert "updateFeatureSetting" in script.text
     assert 'class: "feature-toggle-button"' in script.text
     assert 'aria-pressed' in script.text
+
+
+def test_admin_waiting_review_detail_contract(client: TestClient) -> None:
+    script = client.get("/debug-assets/admin.js")
+
+    assert script.status_code == 200
+    assert "approveAdminTask" in script.text
+    assert "/api/v1/tasks/" in script.text
+    assert "waiting_review" in script.text
+    assert "查看完整执行链" in script.text
+    assert "eventOrderOk" in script.text
     assert 'researcher: "研究者"' in script.text

@@ -16,10 +16,18 @@ def validate() -> dict[str, object]:
     catalog = ScenarioCatalog(ROOT / "config" / "scenarios.yaml")
     if len(cases) < 3:
         raise ValueError("赛题基线至少需要三个典型问题")
+    all_scenarios = catalog.list(enabled_only=False)
+    scenarios_by_id = {item.id: item for item in all_scenarios}
     scenario_ids: set[str] = set()
+    skipped_disabled_ids: list[str] = []
     for case in cases:
         scenario_id = str(case.task_options.get("scenario_id", ""))
-        scenario = catalog.get(scenario_id)
+        scenario = scenarios_by_id.get(scenario_id)
+        if scenario is None:
+            raise ValueError(f"{case.case_id}: unknown scenario {scenario_id}")
+        if not scenario.enabled:
+            skipped_disabled_ids.append(scenario_id)
+            continue
         scenario_ids.add(scenario.id)
         if scenario.agent_id != case.expected_agent:
             raise ValueError(
@@ -54,8 +62,10 @@ def validate() -> dict[str, object]:
             raise ValueError(f"{case.case_id}: 缺少引用数量验收标准")
     return {
         "valid": True,
-        "case_count": len(cases),
+        "case_count": len(scenario_ids),
+        "catalog_case_count": len(cases),
         "scenario_ids": sorted(scenario_ids),
+        "skipped_disabled_scenarios": sorted(set(skipped_disabled_ids)),
         "all_synthetic": True,
         "manual_review_required": True,
     }

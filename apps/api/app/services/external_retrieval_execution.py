@@ -30,6 +30,7 @@ from app.services.academic_search_planner import (
     requested_minimum,
 )
 from app.services.external_research_answer import (
+    filter_research_evidence,
     is_academic_search_follow_up,
     normalize_academic_search_query,
 )
@@ -274,6 +275,20 @@ class ExternalRetrievalExecutionService:
                         source_scopes=list(policy.source_scopes),
                         status="failed",
                         retrieval_trace_id=retrieval_trace_id,
+                    )
+                filtered_items = filter_research_evidence(query, result.items)
+                if len(filtered_items) != len(result.items):
+                    result = result.model_copy(
+                        update={
+                            "items": filtered_items,
+                            "approved_count": min(
+                                result.approved_count, len(filtered_items)
+                            ),
+                            "warnings": [
+                                *result.warnings,
+                                "cross-topic evidence was removed before display",
+                            ][:20],
+                        }
                     )
                 if (
                     plan is not None

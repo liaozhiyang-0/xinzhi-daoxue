@@ -216,6 +216,48 @@ async def test_frontier_review_preserves_valid_non_academic_sources() -> None:
 
 
 @pytest.mark.asyncio
+async def test_recent_search_rejects_undated_and_old_candidates() -> None:
+    class FakeHub:
+        async def run_text(self, *_args: Any, **_kwargs: Any) -> Any:
+            return SimpleNamespace(
+                structured_result={
+                    "decisions": [
+                        {
+                            "evidence_id": "recent-paper",
+                            "approved": True,
+                            "confidence": 0.95,
+                            "reason": "relevant and dated",
+                        }
+                    ]
+                }
+            )
+
+    recent = evidence_item("recent-paper", "Artificial Intelligence Systems")
+    missing_date = recent.model_copy(
+        update={"evidence_id": "missing-date", "published_at": None}
+    )
+    old = recent.model_copy(
+        update={
+            "evidence_id": "old-paper",
+            "published_at": datetime(2018, 1, 1, tzinfo=UTC),
+        }
+    )
+    result = ExternalRetrievalResult(
+        query="recent artificial intelligence papers",
+        normalized_query="recent artificial intelligence",
+        items=[recent, missing_date, old],
+    )
+
+    reviewed = await AcademicPaperReviewService(
+        cast(Any, FakeHub()), Settings(_env_file=None)
+    ).review("recent artificial intelligence papers", result)
+
+    assert [item.evidence_id for item in reviewed.items] == ["recent-paper"]
+    assert "missing-date: rejected missing publication date" in reviewed.warnings
+    assert "old-paper: rejected outside relative date window" in reviewed.warnings
+
+
+@pytest.mark.asyncio
 async def test_frontier_review_rejects_off_topic_non_academic_sources() -> None:
     class FakeHub:
         async def run_text(self, *_args: Any, **_kwargs: Any) -> Any:

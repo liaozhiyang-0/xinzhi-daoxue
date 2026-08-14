@@ -256,8 +256,14 @@ class RAGRetrievalService:
             if not normalized:
                 raise RuntimeError("RAG 已禁用，无法执行纯图片检索")
             sparse = self.lexical.search_result(normalized, [course_id], top_k)
+            filtered_hits = [
+                hit
+                for hit in sparse.hits
+                if not content_types or hit.content_type in content_types
+            ]
             return sparse.model_copy(
                 update={
+                    "hits": filtered_hits,
                     "rag_status": "disabled",
                     "embedding_status": "disabled",
                     "vector_store_status": "disabled",
@@ -419,7 +425,10 @@ class RAGRetrievalService:
             ]
             self._add_dense(
                 candidates,
-                self.vector_store.retrieve_text(parent_ids),
+                self.vector_store.retrieve_text(
+                    parent_ids,
+                    content_types=policy.content_types,
+                ),
                 "visual_parent",
             )
         except Exception as exc:

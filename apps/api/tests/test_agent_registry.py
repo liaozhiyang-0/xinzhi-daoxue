@@ -66,3 +66,11 @@ def test_solver_ct_keeps_published_hybrid_unconfigured_route_contract() -> None:
     assert registry.is_execution_eligible("SOLVER_CT_V1") is True
     assert registry.has_local_execution_contract("SOLVER_CT_V1") is True
     assert registry.allows_unconfigured_route("SOLVER_CT_V1") is True
+
+
+def test_teaching_retrieval_keeps_unclassified_textbook_chunks_available() -> None:
+    lesson = AgentRegistry().get("TEACH_01_LESSON_PREP_V1")
+
+    assert {"mixed", "unknown"}.issubset(
+        lesson.retrieval_policy.allowed_content_types
+    )

@@ -4,6 +4,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from time import monotonic, perf_counter
 from typing import Any
 
@@ -478,6 +479,23 @@ class AgentExecutionPlanner:
         )
 
     @staticmethod
+    def _is_tabular_attachment(item: Any) -> bool:
+        """Keep ordinary documents text-compatible while isolating tables."""
+
+        content_type = str(getattr(item, "content_type", "")).casefold()
+        if content_type in {
+            "text/csv",
+            "text/tab-separated-values",
+            "application/json",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.apache.parquet",
+        }:
+            return True
+        suffix = Path(str(getattr(item, "filename", ""))).suffix.casefold()
+        return suffix in {".csv", ".tsv", ".json", ".xls", ".xlsx", ".parquet"}
+
+    @staticmethod
     def _input_mode(request: AgentRequest) -> str:
         has_text = any(
             isinstance(request.canonical_input.get(key), str)
@@ -492,9 +510,19 @@ class AgentExecutionPlanner:
         if len(request.attachments) > 1:
             if image_count:
                 return "mixed"
+            if any(
+                AgentExecutionPlanner._is_tabular_attachment(item)
+                for item in request.attachments
+            ):
+                return "text_and_data_file" if has_text else "data_file"
+            return "text"
+        if request.attachments and not image_count and any(
+            AgentExecutionPlanner._is_tabular_attachment(item)
+            for item in request.attachments
+        ):
             return "text_and_data_file" if has_text else "data_file"
         if request.attachments and not image_count:
-            return "text_and_data_file" if has_text else "data_file"
+            return "text"
         if request.attachments and has_text:
             return "text_and_single_image"
         if request.attachments:

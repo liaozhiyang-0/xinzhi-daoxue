@@ -17,6 +17,15 @@
 .\xzd.cmd start
 ```
 
+如果遇到“数据库自动关闭”、旧进程残留、虚拟环境无法启动或 API 端口冲突，先运行：
+
+```powershell
+.\xzd.cmd doctor
+.\xzd.cmd repair -Port 8031 -RuntimeDev
+```
+
+`doctor` 只读检查 Python 虚拟环境、Docker、固定命名的 PostgreSQL/Redis/MinIO/Qdrant、端口占用和 API 状态；`repair` 只启动本项目自有容器、执行增量迁移并恢复单实例 API。它不会执行 `docker compose down`、删除数据卷、接管未知端口进程或打印密钥。若 `.venv` 损坏，旧环境会先保存在 `.codex-tmp/venv-backups/`，再尝试重建。
+
 日常使用无需重复输入命令：双击仓库根目录的 `打开芯智导学.cmd` 即可。它会复用统一启动器，在服务就绪后自动打开 `http://127.0.0.1:8000/workspace`；如果服务已经运行，则只打开工作台，不会再启动一套重复进程。这个入口默认不执行星辰云端 Preflight。
 
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key、Secret 或 Flow ID。

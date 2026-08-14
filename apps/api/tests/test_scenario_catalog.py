@@ -10,12 +10,12 @@ from app.services.scenario_catalog import ScenarioCatalog, ScenarioCatalogError
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_contest_scenario_catalog_has_six_enabled_cases() -> None:
+def test_contest_scenario_catalog_has_five_enabled_cases() -> None:
     catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
 
     scenarios = catalog.list()
 
-    assert len(scenarios) == 6
+    assert len(scenarios) == 5
     assert all(item.commercialization.buyer for item in scenarios)
     assert all(item.commercialization.expansion_path for item in scenarios)
     assert all(item.evidence_policy.citation_required for item in scenarios)
@@ -25,7 +25,6 @@ def test_contest_scenario_catalog_has_six_enabled_cases() -> None:
         "assessment_diagnosis_v1",
         "student_learning_path_v1",
         "research_frontier_radar_v1",
-        "research_data_workbench_v1",
         "department_knowledge_governance_v1",
     }
 
@@ -43,7 +42,7 @@ def test_scenario_filters_and_request_enrichment() -> None:
 
     enriched = catalog.enrich_request(request)
 
-    assert len(teacher_cases) == 6
+    assert len(teacher_cases) == 5
     assert enriched.metadata["scenario_id"] == "faculty_course_copilot_v1"
     assert enriched.metadata["scenario_retrieval_profile"] == "teaching_authoritative"
     assert enriched.metadata["scenario_evidence_policy"]["citation_required"] is True
@@ -96,7 +95,7 @@ def test_legacy_task_request_is_bound_to_scenario_policy() -> None:
     assert enriched.intent.value == "lesson_prep"
 
 
-def test_research_analysis_v2_options_survive_scenario_binding() -> None:
+def test_frozen_research_analysis_scenario_cannot_be_bound() -> None:
     catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
     request = AgentRequest(
         session_id="session-research-v2",
@@ -114,29 +113,33 @@ def test_research_analysis_v2_options_survive_scenario_binding() -> None:
         },
     )
 
-    enriched = catalog.enrich_legacy_request(request)
-
-    assert enriched.intent.value == "data_analysis"
-    assert enriched.options["research_analysis_v2"]["execute"] is False
-    assert enriched.options["scenario_id"] == "research_data_workbench_v1"
+    with pytest.raises(ScenarioCatalogError, match="场景不存在或未启用"):
+        catalog.enrich_legacy_request(request)
 
 
-def test_legacy_task_request_rejects_role_not_allowed_by_scenario() -> None:
+@pytest.mark.parametrize(
+    "user_role", [UserRole.STUDENT, UserRole.TEACHER, UserRole.RESEARCHER]
+)
+def test_legacy_task_request_allows_any_member_role_for_a_scenario(
+    user_role: UserRole,
+) -> None:
     catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
     request = AgentRequest(
         session_id="session-student",
         user_id="user-student",
-        user_role=UserRole.STUDENT,
+        user_role=user_role,
         course_id="CT",
         scenario_id="assessment_diagnosis_v1",
         canonical_input={"text": "review the assignment"},
     )
 
-    with pytest.raises(ScenarioCatalogError, match="scenario role is not authorized"):
-        catalog.enrich_legacy_request(request)
+    enriched = catalog.enrich_legacy_request(request)
+
+    assert enriched.options["scenario_id"] == "assessment_diagnosis_v1"
+    assert enriched.intent.value == "assignment_review"
 
 
-def test_guest_task_cannot_claim_teacher_role_for_teacher_scenario(api) -> None:
+def test_guest_task_can_use_a_teacher_example_without_role_switching(api) -> None:
     guest = api.client.post("/api/v1/auth/guest")
     assert guest.status_code == 200
     session = api.create_session()
@@ -155,8 +158,10 @@ def test_guest_task_cannot_claim_teacher_role_for_teacher_scenario(api) -> None:
 
     response = api.client.post("/api/v1/tasks", json=payload)
 
-    assert response.status_code == 422
-    assert "scenario role is not authorized" in response.text
+    assert response.status_code == 202
+    assert response.json()["input_content"]["scenario_id"] == (
+        "faculty_course_copilot_v1"
+    )
 
 
 def test_legacy_task_request_rejects_unadvertised_attachment_mode() -> None:

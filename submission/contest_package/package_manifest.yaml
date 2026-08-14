@@ -2,7 +2,7 @@ schema_version: "contest_package_manifest.v1"
 package_status: "draft_evidence_only"
 official_rules_verified: false
 official_score_claims_allowed: false
-demo_cases_included: true
+demo_cases_included: false
 real_user_outcomes_included: false
 real_provider_results_included: false
 artifacts:

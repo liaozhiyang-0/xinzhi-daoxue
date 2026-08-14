@@ -79,6 +79,7 @@ from app.services.rag_retrieval import RAGRetrievalService
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 DOCUMENT_PAGE_CHARS = 24_000
 DOCUMENT_PAGE_MAX_CHARS = 60_000
+DOCUMENT_CHUNK_PAGE_CHARS = 8_000
 
 
 def _material_quality_report(item: FileModel) -> dict[str, Any]:
@@ -956,8 +957,8 @@ async def knowledge_document_page(
     relative_path: str,
     request: Request,
     offset: int | None = Query(default=None, ge=0),
-    limit: int = Query(
-        default=DOCUMENT_PAGE_CHARS,
+    limit: int | None = Query(
+        default=None,
         ge=4000,
         le=DOCUMENT_PAGE_MAX_CHARS,
     ),
@@ -984,20 +985,28 @@ async def knowledge_document_page(
             chunk_anchor = await asyncio.to_thread(
                 lambda: knowledge_base.source_content(source_ref) or ""
             )
+        page_limit = limit or (
+            DOCUMENT_CHUNK_PAGE_CHARS if chunk else DOCUMENT_PAGE_CHARS
+        )
+        # The evidence-card summary is the freshest locator for a persisted
+        # result.  A chunk id can point at an older index projection after a
+        # course document is reindexed, so using it first can open an unrelated
+        # part of the same document.  Keep the chunk as a bounded fallback.
+        requested_anchor = anchor or chunk_anchor
         start, end, anchor_status = await asyncio.to_thread(
             _document_window,
             document,
             offset=offset,
-            limit=limit,
-            anchor=chunk_anchor or anchor,
+            limit=page_limit,
+            anchor=requested_anchor,
         )
-        if offset is None and chunk_anchor and anchor_status == "not_found" and anchor:
+        if offset is None and anchor and chunk_anchor and anchor_status == "not_found":
             start, end, anchor_status = await asyncio.to_thread(
                 _document_window,
                 document,
                 offset=None,
-                limit=limit,
-                anchor=anchor,
+                limit=page_limit,
+                anchor=chunk_anchor,
             )
         content = document[start:end]
         if normalize_math:
@@ -1020,7 +1029,7 @@ async def knowledge_document_page(
         total_chars=len(document),
         start_offset=start,
         end_offset=end,
-        previous_offset=max(0, start - limit - 1000) if start > 0 else None,
+        previous_offset=max(0, start - page_limit - 1000) if start > 0 else None,
         next_offset=end if end < len(document) else None,
         anchor_status=anchor_status,
     )

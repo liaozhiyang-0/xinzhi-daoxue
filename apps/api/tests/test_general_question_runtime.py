@@ -347,6 +347,7 @@ def test_general_runtime_persists_retrieved_hits_for_result_presentation() -> No
     )
     request = make_request().model_copy(
         update={
+            "canonical_input": {"text": "电容电压连续性"},
             "options": {
                 "general_question_runtime": {
                     "execute": True,
@@ -365,6 +366,8 @@ def test_general_runtime_persists_retrieved_hits_for_result_presentation() -> No
     result = asyncio.run(service.run(request, run))
 
     assert result.structured_result["knowledge"]["hits"][0]["evidence_id"] == "S1"
+    assert result.structured_result["knowledge_hit_count"] == 1
+    assert result.evidence_status == "partial"
     assert fake.last_request is not None
     assert fake.last_request.options["runtime_retrieved_knowledge_hits"]
 

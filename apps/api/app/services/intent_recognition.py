@@ -97,6 +97,11 @@ class IntentRecognitionService:
     _data_patterns = (
         r"\u6570\u636e|csv|excel|\u56de\u5f52|\u7edf\u8ba1|\u53ef\u89c6\u5316|\u76f8\u5173\u6027|\u663e\u8457\u6027|\u6837\u672c|AUC|p\u503c|\u7f3a\u5931\u503c|\u7f6e\u4fe1\u533a\u95f4|\u53d8\u91cf",
     )
+    _negated_data_patterns = (
+        r"(?:\u6ca1\u6709|\u672a|\u5c1a\u672a|\u6682\u65e0|\u5c1a\u65e0)"
+        r"(?:\u63d0\u4f9b|\u7ed9\u51fa)?(?:.{0,4})?"
+        r"(?:\u5b9e\u9a8c)?\u6570\u636e",
+    )
     _teaching_patterns = (
         r"\u5907\u8bfe|\u6559\u6848|\u6559\u5b66\u8bbe\u8ba1|\u8bfe\u5802|\u6388\u8bfe|\u6559\u5b66\u76ee\u6807",
     )
@@ -106,6 +111,14 @@ class IntentRecognitionService:
     _solver_patterns = (
         r"\u6c42\u89e3|\u8ba1\u7b97|\u63a8\u5bfc|\u65b9\u7a0b|\u7535\u8def|\u7535\u963b|\u7535\u5bb9|\u7535\u611f|\u4f20\u9012\u51fd\u6570|\u62c9\u666e\u62c9\u65af|\u771f\u503c\u8868",
         r"solve|calculate|derive|circuit|equation|transfer function",
+    )
+    _concept_explanation_patterns = (
+        r"\u89e3\u91ca|\u8bf4\u660e|\u662f\u4ec0\u4e48|\u4e3a\u4ec0\u4e48|\u5982\u4f55\u7406\u89e3|"
+        r"\u4e3e\u4f8b|\u4f8b\u5b50|\u539f\u7406|\u6982\u5ff5|\u5b9a\u5f8b|\u5b9a\u7406|\u5173\u7cfb|\u533a\u522b|\u4f5c\u7528|\u4ecb\u7ecd",
+    )
+    _explicit_solver_action_patterns = (
+        r"\u6c42\u89e3|\u8ba1\u7b97|\u63a8\u5bfc|\u5217\u65b9\u7a0b|\u6c42\u6570\u503c|\u5df2\u77e5|\u7ed9\u5b9a",
+        r"solve|calculate|derive|compute|find the value|given",
     )
     _dynamic_circuit_patterns = (
         r"\u52a8\u6001\u7535\u8def|\u72b6\u6001\u53d8\u91cf|\u72b6\u6001\u65b9\u7a0b|\u5fae\u5206\u65b9\u7a0b",
@@ -322,6 +335,10 @@ class IntentRecognitionService:
         ):
             # A staged "analyze first, then write" request is a data workflow
             # with a downstream writing step, not a pure writing request.
+            # A negated data phrase is a boundary condition for writing, not
+            # evidence that the user asked to analyze a dataset.
+            if self._has(text, self._negated_data_patterns):
+                return "academic_writing"
             return "data_analysis"
         # Conflicting workflow signals should not be forced into whichever
         # keyword group happens to be checked first.  Keep the request on the
@@ -340,6 +357,10 @@ class IntentRecognitionService:
             return "assignment_review"
         if self._research_match(text):
             return "academic_search"
+        if self._has(text, self._concept_explanation_patterns) and not self._has(
+            text, self._explicit_solver_action_patterns
+        ):
+            return "explain_concept"
         if self._has(text, self._solver_patterns):
             return "solve_problem"
         return None

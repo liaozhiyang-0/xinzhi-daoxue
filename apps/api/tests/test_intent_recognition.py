@@ -96,6 +96,19 @@ def test_analysis_then_writing_request_keeps_analysis_as_primary_intent() -> Non
     assert decision.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
 
 
+def test_writing_request_with_missing_data_notice_stays_academic_writing() -> None:
+    request_text = (
+        "\u8bf7\u5c06\u201c\u5b9e\u9a8c\u8bf4\u660e\u6ee4\u6ce2\u5668\u6548\u679c\u5f88\u597d\u201d"
+        "\u6539\u5199\u4e3a\u4e25\u8c28\u5b66\u672f\u8868\u8fbe\uff1b"
+        "\u6ca1\u6709\u63d0\u4f9b\u5b9e\u9a8c\u6570\u636e\u3002"
+    )
+    result = IntentRecognitionService().recognize(request(request_text))
+    decision = TaskRouter(AgentRegistry()).route(request(request_text))
+
+    assert result.intent == "academic_writing"
+    assert decision.agent_id == "RESEARCH_02_ACADEMIC_WRITING_V1"
+
+
 def test_statistical_result_then_writing_request_is_a_pipeline() -> None:
     request_text = "分析AUC结果后，再写成学术摘要。"
     result = IntentRecognitionService().recognize(request(request_text))
@@ -114,6 +127,33 @@ def test_explicit_learning_intent_stays_single_agent() -> None:
     assert result.intent == Intent.EXPLAIN_CONCEPT.value
     assert result.route_mode == "single_agent"
     assert result.needs_subagents is False
+
+
+def test_concept_explanation_with_circuit_terms_uses_knowledge_route() -> None:
+    text = (
+        "\u8bf7\u7528\u57fa\u5c14\u970d\u592b\u7535\u6d41\u5b9a\u5f8b\u8bf4\u660e\u8282\u70b9\u7535\u6d41\u5173\u7cfb\uff0c"
+        "\u5e76\u7ed9\u51fa\u4e00\u4e2a\u7b80\u5355\u516c\u5f0f\u4f8b\u5b50\u3002"
+    )
+
+    result = IntentRecognitionService().recognize(request(text))
+    decision = TaskRouter(AgentRegistry()).route(
+        request(text).model_copy(update={"course_id": "CT"})
+    )
+
+    assert result.intent == "explain_concept"
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.intent == "explain_concept"
+
+
+def test_explicit_circuit_calculation_stays_solver_route() -> None:
+    text = (
+        "\u5df2\u77e5\u7535\u963b 2\u03a9 \u548c 3\u03a9 \u4e32\u8054\uff0c"
+        "\u8bf7\u8ba1\u7b97\u603b\u7535\u963b\u3002"
+    )
+
+    result = IntentRecognitionService().recognize(request(text))
+
+    assert result.intent == "solve_problem"
 
 
 def test_router_attaches_structured_intent_context() -> None:

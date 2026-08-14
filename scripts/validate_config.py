@@ -8,19 +8,42 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.agents import AgentRegistry  # noqa: E402
-from app.capabilities import default_capability_registry  # noqa: E402
-from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # noqa: E402
-from app.courses import default_course_registry  # noqa: E402
-from app.services.error_pool import ErrorPoolRegistry  # noqa: E402
-from app.services.learning_outcome import LearningOutcomeService  # noqa: E402
-from app.services.skill_registry import SkillRegistry  # noqa: E402
+from app.agents import AgentDefinition, AgentRegistry  # type: ignore[import-untyped]  # noqa: E402, I001
+from app.capabilities import default_capability_registry  # type: ignore[import-untyped]  # noqa: E402
+from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # type: ignore[import-untyped]  # noqa: E402
+from app.courses import default_course_registry  # type: ignore[import-untyped]  # noqa: E402
+from app.services.error_pool import ErrorPoolRegistry  # type: ignore[import-untyped]  # noqa: E402
+from app.services.learning_outcome import LearningOutcomeService  # type: ignore[import-untyped]  # noqa: E402
+from app.services.skill_registry import SkillRegistry  # type: ignore[import-untyped]  # noqa: E402
 
 
 def safe_status(value: str, *, required: bool) -> str:
     if value:
         return "configured"
     return "missing" if required else "not_required"
+
+
+def agent_status(
+    agent: AgentDefinition,
+    registry: AgentRegistry,
+    settings: Settings,
+) -> dict[str, object]:
+    agent_id = agent.agent_id
+    frozen = (
+        agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+        and not settings.data_analysis_enabled
+    )
+    return {
+        "agent_id": agent_id,
+        "enabled": agent.enabled,
+        "publication_status": agent.publication_status,
+        "flow_configured": bool(registry.resolve_flow_id(agent_id, settings)),
+        "runtime_available": (
+            False if frozen else registry.is_runtime_available(agent_id, settings)
+        ),
+        "frozen": frozen,
+        "unavailable_reason": "data_analysis_frozen" if frozen else "",
+    }
 
 
 def validate(settings: Settings) -> dict[str, object]:
@@ -112,17 +135,7 @@ def validate(settings: Settings) -> dict[str, object]:
             "use_local_kb_context": settings.xingchen_use_local_kb_context,
         },
         "agents": [
-            {
-                "agent_id": agent.agent_id,
-                "enabled": agent.enabled,
-                "publication_status": agent.publication_status,
-                "flow_configured": bool(
-                    registry.resolve_flow_id(agent.agent_id, settings)
-                ),
-                "runtime_available": registry.is_runtime_available(
-                    agent.agent_id, settings
-                ),
-            }
+            agent_status(agent, registry, settings)
             for agent in registry.list_agents()
         ],
         "uploads": {

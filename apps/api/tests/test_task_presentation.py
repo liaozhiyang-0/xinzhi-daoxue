@@ -42,6 +42,66 @@ def test_evidence_excerpt_removes_orphaned_formula_tail_and_dividers() -> None:
     assert "工程上认为电容的电压总是连续变化的" in cleaned
 
 
+def test_evidence_excerpt_removes_embedded_images_and_clipped_closers() -> None:
+    excerpt = (
+        r"\] \[P = UI = I^2R\]"
+        "\n![figure-1.png](images/figure-1.png)"
+        r"\n0 \) , indicating conservation of power."
+    )
+
+    cleaned = _clean_evidence_excerpt(excerpt)
+
+    assert "![" not in cleaned
+    assert "figure-1.png" in cleaned
+    assert not cleaned.startswith(r"\]")
+    assert r"0 \)" not in cleaned
+
+
+def test_shared_evidence_excerpt_removes_clipped_prefix_and_ocr_marker() -> None:
+    from app.services.evidence_excerpt import clean_evidence_excerpt
+
+    excerpt = (
+        r"t\right) \mathrm{C}\;\left( {\text{ 或 }q = {Cu} = "
+        r"\varepsilon \left( t\right) }\right) \] ---"
+        " ⑤ 工程上认为电容的电压总是连续变化的。因为实际电路中不可能出现无穷大的电流。"
+    )
+    cleaned = clean_evidence_excerpt(excerpt)
+    assert cleaned.startswith("工程上认为电容的电压总是连续变化的")
+    assert r"\right" not in cleaned
+    assert "---" not in cleaned
+    assert r"\mat" not in clean_evidence_excerpt(excerpt, max_chars=120)
+
+
+def test_display_evidence_excerpt_preserves_formula_and_markdown_source() -> None:
+    from app.services.evidence_excerpt import display_evidence_excerpt
+
+    excerpt = (
+        r"\left( {u}_{0} \right) = \frac{1}{C}"
+        "\n![figure-1](images/figure-1.png)\n---\n"
+        "特殊字符：αβ ≤ ≥"
+    )
+
+    assert display_evidence_excerpt(excerpt) == excerpt
+
+
+def test_display_evidence_excerpt_does_not_cut_formula_fragments() -> None:
+    from app.services.evidence_excerpt import display_evidence_excerpt
+
+    excerpt = "前置说明 " + ("背景文本 " * 80) + r"\[V = \frac{1}{C} q\] 后续原文"
+
+    assert len(excerpt) > 360
+    assert display_evidence_excerpt(excerpt, max_chars=360) == excerpt
+
+
+def test_display_evidence_excerpt_still_bounds_plain_text() -> None:
+    from app.services.evidence_excerpt import display_evidence_excerpt
+
+    excerpt = "普通资料 " * 200
+
+    result = display_evidence_excerpt(excerpt, max_chars=360)
+
+    assert len(result) <= 361
+    assert result.endswith("…")
 def bundle(mode: RAGInteractionMode) -> WorkflowContextBundle:
     packet = RetrievalContextPacket(
         query="为什么电容电压不能突变",
@@ -148,6 +208,39 @@ def test_runtime_knowledge_result_populates_evidence_view_without_bundle() -> No
     assert evidence[0].evidence_id == "S1"
     assert evidence[0].used_by_answer is True
     assert evidence[0].entered_workflow is True
+    assert presentation.execution_steps[2]["status"] == "completed"
+
+
+def test_runtime_knowledge_result_does_not_render_rejected_candidate_hits() -> None:
+    definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
+    rejected_hit = hit()
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local",
+        course_id="CT",
+        intent="explain_concept",
+        answer="当前问题没有足够的相关课程依据。",
+        evidence_status="insufficient",
+        structured_result={
+            "knowledge": {
+                "hits": [],
+                "candidate_hits": [rejected_hit.model_dump(mode="json")],
+            },
+            "warnings": ["检索片段与问题主题不一致"],
+        },
+    )
+
+    presentation, summary, evidence = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={"route_source": "runtime"},
+        timings={"total_ms": 120},
+    )
+
+    assert evidence == []
+    assert summary.evidence_count == 0
+    assert "课程资料" in presentation.source_summary
 
 
 def test_runtime_core_retrieval_summary_populates_evidence_view() -> None:

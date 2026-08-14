@@ -100,7 +100,7 @@ class AcademicSearchPlannerService:
         queries = _stabilize_queries(query, queries)
         updates: dict[str, object] = {"search_queries": queries[:6]}
         if _has_relative_time_request(query):
-            freshness_days = 1095
+            freshness_days = relative_freshness_days(query)
             if research_intent:
                 raw_freshness_days = research_intent.get("freshness_days")
                 if isinstance(raw_freshness_days, int):
@@ -329,6 +329,25 @@ def _has_relative_time_request(query: str) -> bool:
     return any(term in normalized for term in _RELATIVE_TIME_TERMS) and not re.search(
         r"20\d{2}", normalized
     )
+
+
+def relative_freshness_days(query: str) -> int:
+    """Translate a relative year request into a bounded retrieval window."""
+
+    match = re.search(
+        r"近\s*(\d+|[一二三四五六七八九十几]+)\s*年", query.casefold()
+    )
+    if not match:
+        return 1095
+    value = match.group(1)
+    if value.isdigit():
+        years = int(value)
+    else:
+        years = {
+            "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+        }.get(value, 3)
+    return max(365, min(years, 10) * 365)
 
 
 def _repair_relative_time_ranges(

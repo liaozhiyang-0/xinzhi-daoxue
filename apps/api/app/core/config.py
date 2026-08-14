@@ -487,6 +487,8 @@ class Settings(BaseSettings):
     enable_debug_api: bool = True
     enable_evaluation_api: bool = False
     enable_local_knowledge_qa: bool = True
+    # Product freeze: keep the data-analysis path reversible but unavailable.
+    data_analysis_enabled: bool = False
     enable_local_solver_ct: bool = False
     enable_xingchen_fallback: bool = False
 

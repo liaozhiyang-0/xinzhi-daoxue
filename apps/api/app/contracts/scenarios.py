@@ -26,6 +26,23 @@ class KnowledgeEvidencePolicy(BaseModel):
     freshness_days: int | None = Field(default=None, ge=1, le=3650)
 
 
+class ScenarioDemoCase(BaseModel):
+    """Reproducible product-facing demonstration contract for one scenario."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")
+    role: str = Field(min_length=1, max_length=32)
+    course: str = Field(min_length=1, max_length=32)
+    prompt: str = Field(min_length=80, max_length=8_000)
+    expected_agent: str = Field(min_length=1, max_length=100)
+    expected_output: list[str] = Field(min_length=1, max_length=24)
+    business_context: str = Field(min_length=1, max_length=1_000)
+    evidence_requirements: list[str] = Field(min_length=1, max_length=12)
+    review_boundary: str = Field(min_length=1, max_length=1_000)
+    acceptance_conditions: list[str] = Field(min_length=1, max_length=16)
+
+
 class ScenarioEvidenceSource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -100,6 +117,7 @@ class ScenarioDefinition(BaseModel):
     primary_value_metric: str = Field(min_length=1, max_length=200)
     evidence_requirements: list[str] = Field(min_length=1, max_length=12)
     demo_steps: list[str] = Field(min_length=1, max_length=8)
+    demo_cases: list[ScenarioDemoCase] = Field(default_factory=list, max_length=8)
     enabled: bool = True
 
 

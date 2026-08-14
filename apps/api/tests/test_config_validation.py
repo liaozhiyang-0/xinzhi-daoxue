@@ -34,6 +34,28 @@ def test_missing_xingchen_fields_are_not_required() -> None:
     assert teaching["course_packs"]["CT"]["implementation_status"] == "implemented"
 
 
+def test_frozen_data_analysis_is_not_reported_as_runtime_available() -> None:
+    result = validate(
+        Settings(
+            app_env="test",
+            default_agent_provider="mock",
+            data_analysis_enabled=False,
+            _env_file=None,
+        )
+    )
+
+    agents = result["agents"]
+    assert isinstance(agents, list)
+    research_agent = next(
+        agent
+        for agent in agents
+        if agent["agent_id"] == "RESEARCH_03_DATA_ANALYSIS_V1"
+    )
+    assert research_agent["runtime_available"] is False
+    assert research_agent["frozen"] is True
+    assert research_agent["unavailable_reason"] == "data_analysis_frozen"
+
+
 def test_xingchen_timeout_is_bounded_and_local_context_defaults_on() -> None:
     settings = Settings(app_env="test", _env_file=None)
     assert settings.xingchen_timeout_seconds == 300

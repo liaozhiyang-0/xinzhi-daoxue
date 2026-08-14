@@ -394,6 +394,32 @@ async def test_research_analysis_v2_prefers_direct_model_and_keeps_local_fallbac
     assert str(data_path) not in hub.input_text
 
 
+def test_research_analysis_no_data_message_is_user_facing_and_actionable() -> None:
+    executor, _ = service()
+    task_request = request(Intent.DATA_ANALYSIS).model_copy(
+        update={
+            "options": {
+                "request_id": "request-v2-no-data",
+                "research_analysis_v2": {
+                    "execute": False,
+                    "request": {
+                        "research_question": "不同教学方法对成绩的影响是什么？",
+                        "analysis_goal": "compare",
+                        "design": "unknown",
+                    },
+                },
+            }
+        }
+    )
+
+    result = executor._run_research_analysis_v2(task_request)
+    interpretation = str(result.business_data["interpretation"])
+
+    assert "分析计划已冻结" in interpretation
+    assert "等待质量门禁与人工复核" in interpretation
+    assert "execute=true" not in interpretation
+
+
 class FakeTaskInternalExecution:
     def available(self, agent_id: str) -> bool:
         return agent_id == "TEACH_01_LESSON_PREP_V1"

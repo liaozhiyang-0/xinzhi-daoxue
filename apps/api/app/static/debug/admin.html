@@ -162,7 +162,7 @@
   <dialog id="account-dialog" class="admin-dialog">
     <form id="account-form" class="form-stack" method="dialog">
       <div class="section-heading"><div><h2>创建账号</h2><p>密码至少 12 个字符。</p></div><button class="dialog-close" value="cancel" type="submit" aria-label="关闭">×</button></div>
-      <label>登录名<input name="login" type="email" required></label>
+      <label>登录名<input name="login" type="text" autocomplete="username" required></label>
       <label>显示名称<input name="display_name" type="text"></label>
       <label>角色<select name="role"><option value="student">学生</option><option value="teacher">教师</option><option value="researcher">研究者</option><option value="operator">运营</option><option value="admin">管理员</option></select></label>
       <label>初始密码<input name="password" type="password" minlength="12" required></label>
@@ -173,6 +173,6 @@
 
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <script src="/debug-assets/ui-core.js"></script>
-  <script src="/debug-assets/admin.js?v=20260810-role-aware-scenarios-v1"></script>
+  <script src="/debug-assets/admin.js?v=20260813-admin-task-approval-v4"></script>
 </body>
 </html>

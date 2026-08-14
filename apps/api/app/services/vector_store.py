@@ -52,7 +52,12 @@ class VectorStoreAdapter(Protocol):
         limit: int,
     ) -> list[VectorSearchHit]: ...
 
-    def retrieve_text(self, chunk_ids: Sequence[str]) -> list[VectorSearchHit]: ...
+    def retrieve_text(
+        self,
+        chunk_ids: Sequence[str],
+        *,
+        content_types: Sequence[str] = (),
+    ) -> list[VectorSearchHit]: ...
 
     def prune(self, *, text_ids: set[str], image_ids: set[str]) -> dict[str, int]: ...
 
@@ -397,7 +402,12 @@ class QdrantVectorStoreAdapter:
         return [self._hit(item) for item in response.points]
 
     @_observe("retrieve_text")
-    def retrieve_text(self, chunk_ids: Sequence[str]) -> list[VectorSearchHit]:
+    def retrieve_text(
+        self,
+        chunk_ids: Sequence[str],
+        *,
+        content_types: Sequence[str] = (),
+    ) -> list[VectorSearchHit]:
         if not chunk_ids:
             return []
         records = self.client.retrieve(
@@ -407,8 +417,11 @@ class QdrantVectorStoreAdapter:
             with_vectors=False,
         )
         output: list[VectorSearchHit] = []
+        allowed = set(content_types)
         for item in records:
             payload = dict(item.payload or {})
+            if allowed and str(payload.get("content_type", "")) not in allowed:
+                continue
             output.append(
                 VectorSearchHit(
                     item_id=str(payload.get("chunk_id") or item.id),

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("start", "stop", "status", "doctor", "preflight", "index")]
+    [ValidateSet("start", "stop", "status", "doctor", "repair", "preflight", "index")]
     [string]$Command = "start",
     [int]$Port = 8000,
     [switch]$Reload,
@@ -21,7 +21,14 @@ $RepoRoot = $PSScriptRoot
 $VenvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 
 function Find-XzdPython {
-    if (Test-Path -LiteralPath $VenvPython) { return $VenvPython }
+    if (Test-Path -LiteralPath $VenvPython) {
+        try {
+            & $VenvPython -c "import sys" *> $null
+            if ($LASTEXITCODE -eq 0) { return $VenvPython }
+        } catch {
+            # Fall through to a system interpreter so repair can rebuild .venv.
+        }
+    }
     $PyLauncher = Get-Command py -ErrorAction SilentlyContinue
     if ($PyLauncher) {
         foreach ($Version in @("3.13", "3.12", "3.11")) {
@@ -45,6 +52,11 @@ if ($Command -eq "start") {
     if ($WithCloud) { $Arguments += "--with-cloud" }
     if ($RuntimeDev) { $Arguments += "--runtime-dev" }
     if ($OpenBrowser) { $Arguments += "--open-browser" }
+} elseif ($Command -eq "stop" -or $Command -eq "doctor") {
+    $Arguments += @("--port", "$Port")
+} elseif ($Command -eq "repair") {
+    $Arguments += @("--port", "$Port")
+    if ($RuntimeDev) { $Arguments += "--runtime-dev" }
 } elseif ($Command -eq "preflight") {
     if ($WithCloud) { $Arguments += "--with-cloud" }
 } elseif ($Command -eq "index") {

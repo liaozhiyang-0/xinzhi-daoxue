@@ -13,10 +13,9 @@ from app.contracts import (
     WorkflowContextBundle,
 )
 from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
-from app.services.math_formatting_service import MathFormattingService
+from app.services.evidence_excerpt import display_evidence_excerpt
 
 COURSE_LABELS = KNOWLEDGE_COURSE_NAMES
-MATH_FORMATTER = MathFormattingService()
 
 
 def _is_orphan_formula_line(line: str) -> bool:
@@ -35,22 +34,46 @@ def _is_orphan_formula_line(line: str) -> bool:
     )
 
 
+def _clean_inline_formula_artifacts(line: str) -> str:
+    """Remove clipped closing delimiters without rewriting valid math."""
+
+    cleaned = re.sub(r"^\s*(?:(?:\\\]|\\\))\s*)+", "", line)
+    if "\\(" not in cleaned and "\\[" not in cleaned:
+        cleaned = re.sub(r"\\(?:\]|\))", "", cleaned)
+    return cleaned
+
+
+def _clean_markdown_image_links(value: str) -> str:
+    """Keep a readable image label; related images are rendered separately."""
+
+    return re.sub(
+        r"!\[([^\]]*)\]\((?:<[^>]+>|[^)\s]+)(?:\s+\"[^\"]*\")?\)",
+        lambda match: match.group(1).strip(),
+        value,
+    )
+
+
 def _clean_evidence_excerpt(value: str) -> str:
     """Keep clipped retrieval excerpts readable without fabricating missing math."""
 
     raw = str(value or "").strip()
     if not raw:
         return ""
-    lines = raw.splitlines()
+    lines = _clean_markdown_image_links(raw).splitlines()
     while lines and _is_orphan_formula_line(lines[0]):
         lines.pop(0)
-    lines = [line for line in lines if line.strip() not in {"--", "---", "\\]", "\\)"}]
+    lines = [
+        _clean_inline_formula_artifacts(line)
+        for line in lines
+        if line.strip() not in {"--", "---", "\\]", "\\)"}
+    ]
     cleaned = "\n".join(lines).strip()
     return cleaned or "该资料片段的公式未完整落在检索片段内，请打开原文查看。"
 
 
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
+    "GENERAL_MODEL_FALLBACK_V1": "通用模型回答",
     "LEARN_01_KNOWLEDGE_QA_V1": "知识问答",
     "LEARN_01_LOCAL_RETRIEVAL_V1": "知识问答",
     "SOLVER_CT_V1": "电路解题",
@@ -117,16 +140,42 @@ def build_task_views(
     external_retrieval = (
         external_retrieval if isinstance(external_retrieval, dict) else {}
     )
-    external_count = len(external_retrieval.get("items", []))
+    external_items = external_retrieval.get("items", [])
+    if not isinstance(external_items, list):
+        external_items = []
+    # Older persisted direct-search results stored only the frontend view.
+    # Reconstruct the bounded metadata projection for refresh/history views.
+    if not external_items:
+        legacy_view = result.structured_result.get("external_search_view", [])
+        if isinstance(legacy_view, list):
+            external_items = [
+                {
+                    **item,
+                    "canonical_url": item.get("url", ""),
+                    "content_excerpt": item.get("abstract", ""),
+                }
+                for item in legacy_view
+                if isinstance(item, dict)
+            ]
+    external_count = len(external_items)
     external_attempted = bool(
         external_retrieval.get("status")
         or external_retrieval.get("provider_status")
         or external_retrieval.get("warnings")
         or external_retrieval.get("search_queries")
+        or result.structured_result.get("external_search_status")
+        or external_items
     )
     course_label = COURSE_LABELS.get(result.course_id, result.course_id or "课程")
     is_solver = rag_mode == RAGInteractionMode.METHOD_REFERENCE
-    is_general = definition.agent_id == "GENERAL_QUESTION_V1"
+    is_generic_model = (
+        definition.agent_id == "GENERAL_MODEL_FALLBACK_V1"
+        or result.structured_result.get("answer_mode") == "generic_model"
+    )
+    is_general = definition.agent_id in {
+        "GENERAL_QUESTION_V1",
+        "GENERAL_MODEL_FALLBACK_V1",
+    }
     is_local_research = definition.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     is_local_knowledge_fallback = (
         result.structured_result.get("answer_mode") == "local_knowledge_fallback"
@@ -137,8 +186,14 @@ def build_task_views(
     is_external_search_result = bool(
         result.structured_result.get("external_search", False)
     )
+    scenario_contract = result.structured_result.get("scenario_contract", {})
+    scenario_contract = (
+        scenario_contract if isinstance(scenario_contract, dict) else {}
+    )
     task_label = (
-        "学术论文检索"
+        str(scenario_contract.get("presentation_label"))
+        if scenario_contract.get("presentation_label")
+        else "学术论文检索"
         if is_external_search_result
         else TASK_LABELS.get(definition.agent_id, definition.display_name)
     )
@@ -153,7 +208,6 @@ def build_task_views(
     used_count = len(used_ids)
     evidence_count = len(evidence_items)
     workflow_count = len(entered_ids)
-    external_items = external_retrieval.get("items", [])
     academic_external_count = sum(
         1
         for item in external_items
@@ -169,7 +223,12 @@ def build_task_views(
     web_external_count = max(
         0, external_count - academic_external_count - conference_external_count
     )
-    if external_count:
+    if is_generic_model:
+        source_summary = "未使用可核验资料依据"
+        evidence_message = (
+            "这是通用模型回答；资料不可用时未生成课程、科研引用或外部链接"
+        )
+    elif external_count:
         source_parts = []
         if academic_external_count:
             source_parts.append(f"论文 {academic_external_count}")
@@ -257,7 +316,12 @@ def build_task_views(
         if isinstance(quality_gate, dict)
         else "not_checked"
     )
-    if result.provider == "external_retrieval" and external_count:
+    if is_generic_model:
+        answer_quality_status = "generic_model"
+        answer_quality_message = (
+            "这是通用模型回答，不代表专业 Agent 已完成任务；请人工核对后再使用。"
+        )
+    elif result.provider == "external_retrieval" and external_count:
         answer_quality_status = "checked"
         answer_quality_message = (
             "检索结果已完成来源、时间和链接字段整理；摘要内容仍建议打开原文核对。"
@@ -309,6 +373,7 @@ def build_task_views(
         "incomplete",
         "needs_review",
         "fallback_complete",
+        "generic_model",
         "not_checked",
     }
     status_label = (
@@ -320,6 +385,8 @@ def build_task_views(
         if generation_incomplete
         else "建议复核"
         if answer_quality_status == "needs_review"
+        else "通用模型回答"
+        if is_generic_model
         else "后备模型完成"
         if fallback
         else "带提示完成"
@@ -343,6 +410,15 @@ def build_task_views(
         "direct_general_model_unavailable": (
             "专业与通用回答模型当前均不可用，请稍后重试。"
         ),
+        "route_unavailable": (
+            "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。"
+        ),
+        "target_agent_unavailable": (
+            "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。"
+        ),
+        "runtime_execution_failed": (
+            "这是通用模型回答；Runtime 执行失败，专业 Agent 未完成本次任务。"
+        ),
     }
     generation_failure_messages = {
         "model_timeout": "回答模型响应超时，请稍后重试。",
@@ -355,16 +431,22 @@ def build_task_views(
         if isinstance(model_execution, dict)
         else ""
     )
-    fallback_message = generation_failure_messages.get(
+    fallback_message = (
+        "这是通用模型回答，不代表专业 Agent 已完成任务；本次未使用可核验资料依据。"
+        if is_generic_model
+        else generation_failure_messages.get(
         generation_error,
         "回答模型本次未完成，请稍后重试。",
-    ) if generation_failed else (
+        )
+        if generation_failed
+        else (
         fallback_messages.get(
             result.fallback_reason,
             "云端主能力本次未完成，已切换到本地安全后备结果。",
         )
         if fallback
         else ""
+        )
     )
     steps = _execution_steps(result, bundle, citation_status)
     title = (
@@ -435,9 +517,7 @@ def _evidence_view(
                 chapter=hit.chapter,
                 section=hit.section,
                 content_type=hit.content_type,
-                summary=MATH_FORMATTER.process_markdown(
-                    _clean_evidence_excerpt(hit.content[:320])
-                ).markdown,
+                summary=display_evidence_excerpt(hit.content, max_chars=360),
                 source_ref=hit.source_ref,
                 related_images=hit.related_images,
                 entered_workflow=hit.evidence_id in entered_ids,
@@ -519,13 +599,14 @@ def _execution_steps(
     bundle: WorkflowContextBundle | None,
     citation_status: str,
 ) -> list[dict[str, str]]:
+    runtime_evidence = _runtime_knowledge_hits(result)
     steps = [
         {"key": "understand", "label": "需求识别", "status": "completed"},
         {"key": "route", "label": "能力编排", "status": "completed"},
         {
             "key": "retrieval",
             "label": "资料准备",
-            "status": "completed" if bundle else "skipped",
+            "status": "completed" if bundle or runtime_evidence else "skipped",
         },
     ]
     external = result.structured_result.get("external_retrieval", {})

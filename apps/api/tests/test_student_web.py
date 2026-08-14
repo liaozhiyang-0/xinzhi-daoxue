@@ -33,7 +33,6 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
 
     assert page.status_code == 200
     assert page.headers["cache-control"] == "no-store, max-age=0"
-    assert "知识问答" in page.text
     assert "自然语言自动调度" in page.text
     assert 'id="mode-control"' not in page.text
     assert "今天想学习什么" in page.text
@@ -42,21 +41,27 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "Flow ID" not in page.text
     assert "Xingchen" not in page.text
     for capability_intent in (
-        'data-capability="course_qa" data-intent="general_qa"',
-        'data-capability="circuit_reasoning" data-intent="solve_problem"',
         'data-capability="lesson_prep" data-intent="lesson_prep"',
         'data-capability="assignment_review" data-intent="assignment_review"',
+        'data-capability="student_learning_path" data-intent="learning_advice"',
         'data-capability="academic_search" data-intent="academic_search"',
-        'data-capability="academic_writing" data-intent="academic_writing"',
-        'data-capability="data_analysis" data-intent="data_analysis"',
+        'data-capability="knowledge_governance" data-intent="summarize_knowledge"',
+        'data-intent="solve_problem" data-course="AE" '
+        'data-image-src="/debug-assets/question-bank/analog-opamp.jpg"',
     ):
         assert capability_intent in page.text
+    assert page.text.count("data-capability=") == 6
+    assert "data-scenario-id=" not in page.text
+    assert "经典模电运算放大器解题" in page.text
+    assert "模电测试集_图2.1.1_运算放大器电路.jpg" in page.text
+    assert 'class="prompt-example-image"' not in page.text
+    assert 'data-capability="data_analysis"' not in page.text
     assert "专业工作流" not in page.text
-    assert "教案设计" in page.text
-    assert "作业初审" in page.text
-    assert "科研前沿检索" in page.text
-    assert "学术写作" in page.text
-    assert "数据分析" in page.text
+    assert "教师智能备课" in page.text
+    assert "作业批改与首错诊断" in page.text
+    assert "学生个性化学习路径" in page.text
+    assert "科研前沿检索与证据简报" in page.text
+    assert "学院知识库治理与课程资产发布" in page.text
     assert 'api("/api/v1/tasks"' in script.text
     assert "/debug/rag/run" not in script.text
     assert "xingchen-api" not in script.text
@@ -71,9 +76,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "let pendingMaterialFiles = []" in script.text
     assert "function appendMaterialFiles(files)" in script.text
     assert 'id="preview-images"' in page.text
-    assert "20260812-workspace-evidence-clean-v4" in page.text
-    assert "workspace.js?v=20260812-workspace-evidence-clean-v4" in page.text
-    assert "ui-core.js?v=20260812-workspace-evidence-clean-v4" in page.text
+    assert "20260814-unified-members-v1" in page.text
+    assert "workspace.js?v=20260814-unified-members-v1" in page.text
     assert 'id="left-resizer"' in page.text
     assert 'id="right-resizer"' in page.text
     assert 'id="document-dialog"' in page.text
@@ -90,6 +94,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "appendStoredAttachmentImages" in script.text
     assert "/content?user_id=" in script.text
     assert "initializeResizablePanels()" in script.text
+    assert "async function attachExampleImage(button)" in script.text
     assert "businessSectionAlreadyInAnswer" in script.text
     assert "需要人工复核" in script.text
     assert "function messageStatusText(status)" in script.text
@@ -106,7 +111,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "runSequence !== state.runSequence" in script.text
     assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
     assert "let pendingLearningFollowUp = null" in script.text
-    assert 'intent: requestedIntent' in script.text
+    assert "intent: requestedIntent" in script.text
     assert "source_task_id: learningFollowUp?.source_task_id" in script.text
     assert "pendingLearningFollowUp = result.follow_up_context || null" in script.text
     assert 'id="teaching-mode"' in page.text
@@ -130,16 +135,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert 'api("/api/v1/feedback"' in script.text
     assert "function submitTaskFeedback()" in script.text
     assert "function usesInteractiveTeaching(structured = {})" in script.text
-    assert (
-        "if (!loop || !usesInteractiveTeaching(structured))" in script.text
-    )
-    assert (
-        '["guided_learning", "check_my_work"].includes(mode)' in script.text
-    )
-    assert (
-        "retests.filter((item) => item.source_task_id === task.id)"
-        in script.text
-    )
+    assert "if (!loop || !usesInteractiveTeaching(structured))" in script.text
+    assert '["guided_learning", "check_my_work"].includes(mode)' in script.text
+    assert "retests.filter((item) => item.source_task_id === task.id)" in script.text
     assert "function verificationPresentation(report)" in script.text
     assert 'data-context-tab="context"' in page.text
     assert 'id="context-usage"' in page.text
@@ -150,11 +148,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "本次已使用" in script.text
     assert "从模型摘要中自动保存明确的稳定偏好" in page.text
     assert "ownedTaskUrl(state.currentTask.id)" in script.text
-    assert "audience: requestedWorkspaceRole" in script.text
-    assert (
-        'requestedWorkspaceRole = ["student", "teacher", "researcher"]'
-        in script.text
-    )
+    assert 'audience: "student"' in script.text
+    assert 'return role === "admin" ? "admin" : "student";' in script.text
     assert 'api("/api/v1/capabilities")' in script.text
     assert "/api/v1/sessions/${sessionId}/tasks?limit=50" in script.text
     assert "archiveCurrentAnswer()" in script.text
@@ -173,13 +168,36 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert 'text.startsWith("\\\\[", index)' in shared_script.text
     assert 'text.startsWith("$$", index)' in shared_script.text
     assert "window.katex.render" in shared_script.text
-    assert 'trust: false' in shared_script.text
+    assert "trust: false" in shared_script.text
     assert "math-latex-fallback" in shared_script.text
+    assert (
+        'class: "math-latex-fallback", text: latex || "(empty formula)"'
+        in shared_script.text
+    )
+    assert "公式片段未完整解析，请结合上下文核对原文" not in shared_script.text
+    assert "evidenceDisplayExcerpt" in script.text
     assert ".math-display" in shared_styles.text
     assert ".katex-display" in shared_styles.text
     assert katex_script.status_code == 200
     assert katex_styles.status_code == 200
     assert "/debug-assets/vendor/katex/katex.min.js" in page.text
+
+
+def test_standalone_student_source_cards_preserve_external_provenance(client) -> None:
+    script = client.get("/debug-assets/student.js")
+    assert script.status_code == 200
+    assert "function externalSourceUrl(item)" in script.text
+    assert "structured.external_retrieval?.items" in script.text
+    assert "外部来源 · 请打开原文核验" in script.text
+    assert "开发态 Mock · 非真实来源" in script.text
+    assert 'text: "打开原文"' in script.text
+    assert 'target: "_blank"' in script.text
+    assert 'rel: "noopener noreferrer"' in script.text
+    assert "function mergeStudentSources(...groups)" in script.text
+    assert "const sources = mergeStudentSources(hits, externalItems)" in script.text
+    assert "if (!keys.length)" in script.text
+    assert "source:${sourceRef}" in script.text
+    assert "renderMarkdown(excerpt" in script.text
 
 
 def test_workspace_capabilities_hide_provider_implementation(client) -> None:
@@ -276,12 +294,8 @@ def test_research_followup_is_routed_with_session_context_before_creation(
     assert second["input_content"]["options"]["previous_agent"] == (
         "RESEARCH_01_ACADEMIC_SEARCH_V1"
     )
-    assert second["input_content"]["options"]["previous_intent"] == (
-        "academic_search"
-    )
-    assert second["input_content"]["options"]["previous_task_family"] == (
-        "research"
-    )
+    assert second["input_content"]["options"]["previous_intent"] == ("academic_search")
+    assert second["input_content"]["options"]["previous_task_family"] == ("research")
 
 
 def test_course_switch_clears_previous_answer_context(settings) -> None:

@@ -2502,3 +2502,233 @@ node scripts\run_runtime_teacher_browser_acceptance.js
   Windows cleanup and were stopped; this remains an environment limitation,
   not a passing test result. Teacher approval still requires an authorized
   teacher identity, and protected RESEARCH_03 remains excluded.
+
+## 145. 2026-08-12 real Edge teacher approval and evidence-card cleanup
+
+- Through the formal Edge admin UI, a synthetic local admin created a synthetic
+  teacher account. The teacher then created a Circuit Theory lesson-prep task,
+  submitted the visible approval control, and the task resumed from its Runtime
+  checkpoint to terminal completion. The result showed five course evidence
+  items and the completed Runtime process state.
+- The approval flow exposed a real account-form defect: the admin create-account
+  login field used `type="email"` even though the API accepts ordinary internal
+  login names. The field now uses a text input with a matching page regression
+  assertion.
+- The same lesson result exposed a second evidence presentation defect on the
+  real Runtime path: clipped excerpts contained raw Markdown image links and
+  orphaned `\\]`/`\\)` math closers. Backend and Workspace cleanup now keep a
+  readable image label, render related images separately, and remove only
+  clearly clipped closing delimiters. The Workspace cache ID advanced to `v5`.
+- After a single-service restart and a fresh Edge teacher login, the persisted
+  lesson task restored as `已完成`. The evidence panel showed S1–S5 without raw
+  image Markdown or orphaned closers. Opening S2 displayed the read-only source
+  dialog with a rendered equation and course figure, without raw Markdown or a
+  standalone loading state.
+- A separate fresh teacher task was intentionally stopped after it remained in
+  execution too long. The first post-stop render briefly retained a waiting-
+  approval control, but a page refresh restored the durable `已取消` terminal
+  state with no approval control. This transient control-refresh issue is a
+  remaining frontend risk and was not counted as a successful approval flow.
+- Ruff and JavaScript syntax checks passed. The combined targeted Pytest command
+  again exceeded the bounded Windows cleanup timeout and was stopped; this is
+  not reported as a passing test result. Protected research-data paths remain
+  excluded, and the full product audit remains unfinished.
+
+## 146. 2026-08-12 real Edge cross-course routing and source-document HTML cleanup
+
+- A formal Edge run after a CT conversation switched to `模拟电子技术` and
+  submitted an explanation question. Before the fix it fell back to
+  `GENERAL_QUESTION_V1`; the persisted task had `course_id=AE` but no course
+  evidence. The router now allows a clear explanation/concept request to leave
+  the previous agent context, while keeping quantified solver requests on the
+  solver route.
+- The same request was rerun in real Edge. It completed on
+  `LEARN_01_LOCAL_RETRIEVAL_V1`, displayed `知识问答 · 模拟电子技术`, showed
+  three evidence cards, and exposed S1–S3 in the evidence panel. Opening S1
+  confirmed the read-only source dialog and rendered formulas/images; this is
+  a real UI pass, not a mock claim.
+- The source dialog then exposed a remaining presentation issue in the raw
+  document payload: embedded HTML tables and image tags were displayed as
+  literal source text. The Workspace now converts those tables to readable
+  Markdown tables, converts image tags to safe image references, removes
+  structural HTML, and preserves the existing formula/image cleanup. Asset
+  cache IDs advanced to `v6`.
+- The local knowledge task initially remained on `正在检索课程资料` in real Edge.
+  The cause was the formal Workspace payload setting `allow_cloud=false` while
+  the knowledge service still entered model generation after retrieval. The
+  service now returns the local retrieval answer directly for an explicit cloud
+  opt-out; a dedicated regression test covers this boundary. The real Edge task
+  then completed with three evidence cards and a readable answer.
+- The final `v6` source-dialog pass completed in real Edge after Docker
+  dependencies recovered: the dialog rendered readable Chinese, formulas,
+  and tables, with no literal `<table>`, `<td>`, or `<img>` source tags in the
+  visible text. This is a focused UI pass, not a claim that every product area
+  has passed.
+- The fallback answer remains intentionally conservative but is too generic for
+  a voltage-gain question; a later content-quality pass should add a direct
+  gain formula only when the retrieved evidence supports it.
+
+## 147. 2026-08-12 real Edge multi-domain frontend regression
+
+- A fresh formal Edge Workspace session completed local knowledge questions
+  across CT, AE, and DE. Each task reached a terminal result through the real
+  SSE path and displayed three course-evidence cards; formulas rendered in the
+  answer and source surfaces. This is focused browser evidence, not a claim
+  that every Runtime path is release-ready.
+- The real CT circuit-analysis path completed after an approximately 45-second
+  bounded wait with the expected `2 A` result, KVL derivation, power check, and
+  method-reference cards. An earlier 20-second observation was too short and
+  was stopped; it is recorded as an observation-window issue, not a backend
+  failure.
+- The real guest teacher-role page correctly exposed read-only feedback and
+  review queues without approval controls. The previously recorded authorized
+  synthetic teacher browser run remains the evidence for the approval/resume
+  path; guest access is not counted as teacher authorization.
+- The real academic-search path completed external retrieval in about 41
+  seconds and reached structured-answer validation after the browser stop was
+  requested. The resulting task was correctly persisted as cancelled, so the
+  UI test confirms cancellation and bounded external-retrieval behavior rather
+  than a successful research answer.
+- The answer renderer now converts inline `**bold**` markers to semantic
+  `<strong>` nodes. Real Edge refresh confirmed that circuit self-check labels
+  no longer show raw Markdown markers. The Workspace asset cache ID advanced
+  to `v7`.
+- Remaining product risks from this pass are semantic answer quality for
+  conservative local fallback answers, explicit progress/ETA for 40+ second
+  external or solver work, and a complete authenticated assignment-review run.
+
+## 148. 2026-08-12 Edge evidence-count and raw-LaTeX cleanup follow-up
+
+- A real Edge reload of the CT circuit task exposed a user-visible count
+  mismatch: the answer chip said `方法参考 3 条`, while the legacy hidden
+  summary still said `参考课程资料 0`; the visible context panel contained
+  three evidence cards. The Workspace now synchronizes that legacy summary
+  with the rendered evidence-card count.
+- The same cards exposed undelimited fragments such as
+  `{20}\\mathrm{\\;A}` in the excerpt text. Evidence cleanup now removes the
+  safe subset of raw `\\mathrm`/`\\text` wrappers, spacing commands, and simple
+  numeric braces while preserving delimited math for the renderer.
+- After the cache ID advanced to `v8`, real Edge reloaded the persisted CT
+  task and showed `参考课程资料 3`, three evidence cards, and readable `20 A`
+  text. A DOM check found no raw `\\mathrm`, simple numeric-brace fragments,
+  HTML tags, Markdown image links, orphaned math closers, or raw bold markers
+  in the visible evidence panel.
+- `node --check` for `workspace.js` and Ruff for the changed web tests passed.
+  The previously slow route-shell test was rerun with a 120-second bound and
+  passed all 9 parameterized routes in 85.31 seconds; the earlier 60-second
+  timeout was a test-runtime budget issue, not a route assertion failure.
+
+## 149. 2026-08-12 authenticated teacher assignment-review flow
+
+- A fresh synthetic teacher account was created through the formal registration
+  page and the authenticated Edge Workspace completed an assignment-review
+  task for a deliberately incorrect CT answer. The real SSE sequence showed
+  intent recognition, execution planning, capability orchestration, local
+  retrieval, structured answer generation, and result validation.
+- The result presented correct points, improvement points, and an explicit
+  `建议分仅供教师复核，不是正式成绩` boundary. It also marked the case as
+  `需要人工复核`, displayed three course evidence cards, and did not expose
+  student personal information or provider credentials.
+- Refreshing the authenticated Workspace restored the same task, evidence
+  cards, review warning, and teacher identity. This confirms the user-facing
+  task/history recovery path for assignment review.
+- The formal teacher dashboard loaded with course filters, material-quality
+  status, OCR review queues, and CT/AE error-template review queues. It clearly
+  reported that the feedback loop feature is currently disabled. The feedback
+  form is therefore intentionally hidden, and the authenticated teacher was
+  correctly denied access to the admin feature-switch console; no permission
+  bypass or direct database change was performed. Enabling this feature remains
+  a release-configuration decision.
+- The restored assignment evidence exposed a second-generation clipping issue:
+  undelimited `\\(`/`\\]`, truncated commands such as `thrm{}`, and simple
+  formula braces survived in historical excerpts. Workspace cleanup v9 now
+  converts the safe subset of these fragments (`\\times`, `\\mathbf`, simple
+  fractions and unmatched braces) to readable text. Edge verification showed
+  no raw formula commands, HTML tags, Markdown image links, or raw bold markers
+  in the visible evidence panel.
+
+## 150. 2026-08-12 formal Edge follow-up: evidence policy and terminal UI recovery
+
+- A real academic-writing task initially showed two external paper cards even
+  though the user asked only for a careful rewrite and explicitly supplied no
+  data or literature. The cause was the external-retrieval allowlist treating
+  the academic-writing agent category as sufficient retrieval intent. The
+  TaskRunner boundary now blocks that agent-only category while preserving
+  explicit citation, literature, freshness, and source-follow-up requests.
+- A no-data data-analysis task correctly stopped before computation, but the
+  visible answer leaked the implementation instruction `execute=true`. The
+  local analysis path now presents a Chinese quality-gate and manual-review
+  explanation instead. The service regression test confirms that the internal
+  execution flag is absent from the user-facing interpretation.
+- Formal Edge interaction also exposed a separate completion UX risk: the
+  frontend depended primarily on terminal SSE events, while the backend could
+  already persist a terminal task state while the stream remained open. The
+  workspace now polls the task terminal state every 1.2 seconds independently
+  of SSE and cleans that timer on completion; the asset cache ID is v10.
+- The two policy boundaries and the UI regression checks passed in a bounded
+  20-test run. The final v10 Edge page load/hand-off was interrupted by the
+  browser extension response timeout, so a fresh post-v10 visual confirmation
+  of both task result cards remains required. This is recorded as an Edge
+  harness/observation limitation, not as a passed end-to-end verification.
+### 151. 2026-08-12 正式 Edge 前后端回归补充
+
+- 在正式 Edge 页面完成知识问答、电路分析、教案设计、作业初审和历史恢复验证：页面能展示课程资料数量、资料卡片、执行过程与业务提示；作业初审明确“不自动给出正式成绩”，刷新后可恢复历史结果。
+- 发现并修复工作台新建会话未清空 `intentOverride` 的路由缺陷：用户先选择数据分析，再新建会话选择学术写作时，输入框虽显示新任务，后端仍可能收到旧的 `data_analysis` 意图。修复后资源版本升级为 `workspace-evidence-clean-v11`，正式 Edge 已确认学术写作进入 `RESEARCH_02_ACADEMIC_WRITING_V1`，不再误路由到数据分析。
+- 数据分析路径仍按约束不读取、不修改受保护的 Research Analysis Runtime；真实页面公开表现为后台任务失败，需后续在允许审计该 Runtime 的阶段单独处理，当前不宣称该领域通过。
+- 学术写作真实页面已进入预期人工审批 checkpoint，前端显示“等待人工审批”，未将未审批任务伪装为完成。
+- 之前观察到的 KaTeX `innerText` 重复主要来自隐藏 MathML 与可视 HTML 双树，不等同于截图中的可视重复；当前未据此做破坏性渲染修改。
+- 本轮 API 以单实例运行在 `127.0.0.1:8031`；健康检查返回 200，数据库、Redis、MinIO 为 ok，Provider 为 mock，星辰 Runtime 不可用。
+- 复核限制：本轮 Python 解释器在当前 Windows 会话中多次被进程创建权限/引号问题阻断，新增回归测试未能实际启动；Node 语法、Ruff 和 `git diff --check` 已执行并通过。
+
+## 152. 2026-08-12 正式 Edge：资料依据呈现清理
+
+- 通过正式 Edge 新建课程知识问答复现：资料卡片会暴露截断的 LaTeX/OCR 残片，例如 `⑤`、`---`、`\\mat` 和 `\\sim \\infty`；检索到的课程资料本身正确，但学生看到的依据不够可读。
+- 新增共享的 `evidence_excerpt` 清洗器，并让结构化检索摘要、回答中的本地资料依据以及资料卡片摘要统一使用它。清洗器移除图片链接包装、孤立公式闭合符、OCR 编号、分隔线残片和截断处不完整的 LaTeX 命令，不补写缺失的数学内容。
+- API 重启后再次通过正式 Edge 提交全新任务，页面显示 3 张可读资料卡片；DOM 检查未发现 `⑤`、`---`、`\\mat` 或 `\\sim \\infty` 残片，局部截图也确认可视区域正常。KaTeX 的 `innerText` 重复仍属于无障碍 MathML 与可视 HTML 双树的检查产物，本轮未改动正常的视觉公式渲染。
+- Ruff、Node 语法检查和 `git diff --check` 已通过。由于当前 Windows 会话持续出现 Python 进程创建失败，新增 Python 回归测试未能实际启动；这属于验证限制，不宣称 pytest 已通过。
+
+## 153. 2026-08-12 正式 Edge：多领域用户回归补充
+
+- 课程知识问答：新建任务完成，资料依据卡片可读，清洗后的页面未再出现已确认的 OCR/LaTeX 截断残片。
+- 普通电路题：后端最终成功并持久化了完整答案，但从用户提交到完成约 124 秒；期间前端持续显示“正在处理当前任务”，没有明确的预计等待或超时提示。刷新页面后结果正确恢复。该路径暂记为响应时延/等待体验风险，尚未修改超时策略。
+- 作业初审：结果明确显示“建议分仅供教师复核，不是正式成绩”，并展示人工复核提示；未发现自动给出正式成绩的表现。
+- 教案设计：历史结果可恢复，页面展示“带提示完成”和“需要教师确认”，并标注未提供依据的内容待核验。
+- 学术写作：新建任务正确路由到 `RESEARCH_02_ACADEMIC_WRITING_V1`，进入“等待人工审批”；学生游客身份看不到审批按钮，刷新后仍恢复为“已从持久化 checkpoint 恢复”。教师工作台可打开并展示材料质量、OCR 与错误模板复核队列；当前浏览器仍是游客身份，URL 参数不会绕过真实授权，因此未执行审批写入。
+- 当前服务健康检查为 200，数据库、Redis、MinIO 正常，Provider 为 mock；未启动第二个 API/Worker。数据分析和受保护的 Research Analysis Runtime 仍未审计。
+
+## 154. 2026-08-12 正式 Edge：普通题长等待反馈
+
+- 复核确认普通电路题的长等待来自真实模型链路：一次任务后端约 124 秒完成，另一条同类任务约 54 秒完成；并非任务丢失或 SSE 终态未持久化。期间任务最终均为 `completed`，刷新后结果可恢复。
+- 工作台 v12 增加长等待用户反馈：等待 15 秒后显示“正在等待模型响应”，等待 60 秒后显示“模型响应较慢，仍会自动完成”，并明确提示任务仍在后台运行、不要重复提交；任务完成、失败、取消或停止时清理计时器。
+- 正式 Edge 已加载 `/debug-assets/workspace.js?v=20260812-workspace-long-wait-v12`，18 秒时实测显示等待提示，执行过程同步显示相同状态。该改动只涉及前端状态解释，不改变 Task/SSE/Provider 边界和模型预算。
+- Node 语法、Ruff 与 `git diff --check` 通过；Python 回归测试仍需在进程创建问题解决后补跑。
+
+## 155. 2026-08-12 正式 Edge：数据分析边界与失败历史恢复
+
+- 在正式 Edge 以游客身份提交“尚未提供数据”的数据分析请求。后端任务按当前受保护 Runtime 边界进入失败/未执行状态；前端不再显示通用的“旧响应格式”，而是明确展示“未执行 · 数据边界”、研究设计与数据授权门禁，并说明没有读取或计算原始数据。
+- 该场景的结果展示使用“数据分析尚未执行”和“任务未执行，不代表分析结论失败”等用户可理解的边界文案；没有伪造分析结论，也没有绕过数据授权门禁。正式 Edge v13 已完成即时结果复核。
+- 进一步发现刷新后重新点击历史会话时，失败任务曾退回“等待提问”，导致用户看不到刚才的边界说明。工作台历史恢复现在同时恢复 `completed`、`failed` 和 `cancelled` 终态；正式 Edge v14 复核通过，失败历史任务可恢复显示同一研究设计门禁和未执行说明。
+- 本轮只修改公开前端状态恢复与展示，不读取或修改受保护的 Research Analysis Runtime。Node 语法、Ruff、`git diff --check` 已通过；Python 回归测试仍受当前 Windows 进程创建问题阻断，不能宣称 pytest 已通过。
+
+## 156. 2026-08-12 本地运行环境自检/修复治理
+
+- 正式 Edge 取消流程复测期间发现页面“会话列表暂不可用”和“服务器内部错误”并非停止按钮本身导致；当时直接 Uvicorn 使用了容器内 `postgres`/`redis`/`minio` 主机名，而本机 API 应使用 `localhost` 覆盖配置，造成宿主 API 无法连接依赖。
+- 进一步确认固定 Compose 项目的 PostgreSQL、Redis、MinIO、Qdrant 容器均可恢复且数据卷仍在；之前反复启动失败还暴露出损坏/被锁定的 `.venv` 会阻止任何新的 API 进程创建。
+- 启动器新增统一 `doctor` 运行环境检查和 `repair` 安全修复路径：检查解释器、Docker、项目容器健康状态、端口未知占用/重复本项目进程与 API；修复只启动项目容器、执行增量迁移和恢复单实例 API，不删除卷、不接管未知进程。损坏 `.venv` 会移动到 `.codex-tmp/venv-backups/` 后再重建。
+- 新增启动器回归断言覆盖无密钥泄露、容器状态识别、端口安全门和 repair 命令解析；修正动态加载兼容性和测试隔离后，`pytest --no-cov apps/api/tests/test_team_launcher.py -q` 实测 `22 passed`。Ruff 与 `git diff --check` 也已通过。
+- 随后使用系统 Python 触发 repair：本机 `.venv` 经过可执行性检查后被继续复用，未发生重建；依赖容器继续复用原固定数据卷。`doctor --port 8031` 实测 11/11 通过，API `/health` 为 `status=ok`，数据库、Redis、MinIO 均为 ok，8031 仅有一个本项目 API 监听 PID。若后续再次确认解释器损坏，repair 才会把旧环境移动到 `.codex-tmp/venv-backups/` 后重建。
+- 依赖恢复后正式 Edge 复测停止流程通过：运行中“停止”按钮可用，点击后立即显示“任务已停止/未生成新回答”，重新打开工作台后停止任务历史仍可见。此前的“服务器内部错误/会话列表不可用”归因于宿主 API 使用了容器内连接地址以及损坏虚拟环境，不再作为当前产品路径结论。
+
+## 157. 2026-08-12 ��ʽ Edge�������������»Ự״̬�ع�
+
+- �½��Ự����ʵ�ύ֪ʶ�ʴ�ʱ��ǰ����������һ�Ự�����ݷ���������ԭ���� `resetConversation()` ����˴𰸵�û�����¼����о��������Ŀɼ�״̬��v20 ���ӻỰ���ú�����ˢ�£�Edge ��֤�»Ự������ʾ�������嵥 JSON�����о�������
+- Runtime ֪ʶ�ʴ�ʵ�ʷ��� 3 ���γ�֤�ݣ���ִ�й�������ʾ������׼��������δִ�С���ԭ���ǳ��ֲ�ֻ�� `WorkflowContextBundle` �жϼ����Ƿ�ִ�У�δ���� Runtime ����е� `knowledge.hits`���ָ�Ϊ Runtime ֤��Ҳ��ǡ�����׼��������ɡ������� Edge ��֤���Ͽ��Կ�չ����
+- ԭ�ĵ����е����� KaTeX ��ʽ���������Ű棻����Դ���� OCR/������������ 18 ����ʽƬ�Σ�v21 ������ʾ��ɫ LaTeX/�����Ƭ������ʾ������ʾ����ʽƬ��δ�������������������ĺ˶�ԭ�ġ������ڵ�������˵���������˹��˶Ա߽硣ԭʼ�γ�����δ���޸ġ�
+- Edge ˢ�º����´���ʷ֪ʶ�ʴ𣬻ش��������ݺ��о�����״̬����ȷ�ָ���Node �﷨��顢`git diff --check` ͨ����Python pytest/mypy �������� Windows �Ự���� Python �ӽ��̡��ܾ����ʡ����ƣ�δ����ͨ����
+
+## 158. 2026-08-12 ��ʽ Edge����������̨����
+
+- ��ʦ����̨ `/teacher` ���ο����ݴ򿪳ɹ����γ�ɸѡ��ѧϰָ�갲ȫ�߽硢OCR ֻ�����˶��С�CT/AE ����ģ�帴�˶��о��ɼ��������ջ��ر�ʱҳ����ȷ��ʾ������ȡ����ָ�ꡱ��δִ��ԽȨд�롣
+- �о��߹���̨ͨ����ʽ�������ύ����ǰ�ؼ���������ʵִ�й�����ʾ�ⲿ֤�ݼ�����ɣ�������� 2 ����Դ��ʱ���ߡ���Դ���ͺ�֤�����ƣ�������������ṩ arXiv �� DOI �ɵ�����ӡ���ǰ�������� mock �����²��ɼ������ʹ���û��ɼ���������֤�Զ�·�ɣ�û���ƹ�Ȩ�ޡ�
+- �̰������ʵ������ҳ�泤ʱ��ͣ���ڼƻ��ڵ� `partial`��û��α����ɣ�Ҳû�����ο���ʾ������ť�����ֹͣ��������ʾȡ����ˢ�¹���̨δ�ָ��ɴ������ɽ������·���Դ��ں���·���ȴ�/�����ɹ۲��Է��գ���Ҫ����ר��������
+- ������̨ `/admin` ���ο���ʾ����Ա��¼�͡���ǰ�˺�û�й���ԱȨ�ޡ���δִ�е�¼�ƹ������д�롣

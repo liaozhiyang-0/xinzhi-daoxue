@@ -299,6 +299,48 @@ def test_document_page_anchors_and_pages_even_when_chunk_is_stale(
         assert next_page["anchor_status"] == "not_requested"
 
 
+def test_document_page_defaults_to_bounded_chunk_context(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={"chunk": "chunk-1"},
+        )
+
+        assert response.status_code == 200
+        page = response.json()
+        assert page["anchor_status"] == "matched"
+        assert page["end_offset"] - page["start_offset"] <= 8_000
+        assert r"$I=\frac{10}{5}=2A$" in page["content"]
+
+
+def test_document_page_prefers_evidence_anchor_over_stale_chunk_context(
+    tmp_path: Path,
+) -> None:
+    target = "ANCHOR_KCL_TARGET"
+    document_path = tmp_path / "ct" / "chapter.md"
+    with make_client(tmp_path) as client:
+        document_path.write_text(
+            ("prefix material\n" * 80) + f"{target}: KCL evidence\n" + ("tail\n" * 80),
+            encoding="utf-8",
+        )
+
+        response = client.get(
+            "/api/v1/knowledge/document-pages/CT/chapter.md",
+            params={
+                "chunk": "chunk-1",
+                "anchor": target,
+                "limit": 4000,
+                "normalize_math": "false",
+            },
+        )
+
+        assert response.status_code == 200
+        page = response.json()
+        assert page["anchor_status"] == "matched"
+        assert target in page["content"]
+        assert "KCL evidence" in page["content"]
+
+
 def test_document_page_reports_missing_anchor_without_hiding_document(
     tmp_path: Path,
 ) -> None:

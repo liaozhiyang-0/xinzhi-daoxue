@@ -13,6 +13,7 @@ from app.contracts.external_retrieval import (
     ExternalRetrievalResult,
 )
 from app.core.config import Settings
+from app.services.academic_search_planner import relative_freshness_days
 
 _FLEXIBLE_ELECTRONICS_SCOPE_TERMS = (
     "柔性电子",
@@ -109,6 +110,12 @@ _AGENT_SCOPE_TERMS = (
     "planning",
 )
 
+_RELATIVE_DATE_WINDOW_PATTERN = re.compile(
+    r"近(?:\d+|[一二三四五六七八九十百几]+)\s*年|近年|最近|近期|"
+    r"recent|latest|last\s+(?:few|several|\d+)\s+years",
+    flags=re.IGNORECASE,
+)
+
 
 def _matches_query_scope(
     query: str,
@@ -195,11 +202,33 @@ class AcademicPaperReviewService:
         now = datetime.now(UTC)
         candidates: list[ExternalEvidenceItem] = []
         warnings = list(result.warnings)
-        requested_year_range = _requested_year_range(query)
+        requested_year_range = _requested_year_range(query, now=now)
+        relative_cutoff = (
+            now - timedelta(days=relative_freshness_days(query))
+            if _RELATIVE_DATE_WINDOW_PATTERN.search(query)
+            else None
+        )
+        requires_verifiable_date = bool(
+            requested_year_range or _RELATIVE_DATE_WINDOW_PATTERN.search(query)
+        )
         for item in result.items:
-            item_date = item.updated_at or item.published_at
+            item_date = item.published_at or item.updated_at
+            if requires_verifiable_date and item_date is None:
+                warnings.append(
+                    f"{item.evidence_id}: rejected missing publication date"
+                )
+                continue
             if item_date is not None and item_date > now + timedelta(days=1):
                 warnings.append(f"{item.evidence_id}: rejected future publication date")
+                continue
+            if (
+                relative_cutoff is not None
+                and item_date is not None
+                and item_date < relative_cutoff
+            ):
+                warnings.append(
+                    f"{item.evidence_id}: rejected outside relative date window"
+                )
                 continue
             if (
                 requested_year_range is not None
@@ -422,6 +451,14 @@ def _is_ai_frontier_request(query: str) -> bool:
     )
 
 
-def _requested_year_range(query: str) -> tuple[int, int] | None:
+def _requested_year_range(
+    query: str, *, now: datetime | None = None
+) -> tuple[int, int] | None:
     years = sorted({int(value) for value in re.findall(r"20\d{2}", query)})
-    return (years[0], years[-1]) if len(years) >= 2 else None
+    if len(years) >= 2:
+        return years[0], years[-1]
+    if _RELATIVE_DATE_WINDOW_PATTERN.search(query):
+        reference = now or datetime.now(UTC)
+        start = reference - timedelta(days=relative_freshness_days(query))
+        return start.year, reference.year
+    return None

@@ -401,6 +401,54 @@ agents:
     validator_type: generic
     renderer_type: generic
 
+  GENERAL_MODEL_FALLBACK_V1:
+    display_name: 通用模型兜底回答
+    version: "1.0"
+    schema_version: "1"
+    scene: learning
+    provider:
+      type: local
+      timeout_seconds: 120
+      max_retries: 0
+      parser_type: plain_text
+      output_schema: general_model_fallback_v1
+    enabled: true
+    publication_status: local
+    route_when_unconfigured: true
+    mode: local_model
+    execution_mode: local
+    local_handler: app.services.general_question_service.GeneralQuestionService
+    priority: 5
+    task_families: [FALLBACK]
+    capabilities:
+      user_roles: [student, teacher, researcher, admin]
+      courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC, UNKNOWN]
+      intents: [fallback, general_qa, unknown]
+      input_modes: [text]
+      supports_session_context: false
+      supports_images: false
+    input_mapping:
+      text: {source: text, transform: string, max_length: 12000}
+    input_contract:
+      required: [text]
+      optional: []
+    retrieval_policy:
+      enabled: false
+      policy_name: generic_model_fallback_no_rag
+      mode: no_rag
+      course_required: false
+      text_top_k: 0
+      image_top_k: 0
+      reranker: off
+      context_max_chars: 0
+      generation_injection: false
+    fallback:
+      type: none
+      handler: no_fallback
+      trigger_on: []
+    validator_type: generic
+    renderer_type: generic
+
   TEACH_01_LESSON_PREP_V1:
     display_name: 智能备课
     version: "1.0"
@@ -467,7 +515,11 @@ agents:
       text_top_k: 5
       image_top_k: 3
       reranker: off
-      allowed_content_types: [chapter_summary, concept, method, worked_example]
+      # Teaching evidence may come from imported textbook chunks whose audit
+      # classifier cannot confidently label the chunk as concept/method. Keep
+      # those bounded types available to retrieval; RetrievalContextService
+      # still enforces the requested topic before a source becomes evidence.
+      allowed_content_types: [chapter_summary, concept, method, worked_example, mixed, unknown]
       context_max_chars: 12000
       generation_injection: true
     fallback:

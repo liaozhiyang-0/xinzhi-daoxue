@@ -180,6 +180,33 @@ async def test_failed_agent_result_is_rejected_before_terminal_writes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_empty_completed_result_is_rejected_before_terminal_writes() -> None:
+    boundary, presentation, session_commit, result_commit = make_boundary()
+    kwargs = boundary_kwargs(
+        result=AgentResult(
+            status=AgentResultStatus.COMPLETED,
+            agent_id="agent.test",
+            provider="mock",
+            answer="   ",
+        ),
+        runtime_run=make_run(RuntimeRunStatus.COMPLETED),
+    )
+    task = kwargs["task"]
+
+    with pytest.raises(TaskTerminalCommitError) as exc_info:
+        await boundary.commit(**kwargs)
+
+    assert exc_info.value.details == {
+        "result_status": "completed",
+        "reason": "empty_answer",
+    }
+    assert task.status == TaskStatus.RUNNING
+    presentation.apply.assert_not_called()
+    session_commit.assert_not_awaited()
+    result_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_result_commit_appends_completion_event_only_for_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

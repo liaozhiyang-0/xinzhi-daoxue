@@ -14,7 +14,7 @@ routes:
     options: {temperature: 0.0, max_tokens: 700}
   research_intent_classification:
     primary: qwen_text_fast
-    fallback: spark_reasoner
+    fallback: qwen_vision_primary
     max_retries: 0
     fallback_on_timeout: false
     options: {temperature: 0.0, max_tokens: 500}
@@ -24,20 +24,41 @@ routes:
     max_retries: 0
     fallback_on_timeout: false
     options: {temperature: 0.1, max_tokens: 5000}
-  course_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
-  intent_classification: {primary: spark_reasoner, fallback: qwen_text_fast}
-  query_rewrite: {primary: spark_reasoner, fallback: qwen_text_fast}
-  retrieval_keyword_generation: {primary: spark_reasoner, fallback: qwen_text_fast}
+  course_classification:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.0, max_tokens: 256}
+  intent_classification:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.0, max_tokens: 384}
+  query_rewrite:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.0, max_tokens: 500}
+  retrieval_keyword_generation:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.0, max_tokens: 500}
   structured_output_normalization:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
-  knowledge_answer: {primary: spark_reasoner, fallback: qwen_text_fast}
+  knowledge_answer:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1, max_tokens: 2400}
   general_question_answer:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
     max_retries: 0
     fallback_on_timeout: false
     options: {timeout: 45}
+  general_model_fallback:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {temperature: 0.1, max_tokens: 2048}
   academic_direct_answer:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
@@ -51,30 +72,42 @@ routes:
     primary: qwen_vision_primary
     fallback: qwen_vision_fast
     options: {high_resolution: true}
-  multi_image_summary: {primary: spark_reasoner, fallback: qwen_text_fast}
+  multi_image_summary:
+    primary: qwen_vision_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1, max_tokens: 1800}
   conversation_memory_summary:
     primary: qwen_text_fast
     fallback: qwen_vision_primary
     options: {temperature: 0.1, max_tokens: 1200}
   complex_circuit_reasoning:
-    primary: spark_reasoner
-    verifier: qwen_vision_primary
+    primary: qwen_vision_primary
+    fallback: qwen_vision_fast
+    verifier: qwen_vision_fast
+    options: {high_resolution: true, temperature: 0.1, max_tokens: 3200}
   academic_problem_solving:
     primary: qwen_vision_primary
-    fallback: spark_reasoner
-    verifier: qwen_vision_primary
+    fallback: qwen_vision_fast
+    verifier: qwen_vision_fast
     options:
-      spark_response_transport: stream
-      spark_stream_total_timeout_seconds: 50
+      high_resolution: true
+      temperature: 0.1
+      max_tokens: 3600
   academic_problem_solving_simple:
-    primary: spark_reasoner
+    primary: qwen_vision_fast
     fallback: qwen_vision_primary
-    verifier: qwen_vision_primary
+    verifier: qwen_vision_fast
     options:
-      spark_response_transport: stream
-      spark_stream_total_timeout_seconds: 50
-  lesson_prep: {primary: spark_reasoner, fallback: qwen_vision_primary}
-  assignment_review: {primary: spark_reasoner, fallback: qwen_vision_primary}
+      temperature: 0.1
+      max_tokens: 2800
+  lesson_prep:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1, max_tokens: 3000}
+  assignment_review:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    options: {temperature: 0.1, max_tokens: 2800}
   academic_writing:
     primary: qwen_vision_primary
     fallback: qwen_text_fast

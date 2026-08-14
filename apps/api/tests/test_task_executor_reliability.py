@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
 
 import pytest
+from app.contracts import AgentEventType
 from app.main import create_app
 from app.models import TaskStatus
 from app.repositories import TaskRepository
 from app.services.task_executor import LocalTaskExecutor, QueueTaskExecutor
 from app.services.task_queue import InMemoryTaskQueue
+from app.services.task_runner import TaskRunner
 from fastapi.testclient import TestClient
 
 
@@ -42,6 +45,30 @@ async def test_queue_executor_publishes_without_local_fallback() -> None:
     assert await queue.receive(timeout_seconds=1) == "task-1"
     await executor.shutdown()
     assert queue.closed is True
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_background_research_ingest() -> None:
+    class ExternalRetrieval:
+        async def shutdown(self) -> None:
+            return None
+
+    runner = TaskRunner.__new__(TaskRunner)
+    runner._tasks = {}
+    runner._post_tasks = {}
+    runner._research_tasks = {}
+    runner.external_retrieval_execution = ExternalRetrieval()
+    runner.rag_retrieval = None
+
+    async def lingering_ingest() -> None:
+        await asyncio.sleep(60)
+
+    ingest_task = asyncio.create_task(lingering_ingest())
+    runner._research_tasks["research-task"] = ingest_task
+
+    await runner.shutdown()
+
+    assert ingest_task.cancelled() is True
 
 
 def test_retry_respects_max_attempts(api) -> None:
@@ -109,6 +136,41 @@ async def test_recovery_claims_expired_task_once(client, api, monkeypatch) -> No
     submitted.clear()
     assert await client.app.state.task_runner.recover_pending_tasks() == 0
     assert submitted == []
+
+
+@pytest.mark.asyncio
+async def test_recovery_of_expired_queued_task_does_not_duplicate_queued_event(
+    client, api, monkeypatch
+) -> None:
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        client.app.state.task_runner,
+        "submit",
+        lambda task_id: submitted.append(task_id) or True,
+    )
+    session = api.create_session()
+    task = api.create_task(session["id"])
+
+    async with client.app.state.session_factory() as db:
+        model = await TaskRepository(db).get(task["id"])
+        assert model is not None
+        model.status = TaskStatus.QUEUED
+        model.execution_owner = "dead-worker"
+        model.heartbeat_at = datetime.now(UTC) - timedelta(minutes=5)
+        model.lease_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        await db.commit()
+
+    submitted.clear()
+    assert await client.app.state.task_runner.recover_pending_tasks() == 1
+    assert submitted == [task["id"]]
+
+    async with client.app.state.session_factory() as db:
+        events = await TaskRepository(db).list_events(task["id"])
+        queued_events = [
+            event for event in events if event.event_type == AgentEventType.TASK_QUEUED
+        ]
+        assert len(queued_events) == 1
+        assert not queued_events[0].event_data["data"].get("recovered", False)
 
 
 def test_shutdown_requeues_task_for_next_lifespan(settings) -> None:

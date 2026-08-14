@@ -4,6 +4,7 @@ def test_failed_task_retry_creates_child_attempt(api, client) -> None:
         session["id"],
         options={
             "mock_force_failure": True,
+            "permission_denied": True,
             "debug_agent_id": "SOLVER_CT_V1",
         },
         user_role="admin",

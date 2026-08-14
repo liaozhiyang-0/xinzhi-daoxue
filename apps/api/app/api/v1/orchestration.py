@@ -45,6 +45,7 @@ router = APIRouter(tags=["orchestration"])
 
 WORKFLOW_MODES: dict[str, ExecutionMode] = {
     "GENERAL_QUESTION_V1": ExecutionMode.LOCAL,
+    "GENERAL_MODEL_FALLBACK_V1": ExecutionMode.LOCAL,
     "ROUTER_01_FALLBACK_V1": ExecutionMode.HYBRID,
     "LEARN_01_KNOWLEDGE_QA_V1": ExecutionMode.HYBRID,
     "ACADEMIC_PROBLEM_SOLVER": ExecutionMode.LOCAL,
@@ -365,8 +366,17 @@ async def capabilities(request: Request) -> dict[str, Any]:
             {
                 "id": "data_analysis",
                 "label": "数据分析",
-                "available": internal.available("RESEARCH_03_DATA_ANALYSIS_V1"),
+                "available": bool(
+                    settings.data_analysis_enabled
+                    and internal.available("RESEARCH_03_DATA_ANALYSIS_V1")
+                ),
                 "knowledge_enhanced": False,
+                "frozen": not settings.data_analysis_enabled,
+                "unavailable_reason": (
+                    "data_analysis_frozen"
+                    if not settings.data_analysis_enabled
+                    else ""
+                ),
             },
         ],
     }
@@ -402,13 +412,20 @@ async def workflows(request: Request) -> list[WorkflowStatus]:
                 local_handler_available
                 and internal_workflow_models_configured(settings, agent_id)
             )
+        frozen = (
+            agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+            and not settings.data_analysis_enabled
+        )
         available = bool(
             definition.enabled
+            and not frozen
             and (local_available or (flow_configured and settings.xingchen_enabled))
         )
         reason = None
         if not definition.enabled:
             reason = "agent_disabled"
+        elif frozen:
+            reason = "data_analysis_frozen"
         elif not available:
             reason = (
                 "model_api_or_legacy_provider_missing"

@@ -138,6 +138,14 @@ async def create_task(
         except ValueError:
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
+    if (
+        data.intent.value == "data_analysis"
+        and not request.app.state.settings.data_analysis_enabled
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="数据分析功能当前已冻结，暂不接受新任务；已有任务和数据未被修改。",
+        )
     # Bind scenarios after principal attribution so a transient request role
     # cannot affect scenario selection before the Task boundary normalizes it.
     try:
@@ -167,6 +175,14 @@ async def create_task(
         )
         data = _with_conversation_context(data, bundle)
     decision = request.app.state.task_router.route(data)
+    if (
+        decision.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
+        and not request.app.state.settings.data_analysis_enabled
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="数据分析功能当前已冻结，暂不接受新任务；已有任务和数据未被修改。",
+        )
     task = await TaskCreationService(
         db, provider.provider_name, request.app.state.settings
     ).create_queued(data, route=decision)
@@ -385,7 +401,10 @@ async def task_runtime_controls(
     no Runtime mutation or Provider call.
     """
 
-    task = await _get_owned_task(db, task_id, principal)
+    # Runtime approval is a reviewer operation.  Teachers/admins may review
+    # a learner-owned task, matching the approval endpoint's authorization
+    # boundary; task owners retain the normal self-service projection.
+    task = await _get_runtime_control_task(db, task_id, principal)
     runtime = await AgentRunRepository(db).get_for_task(task.id)
     plan_proposal = None
     if runtime is not None:
@@ -751,6 +770,14 @@ async def _get_owned_task(
     if principal.has_identity and task.user_id != principal.user_id:
         raise NotFoundError("任务不存在")
     return task
+
+
+async def _get_runtime_control_task(
+    db: AsyncSession, task_id: str, principal: Principal
+) -> TaskModel:
+    if principal.authenticated and principal.role in {"teacher", "admin"}:
+        return await TaskQueryService(db).get(task_id)
+    return await _get_owned_task(db, task_id, principal)
 
 
 def _require_runtime_approval(

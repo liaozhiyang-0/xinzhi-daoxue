@@ -72,8 +72,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .math-inline { display: inline-block; max-width: 100%; margin: 0 .12em; vertical-align: -.16em; }
 .math-display { display: block; max-width: 100%; margin: 1em 0; padding: 14px 18px; overflow-x: auto; overflow-y: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-secondary) 72%, transparent); text-align: center; }
 .katex-display { margin: .75rem 0; overflow-x: auto; overflow-y: hidden; }
-.math-latex-fallback { display: inline-block; min-width: max-content; color: var(--danger); font-family: var(--font-mono); font-style: normal; white-space: pre-wrap; }
-.math-render-error { border-color: color-mix(in srgb, var(--danger) 28%, var(--border-subtle)); text-align: left; }
+.math-latex-fallback { display: inline-block; max-width: 100%; color: var(--text-secondary); font-family: var(--font-sans); font-style: italic; white-space: normal; }
+.math-render-error { border-color: var(--border-subtle); background: var(--bg-secondary); text-align: left; }
 .math-content { display: inline-block; min-width: max-content; white-space: nowrap; }
 .math-fraction { display: inline-grid; grid-template-rows: auto auto; margin: 0 .18em; vertical-align: middle; text-align: center; line-height: 1.15; }
 .math-numerator { padding: 0 .22em .08em; border-bottom: 1.4px solid currentColor; }

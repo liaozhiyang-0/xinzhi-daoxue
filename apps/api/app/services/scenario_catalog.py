@@ -29,6 +29,7 @@ class ScenarioCatalog:
             "scenario_agent_id",
             "scenario_retrieval_profile",
             "scenario_evidence_policy",
+            "scenario_contract",
             "_scenario_catalog_bound",
         }
     )
@@ -51,6 +52,24 @@ class ScenarioCatalog:
         ids = [item.id for item in document.scenarios]
         if len(ids) != len(set(ids)):
             raise ScenarioCatalogError("场景目录存在重复 id")
+        for item in document.scenarios:
+            if item.enabled and not item.demo_cases:
+                raise ScenarioCatalogError(
+                    f"启用场景缺少结构化演示案例: {item.id}"
+                )
+            for demo_case in item.demo_cases:
+                if demo_case.expected_agent != item.agent_id:
+                    raise ScenarioCatalogError(
+                        f"演示案例预期 Agent 与场景不一致: {item.id}/{demo_case.id}"
+                    )
+                if demo_case.role not in item.roles:
+                    raise ScenarioCatalogError(
+                        f"演示案例角色不在场景 roles 中: {item.id}/{demo_case.id}"
+                    )
+                if demo_case.course.upper() not in item.courses:
+                    raise ScenarioCatalogError(
+                        f"演示案例课程不在场景 courses 中: {item.id}/{demo_case.id}"
+                    )
         try:
             for item in document.scenarios:
                 for intent in item.intents:
@@ -106,6 +125,7 @@ class ScenarioCatalog:
                 f"场景 {scenario.id} 不支持输入类型 {payload.input_type.value}"
             )
         metadata = dict(payload.metadata)
+        demo_case = scenario.demo_cases[0]
         metadata.update(
             {
                 "scenario_id": scenario.id,
@@ -116,6 +136,17 @@ class ScenarioCatalog:
                 "scenario_evidence_policy": scenario.evidence_policy.model_dump(
                     mode="json"
                 ),
+                "scenario_contract": {
+                    "demo_case_id": demo_case.id,
+                    "role": demo_case.role,
+                    "course": demo_case.course.upper(),
+                    "expected_agent": demo_case.expected_agent,
+                    "expected_output": list(demo_case.expected_output),
+                    "business_context": demo_case.business_context,
+                    "evidence_requirements": list(demo_case.evidence_requirements),
+                    "review_boundary": demo_case.review_boundary,
+                    "acceptance_conditions": list(demo_case.acceptance_conditions),
+                },
                 "_scenario_catalog_bound": True,
             }
         )
@@ -167,12 +198,11 @@ class ScenarioCatalog:
             raise ScenarioCatalogError(
                 f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽緭鍏ョ被鍨?{input_type}"
             )
-        if payload.user_role.value not in scenario.roles:
-            raise ScenarioCatalogError(
-                "scenario role is not authorized: "
-                f"{payload.user_role.value} not in {', '.join(scenario.roles)}"
-            )
+        # Scenario roles describe the intended example audience only.  They do
+        # not restrict authenticated users: the product now exposes one
+        # unified question workspace for teaching, learning, and research.
         options = dict(payload.options)
+        demo_case = scenario.demo_cases[0]
         options.update(
             {
                 "scenario_id": scenario.id,
@@ -183,6 +213,17 @@ class ScenarioCatalog:
                 "scenario_evidence_policy": scenario.evidence_policy.model_dump(
                     mode="json"
                 ),
+                "scenario_contract": {
+                    "demo_case_id": demo_case.id,
+                    "role": demo_case.role,
+                    "course": demo_case.course.upper(),
+                    "expected_agent": demo_case.expected_agent,
+                    "expected_output": list(demo_case.expected_output),
+                    "business_context": demo_case.business_context,
+                    "evidence_requirements": list(demo_case.evidence_requirements),
+                    "review_boundary": demo_case.review_boundary,
+                    "acceptance_conditions": list(demo_case.acceptance_conditions),
+                },
                 "_scenario_catalog_bound": True,
             }
         )

@@ -130,6 +130,7 @@ from app.services.runtime_release_authorization import (
 )
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from app.services.scenario_evidence_review import ScenarioEvidenceReviewService
+from app.services.scenario_output_contract import ScenarioOutputContractService
 from app.services.session_compaction import SessionCompactionService
 from app.services.solver_boundary_policy import BoundaryDecision, SolverBoundaryPolicy
 from app.services.solver_quality_gate import SolverQualityGateService
@@ -145,6 +146,7 @@ from app.tools.registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 RuntimePendingEvent = tuple[AgentEventType, dict[str, Any]]
+GENERAL_MODEL_FALLBACK_AGENT_ID = "GENERAL_MODEL_FALLBACK_V1"
 
 
 def utc_now() -> datetime:
@@ -271,6 +273,7 @@ class TaskRunner:
         self.citation_validator = CitationValidator()
         self.external_citation_validator = ExternalCitationValidator()
         self.result_validators = AgentResultValidatorRegistry()
+        self.scenario_output_contract = ScenarioOutputContractService()
         self.business_renderers = BusinessResultRendererRegistry()
         self.math_formatting = MathFormattingService()
         self.result_presentation = TaskResultPresentationService(
@@ -467,19 +470,29 @@ class TaskRunner:
             lease_expires_at = now + timedelta(seconds=lease_seconds)
             for task in tasks:
                 previous_status = task.status.value
-                if task.status == TaskStatus.RUNNING:
+                was_running = task.status == TaskStatus.RUNNING
+                if was_running:
                     task.status = TaskStatus.QUEUED
                 task.execution_owner = self.execution_owner
                 task.heartbeat_at = now
                 task.lease_expires_at = lease_expires_at
                 task.updated_at = now
-                await append_task_event(
-                    db,
-                    task.id,
-                    AgentEventType.TASK_QUEUED,
-                    agent_id=task.agent_id,
-                    data={"recovered": True, "previous_status": previous_status},
-                )
+                # A queued task already has its durable task.queued event from
+                # task creation or an explicit requeue. Repeating that event
+                # during startup recovery makes SSE consumers observe a false
+                # duplicate. An expired running lease is the only recovery
+                # transition that needs a new queued event.
+                if was_running:
+                    await append_task_event(
+                        db,
+                        task.id,
+                        AgentEventType.TASK_QUEUED,
+                        agent_id=task.agent_id,
+                        data={
+                            "recovered": True,
+                            "previous_status": previous_status,
+                        },
+                    )
                 task_ids.append(task.id)
             await db.commit()
         for task_id in task_ids:
@@ -490,7 +503,11 @@ class TaskRunner:
         self._shutting_down = True
         active = [
             task
-            for task in [*self._tasks.values(), *self._post_tasks.values()]
+            for task in [
+                *self._tasks.values(),
+                *self._post_tasks.values(),
+                *self._research_tasks.values(),
+            ]
             if not task.done()
         ]
         for task in active:
@@ -1082,6 +1099,7 @@ class TaskRunner:
                         retrieval_result,
                         course_id=request.course_id,
                         intent=request.intent.value,
+                        query_override=self._knowledge_query(request),
                     )
                     context_latency_ms += int((perf_counter() - context_started) * 1000)
                 provider_started = perf_counter()
@@ -1207,14 +1225,47 @@ class TaskRunner:
                         if cloud_opt_out
                         else self._fallback_trigger(exc.code)
                     )
-                    if (
+                    generic_result = await self._maybe_run_general_model_fallback(
+                        request,
+                        original_agent_id=agent_id,
+                        reason=fallback_reason,
+                        retrieval_result=retrieval_result,
+                    )
+                    if generic_result is not None:
+                        cloud_error = exc
+                        result = generic_result
+                        routing = dict(request.options.get("_routing", {}))
+                        routing.update(
+                            {
+                                "fallback_used": True,
+                                "fallback_reason": fallback_reason,
+                                "original_agent_id": agent_id,
+                                "fallback_agent_id": GENERAL_MODEL_FALLBACK_AGENT_ID,
+                                "answer_mode": "generic_model",
+                                "cloud_status": (
+                                    "not_requested"
+                                    if cloud_opt_out
+                                    else "cloud_failed"
+                                ),
+                            }
+                        )
+                        options = dict(request.options)
+                        options["_routing"] = routing
+                        request = request.model_copy(update={"options": options})
+                        agent_id = GENERAL_MODEL_FALLBACK_AGENT_ID
+                        agent_definition = self.agent_registry.get(agent_id)
+                        workflow_definition = agent_definition
+                    elif (
                         agent_definition.fallback.handler == "no_fallback"
                         or fallback_trigger not in agent_definition.fallback.trigger_on
                     ):
                         raise
-                    cloud_error = exc
-                    fallback = self.agent_registry.resolve_fallback(agent_id)
-                    if self._uses_local_retrieval_fallback(agent_definition):
+                    else:
+                        cloud_error = exc
+                        fallback = self.agent_registry.resolve_fallback(agent_id)
+                    if generic_result is None and self._uses_local_retrieval_fallback(
+                        agent_definition
+                    ):
                         if fallback is None or fallback.mode != "retrieval_only":
                             raise
                         execution = (
@@ -1238,7 +1289,7 @@ class TaskRunner:
                             if cloud_opt_out
                             else f"云端工作流失败，已降级到本地检索回答: {exc.code}"
                         )
-                    else:
+                    elif generic_result is None:
                         result = self._non_cloud_fallback_result(
                             agent_definition,
                             request,
@@ -1247,21 +1298,26 @@ class TaskRunner:
                                 "not_requested" if cloud_opt_out else "cloud_failed"
                             ),
                         )
-                    routing = dict(request.options.get("_routing", {}))
-                    routing.update(
-                        {
-                            "fallback_used": True,
-                            "fallback_reason": fallback_reason,
-                            "original_agent_id": agent_id,
-                            "cloud_status": (
-                                "not_requested" if cloud_opt_out else "cloud_failed"
-                            ),
-                        }
-                    )
-                    options = dict(request.options)
-                    options["_routing"] = routing
-                    request = request.model_copy(update={"options": options})
-                    if fallback is not None and fallback.mode == "retrieval_only":
+                    if generic_result is None:
+                        routing = dict(request.options.get("_routing", {}))
+                        routing.update(
+                            {
+                                "fallback_used": True,
+                                "fallback_reason": fallback_reason,
+                                "original_agent_id": agent_id,
+                                "cloud_status": (
+                                    "not_requested" if cloud_opt_out else "cloud_failed"
+                                ),
+                            }
+                        )
+                        options = dict(request.options)
+                        options["_routing"] = routing
+                        request = request.model_copy(update={"options": options})
+                    if (
+                        generic_result is None
+                        and fallback is not None
+                        and fallback.mode == "retrieval_only"
+                    ):
                         agent_id = fallback.agent_id
                         agent_definition = fallback
                         workflow_definition = fallback
@@ -1322,22 +1378,54 @@ class TaskRunner:
                             workflow_definition = fallback
                             cloud_response_failed = True
                         elif not self._uses_local_retrieval_fallback(agent_definition):
-                            result = self._non_cloud_fallback_result(
-                                agent_definition,
-                                request,
-                                reason="cloud_failed_status",
+                            generic_result = (
+                                await self._maybe_run_general_model_fallback(
+                                    request,
+                                    original_agent_id=agent_id,
+                                    reason="cloud_failed_status",
+                                    retrieval_result=retrieval_result,
+                                )
                             )
-                            routing.update(
-                                {
-                                    "fallback_used": True,
-                                    "fallback_reason": "cloud_failed_status",
-                                    "original_agent_id": agent_id,
-                                    "cloud_status": "cloud_failed",
-                                }
-                            )
-                            options["_routing"] = routing
-                            request = request.model_copy(update={"options": options})
-                            cloud_response_failed = True
+                            if generic_result is not None:
+                                result = generic_result
+                                routing.update(
+                                    {
+                                        "fallback_used": True,
+                                        "fallback_reason": "cloud_failed_status",
+                                        "original_agent_id": agent_id,
+                                        "fallback_agent_id": (
+                                            GENERAL_MODEL_FALLBACK_AGENT_ID
+                                        ),
+                                        "answer_mode": "generic_model",
+                                        "cloud_status": "cloud_failed",
+                                    }
+                                )
+                                options["_routing"] = routing
+                                request = request.model_copy(
+                                    update={"options": options}
+                                )
+                                agent_id = GENERAL_MODEL_FALLBACK_AGENT_ID
+                                agent_definition = self.agent_registry.get(agent_id)
+                                workflow_definition = agent_definition
+                            else:
+                                result = self._non_cloud_fallback_result(
+                                    agent_definition,
+                                    request,
+                                    reason="cloud_failed_status",
+                                )
+                                routing.update(
+                                    {
+                                        "fallback_used": True,
+                                        "fallback_reason": "cloud_failed_status",
+                                        "original_agent_id": agent_id,
+                                        "cloud_status": "cloud_failed",
+                                    }
+                                )
+                                options["_routing"] = routing
+                                request = request.model_copy(
+                                    update={"options": options}
+                                )
+                                cloud_response_failed = True
                     if (
                         upstream_status == "misrouted"
                         and agent_definition.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
@@ -1426,6 +1514,7 @@ class TaskRunner:
                                     retrieval_result,
                                     course_id="CT",
                                     intent=Intent.SOLVE_PROBLEM.value,
+                                    query_override=self._knowledge_query(request),
                                 )
                                 if retrieval_result is not None
                                 else None
@@ -1649,7 +1738,18 @@ class TaskRunner:
                         (perf_counter() - citation_started) * 1000
                     )
             if retrieval_result is not None:
-                hit_payloads = [hit.model_dump(mode="json") for hit in knowledge_hits]
+                # `knowledge_hits` are retrieval candidates.  Only the
+                # context packet has passed course, deduplication, and topic
+                # relevance gates; exposing candidates here would make the UI
+                # render evidence that was explicitly rejected.
+                presentation_hits = (
+                    retrieval_packet.evidence
+                    if retrieval_packet is not None
+                    else knowledge_hits
+                )
+                hit_payloads = [
+                    hit.model_dump(mode="json") for hit in presentation_hits
+                ]
                 result.structured_result["knowledge"] = {
                     "mode": retrieval_result.retrieval_mode,
                     "hits": hit_payloads,
@@ -1860,6 +1960,7 @@ class TaskRunner:
                     result = self._teaching_degraded_result(result, request)
             if result.fallback_used and not result.fallback_reason:
                 result.fallback_reason = "route_cloud_unavailable"
+            result = self.scenario_output_contract.enrich(result, request)
             validation_stage_started = perf_counter()
             await self._append_progress_event(
                 task_id,
@@ -1893,6 +1994,17 @@ class TaskRunner:
             result.structured_result["material_extraction"] = request.options.get(
                 "_material_extraction", {}
             )
+            knowledge_payload = result.structured_result.get("knowledge", {})
+            projected_knowledge_hits = (
+                knowledge_payload.get("hits", [])
+                if isinstance(knowledge_payload, dict)
+                else []
+            )
+            knowledge_hit_count = (
+                len(projected_knowledge_hits)
+                if isinstance(projected_knowledge_hits, list)
+                else len(knowledge_hits)
+            )
             result.structured_result.update(
                 {
                     "scene": agent_definition.scene,
@@ -1907,7 +2019,7 @@ class TaskRunner:
                             agent_id, self.knowledge_base.settings
                         )
                     ),
-                    "knowledge_hit_count": len(knowledge_hits),
+                    "knowledge_hit_count": knowledge_hit_count,
                     "rag_status": result.rag_status,
                     "intent_recognition": dict(
                         routing.get("intent_recognition", {})
@@ -2053,7 +2165,29 @@ class TaskRunner:
             )
             message = exc.message if isinstance(exc, AppError) else "后台任务执行失败"
             code = exc.code if isinstance(exc, AppError) else "background_task_error"
-            await self._fail_after_exception(task_id, message, code)
+            candidate_request = locals().get("request")
+            generic_result = None
+            if isinstance(candidate_request, AgentRequest):
+                generic_result = await self._maybe_run_general_model_fallback(
+                    candidate_request,
+                    original_agent_id=str(locals().get("agent_id", "")),
+                    reason=code,
+                    retrieval_result=None,
+                )
+            if generic_result is not None:
+                await self._fail_after_exception(
+                    task_id,
+                    message,
+                    code,
+                    result=generic_result,
+                )
+                return
+            await self._fail_after_exception(
+                task_id,
+                message,
+                code,
+                result=runtime_result,
+            )
         finally:
             if lease_task is not None:
                 lease_task.cancel()
@@ -2502,6 +2636,75 @@ class TaskRunner:
             }
         )
 
+    async def _maybe_run_general_model_fallback(
+        self,
+        request: AgentRequest,
+        *,
+        original_agent_id: str,
+        reason: str,
+        retrieval_result: RetrievalResult | None,
+    ) -> AgentResult | None:
+        """Run the unified fallback only for an allowed, non-terminal failure."""
+
+        if not self._generic_model_fallback_allowed(
+            request, retrieval_result=retrieval_result
+        ):
+            return None
+        if (
+            self.internal_agents is None
+            or original_agent_id == GENERAL_MODEL_FALLBACK_AGENT_ID
+            or not self.internal_agents.available(GENERAL_MODEL_FALLBACK_AGENT_ID)
+            or request.options.get("_general_model_fallback_attempted") is True
+        ):
+            return None
+        # Mark the live task request before invoking the fallback so any later
+        # exception path in the same task cannot start a second fallback call.
+        request.options["_general_model_fallback_attempted"] = True
+        options = dict(request.options)
+        options["_general_model_fallback"] = {
+            "reason": reason,
+            "source_agent_id": original_agent_id,
+        }
+        fallback_request = request.model_copy(update={"options": options})
+        try:
+            return await self.internal_agents.run(
+                GENERAL_MODEL_FALLBACK_AGENT_ID,
+                fallback_request,
+            )
+        except Exception:
+            logger.warning(
+                "generic_model_fallback_failed task_id=%s source_agent_id=%s",
+                request.task_id,
+                original_agent_id,
+                exc_info=True,
+            )
+            return None
+
+    @staticmethod
+    def _generic_model_fallback_allowed(
+        request: AgentRequest,
+        *,
+        retrieval_result: RetrievalResult | None,
+    ) -> bool:
+        if request.intent == Intent.DATA_ANALYSIS:
+            return False
+        if request.scenario_id == "research_data_workbench_v1":
+            return False
+        blocked_options = {
+            "cancel_requested",
+            "user_stop_requested",
+            "permission_denied",
+            "awaiting_approval",
+            "runtime_waiting_approval",
+            "insufficient_evidence",
+        }
+        if any(request.options.get(key) is True for key in blocked_options):
+            return False
+        policy = request.options.get("scenario_evidence_policy")
+        if isinstance(policy, dict) and bool(policy.get("citation_required")):
+            return bool(retrieval_result is not None and retrieval_result.hits)
+        return True
+
     @staticmethod
     def _needs_direct_model_fallback(result: AgentResult) -> bool:
         if result.agent_id != "ACADEMIC_PROBLEM_SOLVER":
@@ -2723,15 +2926,23 @@ class TaskRunner:
                 else:
                     result = await retrieval
                 return result, True
-            return (
-                await asyncio.to_thread(
-                    self.knowledge_base.search_result,
-                    query,
-                    [request.course_id],
-                    top_k * 3 if content_types else top_k,
-                ),
-                True,
+            lexical_result = await asyncio.to_thread(
+                self.knowledge_base.search_result,
+                query,
+                [request.course_id],
+                top_k * 3 if content_types else top_k,
             )
+            if content_types:
+                lexical_result = lexical_result.model_copy(
+                    update={
+                        "hits": [
+                            hit
+                            for hit in lexical_result.hits
+                            if hit.content_type in content_types
+                        ]
+                    }
+                )
+            return lexical_result, True
         except TimeoutError:
             logger.warning(
                 "knowledge_retrieval_time_budget_exhausted task_id=%s "
@@ -3135,6 +3346,15 @@ class TaskRunner:
             self._knowledge_query(request),
             previous_agent=str(request.options.get("previous_agent", "")),
         )
+        # A plain academic rewrite must not become a network search merely
+        # because the writing agent is allowlisted. Retrieve sources only when
+        # the user explicitly signals literature/citation needs or provides
+        # source context.
+        writing_agent_only_intent = (
+            request.intent == Intent.ACADEMIC_WRITING
+            and intent_decision is not None
+            and intent_decision.category == "agent_intent"
+        )
         return bool(
             self.external_search is not None
             and settings.external_retrieval_enabled
@@ -3143,6 +3363,7 @@ class TaskRunner:
             and self._external_query(request)
             and intent_decision is not None
             and not writing_source_follow_up
+            and not writing_agent_only_intent
             and (intent_decision.decision == "retrieve" or academic_follow_up)
         )
 
@@ -3271,6 +3492,10 @@ class TaskRunner:
             structured_result={
                 "external_search": True,
                 "external_search_status": external_result.status,
+                # Keep the canonical retrieval packet alongside the compact
+                # frontend view.  Task presentation, session restore, and
+                # evidence summaries must all consume the same source set.
+                "external_retrieval": external_result.model_dump(mode="json"),
                 "external_search_view": external_search_view(external_result),
             },
             citations=[],
@@ -3791,7 +4016,12 @@ class TaskRunner:
             )
 
     async def _fail_after_exception(
-        self, task_id: str, message: str, code: str
+        self,
+        task_id: str,
+        message: str,
+        code: str,
+        *,
+        result: AgentResult | None = None,
     ) -> None:
         async with self.session_factory() as db:
             task = await TaskRepository(db).get(task_id, for_update=True)
@@ -3808,9 +4038,39 @@ class TaskRunner:
                 )
                 return
             now = utc_now()
-            task.status = TaskStatus.FAILED
-            task.error_message = message
-            task.failure_category = code
+            generic_completed = bool(
+                result is not None
+                and result.agent_id == GENERAL_MODEL_FALLBACK_AGENT_ID
+                and result.status.value == "completed"
+            )
+            task.status = (
+                TaskStatus.COMPLETED if generic_completed else TaskStatus.FAILED
+            )
+            task.error_message = None if generic_completed else message
+            task.failure_category = (
+                "generic_model_fallback" if generic_completed else code
+            )
+            if result is not None:
+                # A Runtime can fail verification after producing a useful,
+                # explicitly non-authoritative answer (for example, when the
+                # course evidence is insufficient). Preserve that snapshot so
+                # the UI can explain the failure without treating it as a
+                # successful terminal result or re-rendering rejected hits.
+                result_payload = result.model_dump(mode="json")
+                structured_result = dict(
+                    result_payload.get("structured_result") or {}
+                )
+                structured_result["runtime_failure"] = {
+                    "code": code,
+                    "message": message,
+                    "resolved_by": (
+                        GENERAL_MODEL_FALLBACK_AGENT_ID
+                        if generic_completed
+                        else None
+                    ),
+                }
+                result_payload["structured_result"] = structured_result
+                task.result_content = result_payload
             task.completed_at = now
             task.updated_at = now
             task.heartbeat_at = now
@@ -3818,7 +4078,11 @@ class TaskRunner:
             runtime_finalized = await self.runtime_boundary.finalize(
                 db,
                 task_id=task.id,
-                status=RuntimeRunStatus.FAILED,
+                status=(
+                    RuntimeRunStatus.COMPLETED
+                    if generic_completed
+                    else RuntimeRunStatus.FAILED
+                ),
                 provider=self.provider.provider_name,
                 latency_ms=(
                     elapsed_ms(task.started_at, now) if task.started_at else None
@@ -3830,7 +4094,7 @@ class TaskRunner:
                         task_id=task.id,
                         agent_id=task.agent_id,
                         provider=self.provider.provider_name,
-                        status=TaskStatus.FAILED.value,
+                        status=task.status.value,
                         latency_ms=(
                             elapsed_ms(task.started_at, now)
                             if task.started_at
@@ -3840,27 +4104,52 @@ class TaskRunner:
                         completed_at=now,
                     )
                 )
+            terminal_event = (
+                AgentEventType.TASK_COMPLETED
+                if generic_completed
+                else AgentEventType.TASK_FAILED
+            )
             await append_task_event(
                 db,
                 task.id,
-                AgentEventType.TASK_FAILED,
+                terminal_event,
                 agent_id=task.agent_id,
-                data={"error_code": code},
+                data=(
+                    {
+                        "fallback_used": True,
+                        "fallback_agent_id": GENERAL_MODEL_FALLBACK_AGENT_ID,
+                        "fallback_reason": result.fallback_reason if result else code,
+                    }
+                    if generic_completed
+                    else {"error_code": code}
+                ),
             )
-            message_model = await ConversationMessageService(
-                db
-            ).append_terminal_failure(
-                task,
-                status=MessageStatus.FAILED,
-                reason=message,
-            )
+            if generic_completed and result is not None:
+                session = await SessionRepository(db).get_for_user(
+                    task.session_id, task.user_id, for_update=True
+                )
+                message_model = (
+                    await ConversationMessageService(db).append_assistant_for_task(
+                        task, result, session=session
+                    )
+                    if session is not None
+                    else None
+                )
+            else:
+                message_model = await ConversationMessageService(
+                    db
+                ).append_terminal_failure(
+                    task,
+                    status=MessageStatus.FAILED,
+                    reason=message,
+                )
             task.assistant_message_id = (
                 message_model.id if message_model is not None else None
             )
             await self._cleanup_terminal_evaluation_attachments(db, task_id)
             await db.commit()
             logger.warning(
-                "task_failed task_id=%s session_id=%s agent_id=%s "
+                "task_terminal_after_exception task_id=%s session_id=%s agent_id=%s "
                 "provider=%s attempt=%s error_code=%s",
                 task.id,
                 task.session_id,

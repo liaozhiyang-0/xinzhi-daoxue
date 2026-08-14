@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from time import perf_counter
+from typing import Literal
 
 from app.agents import AgentDefinition
 from app.contracts import (
     AgentRequest,
     AgentResult,
     AgentValidationResult,
+    EvidencePacketV1,
+    EvidenceSourceV1,
+    EvidenceViewItem,
     WorkflowContextBundle,
 )
 from app.services.agent_result_governance import BusinessResultRendererRegistry
@@ -48,6 +53,12 @@ class TaskResultPresentationService:
             routing=dict(routing),
             timings=dict(timings),
         )
+        self._synchronize_evidence_projection(
+            result=result,
+            request=request,
+            bundle=bundle,
+            evidence_view=evidence_view,
+        )
         result.metrics.presentation_latency_ms = int(
             (perf_counter() - presentation_started) * 1000
         )
@@ -81,3 +92,101 @@ class TaskResultPresentationService:
                 artifact.content["answer_text"] = math_content.markdown
             artifact.content["math_content"] = math_content.model_dump(mode="json")
         return result
+
+    @staticmethod
+    def _synchronize_evidence_projection(
+        *,
+        result: AgentResult,
+        request: AgentRequest,
+        bundle: WorkflowContextBundle | None,
+        evidence_view: Sequence[EvidenceViewItem],
+    ) -> None:
+        """Keep persisted evidence metadata aligned with visible evidence cards."""
+
+        if not evidence_view:
+            return
+        structured = result.structured_result
+        structured["knowledge_hit_count"] = len(evidence_view)
+        current_packet = structured.get("evidence_packet")
+        if isinstance(current_packet, dict) and current_packet.get("sources"):
+            return
+        query = next(
+            (
+                str(request.canonical_input[key])
+                for key in ("question", "text", "query")
+                if request.canonical_input.get(key)
+            ),
+            "",
+        )
+        sources: list[EvidenceSourceV1] = []
+        if bundle is not None and bundle.evidence_items:
+            for hit in bundle.evidence_items:
+                course_id = getattr(hit.course_id, "value", hit.course_id)
+                source_id = hit.evidence_id
+                support_level: Literal[
+                    "potentially_relevant", "supports_claim"
+                ] = (
+                    "supports_claim"
+                    if source_id in bundle.used_evidence_ids
+                    else "potentially_relevant"
+                )
+                sources.append(
+                    EvidenceSourceV1(
+                        source_id=source_id,
+                        document_id=hit.document_id,
+                        chunk_id=hit.chunk_id,
+                        course_id=str(course_id),
+                        chapter=hit.chapter or None,
+                        section=hit.section or None,
+                        title=hit.title or None,
+                        content_excerpt=hit.content[:1_200],
+                        source_ref=hit.source_ref or None,
+                        retrieval_score=hit.score,
+                        rerank_score=hit.score_components.get("rerank_score"),
+                        score_components=hit.score_components,
+                        document_checksum=hit.document_checksum or None,
+                        support_level=support_level,
+                        image_refs=[
+                            image.resource_uri for image in hit.related_images
+                        ],
+                    )
+                )
+        else:
+            for item in evidence_view:
+                sources.append(
+                    EvidenceSourceV1(
+                        source_id=item.evidence_id,
+                        document_id="",
+                        chunk_id="",
+                        course_id=item.course_id or None,
+                        chapter=item.chapter or None,
+                        section=item.section or None,
+                        title=item.title or None,
+                        content_excerpt=item.summary,
+                        source_ref=item.source_ref or None,
+                        support_level=(
+                            "supports_claim"
+                            if item.used_by_answer
+                            else "potentially_relevant"
+                        ),
+                        image_refs=[
+                            image.resource_uri for image in item.related_images
+                        ],
+                    )
+                )
+        if not sources:
+            return
+        structured["evidence_packet"] = EvidencePacketV1(
+            query=query,
+            course_id=(bundle.course_id if bundle is not None else result.course_id),
+            retrieval_status=(
+                bundle.rag_status if bundle is not None else result.rag_status
+            ),
+            evidence_sufficiency=(
+                bundle.evidence_status
+                if bundle is not None
+                else result.evidence_status
+            ),
+            sources=sources,
+            warnings=list(bundle.warnings) if bundle is not None else [],
+        ).model_dump(mode="json")

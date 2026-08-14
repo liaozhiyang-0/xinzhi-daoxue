@@ -3,8 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
+import pytest
+from app.api.v1 import tasks as tasks_api
 from app.api.v1.tasks import _project_task_runtime_controls
+from app.services.auth_service import Principal
 
 
 def _runtime(
@@ -122,6 +126,33 @@ def test_task_runtime_controls_endpoint_uses_public_projection(
     assert all(not item["available"] for item in payload["controls"])
     assert "control_data" not in payload
     assert "request_snapshot" not in payload
+
+
+@pytest.mark.asyncio
+async def test_teacher_runtime_controls_can_project_learner_owned_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = SimpleNamespace(id="task-learner", user_id="guest-user")
+    get_task = AsyncMock(return_value=task)
+
+    class _Query:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        async def get(self, _task_id: str) -> SimpleNamespace:
+            return await get_task(_task_id)
+
+    monkeypatch.setattr(tasks_api, "TaskQueryService", _Query)
+    teacher = Principal(
+        authenticated=True,
+        user_id="teacher-user",
+        role="teacher",
+    )
+
+    projected = await tasks_api._get_runtime_control_task(object(), task.id, teacher)
+
+    assert projected is task
+    get_task.assert_awaited_once_with(task.id)
 
 
 def test_workspace_markup_uses_public_runtime_control_projection() -> None:

@@ -44,7 +44,7 @@ from app.services.storage import StorageService
 
 Formatter = Callable[[dict[str, Any]], tuple[str, dict[str, Any], list[str], list[str]]]
 GENERAL_WORKFLOW_AGENT_IDS = frozenset(
-    {"GENERAL_QUESTION_V1"}
+    {"GENERAL_QUESTION_V1", "GENERAL_MODEL_FALLBACK_V1"}
 )
 
 
@@ -233,8 +233,8 @@ class InternalAgentExecutionService:
                 plan=planning.plan,
                 provenance=build_research_analysis_provenance(analysis_request),
                 interpretation=(
-                    "The plan is frozen for review. Set execute=true only after "
-                    "the quality gate and storage policy are approved."
+                    "分析计划已冻结，等待质量门禁与人工复核。质量门禁和存储策略获批后，"
+                    "才可以执行原始数据分析。"
                 ),
                 limitations=planning.warnings,
                 evidence_ids=planning.method_evidence_ids,

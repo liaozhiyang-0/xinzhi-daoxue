@@ -12,6 +12,7 @@ from app.contracts import (
     RetrievalContextPacket,
     RetrievalResult,
 )
+from app.services.evidence_excerpt import display_evidence_excerpt
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
 from app.services.model_service import ModelService
@@ -47,6 +48,11 @@ class KnowledgeQAService:
         self, agent_id: str, request: AgentRequest
     ) -> KnowledgeQAExecution:
         execution = await asyncio.to_thread(self.run, agent_id, request)
+        # The formal learning UI explicitly opts out of cloud execution. In
+        # that mode the retrieval result is already the local answer; do not
+        # enter the model gateway for this request.
+        if request.options.get("allow_cloud") is False:
+            return execution
         model_service = self.model_service
         if model_service is None or not execution.context.evidence:
             return execution
@@ -169,13 +175,14 @@ class KnowledgeQAService:
             retrieval,
             course_id=request.course_id,
             intent=request.intent.value,
+            query_override=question,
         )
         chapters = list(dict.fromkeys(hit.chapter for hit in context.evidence))
         excerpts = [
             {
                 "chapter": hit.chapter,
                 "title": hit.title,
-                "excerpt": hit.content[:240],
+                "excerpt": display_evidence_excerpt(hit.content, max_chars=240),
                 "score": hit.score,
                 "source_ref": hit.source_ref,
                 "document_id": hit.document_id,
@@ -261,7 +268,7 @@ class KnowledgeQAService:
             "### 本地资料依据",
         ]
         for evidence in context.evidence[:4]:
-            excerpt = " ".join(evidence.content.split())[:520]
+            excerpt = display_evidence_excerpt(evidence.content, max_chars=520)
             label = evidence.chapter or evidence.title or evidence.document_path
             lines.extend([f"- [{evidence.evidence_id}] {label}", f"  {excerpt}"])
         lines.extend(

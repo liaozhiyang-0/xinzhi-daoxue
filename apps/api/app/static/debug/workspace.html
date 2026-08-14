@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260812-workspace-evidence-clean-v4">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260814-qwen-cards-v1">
 </head>
 <body class="workspace-page">
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -44,14 +44,13 @@
           <p class="eyebrow">AI LEARNING WORKSPACE</p>
           <h1>今天想学习什么？</h1>
           <p>一个输入框完成学习、教学与研究任务；系统自动组合内部 Agent 与本地课程资料</p>
-          <div class="prompt-grid">
-            <button type="button" data-capability="course_qa" data-intent="general_qa" data-prompt="为什么电容电压不能突变？" data-course="CT"><span class="capability-state">本地资料增强</span><strong>课程知识问答</strong><small>解释概念并展示真实课程依据</small></button>
-            <button type="button" data-capability="circuit_reasoning" data-intent="solve_problem" data-prompt="一个10V电压源串联5Ω电阻，求回路电流。" data-course="CT"><span class="capability-state">电路分析</span><strong>电路题分析</strong><small>支持文字题与单张电路图</small></button>
-            <button type="button" data-capability="lesson_prep" data-intent="lesson_prep" data-prompt="请为电容电压连续性设计一份45分钟课堂教案，包含目标、流程和形成性评价。" data-course="CT"><span class="capability-state">内部 Agent</span><strong>教案设计</strong><small>结合课程资料生成可复核草稿</small></button>
-            <button type="button" data-capability="assignment_review" data-intent="assignment_review" data-prompt="请初审这份作业：题目为10V电源串联5Ω电阻求电流，学生回答I=10/5=2A。指出正确部分、风险和反馈。" data-course="CT"><span class="capability-state">教师复核</span><strong>作业初审</strong><small>不自动给出正式成绩</small></button>
-            <button type="button" data-capability="academic_search" data-intent="academic_search" data-prompt="检索近五年关于主动学习对工程教育效果影响的学术证据，返回可核验来源并标出证据限制。" data-course="AUTO"><span class="capability-state">外部证据</span><strong>科研前沿检索</strong><small>检索来源并生成可复核证据简报</small></button>
-            <button type="button" data-capability="academic_writing" data-intent="academic_writing" data-prompt="请将“实验说明滤波器效果很好”改写为严谨学术表达；没有提供实验数据或文献，不得补充数值和引用。" data-course="AUTO"><span class="capability-state">事实约束</span><strong>学术写作</strong><small>改写并标出待核验声明</small></button>
-            <button type="button" data-capability="data_analysis" data-intent="data_analysis" data-prompt="我想分析不同教学方法对成绩的影响，但还没有提供数据。请给出可复现的分析计划和限制。" data-course="AUTO"><span class="capability-state">数据边界</span><strong>数据分析</strong><small>先冻结研究设计，再进入质量门禁与执行</small></button>
+          <div class="prompt-grid" aria-label="统一问题输入示例">
+            <button type="button" data-capability="lesson_prep" data-intent="lesson_prep" data-prompt="我下周要给大二电子信息专业讲授电路理论中的节点电压法。请根据课程目标和可核验的课程资料，设计一份 50 分钟课堂方案：先写 3 个可观察的学习目标，再安排导入、概念讲解、带解例题、分层练习和出口条；列出学生最容易混淆的参考节点、支路电流方向和符号约定；为基础、达标、挑战三层学生各给一道练习；每个关键判断标注资料依据或明确说明资料不足；最后列出必须由教师复核的内容，并禁止自动发布未经审核的课件。" data-course="CT"><span class="capability-state">教师智能备课</span><strong>教师智能备课</strong><small>生成目标、课堂流程、分层练习、资料依据和教师复核点</small></button>
+            <button type="button" data-capability="assignment_review" data-intent="assignment_review" data-prompt="请诊断下面这份电路理论作业答案，目标不是直接给总分，而是找出学生第一次导致后续结论失效的关键错误。题目：含 2 个节点和 3 条支路的直流电阻网络，已知电阻与电流方向，要求用节点电压法求两节点电压。学生步骤：1）把参考节点选在左侧节点；2）在右侧节点写成 (V-12)/2 + V/4 - 3 = 0；3）整理得到 V=12；4）因此左侧节点电压也是 12V。请保留其中正确的建模步骤，解释首错与错误传播，分别给基础和进阶学生各一条提示，并生成一道只改变一个参数的验证题；缺少标准答案或评分规则的地方必须明确标为待教师复核。" data-course="CT"><span class="capability-state">作业诊断</span><strong>作业批改与首错诊断</strong><small>定位首错、保留正确步骤、给出分层提示和验证题</small></button>
+            <button type="button" data-capability="student_learning_path" data-intent="learning_advice" data-prompt="我最近三次电路理论练习中，KCL 选择题分别得分 80、60、40 分；涉及参考方向的题目经常把支路电流符号写反，但电阻串并联化简基本正确。请根据这些答题证据识别最可能的薄弱知识点，不要把一次错误当成能力定论；制定一个为期 7 天、每天不超过 25 分钟的分阶段学习路径，说明每一天的先修关系、练习目标和完成证据，并安排至少两道用于验证是否真正改善的任务。如果证据不足以支持某个判断，请明确说明并把需要教师介入的节点列出来。" data-course="CT"><span class="capability-state">学生学习路径</span><strong>学生个性化学习路径</strong><small>根据作答证据制定阶段计划、复测任务和教师介入点</small></button>
+            <button type="button" data-capability="academic_search" data-intent="academic_search" data-prompt="请为“2022-01-01 至 2025-12-31 期间，面向低功耗边缘设备的神经网络推理优化”制作科研前沿证据简报。先把问题拆成模型压缩、量化、编译器/运行时和硬件协同四个子方向；筛选与问题真正相关的论文，优先返回 DOI 或 arXiv 标识、发布日期、方法和主要证据；区分论文结论与推测，说明每条证据对应哪个子问题；最后总结仍未解决的开放问题和检索范围局限。任何没有可靠来源支持的 DOI、网页或定量结论都不要生成，并明确写出资料不足之处。" data-course="AUTO"><span class="capability-state">科研证据</span><strong>科研前沿检索与证据简报</strong><small>限定时间范围、筛选论文、保留 DOI/arXiv 和证据边界</small></button>
+            <button type="button" data-capability="knowledge_governance" data-intent="summarize_knowledge" data-prompt="请检查 CT 课程知识库中准备发布的一组课程资产：讲义《节点电压法》v3、练习题包《直流网络》v2、教师修订说明 v1。请按资产清单逐项核对版本号、来源、最近审批状态和可追溯链接；找出讲义 v3 与练习题包 v2 之间可能的版本冲突，列出会阻塞发布的问题、需要补齐的审批或权限信息，并给出发布前、发布后和回滚后的检查清单。只能依据输入中提供的资产记录，缺失字段必须标记为未知，不能把建议当作已完成审批。" data-course="CT"><span class="capability-state">学院治理</span><strong>学院知识库治理与课程资产发布</strong><small>检查版本、来源、审批、权限、发布阻塞项和回滚追踪</small></button>
+            <button type="button" data-capability="solve_problem" data-intent="solve_problem" data-course="AE" data-image-src="/debug-assets/question-bank/analog-opamp.jpg" data-image-name="模电测试集_图2.1.1_运算放大器电路.jpg" data-prompt="请解答这道经典模电题，并结合随附电路图逐步说明判断依据：图中为理想运算放大器，反相端接地，同相端由输入 vi 经 R1=1 MΩ 串联后接到节点 vp，再由 R2=1 kΩ 接地，输出端接负载 RL；电源为 ±15 V，忽略输入失调。请先判断该电路是否处于线性负反馈状态、虚短和虚断是否可以使用；再推导 vp 与 vi 的关系，说明 vo 的饱和方向和 vi 的输出不饱和边界；最后总结为什么不能直接套用同相比例放大器公式，并标出需要人工复核的图像读数或假设。"><span class="capability-state">图片解题</span><strong>经典模电运算放大器解题</strong><small>点击后自动附加本地题库电路图，判断虚短、饱和与输出边界</small></button>
           </div>
         </div>
         <div id="messages" class="message-list" aria-live="polite"></div>
@@ -312,7 +311,7 @@
     </div>
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-  <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260812-workspace-evidence-clean-v4"></script>
-    <script src="/debug-assets/workspace.js?v=20260812-workspace-evidence-clean-v4"></script>
+    <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260814-unified-members-v1"></script>
+    <script src="/debug-assets/workspace.js?v=20260814-unified-members-v1&session-reset=1"></script>
 </body>
 </html>
