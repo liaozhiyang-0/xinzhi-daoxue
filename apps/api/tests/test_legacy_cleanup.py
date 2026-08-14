@@ -27,7 +27,9 @@ def test_active_registry_excludes_unpublished_legacy_agents() -> None:
 
     assert REMOVED_AGENT_IDS.isdisjoint(agent_ids)
     assert ACTIVE_BUSINESS_WORKFLOWS <= agent_ids
-    assert len(agent_ids) == 12
+    # The unified generic-model fallback is an active registry entry in
+    # addition to the historical business workflow set.
+    assert len(agent_ids) == 13
 
 
 def test_removed_flow_settings_are_not_part_of_active_configuration() -> None:
