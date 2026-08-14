@@ -28,9 +28,15 @@ scripts
 submission
 tmp
 tests
+**/tests
+**/test_*.py
 knowledge_indexes
 local_knowledge
 local_storage
+真实测试题
+evaluation/*
+!evaluation/knowledge_retrieval/
+!evaluation/knowledge_retrieval/**
 *.coverage
 *.coverage.*
 *.db-*
@@ -38,4 +44,7 @@ local_storage
 数电
 模电
 电路理论
+信号与系统版本一
+数字信号处理
+通信原理
 知识库
