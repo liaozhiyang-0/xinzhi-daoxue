@@ -29,6 +29,7 @@ SECRET_PATTERNS = {
         r"[A-Za-z0-9_\-]{16,}"
     ),
 }
+SAFE_ENV_TEMPLATES = {".env.example", ".env.server.example"}
 
 
 def tracked_files() -> list[Path]:
@@ -50,7 +51,7 @@ def scan(paths: list[Path]) -> list[str]:
         if parts & PROHIBITED_PATH_PARTS or lowered.endswith(PROHIBITED_SUFFIXES):
             findings.append(f"prohibited_path:{relative.as_posix()}")
             continue
-        if relative.name.startswith(".env") and relative.name != ".env.example":
+        if relative.name.startswith(".env") and relative.name not in SAFE_ENV_TEMPLATES:
             findings.append(f"tracked_env:{relative.as_posix()}")
             continue
         try:
