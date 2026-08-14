@@ -12,6 +12,18 @@ def test_runtime_image_keeps_dependency_metadata_as_the_single_source() -> None:
     assert "--requirement /tmp/runtime-requirements.txt" in dockerfile
     assert "--no-deps ." in dockerfile
     assert "--mount=type=cache,target=/root/.cache/pip" in dockerfile
+    assert "COPY config /workspace/config" in dockerfile
+
+
+def test_server_overlay_is_single_queue_and_qwen_first() -> None:
+    overlay = (ROOT / "docker-compose.server.yml").read_text(encoding="utf-8")
+
+    assert 'profiles: ["queue-worker", "server"]' in overlay
+    assert "ports: !override" in overlay
+    assert "ports: !reset []" in overlay
+    assert "TASK_EXECUTOR_MODE: redis" in overlay
+    assert 'IFLYTEK_SPARK_ENABLED: "false"' in overlay
+    assert 'ENABLE_QWEN_VISION_PRIMARY: "true"' in overlay
 
 
 def test_compose_exposes_cpu_torch_default_for_api_and_worker() -> None:
