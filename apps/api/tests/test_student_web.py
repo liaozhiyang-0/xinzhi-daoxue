@@ -28,10 +28,19 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     script = client.get("/debug-assets/workspace.js")
     materials = client.get("/debug-assets/workspace-materials.js")
     transport = client.get("/debug-assets/workspace-task-transport.js")
+    materials_ts = client.get("/debug-assets/ts/materials.js")
+    transport_ts = client.get("/debug-assets/ts/task-transport.js")
     contracts = client.get("/debug-assets/ts/workspace-contracts.js")
     styles = client.get("/debug-assets/workspace-v2.css")
     script_text = "\n".join(
-        (script.text, materials.text, transport.text, contracts.text)
+        (
+            script.text,
+            materials.text,
+            transport.text,
+            materials_ts.text,
+            transport_ts.text,
+            contracts.text,
+        )
     )
 
     assert page.status_code == 200

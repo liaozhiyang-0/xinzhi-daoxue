@@ -52,7 +52,7 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     student = "\n".join(
         (
             client.get("/debug-assets/workspace.js").text,
-            client.get("/debug-assets/workspace-task-transport.js").text,
+            client.get("/debug-assets/ts/task-transport.js").text,
         )
     )
 
