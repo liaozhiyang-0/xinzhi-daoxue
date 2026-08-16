@@ -1,5 +1,6 @@
-import { createMaterialManager } from "./workspace-materials.js";
-import { createTaskTransport } from "./workspace-task-transport.js";
+import { createMaterialManager } from "./ts/materials.js";
+import { createTaskTransport } from "./ts/task-transport.js";
+import { buildStudentTaskPayload } from "./ts/workspace-contracts.js";
 
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
@@ -2360,16 +2361,6 @@ const selectedMaterialFiles = () => materialManager.selected();
 const appendMaterialFiles = (files) => materialManager.append(files);
 const attachExampleImage = (button) => materialManager.attachExample(button);
 const uploadMaterials = () => materialManager.upload();
-function attachmentRef(file) {
-  return {
-    file_id: file.id,
-    filename: file.filename,
-    content_type: file.content_type,
-    size_bytes: file.size_bytes,
-    storage_key: file.storage_key,
-    checksum_sha256: file.checksum_sha256,
-  };
-}
 
 const taskTransport = createTaskTransport({
   api,
@@ -2495,10 +2486,23 @@ async function submit(event) {
         uploadedText || `已上传结构化数据文件：${tabularMaterials[0].uploaded.filename}`,
       ].filter(Boolean).join("\n\n");
     }
-    const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: studentAttempt ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
     const researchAnalysis = buildResearchAnalysisV2(question, materials);
-    if (researchAnalysis) options.research_analysis_v2 = researchAnalysis;
-    const payload = { session_id: state.sessionId, user_id: state.userId, user_role: state.userRole, scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: state.activeScenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
+    const payload = buildStudentTaskPayload({
+      sessionId: state.sessionId,
+      userId: state.userId,
+      userRole: state.userRole,
+      courseId: requestedCourse,
+      intent: requestedIntent,
+      scenarioId: state.activeScenarioId || null,
+      canonicalInput: canonical,
+      materials,
+      responseDepth: $("#depth-select").value,
+      teachingMode,
+      studentAttempt,
+      learningFollowUp,
+      requestId: `student_${crypto.randomUUID()}`,
+      researchAnalysis: researchAnalysis || undefined,
+    });
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
     state.taskId = task.id; state.currentTask = task; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：课程、任务与学习方式将由系统自动协作", "system");

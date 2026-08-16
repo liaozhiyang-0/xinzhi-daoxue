@@ -28,8 +28,11 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     script = client.get("/debug-assets/workspace.js")
     materials = client.get("/debug-assets/workspace-materials.js")
     transport = client.get("/debug-assets/workspace-task-transport.js")
+    contracts = client.get("/debug-assets/ts/workspace-contracts.js")
     styles = client.get("/debug-assets/workspace-v2.css")
-    script_text = "\n".join((script.text, materials.text, transport.text))
+    script_text = "\n".join(
+        (script.text, materials.text, transport.text, contracts.text)
+    )
 
     assert page.status_code == 200
     assert page.headers["cache-control"] == "no-store, max-age=0"
@@ -61,6 +64,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "allow_cloud" not in script_text
     assert "createMaterialManager" in script_text
     assert "createTaskTransport" in script_text
+    assert "./ts/workspace-contracts.js" in script.text
+    assert "buildStudentTaskPayload" in contracts.text
     assert "id=\"preview-images\"" in page.text
     assert "20260815-subject-agents-v1" in page.text
     assert "function openEvidenceDocument(item)" in script.text
@@ -73,10 +78,13 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "renderedAssistantTaskIds" in script.text
     assert "state.activeTaskWait" in script_text
     assert "runSequence !== state.runSequence" in script.text
-    assert "materials.map((item) => attachmentRef(item.uploaded))" in script.text
+    assert (
+        "attachments: materials.map((item) => attachmentRef(item.uploaded))"
+        in contracts.text
+    )
     assert "let pendingLearningFollowUp = null" in script.text
     assert "intent: requestedIntent" in script.text
-    assert "source_task_id: learningFollowUp?.source_task_id" in script.text
+    assert "source_task_id: learningFollowUp?.source_task_id" in contracts.text
     assert "workspace-answer" in styles.text
     assert ".workspace-composer > #question-input" in styles.text
     assert "scrollbar-width: thin" in styles.text

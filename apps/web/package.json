@@ -1,0 +1,13 @@
+{
+  "name": "xinzhi-daoxue-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
