@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
 
@@ -11,7 +10,6 @@ from app.models import TaskStatus
 from app.repositories import TaskRepository
 from app.services.task_executor import LocalTaskExecutor, QueueTaskExecutor
 from app.services.task_queue import InMemoryTaskQueue
-from app.services.task_runner import TaskRunner
 from fastapi.testclient import TestClient
 
 
@@ -47,29 +45,6 @@ async def test_queue_executor_publishes_without_local_fallback() -> None:
     assert queue.closed is True
 
 
-@pytest.mark.asyncio
-async def test_shutdown_cancels_background_research_ingest() -> None:
-    class ExternalRetrieval:
-        async def shutdown(self) -> None:
-            return None
-
-    runner = TaskRunner.__new__(TaskRunner)
-    runner._tasks = {}
-    runner._post_tasks = {}
-    runner._research_tasks = {}
-    runner.external_retrieval_execution = ExternalRetrieval()
-    runner.rag_retrieval = None
-
-    async def lingering_ingest() -> None:
-        await asyncio.sleep(60)
-
-    ingest_task = asyncio.create_task(lingering_ingest())
-    runner._research_tasks["research-task"] = ingest_task
-
-    await runner.shutdown()
-
-    assert ingest_task.cancelled() is True
-
 
 def test_retry_respects_max_attempts(api) -> None:
     session = api.create_session()
@@ -104,7 +79,7 @@ def test_debug_metrics_are_aggregated_without_raw_prompt(api) -> None:
 async def test_recovery_claims_expired_task_once(client, api, monkeypatch) -> None:
     submitted: list[str] = []
     monkeypatch.setattr(
-        client.app.state.task_runner,
+        client.app.state.task_coordinator,
         "submit",
         lambda task_id: submitted.append(task_id) or True,
     )
@@ -121,7 +96,7 @@ async def test_recovery_claims_expired_task_once(client, api, monkeypatch) -> No
         await db.commit()
 
     submitted.clear()
-    recovered = await client.app.state.task_runner.recover_pending_tasks()
+    recovered = await client.app.state.task_coordinator.recover()
     assert recovered == 1
     assert submitted == [task["id"]]
 
@@ -129,12 +104,14 @@ async def test_recovery_claims_expired_task_once(client, api, monkeypatch) -> No
         model = await TaskRepository(db).get(task["id"])
         assert model is not None
         assert model.status == TaskStatus.QUEUED
-        assert model.execution_owner == client.app.state.task_runner.execution_owner
+        assert (
+            model.execution_owner == client.app.state.task_coordinator.execution_owner
+        )
         events = await TaskRepository(db).list_events(task["id"])
         assert events[-1].event_data["data"]["recovered"] is True
 
     submitted.clear()
-    assert await client.app.state.task_runner.recover_pending_tasks() == 0
+    assert await client.app.state.task_coordinator.recover() == 0
     assert submitted == []
 
 
@@ -144,7 +121,7 @@ async def test_recovery_of_expired_queued_task_does_not_duplicate_queued_event(
 ) -> None:
     submitted: list[str] = []
     monkeypatch.setattr(
-        client.app.state.task_runner,
+        client.app.state.task_coordinator,
         "submit",
         lambda task_id: submitted.append(task_id) or True,
     )
@@ -161,7 +138,7 @@ async def test_recovery_of_expired_queued_task_does_not_duplicate_queued_event(
         await db.commit()
 
     submitted.clear()
-    assert await client.app.state.task_runner.recover_pending_tasks() == 1
+    assert await client.app.state.task_coordinator.recover() == 1
     assert submitted == [task["id"]]
 
     async with client.app.state.session_factory() as db:

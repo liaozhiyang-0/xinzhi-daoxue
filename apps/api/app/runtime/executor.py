@@ -51,8 +51,8 @@ class PlanExecutor:
     """Execute a validated plan through registered, bounded node handlers.
 
     The executor is deliberately storage-agnostic. A checkpoint hook receives
-    the serializable AgentRun after state changes; the durable repository will
-    be connected before this executor replaces the production TaskRunner path.
+    the serializable AgentRun after state changes; production persistence is
+    connected through RuntimePersistenceHooks.
     """
 
     def __init__(
@@ -214,7 +214,7 @@ class PlanExecutor:
         error_code = (
             error.error_code
             if isinstance(error, RuntimeNodeError)
-            else type(error).__name__
+            else str(getattr(error, "code", "")) or type(error).__name__
         )
         state = run.nodes[node_id]
         descriptor = self._descriptor(node.handler_id)

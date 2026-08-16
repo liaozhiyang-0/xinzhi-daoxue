@@ -190,6 +190,9 @@ def build_task_views(
     scenario_contract = (
         scenario_contract if isinstance(scenario_contract, dict) else {}
     )
+    governance_model_required = (
+        scenario_contract.get("status") == "model_synthesis_required"
+    )
     task_label = (
         str(scenario_contract.get("presentation_label"))
         if scenario_contract.get("presentation_label")
@@ -223,7 +226,10 @@ def build_task_views(
     web_external_count = max(
         0, external_count - academic_external_count - conference_external_count
     )
-    if is_generic_model:
+    if governance_model_required:
+        source_summary = "资料已收集，尚未完成大模型整理"
+        evidence_message = "治理报告未经过模型整理，当前结果不可发布"
+    elif is_generic_model:
         source_summary = "未使用可核验资料依据"
         evidence_message = (
             "这是通用模型回答；资料不可用时未生成课程、科研引用或外部链接"
@@ -316,7 +322,10 @@ def build_task_views(
         if isinstance(quality_gate, dict)
         else "not_checked"
     )
-    if is_generic_model:
+    if governance_model_required:
+        answer_quality_status = "needs_review"
+        answer_quality_message = "必须先完成大模型整理，再进入教师或管理员复核。"
+    elif is_generic_model:
         answer_quality_status = "generic_model"
         answer_quality_message = (
             "这是通用模型回答，不代表专业 Agent 已完成任务；请人工核对后再使用。"
@@ -379,6 +388,8 @@ def build_task_views(
     status_label = (
         "开发演示"
         if mock
+        else "等待模型整理"
+        if governance_model_required
         else "生成失败"
         if generation_failed
         else "回答未完整"
@@ -394,15 +405,14 @@ def build_task_views(
         else "已完成"
     )
     fallback_messages = {
-        "cloud_opt_out": "已按本地优先策略处理，本次未调用星辰工作流。",
-        "xingchen_response_parse_error": (
-            "云端结果格式校验未通过，本次已切换到本地安全后备结果。"
+        "provider_opt_out": "已按本地 Runtime 策略处理。",
+        "provider_response_parse_error": (
+            "本地 Runtime 结果格式校验未通过，已保留安全后备结果。"
         ),
-        "provider_timeout": "云端响应超时，本次已切换到本地安全后备结果。",
-        "xingchen_timeout": "云端响应超时，本次已切换到本地安全后备结果。",
-        "not_configured": "该云端能力尚未配置，本次已切换到本地安全后备结果。",
+        "provider_timeout": "本地 Runtime 响应超时，已保留安全后备结果。",
+        "not_configured": "本地 Runtime 能力尚未配置，已切换到安全后备结果。",
         "general_model_unavailable": (
-            "通用回答模型暂不可用，本次未调用星辰工作流。"
+            "通用回答模型暂不可用，请稍后重试。"
         ),
         "academic_generation_direct_model": (
             "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。"
@@ -432,7 +442,9 @@ def build_task_views(
         else ""
     )
     fallback_message = (
-        "这是通用模型回答，不代表专业 Agent 已完成任务；本次未使用可核验资料依据。"
+        "治理报告尚未经过大模型整理，不得作为发布结果。"
+        if governance_model_required
+        else "这是通用模型回答，不代表专业 Agent 已完成任务；本次未使用可核验资料依据。"
         if is_generic_model
         else generation_failure_messages.get(
         generation_error,
@@ -442,7 +454,7 @@ def build_task_views(
         else (
         fallback_messages.get(
             result.fallback_reason,
-            "云端主能力本次未完成，已切换到本地安全后备结果。",
+            "主要能力本次未完成，已切换到本地安全后备结果。",
         )
         if fallback
         else ""

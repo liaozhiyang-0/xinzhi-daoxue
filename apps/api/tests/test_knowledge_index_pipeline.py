@@ -9,8 +9,8 @@ from app.core.config import Settings
 from app.services.knowledge_audit import KnowledgeAuditScanner, checksum_file
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.knowledge_index import KnowledgeIndexBuilder, semantic_chunks
+from app.services.request_enrichment import with_learning_context
 from app.services.retrieval_context import RetrievalContextService
-from app.services.task_runner import TaskRunner
 
 
 def roots(tmp_path: Path) -> dict[str, Path]:
@@ -478,7 +478,7 @@ def test_learning_context_adapter_keeps_packet_and_warnings() -> None:
         '"intent":"general_qa","canonical_input":{"text":"问题"}}'
     )
 
-    augmented = TaskRunner._with_learning_context(
+    augmented = with_learning_context(
         AgentRequest.model_validate(request), packet
     )
 

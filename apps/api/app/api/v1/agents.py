@@ -30,10 +30,8 @@ class AgentDryRunRequest(BaseModel):
 
 
 def _lifecycle_status(definition: Any, configured: bool, mock_ready: bool) -> str:
-    if definition.publication_status == "published" and definition.enabled:
-        return "published"
-    if configured:
-        return "cloud_configured"
+    if definition.enabled and configured:
+        return "local_ready"
     if mock_ready:
         return "mock_ready"
     if definition.publication_status == "planned":
@@ -68,8 +66,8 @@ async def list_agent_status(request: Request) -> dict[str, Any]:
                 "supports": sorted(definition.supports),
                 "fallback_agent_id": definition.fallback_agent_id,
                 "configured": configured,
-                "flow_configured": bool(
-                    registry.resolve_flow_id(definition.agent_id, settings)
+                "local_ready": registry.is_runtime_available(
+                    definition.agent_id, settings
                 ),
                 "runtime_available": registry.is_runtime_available(
                     definition.agent_id, settings
@@ -141,8 +139,7 @@ async def show_agent(agent_id: str, request: Request) -> dict[str, Any]:
         "enabled": definition.enabled,
         "publication_status": definition.publication_status,
         "provider": definition.provider,
-        "flow_env_key": definition.flow_env,
-        "flow_configured": registry.is_configured(agent_id, request.app.state.settings),
+        "local_ready": registry.is_configured(agent_id, request.app.state.settings),
         "capabilities": {
             "user_roles": sorted(definition.capabilities.user_roles),
             "courses": sorted(definition.capabilities.courses),
@@ -163,12 +160,7 @@ async def show_agent(agent_id: str, request: Request) -> dict[str, Any]:
                 definition.development.mock_profile
             )
         ),
-        "deprecation_warnings": (
-            ["legacy_registry_fields"]
-            if not definition.input_contract.required
-            and definition.provider == "xingchen"
-            else []
-        ),
+        "deprecation_warnings": [],
     }
     return payload
 
@@ -205,7 +197,7 @@ async def dry_run_agent(
         route_status=RouteStatus.SELECTED,
         reason="debug dry-run",
         retrieval_required=definition.retrieval_policy.enabled,
-        provider_required=definition.provider == "xingchen",
+        provider_required=False,
     )
     plan = AgentExecutionPlanner(registry, request.app.state.settings).build(
         decision, agent_request
@@ -220,7 +212,7 @@ async def dry_run_agent(
     )
     return {
         "dry_run": True,
-        "cloud_called": False,
+        "remote_provider_called": False,
         "agent_id": agent_id,
         "configured": plan.configured,
         "capabilities": {

@@ -2,15 +2,14 @@
 
 ## 标准流程
 
-拿到 Flow ID → 在 `agent_configs/registry.yaml` 增加 AgentDefinition → 在本地 `.env` 填对应环境变量 → 配置输入/输出映射 → 选择 Parser → 选择 RetrievalPolicy → 选择 fallback → validate → dry-run → Fake Provider/契约测试 → 显式真实云端测试 → 设置 `enabled: true` 与 `publication_status: published`。
+定义本地 Runtime handler → 在 `agent_configs/registry.yaml` 增加 AgentDefinition → 配置输入/输出映射 → 选择 Parser → 选择 RetrievalPolicy → 选择 fallback → validate → dry-run → Mock/契约测试 → 设置 `enabled: true` 与 `publication_status: local`。
 
-不要把 Flow ID 或密钥写入 YAML、日志、截图或测试 fixture。新增星辰 Agent 不创建 HTTP Client、Provider、RAG Service 或正式 API。
+不要把密钥写入 YAML、日志、截图或测试 fixture。新增 Agent 不创建旁路 HTTP Client、Provider、RAG Service 或正式 API。
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\agent_cli.py validate
 .\.venv\Scripts\python.exe scripts\agent_cli.py show TEACH_01_LESSON_PREP_V1
 .\.venv\Scripts\python.exe scripts\agent_cli.py dry-run TEACH_01_LESSON_PREP_V1 --course CT --intent explain_concept
-.\.venv\Scripts\python.exe scripts\agent_cli.py check-flow TEACH_01_LESSON_PREP_V1
 .\.venv\Scripts\python.exe scripts\agent_cli.py test-contract TEACH_01_LESSON_PREP_V1
 ```
 
@@ -30,7 +29,7 @@
 
 1. required 输入均有映射且可转为 String。
 2. Parser 能把 Fake 响应封装为统一结果。
-3. `configured=true` 但 Debug 不显示 Flow 值。
-4. 不支持的课程、角色和输入模态在云端调用前被阻断。
-5. `RUN_REAL_XINGCHEN_TESTS=1` 时才运行真实测试。
-6. 通过 Ruff、Mypy、Pytest、60条 RAG、配置和敏感文件检查后再发布。
+3. `local_ready=true` 且 Debug 不显示敏感配置。
+4. 不支持的课程、角色和输入模态在 Runtime 执行前被阻断。
+5. 本地边界与降级测试覆盖真实任务合同。
+6. 通过 Ruff、Mypy、Pytest、RAG、配置和敏感文件检查后再发布。

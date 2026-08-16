@@ -129,7 +129,7 @@
 
       <section data-admin-module="agents" hidden>
         <header class="module-header">
-          <div><p class="eyebrow">AGENT CONTROL</p><h2>Agent 中心</h2><p>统一查看注册、发布、配置、Mock 与契约状态；真实云端动作仍遵循现有发布和权限约束。</p></div>
+          <div><p class="eyebrow">AGENT CONTROL</p><h2>Agent 中心</h2><p>统一查看注册、发布、配置、Mock 与契约状态；调试动作只触发本地 Runtime。</p></div>
           <div class="module-actions"><button id="admin-agent-refresh" class="button secondary" type="button">刷新 Agent</button><a class="button secondary" href="/debug/agents">打开完整调试页</a></div>
         </header>
         <section id="admin-agent-summary" class="admin-metric-grid"></section>
@@ -149,7 +149,7 @@
 
       <section data-admin-module="system" hidden>
         <header class="module-header">
-          <div><p class="eyebrow">SYSTEM STATUS</p><h2>系统状态</h2><p>集中展示 API、数据库、Provider、RAG、Agent 注册和运行依赖状态，不触发大模型预热或云端调用。</p></div>
+          <div><p class="eyebrow">SYSTEM STATUS</p><h2>系统状态</h2><p>集中展示 API、数据库、Provider、RAG、Agent 注册和运行依赖状态，不触发大模型预热。</p></div>
           <button id="admin-system-refresh" class="button secondary" type="button">刷新状态</button>
         </header>
         <div id="admin-system-notice" aria-live="polite"></div>

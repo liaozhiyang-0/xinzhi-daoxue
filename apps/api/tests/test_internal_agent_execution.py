@@ -259,10 +259,26 @@ def test_lesson_runtime_uses_deep_structured_output_budget() -> None:
         }
     )
 
-    assert InternalAgentExecutionService._max_tokens(runtime_request) == 512
+    assert InternalAgentExecutionService._max_tokens(runtime_request) == 3072
     assert InternalAgentExecutionService._max_tokens(
         request(Intent.LESSON_PREP)
-    ) == 384
+    ) == 3072
+
+
+def test_runtime_prompt_exposes_empty_retrieval_as_evidence_gap() -> None:
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "options": {
+                "runtime_retrieved_knowledge_hits": [],
+                "runtime_retrieval_evidence_status": "insufficient",
+            }
+        }
+    )
+
+    prompt = InternalAgentExecutionService._input_text(runtime_request, None)
+
+    assert "insufficient" in prompt
+    assert "课程资料" in prompt
 
 
 @pytest.mark.asyncio
@@ -437,7 +453,7 @@ class FakeTaskInternalExecution:
             answer="## 教案草稿\n\n### 教学目标\n- 解释电容连续性",
             business_data={
                 "learning_objectives": ["解释电容连续性"],
-                "lesson_flow": ["概念导入"],
+                "lesson_flow": ["概念导入", "简单例题讨论"],
                 "activities": ["小组讨论"],
                 "formative_assessment": ["出口题"],
             },
@@ -445,7 +461,7 @@ class FakeTaskInternalExecution:
                 "status": "completed",
                 "business_data": {
                     "learning_objectives": ["解释电容连续性"],
-                    "lesson_flow": ["概念导入"],
+                    "lesson_flow": ["概念导入", "简单例题讨论"],
                     "activities": ["小组讨论"],
                     "formative_assessment": ["出口题"],
                 },
@@ -456,7 +472,7 @@ class FakeTaskInternalExecution:
 
 
 def test_task_api_executes_internal_agent_without_second_task_path(client, api) -> None:
-    client.app.state.task_runner.internal_agents = FakeTaskInternalExecution()
+    client.app.state.task_engine.internal_agents = FakeTaskInternalExecution()
     session = api.create_session(user_id="teacher-internal")
     payload = {
         "session_id": session["id"],
@@ -466,7 +482,10 @@ def test_task_api_executes_internal_agent_without_second_task_path(client, api) 
         "course_id": "CT",
         "intent": "lesson_prep",
         "canonical_input": {"text": "请设计电容连续性课堂教案"},
-        "options": {"request_id": "request-task-internal"},
+        "options": {
+            "request_id": "request-task-internal",
+            "lesson_prep_runtime": {"execute": True},
+        },
     }
 
     created = client.post("/api/v1/tasks", json=payload)

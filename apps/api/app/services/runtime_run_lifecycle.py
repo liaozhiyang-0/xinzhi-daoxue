@@ -13,16 +13,14 @@ from app.runtime import (
     AgentRunPlan,
     RuntimeCompatibilitySnapshot,
     RuntimeLaunchSnapshot,
-    RuntimeNode,
     RuntimeNodeStatus,
-    RuntimeObservation,
     RuntimeRunStatus,
     RuntimeStateMachine,
 )
 
 
 class RuntimeRunLifecycleService:
-    """Persist a compatibility Runtime envelope around the legacy TaskRunner."""
+    """Create, restore, and finalize durable Runtime runs."""
 
     def __init__(
         self,
@@ -72,7 +70,9 @@ class RuntimeRunLifecycleService:
                     await repository.save_checkpoint(restored)
             return restored
 
-        run_plan = runtime_plan or self._build_plan(agent_id, goal, intent_plan)
+        if runtime_plan is None:
+            raise ValueError("Runtime lifecycle requires a registered business plan")
+        run_plan = runtime_plan
         run = AgentRun(
             run_id=uuid4().hex,
             task_id=task_id,
@@ -82,9 +82,6 @@ class RuntimeRunLifecycleService:
             launch_decision=launch_decision,
             compatibility_snapshot=compatibility_snapshot,
         )
-        if runtime_plan is None:
-            RuntimeStateMachine.mark_ready(run)
-            RuntimeStateMachine.start_node(run, run_plan.nodes[0].node_id)
         await repository.create(run, agent_id=agent_id, provider=provider)
         return run
 
@@ -115,56 +112,27 @@ class RuntimeRunLifecycleService:
                 return None
 
         target_status = RuntimeRunStatus(status)
-        compatibility_plan = (
-            len(run.plan.nodes) == 1
-            and run.plan.nodes[0].node_id == "legacy.execution"
-        )
-        if compatibility_plan and run.nodes["legacy.execution"].status == (
-            RuntimeNodeStatus.RUNNING
-        ):
-            node_id = "legacy.execution"
-            node_status = {
-                RuntimeRunStatus.COMPLETED: RuntimeNodeStatus.SUCCEEDED,
-                RuntimeRunStatus.FAILED: RuntimeNodeStatus.FAILED,
-                RuntimeRunStatus.CANCELLED: RuntimeNodeStatus.SKIPPED,
-            }.get(target_status, RuntimeNodeStatus.FAILED)
-            RuntimeStateMachine.complete_node(
-                run,
-                node_id,
-                status=node_status,
-                observation=RuntimeObservation(
-                    node_id=node_id,
-                    artifact_ids=list(artifact_ids),
-                    facts={
-                        "execution_mode": "legacy_task_runner_shadow",
-                        "task_status": target_status.value,
-                    },
-                    errors=[error_code] if error_code else [],
-                ),
-                error_code=error_code,
-            )
-        elif not compatibility_plan:
-            for node_id, node_state in run.nodes.items():
-                if node_state.status == RuntimeNodeStatus.RUNNING:
-                    RuntimeStateMachine.complete_node(
-                        run,
-                        node_id,
-                        status=(
-                            RuntimeNodeStatus.SKIPPED
-                            if target_status == RuntimeRunStatus.CANCELLED
-                            else RuntimeNodeStatus.FAILED
-                        ),
-                        error_code=error_code or "task_terminal",
-                    )
-                elif node_state.status in {
-                    RuntimeNodeStatus.PENDING,
-                    RuntimeNodeStatus.READY,
-                }:
-                    RuntimeStateMachine.block_node(
-                        run,
-                        node_id,
-                        error_code=error_code or "task_terminal",
-                    )
+        for node_id, node_state in run.nodes.items():
+            if node_state.status == RuntimeNodeStatus.RUNNING:
+                RuntimeStateMachine.complete_node(
+                    run,
+                    node_id,
+                    status=(
+                        RuntimeNodeStatus.SKIPPED
+                        if target_status == RuntimeRunStatus.CANCELLED
+                        else RuntimeNodeStatus.FAILED
+                    ),
+                    error_code=error_code or "task_terminal",
+                )
+            elif node_state.status in {
+                RuntimeNodeStatus.PENDING,
+                RuntimeNodeStatus.READY,
+            }:
+                RuntimeStateMachine.block_node(
+                    run,
+                    node_id,
+                    error_code=error_code or "task_terminal",
+                )
         run.status = target_status
         checkpoint = await repository.save_checkpoint(
             run,
@@ -176,25 +144,3 @@ class RuntimeRunLifecycleService:
         )
         del checkpoint
         return run
-
-    @staticmethod
-    def _build_plan(
-        agent_id: str,
-        goal: str,
-        intent_plan: IntentExecutionPlan | None,
-    ) -> AgentRunPlan:
-        del intent_plan
-        return AgentRunPlan(
-            plan_id=f"legacy-runtime:{agent_id}",
-            version="compat-1",
-            goal=goal.strip()[:8_000] or f"task:{agent_id}",
-            nodes=[
-                RuntimeNode(
-                    node_id="legacy.execution",
-                    node_type="workflow",
-                    handler_id=f"legacy.task_runner.{agent_id}",
-                    timeout_ms=900_000,
-                )
-            ],
-            success_criteria=["legacy_task_terminal_status"],
-        )

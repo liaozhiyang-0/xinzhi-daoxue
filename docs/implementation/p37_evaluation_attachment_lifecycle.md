@@ -21,7 +21,7 @@
 .\.venv\Scripts\python.exe -m ruff check apps/api/app/evaluation/runner.py apps/api/tests/test_evaluation_framework.py
 ```
 
-新增集成回归会生成一个有效 PNG，走真实的应用内 `/files`、`/sessions`、`/tasks` 和后台任务轮询链，并检查终态后附件记录与本地存储对象均已删除。该测试使用项目 Mock/离线配置，不代表真实模型或真实星辰调用结果。
+新增集成回归会生成一个有效 PNG，走真实的应用内 `/files`、`/sessions`、`/tasks` 和后台任务轮询链，并检查终态后附件记录与本地存储对象均已删除。该测试使用项目 Mock/离线配置，不代表真实模型调用结果。
 
 ## 边界与后续
 

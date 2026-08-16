@@ -46,7 +46,7 @@
 - 展示 Run、节点、checkpoint、暂停、恢复、等待输入、审批和失败原因；
 - 消费现有 Task 查询和 SSE 合同，处理断线重连、重复事件和终态展示；
 - 提供人工审批、用户补充输入和恢复操作的交互确认；
-- 对用户可见字段做脱敏，不显示 Prompt、完整 trace、向量、凭据、绝对路径或未授权 Flow ID。
+- 对用户可见字段做脱敏，不显示 Prompt、完整 trace、向量、凭据或绝对路径。
 
 前端 Agent 不得把 Runtime、RAG、Provider、TaskRunner 或重试逻辑复制到浏览器；页面加载和按钮渲染不得直接触发未经任务队列控制的 Provider 调用。
 
@@ -210,17 +210,17 @@ evidence 时仍必须保持 fail-closed。readiness、Mock、synthetic contract 
 ### 5.4 Provider、工具和子 Agent
 
 - Provider 只负责外部调用和协议解析；Runtime 负责何时调用、调用几次、预算、超时、失败传播和是否重规划。
-- 所有凭据、Flow ID、连接串和授权头只能来自受控环境变量/密钥系统；不得写入代码、YAML、测试 fixture、日志、截图、trace 或前端响应。
-- 未发布、未配置、缺少 Flow ID 或不满足 readiness 的 Agent 必须 fail-closed；Mock 结果必须明确标记为 mock/local。
-- 新增星辰 Agent 必须复用既有 Provider、环境变量和 HTTP 调用链，不创建旁路 HTTP client，不硬编码凭据。
+- 所有凭据、连接串和授权头只能来自受控环境变量/密钥系统；不得写入代码、YAML、测试 fixture、日志、截图、trace 或前端响应。
+- 未配置或不满足 readiness 的 Agent 必须 fail-closed；Mock 结果必须明确标记为 mock/local。
+- 新增 Agent 必须复用 Local Runtime、ModelService 和统一 Provider 边界，不创建旁路 HTTP client，不硬编码凭据。
 - 子 Agent 必须有深度、预算、父子 Run 关系和结果 schema；不能通过任意 Python、URL 或未注册 handler 执行。
 
 ### 5.5 SOLVER_CT 冻结边界
 
 - `SOLVER_CT v1.0` / `SOLVER_CT_V1` 是冻结基线，只能读取、适配和做 parity/hash 校验。
-- 原始星辰 YAML 只允许出现在 `.local_inputs/`，不得进入公共仓库、评测 artifact、日志或截图。
+- 历史基线原始输入只允许出现在 `.local_inputs/`，不得进入公共仓库、评测 artifact、日志或截图。
 - 任何涉及 Solver 的任务都必须附带 freeze 检查；若 hash、字段映射、文字/单图片工作流或 Provider 链发生意外变化，立即停止并回滚该任务。
-- “通过 Mock”不能证明冻结 Solver 的真实云端等价性，也不能替代授权的真实调用证据。
+- “通过 Mock”不能证明冻结 Solver 的历史等价性，也不能替代真实模型质量验收。
 
 ## 6. 消息与状态同步
 
@@ -297,7 +297,7 @@ git diff --name-only <base-commit>...HEAD
 结果必须证明：
 
 - 只包含 `write_scope` 中的文件；
-- 没有密钥、Bearer、Flow ID、原始 YAML、学生隐私或绝对本机路径；
+- 没有密钥、Bearer、历史原始输入、学生隐私或绝对本机路径；
 - 没有修改已提交 migration、冻结 Solver 或无关格式；
 - commit message 使用 `<scope>: <imperative summary>`，例如 `fix(runtime): preserve failed verification state`；
 - 一个提交只对应一个任务目的，避免把格式化、重命名和功能混在一起。
@@ -379,7 +379,7 @@ git diff --check
 出现任一条件，当前 Agent 必须停止修改并升级给主集成 Agent：
 
 - 需要修改 `SOLVER_CT v1.0`、`SOLVER_CT_V1` 或其冻结来源；
-- 发现真实 API key、Bearer token、Flow ID、原始星辰 YAML 或学生隐私进入代码、日志、fixture、trace、artifact 或文档；
+- 发现真实 API key、Bearer token、历史原始输入或学生隐私进入代码、日志、fixture、trace、artifact 或文档；
 - 任务创建路径将直接执行 Provider、工具、RAG 或子 Agent，可能破坏非阻塞约束；
 - 要绕过 Task/SSE/Provider 边界、绕过 Agent readiness 或把未发布 Agent 当作可执行；
 - 需要修改已提交 migration，或无法同时提供增量 migration、升级和回滚证据；

@@ -42,7 +42,6 @@ SENSITIVE_KEYS = frozenset(
         "api_key",
         "authorization",
         "cookie",
-        "flow_id",
         "raw_prompt",
         "secret",
         "token",

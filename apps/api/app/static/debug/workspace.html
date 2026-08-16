@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/debug-assets/design-tokens.css">
   <link rel="stylesheet" href="/debug-assets/app-shell.css">
   <link rel="stylesheet" href="/debug-assets/components.css">
-  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260814-qwen-cards-v1">
+  <link rel="stylesheet" href="/debug-assets/workspace-v2.css?v=20260815-subject-agents-v1">
 </head>
 <body class="workspace-page">
   <aside id="app-sidebar" class="app-sidebar"></aside>
@@ -32,7 +32,7 @@
     <div id="left-resizer" class="workspace-resizer left" role="separator" tabindex="0" aria-label="调整会话列表宽度" aria-orientation="vertical" aria-valuemin="180" aria-valuemax="360"></div>
     <section class="workspace-center">
       <header class="workspace-toolbar" aria-label="任务模式">
-        <div><strong>自然语言自动调度</strong><span class="workspace-auto-hint"> 系统会自动识别课程与任务</span></div>
+        <div><strong>学科智能体自动协作</strong><span class="workspace-auto-hint"> 只需描述目标，系统自动识别课程、任务和学习方式</span></div>
         <div class="workspace-toolbar-actions">
           <button id="toggle-context" class="button secondary" type="button" aria-expanded="true">任务详情</button>
           <button id="new-session" class="text-button" type="button">新建会话</button>
@@ -42,15 +42,15 @@
       <section id="conversation" class="workspace-conversation">
         <div id="welcome" class="workspace-welcome">
           <p class="eyebrow">AI LEARNING WORKSPACE</p>
-          <h1>今天想学习什么？</h1>
-          <p>一个输入框完成学习、教学与研究任务；系统自动组合内部 Agent 与本地课程资料</p>
-          <div class="prompt-grid" aria-label="统一问题输入示例">
+          <h1>把目标交给学科智能体</h1>
+          <p>围绕课程知识、教学设计、学习诊断、科研证据和知识治理完成任务；你只需描述想达成的目标。</p>
+          <div class="prompt-grid" aria-label="项目展示案例">
             <button type="button" data-capability="lesson_prep" data-intent="lesson_prep" data-prompt="我下周要给大二电子信息专业讲授电路理论中的节点电压法。请根据课程目标和可核验的课程资料，设计一份 50 分钟课堂方案：先写 3 个可观察的学习目标，再安排导入、概念讲解、带解例题、分层练习和出口条；列出学生最容易混淆的参考节点、支路电流方向和符号约定；为基础、达标、挑战三层学生各给一道练习；每个关键判断标注资料依据或明确说明资料不足；最后列出必须由教师复核的内容，并禁止自动发布未经审核的课件。" data-course="CT"><span class="capability-state">教师智能备课</span><strong>教师智能备课</strong><small>生成目标、课堂流程、分层练习、资料依据和教师复核点</small></button>
             <button type="button" data-capability="assignment_review" data-intent="assignment_review" data-prompt="请诊断下面这份电路理论作业答案，目标不是直接给总分，而是找出学生第一次导致后续结论失效的关键错误。题目：含 2 个节点和 3 条支路的直流电阻网络，已知电阻与电流方向，要求用节点电压法求两节点电压。学生步骤：1）把参考节点选在左侧节点；2）在右侧节点写成 (V-12)/2 + V/4 - 3 = 0；3）整理得到 V=12；4）因此左侧节点电压也是 12V。请保留其中正确的建模步骤，解释首错与错误传播，分别给基础和进阶学生各一条提示，并生成一道只改变一个参数的验证题；缺少标准答案或评分规则的地方必须明确标为待教师复核。" data-course="CT"><span class="capability-state">作业诊断</span><strong>作业批改与首错诊断</strong><small>定位首错、保留正确步骤、给出分层提示和验证题</small></button>
             <button type="button" data-capability="student_learning_path" data-intent="learning_advice" data-prompt="我最近三次电路理论练习中，KCL 选择题分别得分 80、60、40 分；涉及参考方向的题目经常把支路电流符号写反，但电阻串并联化简基本正确。请根据这些答题证据识别最可能的薄弱知识点，不要把一次错误当成能力定论；制定一个为期 7 天、每天不超过 25 分钟的分阶段学习路径，说明每一天的先修关系、练习目标和完成证据，并安排至少两道用于验证是否真正改善的任务。如果证据不足以支持某个判断，请明确说明并把需要教师介入的节点列出来。" data-course="CT"><span class="capability-state">学生学习路径</span><strong>学生个性化学习路径</strong><small>根据作答证据制定阶段计划、复测任务和教师介入点</small></button>
             <button type="button" data-capability="academic_search" data-intent="academic_search" data-prompt="请为“2022-01-01 至 2025-12-31 期间，面向低功耗边缘设备的神经网络推理优化”制作科研前沿证据简报。先把问题拆成模型压缩、量化、编译器/运行时和硬件协同四个子方向；筛选与问题真正相关的论文，优先返回 DOI 或 arXiv 标识、发布日期、方法和主要证据；区分论文结论与推测，说明每条证据对应哪个子问题；最后总结仍未解决的开放问题和检索范围局限。任何没有可靠来源支持的 DOI、网页或定量结论都不要生成，并明确写出资料不足之处。" data-course="AUTO"><span class="capability-state">科研证据</span><strong>科研前沿检索与证据简报</strong><small>限定时间范围、筛选论文、保留 DOI/arXiv 和证据边界</small></button>
             <button type="button" data-capability="knowledge_governance" data-intent="summarize_knowledge" data-prompt="请检查 CT 课程知识库中准备发布的一组课程资产：讲义《节点电压法》v3、练习题包《直流网络》v2、教师修订说明 v1。请按资产清单逐项核对版本号、来源、最近审批状态和可追溯链接；找出讲义 v3 与练习题包 v2 之间可能的版本冲突，列出会阻塞发布的问题、需要补齐的审批或权限信息，并给出发布前、发布后和回滚后的检查清单。只能依据输入中提供的资产记录，缺失字段必须标记为未知，不能把建议当作已完成审批。" data-course="CT"><span class="capability-state">学院治理</span><strong>学院知识库治理与课程资产发布</strong><small>检查版本、来源、审批、权限、发布阻塞项和回滚追踪</small></button>
-            <button type="button" data-capability="solve_problem" data-intent="solve_problem" data-course="AE" data-image-src="/debug-assets/question-bank/analog-opamp.jpg" data-image-name="模电测试集_图2.1.1_运算放大器电路.jpg" data-prompt="请解答这道经典模电题，并结合随附电路图逐步说明判断依据：图中为理想运算放大器，反相端接地，同相端由输入 vi 经 R1=1 MΩ 串联后接到节点 vp，再由 R2=1 kΩ 接地，输出端接负载 RL；电源为 ±15 V，忽略输入失调。请先判断该电路是否处于线性负反馈状态、虚短和虚断是否可以使用；再推导 vp 与 vi 的关系，说明 vo 的饱和方向和 vi 的输出不饱和边界；最后总结为什么不能直接套用同相比例放大器公式，并标出需要人工复核的图像读数或假设。"><span class="capability-state">图片解题</span><strong>经典模电运算放大器解题</strong><small>点击后自动附加本地题库电路图，判断虚短、饱和与输出边界</small></button>
+            <button type="button" data-capability="solve_problem" data-intent="solve_problem" data-course="AE" data-image-src="/debug-assets/question-bank/analog-opamp.jpg" data-image-name="模电测试集_图2.1.1_运算放大器电路.jpg" data-prompt="请解答这道经典模电题，并结合随附电路图逐步说明判断依据：图中为理想运算放大器，反相端接地，同相端由输入 vi 经 R1=1 MΩ 串联后接到节点 vp，再由 R2=1 kΩ 接地，输出端接负载 RL；电源为 ±15 V，忽略输入失调。请先判断该电路是否处于线性负反馈状态、虚短和虚断是否可以使用；再推导 vp 与 vi 的关系，说明 vo 的饱和方向和 vi 的输出不饱和边界；最后总结为什么不能直接套用同相比例放大器公式，并标出需要人工复核的图像读数或假设。"><span class="capability-state">学科诊断</span><strong>模拟电子技术 · 电路诊断与边界分析</strong><small>结合本地题图分析工作状态、关键假设、验证依据与输出边界</small></button>
           </div>
         </div>
         <div id="messages" class="message-list" aria-live="polite"></div>
@@ -62,69 +62,6 @@
             </div>
             <button id="answer-source-chip" class="source-chip" type="button">课程资料 0</button>
           </header>
-          <section id="teaching-loop-panel" class="teaching-loop-panel" aria-labelledby="teaching-loop-title" hidden>
-            <header class="teaching-loop-header">
-              <div>
-                <span class="eyebrow">分级辅导</span>
-                <h3 id="teaching-loop-title">本题学习路径</h3>
-              </div>
-              <div class="teaching-loop-badges">
-                <span id="teaching-path-badge" class="teaching-badge">直接解答</span>
-                <span id="teaching-hint-badge" class="teaching-badge level" hidden>H0</span>
-              </div>
-            </header>
-            <div id="teaching-verification-card" class="teaching-status-card" hidden>
-              <strong id="teaching-verification-title">有限核对结果</strong>
-              <p id="teaching-verification-text"></p>
-            </div>
-            <div id="teaching-hint-card" class="teaching-step-card" hidden>
-              <span class="teaching-step-label">当前提示</span>
-              <p id="teaching-hint-text"></p>
-            </div>
-            <div id="teaching-next-card" class="teaching-step-card" hidden>
-              <span class="teaching-step-label">下一步理解检查</span>
-              <p id="teaching-next-question"></p>
-              <label for="teaching-response-input">写下你的判断或计算结果</label>
-              <textarea id="teaching-response-input" maxlength="10000" rows="2" placeholder="只需回答这一小步，不必重写整道题。"></textarea>
-            </div>
-            <div class="teaching-loop-actions">
-              <button id="submit-teaching-response" class="button" type="button">提交本步回答</button>
-              <button id="request-more-hint" class="button secondary" type="button">再给一点提示</button>
-              <button id="switch-direct-answer" class="text-button" type="button">查看完整解答</button>
-            </div>
-            <p id="teaching-scope-note" class="teaching-scope-note">有限核对只确认规则可验证的错误；复杂推导会明确标记为需要人工复核。</p>
-          </section>
-          <section id="learning-progress-panel" class="learning-progress-panel" aria-labelledby="learning-progress-title" hidden>
-            <header class="learning-progress-header">
-              <div>
-                <span class="eyebrow">学习记录</span>
-                <h3 id="learning-progress-title">本题进展与待复习</h3>
-              </div>
-              <span class="teaching-badge">本地记录</span>
-            </header>
-            <div class="learning-progress-grid">
-              <section class="learning-progress-card">
-                <h4>尝试历史</h4>
-                <div id="attempt-history" class="attempt-history"></div>
-              </section>
-              <section class="learning-progress-card">
-                <h4>提交修改后的步骤</h4>
-                <textarea id="attempt-revision-input" maxlength="10000" rows="3" placeholder="根据提示修改你的步骤或最终结果。"></textarea>
-                <button id="submit-attempt-revision" class="button" type="button">提交修改后的步骤</button>
-                <p id="feedback-uptake-message" class="learning-feedback" hidden></p>
-              </section>
-              <section class="learning-progress-card">
-                <h4>学习进度估计</h4>
-                <div id="mastery-progress-list" class="mastery-progress-list"></div>
-                <p class="teaching-scope-note">学习进度为基于当前练习记录的辅助估计，不等同于考试成绩或正式能力评价。</p>
-              </section>
-              <section class="learning-progress-card">
-                <h4>待复习</h4>
-                <div id="retest-plan-list" class="retest-plan-list"></div>
-                <p class="teaching-scope-note">复习项仅在你打开工作台时查询，不会主动发送通知。</p>
-              </section>
-            </div>
-          </section>
           <div id="answer-text" class="markdown-view markdown-document"></div>
           <div id="business-result" class="business-result"></div>
           <div id="answer-notices" class="notice-stack"></div>
@@ -153,13 +90,13 @@
             <button id="copy-answer" type="button" class="text-button">复制回答</button>
             <button id="toggle-sources" type="button" class="text-button">查看资料依据</button>
             <button id="follow-up" type="button" class="text-button">继续追问</button>
-            <button id="reask" type="button" class="text-button">重新提问</button>
-            <button type="button" class="text-button" data-learning-action="add_wrong_answer">加入错题本</button>
-            <button type="button" class="text-button" data-learning-action="get_hint">给我提示</button>
-            <button type="button" class="text-button" data-learning-action="check_answer">检查我的答案</button>
-            <button type="button" class="text-button" data-learning-action="generate_variant">生成变式题</button>
-            <button type="button" class="text-button" data-learning-action="related_knowledge">讲解关联知识</button>
-            <button type="button" class="text-button" data-learning-action="mark_mastered">标记已掌握</button>
+            <button id="retry-task" type="button" class="button secondary" hidden>重试本次任务</button>
+            <details class="answer-more-actions">
+              <summary>更多操作</summary>
+              <div>
+                <button id="reask" type="button" class="text-button">重新提问</button>
+              </div>
+            </details>
           </div>
           <section id="task-feedback-panel" class="task-feedback-panel" hidden aria-labelledby="task-feedback-title">
             <div>
@@ -190,10 +127,13 @@
           </div>
           <div id="preview-images" class="upload-preview-list" aria-live="polite"></div>
         </div>
-        <div class="teaching-mode-row">
-          <label class="compact-control"><span>学习方式</span><select id="teaching-mode"><option value="direct_answer" selected>直接解答</option><option value="guided_learning">分步辅导</option><option value="check_my_work">检查我的步骤</option></select></label>
-          <span id="teaching-mode-boundary">直接给出完整思路与结论。</span>
+        <div class="auto-detection-row" role="status" aria-live="polite">
+          <span class="auto-detection-label">自动识别</span>
+          <span id="detected-course" class="detection-chip">课程：等待提问</span>
+          <span id="detected-learning-mode" class="detection-chip">学习方式：等待提问</span>
+          <span id="teaching-mode-boundary" class="auto-detection-note">根据问题目标、附件和上下文自动组织回答。</span>
         </div>
+        <input id="teaching-mode" type="hidden" value="direct_answer">
         <section id="research-analysis-v2-panel" class="research-analysis-v2-panel" hidden>
           <div class="section-heading">
             <div>
@@ -247,15 +187,15 @@
           <label>方法证据 JSON（可选数组；只填写可核验的 method_reference）<textarea id="research-analysis-evidence" class="compact-textarea" rows="2" maxlength="6000" placeholder='[{"evidence_id":"method-001","role":"method_reference","title":"方法来源","source_ref":"https://doi.org/...","cited":true}]'></textarea></label>
           <p class="field-hint">执行原始数据前还需要服务端受控数据引用、输出目录和人工复核；本入口不会从浏览器接收或显示服务器绝对路径。</p>
         </section>
-        <textarea id="question-input" maxlength="4000" rows="1" aria-label="学习问题" placeholder="输入课程问题；Shift+Enter 换行"></textarea>
+        <textarea id="question-input" maxlength="4000" rows="1" aria-label="任务目标或学习问题" placeholder="描述你的学习、教学或研究目标；Shift+Enter 换行"></textarea>
         <div id="student-attempt-panel" class="student-attempt-panel" hidden>
-          <label for="student-attempt-input">请填写你的解题过程或答案</label>
-          <textarea id="student-attempt-input" maxlength="10000" rows="3" aria-label="学生解题过程" placeholder="例如：先列出 KCL 方程，再代入数值……"></textarea>
+          <label for="student-attempt-input">请填写你已有的思路或答案</label>
+          <textarea id="student-attempt-input" maxlength="10000" rows="3" aria-label="已有思路或答案" placeholder="例如：我先列出 KCL 方程，再代入数值……"></textarea>
           <small>暂不识别手写图片，也不承诺复杂推导的稳定首错定位。</small>
         </div>
         <div class="composer-controls">
           <div class="composer-left">
-            <label class="compact-control"><span>课程</span><select id="course-select"><option value="AUTO">自动识别</option><option value="CT">电路理论</option><option value="AE">模拟电子技术</option><option value="DE">数字电子技术</option><option value="SS">信号与系统</option><option value="DSP">数字信号处理</option><option value="COMM">通信原理</option></select></label>
+            <input id="course-select" type="hidden" value="AUTO">
             <label id="image-label" class="composer-tool"><span>添加材料</span><input id="image-input" type="file" multiple accept="image/jpeg,image/png,image/webp,text/plain,text/markdown,text/csv,text/tab-separated-values,application/json,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.apache.parquet,.md,.txt,.csv,.tsv,.json,.pdf,.doc,.docx,.xlsx,.parquet"></label>
             <details class="more-settings"><summary>高级选项</summary><div class="settings-popover"><label>回答深度<select id="depth-select"><option value="brief">简要</option><option value="standard" selected>标准</option><option value="deep">深入</option></select></label><label><input id="show-images" type="checkbox" checked> 显示教材图片</label></div></details>
           </div>
@@ -266,7 +206,9 @@
 
     <div id="right-resizer" class="workspace-resizer right" role="separator" tabindex="0" aria-label="调整任务详情宽度" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="620"></div>
     <aside id="context-panel" class="context-panel" aria-label="课程证据与执行信息">
-      <header class="context-header"><div><span>当前任务</span><strong id="context-task-title">等待提问</strong></div><button id="close-context" class="icon-button" type="button" aria-label="关闭任务详情">×</button></header>
+      <header class="context-header">
+        <div><span>当前任务</span><strong id="context-task-title">等待提问</strong></div><button id="close-context" class="icon-button" type="button" aria-label="关闭任务详情">×</button>
+      </header>
       <div class="context-tabs" role="tablist">
         <button class="active" type="button" data-context-tab="evidence">资料依据</button>
         <button type="button" data-context-tab="process">执行过程</button>
@@ -311,7 +253,7 @@
     </div>
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
-    <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260814-unified-members-v1"></script>
-    <script src="/debug-assets/workspace.js?v=20260814-unified-members-v1&session-reset=1"></script>
+    <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260815-subject-agents-v1"></script>
+    <script type="module" src="/debug-assets/workspace.js?v=20260815-subject-agents-v1&session-reset=1"></script>
 </body>
 </html>

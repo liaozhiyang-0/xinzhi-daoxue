@@ -28,7 +28,7 @@
 - `SOLVER_CT v1.0/SOLVER_CT_V1` 保持冻结；新增 CT 规则证据和确定性校验器通过现有服务边界工作，不复制或重写冻结 Solver。
 - 课程资产 manifest 不是运行时 CoursePack 来源；运行时仍由 Course Registry 提供。
 - CT/AE 候选错误模板必须经过教师证据复核；当前 CT 4 条、AE 6 条候选均 `runtime_eligible=false`，没有 release 文件。
-- 真实 Xingchen/Provider 调用、原始凭据、Flow ID、真实用户数据和真实 OCR 结果没有被写入仓库或由本轮验证产生。
+- 真实外部 Provider 调用、原始凭据、真实用户数据和真实 OCR 结果没有被写入仓库或由本轮验证产生。
 - 三个演示案例不在自动生成、自动评测或完成度结论中。
 - Mock、离线评测和确定性校验只表示工程验证，不表示真实用户效果、准确率或竞赛成绩。
 

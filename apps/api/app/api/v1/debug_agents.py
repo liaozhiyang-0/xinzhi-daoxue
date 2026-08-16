@@ -35,11 +35,6 @@ class AgentDebugRequest(BaseModel):
     allow_mock: bool = False
 
 
-class AgentCompareRequest(AgentDebugRequest):
-    allow_cloud: bool = False
-    cloud_sample: dict[str, Any] | None = None
-
-
 def _ensure_debug(request: Request, *, action: bool = True) -> None:
     settings = request.app.state.settings
     if not settings.rag_debug_enabled:
@@ -79,8 +74,8 @@ def _result_payload(result: Any, *, elapsed_ms: int) -> dict[str, Any]:
         "warnings": result.warnings,
         "mock_used": result.mock_used,
         "mock_profile": result.mock_profile,
-        "cloud_called": result.cloud_status not in {"", "not_run", "not_called"},
-        "cloud_status": result.cloud_status,
+        "remote_provider_called": False,
+        "provider_status": result.provider,
         "local_latency_ms": elapsed_ms,
         "provider_latency_ms": result.metrics.provider_latency_ms,
         "validation_errors": [],
@@ -110,7 +105,7 @@ async def validate_agent(agent_id: str, request: Request) -> dict[str, Any]:
         "retrieval_policy": definition.retrieval_policy.policy_name,
         "fallback_handler": definition.fallback.handler,
         "mock_ready": definition.development.mock_enabled and not errors,
-        "flow_configured": request.app.state.agent_registry.is_configured(
+        "local_ready": request.app.state.agent_registry.is_configured(
             agent_id, request.app.state.settings
         ),
     }
@@ -139,7 +134,7 @@ async def run_mock(
             "agent_id": agent_id,
             "provider": "none",
             "mock_used": False,
-            "cloud_called": False,
+            "remote_provider_called": False,
             "warnings": [],
             "validation_errors": [exc.message],
             "details": exc.details,
@@ -167,57 +162,6 @@ def _type_name(value: Any) -> str:
         return "number"
     return type(value).__name__
 
-
-@router.post("/{agent_id}/compare")
-async def compare_mock_cloud(
-    agent_id: str, payload: AgentCompareRequest, request: Request
-) -> dict[str, Any]:
-    _ensure_debug(request)
-    mock_request = payload.model_copy(update={"allow_mock": True})
-    mock_result = await run_mock(agent_id, mock_request, request)
-    cloud_payload: dict[str, Any] | None = payload.cloud_sample
-    cloud_called = False
-    definition = request.app.state.agent_registry.get(agent_id)
-    if payload.allow_cloud:
-        if not (
-            definition.enabled
-            and definition.publication_status == "published"
-            and request.app.state.agent_registry.is_runtime_available(
-                agent_id, request.app.state.settings
-            )
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="仅已发布且配置完整的Agent允许真实Cloud结构比较",
-            )
-        result = await request.app.state.provider.run(
-            agent_id, _agent_request(agent_id, payload, request), stream=False
-        )
-        cloud_payload = _result_payload(result, elapsed_ms=0)
-        cloud_called = True
-    if cloud_payload is None:
-        raise HTTPException(
-            status_code=422,
-            detail="需要提供脱敏cloud_sample或显式允许已发布Agent调用Cloud",
-        )
-    mock_business = mock_result.get("business_data", {})
-    cloud_business = cloud_payload.get("business_data", {})
-    mock_fields = set(mock_business) if isinstance(mock_business, dict) else set()
-    cloud_fields = set(cloud_business) if isinstance(cloud_business, dict) else set()
-    return {
-        "agent_id": agent_id,
-        "cloud_called": cloud_called,
-        "mock_used": bool(mock_result.get("mock_used")),
-        "mock_schema": _schema(mock_result),
-        "cloud_schema": _schema(cloud_payload),
-        "business_data": {
-            "missing_in_cloud": sorted(mock_fields - cloud_fields),
-            "extra_in_cloud": sorted(cloud_fields - mock_fields),
-            "mock_types": _schema(mock_business),
-            "cloud_types": _schema(cloud_business),
-        },
-        "semantic_quality_compared": False,
-    }
 
 
 @router.post("/{agent_id}/contract-tests")

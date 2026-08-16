@@ -13,7 +13,6 @@ fi
 export APP_ENV=test
 export DEFAULT_AGENT_PROVIDER=mock
 export ALLOW_MOCK_FALLBACK=true
-export XINGCHEN_ENABLED=false
 
 "$python_bin" scripts/validate_config.py
 "$python_bin" scripts/check_sensitive_files.py

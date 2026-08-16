@@ -25,7 +25,7 @@ def test_learning_routes_to_local_knowledge_agent(course_id: str, intent: str) -
     decision = TaskRouter(AgentRegistry()).route(request(course_id, intent))
 
     assert decision.route_status == RouteStatus.SELECTED
-    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
     assert decision.retrieval_required is True
     assert decision.provider_required is False
     assert decision.route_source == "local_fast"
@@ -38,6 +38,27 @@ def test_ct_solve_routes_to_solver() -> None:
 
     assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
     assert decision.provider_required is False
+
+
+def test_legacy_allow_cloud_flag_cannot_enable_remote_routing() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-route",
+            "user_id": "user-route",
+            "scene": "learning",
+            "course_id": "CT",
+            "intent": "explain_concept",
+            "canonical_input": {"question": "测试问题"},
+            "options": {"allow_cloud": True},
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert "allow_cloud" not in task_request.options
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert decision.provider_required is False
+    assert decision.route_source == "local_fast"
 
 
 def test_explicit_course_unknown_learning_question_routes_to_course_knowledge() -> None:
@@ -53,14 +74,14 @@ def test_explicit_course_unknown_learning_question_routes_to_course_knowledge() 
                     "请解释负反馈为什么能改善放大器性能，并引用模拟电子技术课程资料。"
                 )
             },
-            "options": {"allow_cloud": False, "use_local_rag": True},
+            "options": {"use_local_rag": True},
         }
     )
 
     decision = TaskRouter(AgentRegistry()).route(task_request)
 
     assert decision.route_status == RouteStatus.SELECTED
-    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
     assert decision.intent == "explain_concept"
     assert decision.course_id == "AE"
     assert decision.retrieval_required is True
@@ -68,67 +89,22 @@ def test_explicit_course_unknown_learning_question_routes_to_course_knowledge() 
     assert "explicit_course_learning_context" in decision.reason_codes
 
 
-def test_solver_hybrid_fallback_routes_when_cloud_is_allowed_but_unconfigured() -> None:
-    task_request = request("CT", "solve_problem").model_copy(
-        update={
-            "options": {
-                "allow_cloud": True,
-                "_scenario_catalog_bound": True,
-                "scenario_agent_id": "SOLVER_CT_V1",
-            }
-        }
-    )
-    settings = Settings(
-        _env_file=None,
-        xingchen_enabled=True,
-        xingchen_api_key="",
-        xingchen_api_secret="",
-    )
 
-    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
-
-    assert decision.agent_id == "SOLVER_CT_V1"
-    assert decision.provider_required is False
-    assert decision.route_status == RouteStatus.SELECTED
-
-
-def test_unconfigured_provider_without_local_contract_is_not_selected() -> None:
-    task_request = request("CT", "academic_writing").model_copy(
-        update={"options": {"allow_cloud": True}}
-    )
-    settings = Settings(
-        _env_file=None,
-        xingchen_enabled=True,
-        xingchen_api_key="",
-        xingchen_api_secret="",
-    )
-
-    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
-
-    assert decision.agent_id == "GENERAL_MODEL_FALLBACK_V1"
-    assert decision.route_status == RouteStatus.SELECTED
-    assert decision.fallback_used is True
-    assert any(
-        code in decision.reason_codes
-        for code in ("target_agent_unavailable", "route_unavailable")
-    )
-
-
-def test_disabled_xingchen_agent_is_not_kept_by_local_only_routing() -> None:
+def test_disabled_local_agent_is_not_kept_by_local_only_routing() -> None:
     registry = AgentRegistry()
     primary = registry.get("ACADEMIC_PROBLEM_SOLVER")
     registry._agents[primary.agent_id] = replace(
         primary,
-        provider="xingchen",
+        provider="local",
         enabled=False,
         publication_status="published",
-        execution_mode="hybrid",
+        execution_mode="local",
         route_when_unconfigured=True,
     )
 
     decision = TaskRouter(registry, Settings(_env_file=None)).route(
         request("CT", "solve_problem").model_copy(
-            update={"options": {"allow_cloud": False}}
+            update={"options": {}}
         )
     )
 
@@ -209,7 +185,6 @@ def test_research_analysis_v2_stays_local_without_model_keys() -> None:
                 "text": "比较 treatment 与 control 的 score 差异，并报告效应量"
             },
             "options": {
-                "allow_cloud": False,
                 "research_analysis_v2": {"execute": True},
                 "scenario_agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
                 "_scenario_catalog_bound": True,
@@ -219,7 +194,6 @@ def test_research_analysis_v2_stays_local_without_model_keys() -> None:
     settings = Settings(
         _env_file=None,
         default_agent_provider="mock",
-        xingchen_enabled=False,
         iflytek_spark_api_key="",
         dashscope_api_key="",
     )
@@ -360,7 +334,7 @@ def test_high_confidence_recognized_workflow_bypasses_keyword_solver(
         course_id="AUTO",
         intent="unknown",
         canonical_input={"text": text},
-        options={"allow_cloud": False},
+        options={},
     )
 
     decision = TaskRouter(AgentRegistry()).route(task_request)
@@ -379,9 +353,8 @@ def test_network_follow_up_does_not_inherit_previous_course_context() -> None:
         intent="unknown",
         canonical_input={"text": "那为什么服务器要回复 SYN+ACK？"},
         options={
-            "previous_agent": "LEARN_01_LOCAL_RETRIEVAL_V1",
+            "previous_agent": "LEARN_01_KNOWLEDGE_QA_V1",
             "previous_intent": "explain_concept",
-            "allow_cloud": False,
         },
     )
 
@@ -429,7 +402,6 @@ def test_research_workflow_does_not_inherit_learning_session_course() -> None:
         options={
             "active_course": "CT",
             "previous_course": "CT",
-            "allow_cloud": False,
         },
     )
 
@@ -447,7 +419,7 @@ def test_cross_domain_topic_overrides_stale_explicit_course_hint() -> None:
         course_id="CT",
         intent="unknown",
         canonical_input={"text": "2024年至2026年人工智能有哪些代表性进展？"},
-        options={"allow_cloud": False},
+        options={},
     )
 
     decision = TaskRouter(AgentRegistry()).route(task_request)
@@ -492,7 +464,7 @@ def test_dynamic_circuit_state_variables_do_not_route_to_data_analysis() -> None
                     "自然频率、阻尼类型、第一次经过零点的时刻并验证能量平衡。"
                 )
             },
-            "options": {"allow_cloud": False},
+            "options": {},
         }
     )
 
@@ -531,7 +503,7 @@ def test_natural_academic_problem_language_routes_to_solver(text: str) -> None:
             "course_id": "CT",
             "intent": "general_qa",
             "canonical_input": {"text": text},
-            "options": {"allow_cloud": False},
+            "options": {},
         }
     )
 
@@ -549,7 +521,7 @@ def test_general_qa_problem_submission_completes_with_solver_answer(
     payload = api.task_payload(
         session["id"],
         intent="general_qa",
-        options={"allow_cloud": False, "use_local_rag": False},
+        options={"use_local_rag": False},
     )
     payload["canonical_input"] = {
         "text": "已知电阻电压 u=10V、电流 i=2A，按关联参考方向求吸收功率。"

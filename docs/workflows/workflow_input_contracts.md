@@ -2,13 +2,13 @@
 
 ## 两层契约
 
-平台区分“本地业务字段”和“星辰开始节点参数”。材料提取器保留原文并生成业务字段；`AgentInputMapper` 再把这些字段映射到真实开始节点。对尚无导出 YAML 可审计的工作流，只使用仓库历史上已有的 `AGENT_USER_INPUT`，通过 `workflow_prompt` 文本封装传递业务字段，不把建议字段名冒充云端参数名。
+系统区分“业务字段”和“Runtime 输入合同”。材料提取器保留原文并生成业务字段；`AgentInputMapper` 再把这些字段映射到已登记的本地 handler。输入通过 `workflow_prompt` 文本封装传递业务字段，不把建议字段名冒充底层 Provider 参数。
 
 `workflow_prompt` 包含原始问题、course_id、user_role、intent，以及按字段名排序的非空 `canonical_input`；不生成缺失值、不改数值、不包含二进制附件。
 
 ## 各 Agent 逻辑字段
 
-| Agent | 必需 | 可选材料 | 星辰参数 |
+| Agent | 必需 | 可选材料 | Runtime 输入 |
 |---|---|---|---|
 | LEARN | question, course_id, intent, request_id | retrieved_context, previous summaries, response_depth | 既有多字段契约 |
 | SOLVER_CT | text | 单张 PNG/JPEG | 冻结 `AGENT_USER_INPUT`、`USER_INPUT_image` |
@@ -27,7 +27,7 @@ Router 所需候选信息位于请求 options 中，并被确定性封装进 Rou
 - 图片：仅 SOLVER_CT 接受一张 PNG/JPEG。
 - TXT/MD/CSV/JSON：前端安全读取不超过 2 MB 的文本并附带元数据；CSV 只形成真实文本摘要，不宣称已执行统计。
 - PDF：仅保存附件并提示粘贴关键文字；不宣称已全面解析。
-- 本地附件路径不会作为云端图片字段发送。
+- 本地附件路径不会作为底层 Provider 图片字段发送。
 
 ## 验证命令
 

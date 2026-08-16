@@ -60,89 +60,20 @@ def test_host_runtime_uses_host_endpoints(monkeypatch) -> None:
     assert environment["COMPOSE_PROJECT_NAME"] == "xinzhi-daoxue"
 
 
-def test_runtime_development_profile_enables_non_xingchen_defaults() -> None:
-    launcher = load_launcher()
-
-    profile = launcher.enable_runtime_development_profile(
-        {"APP_ENV": "development"}
-    )
-
-    assert profile["AGENT_RUNTIME_SOLVER_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_GENERAL_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_TEACHING_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_RESEARCH_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED"] == "true"
-    assert profile["AGENT_RUNTIME_LAUNCH_MODES"] == (
-        "ACADEMIC_PROBLEM_SOLVER=default,GENERAL_QUESTION_V1=default,"
-        "LEARN_01_LOCAL_RETRIEVAL_V1=default,TEACH_01_LESSON_PREP_V1=default,"
-        "TEACH_02_ASSIGNMENT_REVIEW_V1=default,"
-        "RESEARCH_01_ACADEMIC_SEARCH_V1=default,"
-        "RESEARCH_02_ACADEMIC_WRITING_V1=default"
-    )
-    assert profile["AGENT_RUNTIME_RELEASE_GATE_REQUIRED"] == "false"
-    assert "XINGCHEN_ENABLED" not in profile
-
-
-def test_runtime_development_profile_rejects_production_and_existing_modes() -> None:
-    launcher = load_launcher()
-
-    with pytest.raises(launcher.LaunchError, match="development or test"):
-        launcher.enable_runtime_development_profile({"APP_ENV": "production"})
-    with pytest.raises(launcher.LaunchError, match="LAUNCH_MODES"):
-        launcher.enable_runtime_development_profile(
-            {
-                "APP_ENV": "development",
-                "AGENT_RUNTIME_LAUNCH_MODES": "GENERAL_QUESTION_V1=canary",
-            }
-        )
-
-
-def test_normal_development_start_defaults_to_runtime() -> None:
-    launcher = load_launcher()
-
-    assert launcher.should_enable_default_runtime_profile({"APP_ENV": "development"})
-    assert launcher.should_enable_default_runtime_profile({"APP_ENV": "test"})
-    assert not launcher.should_enable_default_runtime_profile(
-        {"APP_ENV": "production"}
-    )
-    assert not launcher.should_enable_default_runtime_profile(
-        {
-            "APP_ENV": "development",
-            "AGENT_RUNTIME_LAUNCH_MODES": "GENERAL_QUESTION_V1=canary",
-        }
-    )
-
-
-def test_normal_development_start_can_explicitly_keep_legacy() -> None:
-    launcher = load_launcher()
-
-    assert not launcher.should_enable_default_runtime_profile(
-        {"APP_ENV": "development"}, legacy_opt_out=True
-    )
-    assert not launcher.should_enable_default_runtime_profile(
-        {"APP_ENV": "development", "AGENT_RUNTIME_DEFAULT_ENABLED": "false"}
-    )
-
-
 def test_configuration_summary_never_returns_secret_values() -> None:
     launcher = load_launcher()
     secret = "this-value-must-never-be-returned"
     summary = launcher.configuration_summary(
         {
-            "XINGCHEN_ENABLED": "true",
-            "XINGCHEN_API_KEY": secret,
-            "XINGCHEN_API_SECRET": secret,
+            "IFLYTEK_SPARK_API_KEY": secret,
+            "DASHSCOPE_API_KEY": secret,
         }
     )
     rendered = str(summary)
     assert secret not in rendered
-    assert summary["secrets"]["XINGCHEN_API_KEY"] == "configured"
-    assert summary["secrets"]["XINGCHEN_SOLVER_CT_FLOW_ID"] == "missing"
-
+    assert summary["provider_mode"] == "local_runtime"
+    assert summary["secrets"]["IFLYTEK_SPARK_API_KEY"] == "configured"
+    assert summary["secrets"]["DASHSCOPE_API_KEY"] == "configured"
 
 def test_runtime_checks_report_project_services_without_secret_values(
     monkeypatch,
@@ -424,29 +355,10 @@ def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> 
         open_browser=True,
         refresh_deps=False,
         reload=False,
-        with_cloud=False,
     )
 
     assert launcher.command_start(args) == 0
     assert opened == ["http://127.0.0.1:8000"]
-
-
-def test_runtime_dev_requires_force_reload_for_an_existing_api(monkeypatch) -> None:
-    launcher = load_launcher()
-    monkeypatch.setattr(launcher, "api_ready", lambda _base_url: True)
-    monkeypatch.setattr(launcher, "owned_api_pids", lambda _port: [1234])
-    args = SimpleNamespace(
-        port=8000,
-        open_browser=False,
-        refresh_deps=False,
-        reload=False,
-        force_reload=False,
-        with_cloud=False,
-        runtime_dev=True,
-    )
-
-    with pytest.raises(launcher.LaunchError, match="force-reload"):
-        launcher.command_start(args)
 
 
 def test_start_restarts_duplicate_owned_api_processes(monkeypatch) -> None:
@@ -463,7 +375,6 @@ def test_start_restarts_duplicate_owned_api_processes(monkeypatch) -> None:
         open_browser=False,
         refresh_deps=False,
         reload=False,
-        with_cloud=False,
     )
 
     assert launcher.command_start(args) == 0
@@ -492,7 +403,6 @@ def test_force_reload_restarts_one_owned_api_process(monkeypatch) -> None:
         refresh_deps=False,
         reload=False,
         force_reload=True,
-        with_cloud=False,
     )
 
     assert launcher.command_start(args) == 0

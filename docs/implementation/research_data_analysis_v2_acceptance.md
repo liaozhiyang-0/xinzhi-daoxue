@@ -6,7 +6,6 @@
 ## 宸插畬鎴愭枃浠?
 - `apps/api/app/contracts/research_analysis.py`
 - `apps/api/app/contracts/__init__.py`
-- `apps/api/app/services/research_analysis_state.py`
 - `apps/api/app/services/research_data_quality.py`
 - `apps/api/app/services/research_analysis_planner.py`
 - `apps/api/app/services/research_analysis_review.py`

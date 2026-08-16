@@ -79,6 +79,6 @@ AgentRequest
 ## 非目标
 
 - 本阶段不新增数据库表。
-- 本阶段不修改 `SOLVER_CT_V1`、`SOLVER_CT v1.0` 或星辰 Provider。
+- 本阶段不修改 `SOLVER_CT_V1`、`SOLVER_CT v1.0` 或本地 Runtime Provider。
 - 本阶段不引入第二套 Agent Runtime。
 - 本阶段不实现通用网页抓取、全文下载或自动知识库写入。

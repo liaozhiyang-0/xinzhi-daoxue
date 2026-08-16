@@ -23,14 +23,7 @@ from app.services.task_session_commit import TaskSessionCommitService
 
 
 class TaskTerminalBoundary:
-    """Own the shared terminal protocol for legacy and Runtime executions.
-
-    Runtime business services produce an AgentResult, while the compatibility
-    Task/SSE contract still requires the same validation, presentation,
-    Session, Artifact, AgentRun, and completion-event writes. Keeping that
-    protocol here prevents a new Runtime path from growing a second terminal
-    implementation inside TaskRunner.
-    """
+    """Own the Task/SSE terminal protocol for successful Runtime execution."""
 
     def __init__(
         self,

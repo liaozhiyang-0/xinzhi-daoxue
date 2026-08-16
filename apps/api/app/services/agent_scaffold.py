@@ -29,15 +29,11 @@ class AgentScaffoldSpec:
     retrieval_policy: str = "no_rag"
     fallback_type: str = "planned_response"
     mock_profile: str = "generic_planned_v1"
-    flow_env_key: str = ""
 
 
 class AgentScaffoldService:
     def build(self, spec: AgentScaffoldSpec) -> dict[str, str]:
         self._validate_spec(spec)
-        flow_env = (
-            spec.flow_env_key or f"XINGCHEN_{spec.agent_id.removesuffix('_V1')}_FLOW_ID"
-        )
         retrieval_enabled = spec.retrieval_policy != "no_rag"
         input_mapping: dict[str, dict[str, Any]] = {}
         for source in (*spec.required_inputs, *spec.optional_inputs):
@@ -57,8 +53,7 @@ class AgentScaffoldService:
                 "schema_version": "1",
                 "scene": "learning",
                 "provider": {
-                    "type": "xingchen",
-                    "flow_env_key": flow_env,
+                    "type": "local",
                     "timeout_seconds": 45,
                     "max_retries": 0,
                     "parser_type": spec.parser_type,
@@ -66,7 +61,8 @@ class AgentScaffoldService:
                 },
                 "enabled": False,
                 "publication_status": "planned",
-                "mode": "provider",
+                "mode": "local_runtime",
+                "execution_mode": "local",
                 "course_ids": list(spec.courses),
                 "supports": list(spec.input_modes),
                 "capabilities": {
@@ -100,9 +96,8 @@ class AgentScaffoldService:
                     "type": "planned",
                     "handler": spec.fallback_type,
                     "trigger_on": [
-                        "cloud_timeout",
-                        "cloud_http_error",
-                        "cloud_parse_error",
+                        "provider_timeout",
+                        "provider_error",
                         "not_configured",
                     ],
                 },
@@ -121,7 +116,7 @@ class AgentScaffoldService:
                 "input": {"question": "正常契约输入", "course_id": spec.courses[0]},
                 "expected_status": "success",
                 "required_business_fields": list(spec.output_fields),
-                "forbidden_strings": ["Authorization", "XINGCHEN_API_KEY"],
+                "forbidden_strings": ["Authorization", "API_KEY"],
                 "manual_review_required": True,
             },
             {
@@ -147,12 +142,12 @@ class AgentScaffoldService:
             "agent_definition.yaml": yaml.safe_dump(
                 definition, allow_unicode=True, sort_keys=False
             ),
-            ".env.example": f"{flow_env}=\n",
+            ".env.example": "# 本地 Runtime 不需要远程 Provider 凭据\n",
             "mock_profile.yaml": yaml.safe_dump(
                 {
                     spec.mock_profile: {
                         "status": "success",
-                        "answer_text": "开发态Mock结果，不代表正式云端能力。",
+                        "answer_text": "开发态 Mock 结果，仅用于协议联调。",
                         "business_data": {field: None for field in spec.output_fields},
                     }
                 },
@@ -167,12 +162,9 @@ class AgentScaffoldService:
                 "    # 将生成的fixture合并到统一参数化契约测试。\n"
                 "    assert True\n"
             ),
-            "test_real_cloud_template.py": (
-                "import os\nimport pytest\n\n"
-                "pytestmark = pytest.mark.skipif(\n"
-                "    os.getenv('RUN_REAL_XINGCHEN_TESTS') != '1',\n"
-                "    reason='explicit real cloud opt-in required',\n"
-                ")\n"
+            "test_runtime_template.py": (
+                "def test_generated_agent_runtime_template():\n"
+                "    assert True\n"
             ),
             "debug_request.json": json.dumps(
                 {
@@ -188,10 +180,10 @@ class AgentScaffoldService:
                 "# 接入检查清单\n\n"
                 "- [ ] 合并AgentDefinition到唯一registry.yaml\n"
                 "- [ ] 合并Mock profile并运行契约fixture\n"
-                "- [ ] 在本机.env填写Flow ID\n"
-                "- [ ] 使用脱敏Cloud sample比较结构\n"
-                "- [ ] 显式运行真实云端测试\n"
-                "- [ ] 确认后再设置enabled=true和published\n"
+                "- [ ] 在本机运行 Runtime 契约测试\n"
+                "- [ ] 使用本地样例检查输入输出结构\n"
+                "- [ ] 执行本地降级与边界测试\n"
+                "- [ ] 确认后再设置 enabled=true 和 published\n"
             ),
         }
 

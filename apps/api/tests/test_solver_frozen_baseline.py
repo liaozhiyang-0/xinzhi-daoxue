@@ -30,14 +30,13 @@ def test_tracked_solver_baseline_files_are_frozen() -> None:
         )
 
 
-def test_runtime_keeps_solver_baseline_call_mapping() -> None:
+def test_runtime_adapts_frozen_solver_baseline_to_local_runtime() -> None:
     registry_path = REPOSITORY_ROOT / "agent_configs" / "registry.yaml"
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     solver = registry["agents"]["SOLVER_CT_V1"]
 
     assert solver["provider"] == {
-        "type": "xingchen",
-        "flow_env_key": "XINGCHEN_SOLVER_CT_FLOW_ID",
+        "type": "local",
         "timeout_seconds": 300,
         "max_retries": 0,
         "parser_type": "json",
@@ -47,7 +46,7 @@ def test_runtime_keeps_solver_baseline_call_mapping() -> None:
         "app.agents.solver_ct.local_graph.LocalCircuitSolverGraph"
     )
     assert solver["graph_name"] == "academic_problem_solver"
-    assert solver["execution_mode"] == "hybrid"
+    assert solver["execution_mode"] == "local"
 
     assert AcademicSolverRuntimeService.agent_id == "ACADEMIC_PROBLEM_SOLVER"
     assert AcademicSolverRuntimeService.execute_handler_id == "academic.solver.execute"

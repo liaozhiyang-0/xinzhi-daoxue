@@ -1,6 +1,6 @@
 # 国产多模型 API 配置
 
-本地 Supervisor 通过 `config/models.yaml` 和 `config/model_routes.yaml` 选择模型，业务 Agent 只调用统一 `ModelService`。Spark 模型 API、Qwen 模型 API 与原有星辰 Workflow Provider 使用独立配置，不共享密钥或请求协议。
+本地 Supervisor 通过 `config/models.yaml` 和 `config/model_routes.yaml` 选择模型，业务 Agent 只调用统一 `ModelService`。Spark 与 Qwen 使用独立配置，不引入外部工作流 Provider。
 
 ## 最小配置
 
@@ -28,7 +28,7 @@ DASHSCOPE_API_KEY=
 - `DASHSCOPE_WORKSPACE_ID`：仅业务空间专属域名需要；默认公共兼容地址不需要。
 - `DASHSCOPE_BASE_URL`：显式配置时优先；留空且有 Workspace ID 时按地域拼接；两者都没有时使用北京公共兼容地址。
 
-Key 为空不会阻止服务启动。对应 Provider 显示为 `unconfigured`，调用时返回明确配置错误，本地 RAG 与星辰工作流不受影响。
+Key 为空不会阻止服务启动。对应 Provider 显示为 `unconfigured`，调用时返回明确配置错误；本地确定性 Runtime 和 RAG 仍可用。
 
 ## 模型与职责
 
@@ -121,8 +121,8 @@ Qwen Provider 接受公网 HTTP(S) URL、本地路径与 Base64 Data URL。项�
 | 图片超限 | 压缩图片或调整项目限制；错误会显示当前大小与限制 |
 | 模型超时 | 查看模型 Trace 中的重试和 `fallback_used` 状态 |
 
-## 星辰工作流继续保留
+## 本地 Runtime 边界
 
-原有 `XINGCHEN_*_FLOW_ID`、`XINGCHEN_API_KEY`、`XINGCHEN_API_SECRET` 均不属于本次模型 API。`SOLVER_CT_V1` 的已验证文字/单图片链路没有修改；未配置模型 Key 时仍保留原有星辰、Mock 和本地检索边界。
+业务任务不再依赖外部工作流。未配置模型 Key 时，确定性工具、本地 Agent、Mock 和本地检索按各自能力边界运行；需要真实模型时只配置对应的 Model Provider。
 
 本地 BGE、SigLIP2、可选 reranker、Qdrant、PostgreSQL、Redis 和 MinIO 也不是付费模型 API，不需要上述 Key。

@@ -108,6 +108,20 @@ class IntentRecognitionService:
     _assignment_patterns = (
         r"\u4f5c\u4e1a|\u6279\u6539|\u8bc4\u5206|\u5b66\u751f\u7b54\u6848|\u8bc4\u8bed|\u5224\u5206",
     )
+    _learning_path_patterns = (
+        r"\u5b66\u4e60\u8def\u5f84|\u5206\u9636\u6bb5\u5b66\u4e60|\u590d\u6d4b|\u5f31\u77e5\u8bc6\u70b9|"
+        r"\u4f5c\u7b54\u8bc1\u636e|\u590d\u4e60\u8ba1\u5212|\u6bcf\u5929\u4e0d\u8d85\u8fc7",
+    )
+    _knowledge_governance_patterns = (
+        r"\u77e5\u8bc6\u5e93|\u8bfe\u7a0b\u8d44\u4ea7|\u7248\u672c\u51b2\u7a81|\u5ba1\u6279|\u53d1\u5e03\u963b\u585e|"
+        r"\u53d1\u5e03\u524d|\u53d1\u5e03\u540e|\u56de\u6eda|\u8d44\u4ea7\u6e05\u5355|\u6743\u9650\u6cbb\u7406",
+    )
+
+    @classmethod
+    def is_knowledge_governance(cls, text: str) -> bool:
+        """Expose the bounded governance vocabulary to route selection."""
+
+        return cls._has(text, cls._knowledge_governance_patterns)
     _solver_patterns = (
         r"\u6c42\u89e3|\u8ba1\u7b97|\u63a8\u5bfc|\u65b9\u7a0b|\u7535\u8def|\u7535\u963b|\u7535\u5bb9|\u7535\u611f|\u4f20\u9012\u51fd\u6570|\u62c9\u666e\u62c9\u65af|\u771f\u503c\u8868",
         r"solve|calculate|derive|circuit|equation|transfer function",
@@ -330,6 +344,14 @@ class IntentRecognitionService:
             text, self._solver_patterns
         ):
             return "solve_problem"
+        # These two showcase workflows have vocabulary that overlaps with
+        # research and concept explanation (for example, “evidence” and
+        # “explain”). Resolve their bounded business intent before generic
+        # keyword groups can claim the request.
+        if self._has(text, self._knowledge_governance_patterns):
+            return "summarize_knowledge"
+        if self._has(text, self._learning_path_patterns):
+            return "learning_advice"
         if self._has(text, self._writing_patterns) and self._has(
             text, self._data_patterns
         ):

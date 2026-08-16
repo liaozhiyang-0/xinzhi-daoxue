@@ -11,7 +11,7 @@
 docker compose config
 ```
 
-真实星火、星辰、Embedding 和 Docker 检查需要本机凭据、已下载模型或 Docker Desktop；没有执行时不能报告为通过。Provider 单元测试使用 MockTransport，不消耗云端额度。
+真实 Spark/Qwen、Embedding 和 Docker 检查需要本机凭据、已下载模型或 Docker Desktop；没有执行时不能报告为通过。Provider 单元测试使用 MockTransport，不消耗云端额度。仓库不再提供外部工作流压力测试入口。
 
 ## 内部模型 Agent
 
@@ -52,4 +52,4 @@ docker compose config
   apps/api/tests/test_task_api.py
 ```
 
-重点检查：学生端没有 Provider、Flow ID 或原始 Agent ID；六类能力均经 `POST /api/v1/tasks` 创建非阻塞任务；内部 Agent 结果沿用既有 SSE 事件顺序；备课任务只使用同一执行链返回的 `RetrievalContextPacket`；作业初审保持 reference-only。
+重点检查：学生端没有 Provider 或原始 Agent ID；六类能力均经 `POST /api/v1/tasks` 创建非阻塞任务；内部 Agent 结果沿用既有 SSE 事件顺序；备课任务只使用同一执行链返回的 `RetrievalContextPacket`；作业初审保持 reference-only。

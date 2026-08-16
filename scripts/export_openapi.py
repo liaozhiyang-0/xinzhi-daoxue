@@ -10,7 +10,6 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DEFAULT_AGENT_PROVIDER", "mock")
 os.environ.setdefault("ALLOW_MOCK_FALLBACK", "true")
-os.environ.setdefault("XINGCHEN_ENABLED", "false")
 
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402

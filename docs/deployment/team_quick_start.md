@@ -48,17 +48,9 @@ xinzhi-daoxue_xzd_qdrant_data
 
 首次 `start` 会从 `.env.example` 创建 `.env`。`.env` 已被 `.gitignore` 排除，每位组员在自己的机器维护，不通过 Git、聊天或截图分享真实值。
 
-需要真实星辰调用时，只在本机 `.env` 中填写：
+业务任务统一走本地 Runtime。`.env` 只需配置本地基础设施和可选模型 API；不再填写外部工作流或平台凭据。
 
-```env
-XINGCHEN_ENABLED=true
-XINGCHEN_API_KEY=<个人或团队安全下发的值>
-XINGCHEN_API_SECRET=<个人或团队安全下发的值>
-XINGCHEN_SOLVER_CT_FLOW_ID=<安全下发的值>
-XINGCHEN_KNOWLEDGE_QA_FLOW_ID=<安全下发的值>
-```
-
-未配置星辰时仍可启动页面，未发布能力会显示 planned/not configured；Mock 仅在开发配置显式开启时可用，并会标记“开发模拟”。
+未配置模型时仍可启动页面，能力状态会显示本地 Runtime 的就绪度；Mock 仅在开发配置显式开启时可用，并会标记“开发模拟”。
 
 ## 4. 本地课程资料与索引
 
@@ -151,7 +143,7 @@ API 可改用其他端口：
 
 ## 7. 提交代码前
 
-禁止提交 `.env`、教材、索引、上传文件、模型缓存和原始星辰 YAML。提交前执行：
+禁止提交 `.env`、教材、索引、上传文件和模型缓存。提交前执行：
 
 ```powershell
 .\scripts\check.ps1

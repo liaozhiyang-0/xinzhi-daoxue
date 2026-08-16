@@ -20,7 +20,7 @@
 
 - 基础结构：[目录地图](#3-仓库目录地图)、[应用装配](#4-应用创建与依赖装配)、[合同与数据库](#5-合同数据库模型与序列化边界)
 - 核心执行：[任务调用链](#6-任务从提交到显示的完整调用链)、[Agent 与路由](#7-agent-注册路由和-supervisor)
-- 能力模块：[专业求解](#8-多学科专业求解链)、[知识与 RAG](#9-本地知识库与-rag)、[模型与 Provider](#10-模型内部-agent-与星辰-provider)、[学习闭环](#11-学习闭环)
+- 能力模块：[专业求解](#8-多学科专业求解链)、[知识与 RAG](#9-本地知识库与-rag)、[模型与 Provider](#10-模型内部-agent-与本地-provider)、[学习闭环](#11-学习闭环)
 - 开发工具：[API](#12-api-地图)、[前端](#13-静态前端)、[评测](#15-评测框架)、[测试](#17-测试地图)、[常见微调入口](#19-常见微调任务从哪里开始)、[排错](#21-常见排错路径)
 
 ## 1. 阅读顺序与事实来源
@@ -30,7 +30,7 @@
 1. `README.md`：知道平台现在能做什么、如何启动。
 2. `apps/api/app/main.py`：看清所有运行时对象如何创建并放入 `app.state`。
 3. `apps/api/app/api/v1/router.py`：看清全部 API 模块如何挂载。
-4. `apps/api/app/services/task_creation_service.py` 和 `task_runner.py`：理解任务创建与真实执行链。
+4. `task_creation_service.py`、`application/tasks/coordinator.py`、`services/runtime_task_engine.py`：理解任务创建、调度与 Runtime 执行链。
 5. `agent_configs/registry.yaml`、`agents/registry.py`、`agents/router.py`：理解 Agent 定义与自动路由。
 6. `contracts/`、`models/entities.py`：理解 API、领域合同和持久化结构。
 7. 再按需求进入 Solver、RAG、Provider、学习闭环或前端。
@@ -53,7 +53,7 @@ flowchart LR
     API --> CREATE["TaskCreationService"]
     CREATE --> DB[("tasks / events / runs")]
     CREATE --> EXEC["TaskExecutor"]
-    EXEC --> RUNNER["TaskRunner"]
+    EXEC --> RUNNER["RuntimeTaskEngine"]
     RUNNER --> ROUTE["Registry + Router"]
     RUNNER --> LOCAL["内部 Agent / 学术 Solver"]
     RUNNER --> RAG["本地 RAG"]
@@ -61,7 +61,7 @@ flowchart LR
     LOCAL --> MODEL["ModelService"]
     MODEL --> SPARK["Spark-X2"]
     MODEL --> QWEN["Qwen"]
-    PROVIDER --> XC["星辰工作流，默认禁用"]
+    PROVIDER --> LOCAL_RUNTIME["Local Runtime"]
     RUNNER --> VIEW["Presentation + SSE"]
     VIEW --> UI
 ```
@@ -70,11 +70,11 @@ flowchart LR
 
 - 正式任务入口仍是 `POST /api/v1/tasks`，`POST /api/v1/chat` 只是适配到同一任务链。
 - API 创建任务后立即返回，Provider 不在创建请求线程里执行。
-- 当前 `LocalTaskExecutor` 包装进程内 `TaskRunner`；`QueueTaskExecutor` 仅是显式不可用的扩展占位。
+- 当前 `LocalTaskExecutor` 包装 `TaskExecutionCoordinator`；`QueueTaskExecutor` 只负责发布任务，Worker 端复用同一 coordinator 与 lease manager。
 - 学生端只提交自然语言和附件，Agent 选择属于自动路由；手动 Agent 选择只用于调试。
 - 本地 RAG 是证据、上下文和解释性层，不是另一套问答系统。
-- `SOLVER_CT_V1` 是冻结的星辰基线与受控回退，不直接修改。
-- 星辰必须同时满足配置完整和请求授权；默认不调用。
+- `SOLVER_CT_V1` 是冻结的历史基线与只读审计资产，不参与当前 Runtime 路由。
+- 业务任务统一走本地 Runtime；历史 `allow_cloud` 字段在入口被丢弃，不能启用远程路径。
 
 ## 3. 仓库目录地图
 
@@ -118,7 +118,7 @@ flowchart LR
 5. `AcademicProblemSolverService`、内部 Agent Hub 与一般问题服务；
 6. `KnowledgeBaseService`、Embedding、Reranker、VectorStore 和 `RAGRetrievalService`；
 7. 检索上下文、知识问答、Supervisor；
-8. `TeachingExecutionPlanner`、有限核对/提示/披露服务、`TaskRunner`、`LearningLoopService`、`LocalTaskExecutor` 和 RAG Debug；
+8. `TeachingExecutionPlanner`、有限核对/提示/披露服务、`RuntimeTaskEngine`、`LearningLoopService`、`LocalTaskExecutor` 和 RAG Debug；
 9. 在 lifespan 中把对象写入 `app.state`。
 
 不要在各 API 模块里重新创建上述重对象。API 通过 `request.app.state` 或 `dependencies.py` 获取共享实例。
@@ -135,7 +135,7 @@ flowchart LR
 
 - `TaskExecutor.shutdown()` 取消未完成的本地任务；
 - 关闭 Agent Provider、ModelService 与数据库 engine；
-- RAG retrieval 在 TaskRunner 关闭时释放向量资源。
+- RAG retrieval 在 RuntimeTaskEngine 关闭时释放向量资源。
 
 ### 4.3 请求级依赖
 
@@ -211,7 +211,7 @@ sequenceDiagram
     participant A as tasks API
     participant C as TaskCreationService
     participant E as TaskExecutor
-    participant R as TaskRunner
+    participant R as RuntimeTaskEngine
     participant P as Local Agent/RAG/Provider
     participant D as Database
     B->>A: POST /api/v1/tasks
@@ -238,11 +238,11 @@ sequenceDiagram
 - 持久化 queued 状态和初始事件；
 - 不直接执行 Provider。
 
-API 层随后调用 `app.state.task_executor.submit(task_id)`。当前 Local executor 转发给 TaskRunner；将来替换为队列时，API 和 TaskRunner 协议可以保持不变。
+API 层随后调用 `app.state.task_executor.submit(task_id)`。Local executor 转发给 `TaskExecutionCoordinator`；Redis 模式由 Worker 使用同一 coordinator 与租约协议。
 
 ### 6.2 执行阶段
 
-`TaskRunner.run()` 是最大的执行协调器，主要阶段为：
+`RuntimeTaskEngine.execute()` 只编排以下独立阶段：
 
 1. 锁定 queued 任务，检查取消状态；
 2. 写入 running、owner、lease、heartbeat 与启动事件；
@@ -255,7 +255,7 @@ API 层随后调用 `app.state.task_executor.submit(task_id)`。当前 Local exe
 9. 规范化数学内容，构建 `TaskPresentation` 和 `TaskExecutionSummary`；
 10. 保存任务结果、AgentRun、RunMetrics 和终态事件。
 
-如果要修改执行顺序，必须同时检查：取消、SSE 顺序、重试分类、引用、presentation 和对应测试。不要在 TaskRunner 外再实现一个平行执行器。
+如果要修改执行顺序，必须同时检查：取消、SSE 顺序、重试分类、引用、presentation 和对应测试。不要绕过 RuntimeTaskEngine 或增加平行执行器。
 
 ### 6.3 查询、取消和重试
 
@@ -273,22 +273,22 @@ API 层随后调用 `app.state.task_executor.submit(task_id)`。当前 Local exe
 - 拒绝 YAML 重复 key；
 - 解析 provider、mode、capability、input/output mapping、retrieval policy 和 fallback；
 - 校验 Agent 定义和 fallback 引用；
-- 根据 Settings 解析 Flow ID 与运行可用性。
+- 根据 Settings 解析本地 Provider 与 Runtime 可用性。
 
 当前主要 Agent：
 
 | Agent | 用途 | 默认路径 |
 |---|---|---|
 | `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 专业问题求解 | 本地多学科 Solver。 |
-| `SOLVER_CT_V1` | CT 冻结星辰基线 | 仅受控回退/比较。 |
-| `LEARN_01_KNOWLEDGE_QA_V1` | 课程知识问答 | 本地 RAG 优先，可受控云端。 |
+| `SOLVER_CT_V1` | CT 冻结历史基线 | 只读审计，不参与当前路由。 |
+| `LEARN_01_KNOWLEDGE_QA_V1` | 课程知识问答 | 本地 RAG 与 Local Runtime。 |
 | `LEARN_01_LOCAL_RETRIEVAL_V1` | 纯本地检索降级 | 不调用云端。 |
 | `GENERAL_QUESTION_V1` | 随机/通用问题 | 无课程线索的明确常识问句直接使用 Spark；低置信文本也可进入该本地模块。 |
 | `TEACH_01_LESSON_PREP_V1` | 教案设计 | 内部 Agent，可使用同任务 RAG。 |
 | `TEACH_02_ASSIGNMENT_REVIEW_V1` | 作业初审 | 内部 Agent。 |
 | `RESEARCH_02_ACADEMIC_WRITING_V1` | 学术写作辅助 | 内部 Agent。 |
 | `RESEARCH_03_DATA_ANALYSIS_V1` | 数据分析解释 | 内部 Agent。 |
-| `ROUTER_01_FALLBACK_V1` | 低置信云端调度候选 | 默认无授权，不自动调用。 |
+| `ROUTER_01_FALLBACK_V1` | 低置信本地调度候选 | 只选择已注册的本地路径。 |
 
 ### 7.2 TaskRouter
 
@@ -326,11 +326,11 @@ Supervisor trace 存入 `TraceStore`，开发环境可通过 `/api/v1/debug/trac
 
 ### 8.2 执行路径
 
-Graph 根据问题风险、课程包状态和输入完整性选择 FAST、STANDARD、HIGH_RISK 或 insufficient 路径。HIGH_RISK 需要验证报告；TaskRunner 还会根据 Agent 声明的 `ACADEMIC_SOLVING` task family 应用统一质量门，而不是硬编码具体 Solver ID。
+Graph 根据问题风险、课程包状态和输入完整性选择 FAST、STANDARD、HIGH_RISK 或 insufficient 路径。HIGH_RISK 需要验证报告；`RuntimeResultPipeline` 还会根据 Agent 声明的 `ACADEMIC_SOLVING` task family 应用统一质量门，而不是硬编码具体 Solver ID。
 
 `AcademicProblemSolverService` 对长答案支持有限次数续写。判断截断时会检查模型 finish reason、最大 token、公式/代码围栏和结构完整性；续写次数与 token 上限来自 Settings。
 
-多图输入先由 `MultiImageComposer` 规范化。简单批次拼接为带 `Image N` 标签的单图，只进行一次视觉提取；超过图片数、总像素、画布、长宽比或压缩限制时，按原顺序逐图识别，再通过 `multi_image_summary` 合并题设事实。汇总模型只允许整理条件、目标和跨图冲突，不负责求解；最终仍进入同一个学术 Solver。星辰冻结基线不接收多图。
+多图输入先由 `MultiImageComposer` 规范化。简单批次拼接为带 `Image N` 标签的单图，只进行一次视觉提取；超过图片数、总像素、画布、长宽比或压缩限制时，按原顺序逐图识别，再通过 `multi_image_summary` 合并题设事实。汇总模型只允许整理条件、目标和跨图冲突，不负责求解；最终仍进入同一个学术 Solver。
 
 ### 8.3 扩展新课程
 
@@ -367,7 +367,7 @@ flowchart LR
     EMBED --> QDRANT["Qdrant collections"]
     QDRANT --> RETRIEVE["RAGRetrievalService"]
     RETRIEVE --> CONTEXT["RetrievalContextPacket"]
-    CONTEXT --> TASK["同一次 TaskRunner 执行"]
+    CONTEXT --> TASK["同一次 Runtime 执行"]
 ```
 
 关键模块：
@@ -392,7 +392,7 @@ flowchart LR
 - 检索参数改变后同时运行检索 benchmark、citation integrity 和跨课程污染测试。
 - 原始教材目录只读；OCR/标题纠正通过 `knowledge_config/corrections` 并要求 approved 状态。
 
-## 10. 模型、内部 Agent 与星辰 Provider
+## 10. 模型、内部 Agent 与本地 Provider
 
 ### 10.1 ModelRegistry 与 ModelService
 
@@ -429,12 +429,11 @@ flowchart LR
 | `providers/llm/` | Spark、DashScope 和 OpenAI-compatible 模型实现。 |
 | `providers/embedding/` | BGE 和显式 legacy hash 兼容层。 |
 | `providers/vision/` | 视觉 Provider 抽象。 |
-| `providers/workflow/` | 通用工作流接口。 |
-| `providers/xingchen.py` | 已验证的星辰 payload、上传、同步响应解析和标准化。 |
+| `providers/local.py` | 本地 Runtime Agent Provider。 |
 | `providers/mock.py` | 基础测试 Mock。 |
 | `providers/development_mock.py` | 可配置开发 Mock，输出必须标记。 |
 
-不要猜测星辰字段、节点名或响应协议。任何星辰变更都要复用现有 `XingchenCloudProvider` 并以真实已发布 Flow 验证；HTTP 200 只证明传输完成，不证明答案正确。
+业务代码不得绕过 Local Runtime 或 `ModelService` 直接拼接供应商 HTTP；Provider 返回只代表执行完成，结果仍需经过合同、证据和质量门校验。
 
 ## 11. 学习闭环
 
@@ -513,7 +512,7 @@ flowchart LR
 - `presentation` 优先、旧 `answer` 兼容；
 - 公式在代码块、URL、日期和 JSON 中不能误转；
 - 多图选择最多 8 张，只允许图片批次；上传顺序必须与任务附件顺序一致；
-- 不展示 Provider、Flow ID、内部 Agent ID、原始 prompt 或 Point ID；
+- 不展示 Provider、内部 Agent ID、原始 prompt 或 Point ID；
 - Mock、fallback、证据不足和不支持状态必须明确显示。
 
 教学基础能力仍走同一个 `/tasks` 链路。输入规范化在
@@ -561,7 +560,6 @@ Workspace 第一阶段只展示 `direct_answer`、`check_my_work`，不得把预
 | `local_deterministic` | 本地确定性执行，不调用付费模型。 |
 | `local_mock` | 明确 Mock 的协议/页面验证。 |
 | `real_model` | 真实国产模型调用，必须 `--confirm-paid`。 |
-| `real_xingchen` | 真实星辰调用，必须 `--confirm-paid`。 |
 
 `scripts/run_evaluation.py` 使用按最新 migration revision 命名的隔离 SQLite 缓存库，避免复用旧 schema。默认公开样例仅用于框架回归，不代表真实学科准确率。
 
@@ -603,9 +601,7 @@ Windows 推荐：
 | `check_sensitive_files.py` | 敏感文件和凭据扫描。 |
 | `export_openapi.py` | 更新 OpenAPI 快照。 |
 | `generate_repository_catalog.py` | 更新/检查逐文件目录。 |
-| `validate_completed_workflows.py` | 已声明完成工作流一致性。 |
 | `smoke_test_models.py` | 模型配置或显式真实连通性。 |
-| `xingchen_smoke_test.py` | 显式真实星辰 smoke。 |
 | `knowledge_base_cli.py`、`rebuild_index.py` | 知识审计和索引构建。 |
 
 ## 17. 测试地图
@@ -614,11 +610,11 @@ Windows 推荐：
 
 | 改动类型 | 优先运行的测试 |
 |---|---|
-| Task/API/SSE | `test_task_api.py`、`test_background_task_runner.py`、`test_sse_*.py`、`test_event_sequence.py` |
+| Task/API/SSE | `test_task_api.py`、`test_background_runtime_execution.py`、`test_sse_*.py`、`test_event_sequence.py` |
 | 路由/Agent | `test_task_router.py`、`test_automatic_routing_fixture.py`、`test_agent_registry.py` |
 | Solver/质量门 | `test_universal_academic_solver.py`、`test_high_risk_verification.py`、`test_solver_quality_gate.py` |
 | RAG/知识版本 | `test_knowledge_*.py`、`test_multimodal_rag.py`、`test_kb_citation_integrity.py` |
-| 模型/Provider | `test_model_*.py`、`test_spark_llm_provider.py`、`test_workflow_provider.py` |
+| 模型/Provider | `test_model_*.py`、`test_spark_llm_provider.py`、`test_provider_factory.py` |
 | Workspace/页面 | `test_student_web.py`、`test_unified_web_ui.py`、浏览器 smoke 脚本 |
 | 学习闭环 | `test_learning_loop.py` |
 | 任务可靠性 | `test_task_executor_reliability.py`、`test_task_idempotency.py`、`test_task_retry.py` |
@@ -639,7 +635,7 @@ docker compose config --quiet
 git diff --check
 ```
 
-真实模型、星辰和大型本地 embedding 测试需要单独授权、模型文件或 API key，不能把 skipped 描述成已通过真实验收。
+真实模型和大型本地 embedding 测试需要单独授权、模型文件或 API key，不能把 skipped 描述成已通过真实验收。
 
 ## 18. 配置定位
 
@@ -650,7 +646,7 @@ git diff --check
 - App/API/log；
 - Database/Redis/storage；
 - Spark/Qwen 模型与并发、timeout、token；
-- 星辰授权、Flow ID、连接池和熔断；
+- 模型 Provider 授权、连接池和熔断；
 - 上传、图像、PDF；
 - 本地知识库路径和检索阈值；
 - embedding、image embedding、reranker、Qdrant；
@@ -659,16 +655,9 @@ git diff --check
 
 配置值通过 Pydantic Settings 从环境变量读取。路径、模型名、并发、timeout 和阈值不得散落在业务代码里。
 
-### 18.2 云端开关
+### 18.2 历史云端字段
 
-星辰实际调用至少需要：
-
-1. `XINGCHEN_ENABLED=true`；
-2. 对应工作流 Flow ID 和凭据完整；
-3. Agent 已发布且 Registry 状态允许；
-4. 请求 `options.allow_cloud=true` 或受控调试明确授权。
-
-因此“配置了 Key”不等于“普通请求会自动调用星辰”。
+业务请求中的 `options.allow_cloud` 仅为旧客户端兼容保留；合同校验阶段会删除该字段，不能改变本地 Provider、Runtime 或路由选择。需要真实模型时，只配置相应的 Model Provider 并按模型测试流程验收。
 
 ## 19. 常见微调任务从哪里开始
 
@@ -677,7 +666,7 @@ git diff --check
 | 随机问题仍然要回答 | `general_question_service.py`、registry 的 fallback rule | Router fixture、Model route、前端 fallback 标签。 |
 | 调整课程/意图识别 | `agents/router.py`、`agent_configs/registry.yaml` | Supervisor、70 路由 fixture、AE/DE 防误路由测试。 |
 | 新增一个内部 Agent | `agents/internal/hub.py`、`contracts.py` | Model route、InternalAgentExecutionService、registry、评测。 |
-| 新增顶层工作流 | `agent_configs/registry.yaml` | 输入映射、结果 validator/renderer、Provider、路由测试。 |
+| 新增顶层 Runtime 能力 | `agent_configs/registry.yaml` | 输入映射、结果 validator/renderer、Local Provider、路由测试。 |
 | 调整专业答案格式 | `contracts/solver.py`、`academic_solver_service.py` | presentation、公式格式化、质量门、兼容字段。 |
 | 提高长回答完整性 | `academic_solver_service.py` 的 continuation/truncation | token 配置、timeout、前端展示、专项测试。 |
 | 调整多图处理 | `multimodal/image_composer.py`、`academic_solver_service.py` | Settings、模型路由、Workspace 多选、路由输入模式和批次测试。 |
@@ -742,7 +731,7 @@ git diff --check
 ### 回答降级或证据不足
 
 1. 查看 RouteDecision 和执行计划；
-2. 检查 `allow_cloud`，不要误以为会自动调用星辰；
+2. 检查请求合同是否已剥离历史 `allow_cloud` 字段；
 3. 查看 retrieval attempted、hits、evidence quality 和 citation status；
 4. 检查本地模型 route 是否 configured；
 5. 区分“路由成功”“Provider 返回”“答案质量通过”。
@@ -756,14 +745,14 @@ git diff --check
 
 ## 22. 当前扩展边界和已知技术债
 
-- `TaskRunner.run()` 仍然很长，后续可以在保持单链的前提下抽取阶段服务，但不能复制执行流程。
+- `RuntimeTaskEngine.execute()` 只保留阶段编排；准备、执行、结果治理、提交、失败终态和后台副作用分别由独立服务负责。
 - Queue executor 尚未实现，当前任务仅适合单 API 进程内执行。
 - 学习答案检查和变式生成覆盖面有限，扩展必须保持确定性验证。
 - 真实私有学科评测集尚未纳入仓库；公开 synthetic 样例不代表真实准确率。
 - RAG embedding 维度变化需要受控重建，而不是在线覆盖旧集合。
 - 静态前端没有组件构建系统，修改简单，但共享逻辑需要主动放入 `ui-core.js`，避免页面间复制。
 - Debug 与学生页面共享部分静态基础设施，但学生页面必须继续隐藏内部字段。
-- 真实 PostgreSQL、真实国产模型和真实星辰仍需独立环境验收。
+- 真实 PostgreSQL 和真实国产模型仍需独立环境验收。
 
 ## 23. 文档维护
 
@@ -811,7 +800,7 @@ git diff --check
 - 状态与摘要：`session_working_state.py`、`session_compaction.py`
 - 记忆：`app/repositories/memories.py`、`app/services/memory_service.py`
 - API：`app/api/v1/sessions.py`、`app/api/v1/memories.py`
-- 执行链接入：`task_creation_service.py`、`task_runner.py`
+- 执行链接入：`task_creation_service.py`、`application/tasks/coordinator.py`、`runtime_task_engine.py`
 - Workspace：`app/static/debug/workspace.html`、`workspace.js`、
   `workspace-v2.css`
 - migration：`20260723_0006_agent_runtime_foundation.py`

@@ -18,8 +18,8 @@ def test_scaffold_dry_run_builds_schema_valid_bundle() -> None:
 
     assert "agent_definition.yaml" in files
     assert "contract_cases.json" in files
-    assert "test_real_cloud_template.py" in files
-    assert "XINGCHEN_DEMO_01_SAMPLE_FLOW_ID=" in files[".env.example"]
+    assert "test_runtime_template.py" in files
+    assert "本地 Runtime" in files[".env.example"]
     assert "enabled: false" in files["agent_definition.yaml"]
     assert "publication_status: planned" in files["agent_definition.yaml"]
 

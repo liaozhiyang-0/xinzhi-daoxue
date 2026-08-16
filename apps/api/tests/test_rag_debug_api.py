@@ -11,8 +11,8 @@ def test_rag_debug_page_and_status_do_not_expose_credentials(client) -> None:
     body = status.text.casefold()
     assert "api_secret" not in body
     assert "authorization" not in body
-    assert "flow_id" not in body
-    assert status.json()["learn_flow_configured"] is False
+    assert "api_key" not in body
+    assert status.json()["local_ready"] is True
 
 
 def test_rag_debug_run_reuses_local_rag_and_stores_trace(client) -> None:
@@ -25,23 +25,23 @@ def test_rag_debug_run_reuses_local_rag_and_stores_trace(client) -> None:
             "use_rag": True,
             "include_images": False,
             "use_reranker": False,
-            "allow_cloud": False,
         },
     )
 
     assert response.status_code == 200, response.text
     trace = response.json()
     assert trace["trace_id"].startswith("debug_rag_")
-    assert trace["route"]["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert trace["route"]["agent_id"] == "LEARN_01_KNOWLEDGE_QA_V1"
     assert trace["route"]["original_agent_id"] is None
     assert trace["final"]["provider"] == "local"
-    assert trace["final"]["fallback_used"] is False
+    assert trace["final"]["fallback_used"] is True
+    assert trace["final"]["fallback_reason"] == "local_retrieval_fallback"
     saved = client.get(f"/api/v1/debug/rag/traces/{trace['trace_id']}")
     assert saved.status_code == 200
     assert saved.json()["request_id"] == trace["request_id"]
 
 
-def test_rag_debug_forwards_cloud_policy_to_router(client, monkeypatch) -> None:
+def test_rag_debug_does_not_forward_remote_provider_flags(client, monkeypatch) -> None:
     router = client.app.state.rag_debug.router
     route = router.route
     observed_options: dict[str, object] = {}
@@ -58,12 +58,11 @@ def test_rag_debug_forwards_cloud_policy_to_router(client, monkeypatch) -> None:
             "course_id": "SS",
             "intent": "explain_concept",
             "use_rag": True,
-            "allow_cloud": True,
         },
     )
 
     assert response.status_code == 200, response.text
-    assert observed_options["allow_cloud"] is True
+    assert "allow_cloud" not in observed_options
 
 
 def test_rag_debug_compare_and_small_eval(client) -> None:
@@ -78,7 +77,7 @@ def test_rag_debug_compare_and_small_eval(client) -> None:
     )
     evaluation = client.post(
         "/api/v1/debug/rag/eval",
-        json={"group": "CT", "allow_cloud": False, "limit": 1},
+        json={"group": "CT", "limit": 1},
     )
 
     assert comparison.status_code == 200, comparison.text
@@ -87,7 +86,8 @@ def test_rag_debug_compare_and_small_eval(client) -> None:
     assert comparison.json()["b"]["final"]["provider"] == "not_run"
     assert comparison.json()["b"]["retrieval"] == {}
     assert any(
-        stage["name"] == "no_rag_no_cloud" for stage in comparison.json()["b"]["stages"]
+        stage["name"] == "no_rag_no_local_answer"
+        for stage in comparison.json()["b"]["stages"]
     )
     assert evaluation.status_code == 200, evaluation.text
     assert evaluation.json()["total"] == 1
@@ -102,7 +102,6 @@ def test_rag_debug_timeline_exposes_retrieval_phases(client) -> None:
             "question": "为什么电容电压不能突变？",
             "course_id": "CT",
             "intent": "explain_concept",
-            "allow_cloud": False,
         },
     )
 

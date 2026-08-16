@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.agents.registry import AgentDefinition, AgentRegistry, RoutingRule
+from app.agents.registry import AgentRegistry, RoutingRule
 from app.contracts.agent import AgentRequest, Intent
 from app.contracts.intent import IntentRecognition
 from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
 from app.core.config import Settings
-from app.core.errors import AgentInputNotSupportedError, RouteInvalidTargetError
-from app.core.internal_workflows import internal_workflow_models_configured
+from app.core.errors import AgentInputNotSupportedError
 from app.services.external_research_answer import (
     is_academic_search_follow_up,
     is_academic_search_request,
@@ -25,6 +23,7 @@ GENERAL_MODEL_FALLBACK_AGENT_ID = "GENERAL_MODEL_FALLBACK_V1"
 
 BUSINESS_AGENTS = (
     "LEARN_01_KNOWLEDGE_QA_V1",
+    "LEARN_01_LOCAL_RETRIEVAL_V1",
     "ACADEMIC_PROBLEM_SOLVER",
     "TEACH_01_LESSON_PREP_V1",
     "TEACH_02_ASSIGNMENT_REVIEW_V1",
@@ -37,7 +36,10 @@ INTENT_AGENT = {
     "explain_concept": "LEARN_01_KNOWLEDGE_QA_V1",
     "follow_up_question": "LEARN_01_KNOWLEDGE_QA_V1",
     "summarize_knowledge": "LEARN_01_KNOWLEDGE_QA_V1",
-    "learning_advice": "LEARN_01_KNOWLEDGE_QA_V1",
+    # Learning diagnosis is retrieval-only and has a different output
+    # contract from concept QA. Keeping it on the generic QA Agent caused the
+    # workspace to render a hint loop instead of a seven-day evidence plan.
+    "learning_advice": "LEARN_01_LOCAL_RETRIEVAL_V1",
     "check_simple_step": "LEARN_01_KNOWLEDGE_QA_V1",
     "solve_problem": "ACADEMIC_PROBLEM_SOLVER",
     "lesson_prep": "TEACH_01_LESSON_PREP_V1",
@@ -124,7 +126,7 @@ class _ScoredRoute:
 
 
 class TaskRouter:
-    """Fast deterministic routes with bounded, validated cloud fallback hooks."""
+    """Fast deterministic routes with bounded local fallback hooks."""
 
     def __init__(
         self, registry: AgentRegistry, settings: Settings | None = None
@@ -263,6 +265,9 @@ class TaskRouter:
                 input_type=input_type,
                 confidence=recognition.confidence,
             )
+            candidates = self._candidate_models(
+                scored, course_id=course_id, input_type=input_type
+            )
             return decision.model_copy(
                 update={
                     "reason": "本地意图识别已确认研究工作流，直接进入对应 Agent",
@@ -273,11 +278,82 @@ class TaskRouter:
                     "route_confidence": recognition.confidence,
                     "secondary_intents": scored.secondary_intents,
                     "requires_pipeline": scored.requires_pipeline,
+                    "candidate_agents": candidates,
                     "material_extraction": material.model_dump(mode="json"),
                     "inferred_user_role": AGENT_ROLE.get(
                         target_agent_id, request.user_role.value
                     ),
                     "visited_agents": [target_agent_id],
+                }
+            )
+        recognized_direct_intents = {
+            Intent.LESSON_PREP.value,
+            Intent.ASSIGNMENT_REVIEW.value,
+            Intent.SUMMARIZE_KNOWLEDGE.value,
+            Intent.LEARNING_ADVICE.value,
+        }
+        solver_signal = any(
+            code.startswith("domain_contract:")
+            for code in scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
+        )
+        if recognition.intent == Intent.SOLVE_PROBLEM and solver_signal:
+            recognized_direct_intents.add(Intent.SOLVE_PROBLEM.value)
+        if (
+            recognition.intent == Intent.EXPLAIN_CONCEPT
+            # An explicit UNKNOWN course is intentionally conservative: a
+            # daily-science question should remain on the general-answer
+            # path. AUTO is the UI's opt-in for automatic academic routing.
+            and request.course_id.upper().strip() in {"", "AUTO"}
+        ):
+            recognized_direct_intents.add(Intent.EXPLAIN_CONCEPT.value)
+        if (
+            recognition.intent in recognized_direct_intents
+            and (
+                recognition.confidence >= 0.80
+                or "session_continuity" in recognition.reason_codes
+            )
+            and request.intent in {Intent.UNKNOWN, Intent.GENERAL_QA}
+            and "topic_outside_course" not in course_reasons
+        ):
+            target_agent_id = INTENT_AGENT.get(
+                recognition.intent, "LEARN_01_KNOWLEDGE_QA_V1"
+            )
+            if (
+                recognition.intent == Intent.SUMMARIZE_KNOWLEDGE.value
+                and self.intent_recognizer.is_knowledge_governance(material.raw_text)
+            ):
+                target_agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
+            decision = self._decision_for_target(
+                target_agent_id,
+                request,
+                course_id=course_id,
+                intent=recognition.intent,
+                input_type=input_type,
+                confidence=recognition.confidence,
+            )
+            return decision.model_copy(
+                update={
+                    "reason": "本地意图识别已确认展示案例工作流，直接进入对应 Agent",
+                    "route_source": "local_intent_recognition",
+                    "reason_codes": list(
+                        dict.fromkeys(
+                            course_reasons
+                            + scored.reasons.get(target_agent_id, [])
+                            + [f"recognized_intent:{recognition.intent}"]
+                        )
+                    ),
+                    "local_confidence": recognition.confidence,
+                    "route_confidence": recognition.confidence,
+                    "secondary_intents": scored.secondary_intents,
+                    "requires_pipeline": scored.requires_pipeline,
+                    "candidate_agents": self._candidate_models(
+                        scored, course_id=course_id, input_type=input_type
+                    ),
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": AGENT_ROLE.get(
+                        target_agent_id, request.user_role.value
+                    ),
+                    "visited_agents": [decision.agent_id],
                 }
             )
         if (
@@ -314,13 +390,34 @@ class TaskRouter:
             and course_id == explicit_course
             and recognition.intent in course_learning_intents
         ):
+            circuit_concept_signal = (
+                course_id == "CT"
+                and recognition.intent == Intent.EXPLAIN_CONCEPT.value
+                and any(
+                    term in material.raw_text
+                    for term in ("基尔霍夫", "节点电流", "节点电压", "KCL", "KVL")
+                )
+            )
+            # Circuit-theory concept questions need the evidence-grounded
+            # adapter so collected course material can be synthesized before
+            # it is shown, rather than returning an unreferenced generic QA.
+            learning_agent = (
+                "LEARN_01_LOCAL_RETRIEVAL_V1"
+                if recognition.intent in {"learning_advice", "summarize_knowledge"}
+                or circuit_concept_signal
+                else "LEARN_01_KNOWLEDGE_QA_V1"
+            )
             decision = self._decision_for_target(
-                "LEARN_01_KNOWLEDGE_QA_V1",
+                learning_agent,
                 request,
                 course_id=course_id,
                 intent=(
-                    Intent.SUMMARIZE_KNOWLEDGE.value
-                    if recognition.intent == Intent.SUMMARIZE_KNOWLEDGE.value
+                    recognition.intent
+                    if recognition.intent
+                    in {
+                        Intent.SUMMARIZE_KNOWLEDGE.value,
+                        Intent.LEARNING_ADVICE.value,
+                    }
                     else Intent.EXPLAIN_CONCEPT.value
                 ),
                 input_type=input_type,
@@ -442,40 +539,6 @@ class TaskRouter:
                 }
             )
 
-        cloud_router = self.registry.get("ROUTER_01_FALLBACK_V1")
-        if self._cloud_allowed(request) and self.registry.is_runtime_available(
-            cloud_router.agent_id, self.settings
-        ):
-            return RouteDecision(
-                agent_id=cloud_router.agent_id,
-                scene=cloud_router.scene,
-                course_id=course_id,
-                intent=intent,
-                route_status=RouteStatus.SELECTED,
-                reason="local confidence or score gap requires one-pass cloud router",
-                retrieval_required=False,
-                provider_required=True,
-                route_source="cloud_fallback",
-                route_confidence=confidence,
-                task_subtype=scored.task_subtype,
-                secondary_intents=scored.secondary_intents,
-                requires_pipeline=scored.requires_pipeline,
-                candidate_agents=candidates,
-                reason_codes=course_reasons + ["cloud_router_required"],
-                local_confidence=confidence,
-                cloud_router_invoked=True,
-                availability=self._availability(
-                    cloud_router.agent_id, course_id, input_type, intent
-                ),
-                material_extraction=material.model_dump(mode="json"),
-                inferred_user_role=request.user_role.value,
-                visited_agents=[cloud_router.agent_id],
-            )
-        cloud_reason = (
-            "cloud_router_unavailable"
-            if self._cloud_allowed(request)
-            else "cloud_router_not_authorized"
-        )
         general_decision = self._general_question_decision(
             request=request,
             course_id=course_id,
@@ -486,7 +549,10 @@ class TaskRouter:
             material_extraction=material.model_dump(mode="json"),
             reason="专用能力路由置信度不足，使用通用问题回答能力",
             route_source="local_general_fallback",
-            extra_reason_codes=[cloud_reason, "general_question_fallback"],
+            extra_reason_codes=[
+                "local_router_low_confidence",
+                "general_question_fallback",
+            ],
         )
         if general_decision is not None:
             return general_decision
@@ -510,11 +576,7 @@ class TaskRouter:
             course_id=course_id,
             intent=intent,
             route_status=RouteStatus.UNRESOLVED,
-            reason=(
-                "本地路由置信度不足；星辰调度未获本次请求授权，请补充课程或任务类型"
-                if not self._cloud_allowed(request)
-                else "本地路由置信度不足，且云端调度工作流未配置；请求保持未决状态"
-            ),
+            reason="本地路由置信度不足，请补充课程或任务类型",
             retrieval_required=False,
             provider_required=False,
             route_source="local_degraded",
@@ -523,10 +585,10 @@ class TaskRouter:
             secondary_intents=scored.secondary_intents,
             requires_pipeline=scored.requires_pipeline,
             candidate_agents=candidates,
-            reason_codes=course_reasons + [cloud_reason],
+            reason_codes=course_reasons + ["local_router_low_confidence"],
             local_confidence=confidence,
             availability=self._availability(
-                cloud_router.agent_id, course_id, input_type, intent
+                GENERAL_QUESTION_AGENT_ID, course_id, input_type, intent
             ),
             material_extraction=material.model_dump(mode="json"),
             inferred_user_role=request.user_role.value,
@@ -694,7 +756,11 @@ class TaskRouter:
     ) -> list[RouteCandidate]:
         result = []
         for agent_id in BUSINESS_AGENTS:
-            intent = AGENT_INTENT[agent_id]
+            # The local retrieval implementation serves multiple learning
+            # contracts; it is not tied to one canonical intent in the
+            # candidate list. Use the neutral QA intent for scoring and keep
+            # the recognized intent on the selected route.
+            intent = AGENT_INTENT.get(agent_id, Intent.EXPLAIN_CONCEPT.value)
             availability = self._availability(agent_id, course_id, input_type, intent)
             result.append(
                 RouteCandidate(
@@ -912,27 +978,15 @@ class TaskRouter:
         self, agent_id: str, course_id: str, input_type: str, intent: str
     ) -> dict[str, bool]:
         definition = self.registry.get(agent_id)
-        internal_available = internal_workflow_models_configured(
-            self.settings, agent_id
-        )
         return {
             "enabled": definition.enabled,
             "published": self.registry.is_execution_eligible(agent_id),
-            "flow_configured": (
+            "local_ready": (
                 self.registry.is_execution_eligible(agent_id)
                 and self.registry.is_configured(agent_id, self.settings)
             ),
-            "provider_available": (
-                self.registry.is_execution_eligible(agent_id)
-                and (
-                    internal_available
-                    or definition.provider == "local"
-                    or (
-                        self.settings.xingchen_enabled
-                        and bool(self.settings.xingchen_api_key.get_secret_value())
-                        and bool(self.settings.xingchen_api_secret.get_secret_value())
-                    )
-                )
+            "provider_available": self.registry.is_runtime_available(
+                agent_id, self.settings
             ),
             "input_mode_supported": input_type in definition.supports,
             "course_supported": course_id in definition.course_ids,
@@ -1690,24 +1744,15 @@ class TaskRouter:
         selected = primary
         fallback_used = False
         source = "local_fast"
-        cloud_allowed = self._cloud_allowed(request)
         local_analysis_v2 = (
             primary.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
             and isinstance(request.options.get("research_analysis_v2"), dict)
         )
-        internal_available = internal_workflow_models_configured(
-            self.settings, primary.agent_id
-        ) or local_analysis_v2
         runtime_available = local_analysis_v2 or self.registry.is_runtime_available(
             primary.agent_id, self.settings
         )
         primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
-        local_only = (
-            primary.provider == "xingchen"
-            and not cloud_allowed
-            and not internal_available
-        )
-        if not primary_eligible or local_only or not runtime_available:
+        if not primary_eligible or not runtime_available:
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback is not None and self.registry.is_execution_eligible(
                 fallback.agent_id
@@ -1718,14 +1763,10 @@ class TaskRouter:
                 selected = fallback
                 fallback_used = True
                 source = "local_degraded"
-            elif primary_eligible and (
-                self.registry.allows_unconfigured_route(primary.agent_id)
-                or (
-                    local_only
-                    and self.registry.has_local_execution_contract(primary.agent_id)
-                )
+            elif primary_eligible and self.registry.allows_unconfigured_route(
+                primary.agent_id
             ):
-                source = "local_only" if local_only else "local_degraded"
+                source = "local_degraded"
             else:
                 generic_fallback = self._generic_model_fallback_decision(
                     request=request,
@@ -1767,14 +1808,7 @@ class TaskRouter:
                 else f"local deterministic routing selected {primary.agent_id}"
             ),
             retrieval_required=selected.retrieval_policy.enabled,
-            provider_required=(
-                selected.provider == "xingchen"
-                and cloud_allowed
-                and not internal_workflow_models_configured(
-                    self.settings, selected.agent_id
-                )
-                and self.registry.is_runtime_available(selected.agent_id, self.settings)
-            ),
+            provider_required=False,
             route_source=source,
             route_confidence=confidence,
             fallback_used=fallback_used,
@@ -1798,18 +1832,9 @@ class TaskRouter:
         selected = primary
         fallback_used = False
         source = "local_fast"
-        cloud_allowed = self._cloud_allowed(request)
-        internal_available = internal_workflow_models_configured(
-            self.settings, primary.agent_id
-        )
-        local_only = (
-            primary.provider == "xingchen"
-            and not cloud_allowed
-            and not internal_available
-        )
         primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
 
-        if not primary_eligible or local_only or (
+        if not primary_eligible or (
             not self.registry.allows_unconfigured_route(primary.agent_id)
             and not self.registry.is_runtime_available(primary.agent_id, self.settings)
         ):
@@ -1821,10 +1846,7 @@ class TaskRouter:
                 selected = fallback
                 fallback_used = True
                 source = "local_degraded"
-            elif not primary_eligible or not (
-                local_only
-                and self.registry.has_local_execution_contract(primary.agent_id)
-            ):
+            elif not primary_eligible:
                 generic_fallback = self._generic_model_fallback_decision(
                     request=request,
                     course_id=request.course_id.upper(),
@@ -1853,7 +1875,7 @@ class TaskRouter:
                     original_agent_id=primary.agent_id,
                 )
             else:
-                source = "local_only"
+                source = "local_degraded"
 
         return RouteDecision(
             agent_id=selected.agent_id,
@@ -1871,14 +1893,7 @@ class TaskRouter:
                 )
             ),
             retrieval_required=rule.retrieval_required,
-            provider_required=(
-                selected.provider == "xingchen"
-                and cloud_allowed
-                and not internal_workflow_models_configured(
-                    self.settings, selected.agent_id
-                )
-                and self.registry.is_runtime_available(selected.agent_id, self.settings)
-            ),
+            provider_required=False,
             route_source=source,
             route_confidence=0.9 if fallback_used else 0.98,
             fallback_used=fallback_used,
@@ -1886,109 +1901,4 @@ class TaskRouter:
             fallback_instruction=(
                 primary.fallback.instruction_prefix if fallback_used else ""
             ),
-        )
-
-    def _cloud_allowed(self, request: AgentRequest) -> bool:
-        value = request.options.get(
-            "allow_cloud", self.settings.xingchen_workflows_default_enabled
-        )
-        return value is True
-
-    def validate_cloud_target(
-        self,
-        target_agent_id: str,
-        request: AgentRequest,
-        *,
-        source_agent_id: str = "ROUTER_01_FALLBACK_V1",
-    ) -> AgentDefinition:
-        if target_agent_id == source_agent_id:
-            raise RouteInvalidTargetError("云端调度不得路由回自身")
-        try:
-            target = self.registry.get(target_agent_id)
-        except KeyError as exc:
-            raise RouteInvalidTargetError("云端调度返回未注册 Agent") from exc
-        if not self.registry.is_execution_eligible(target.agent_id):
-            raise RouteInvalidTargetError("云端调度返回未启用 Agent")
-        if target.mode == "routing_only":
-            raise RouteInvalidTargetError("云端调度目标不得再次进入调度 Agent")
-        if request.course_id.upper() not in target.course_ids:
-            raise RouteInvalidTargetError("云端调度目标不支持当前课程")
-        has_text = any(
-            isinstance(value, str) and bool(value.strip())
-            for value in request.canonical_input.values()
-        )
-        if len(request.attachments) > 1:
-            raise RouteInvalidTargetError("云端调度目标不支持多附件输入")
-        input_type = (
-            "text_and_single_image"
-            if has_text and request.attachments
-            else "single_image"
-            if request.attachments
-            else "text"
-            if has_text
-            else "empty"
-        )
-        if input_type not in target.supports:
-            raise RouteInvalidTargetError("云端调度目标不支持当前输入类型")
-        if target.provider == "xingchen" and not self.registry.is_runtime_available(
-            target.agent_id, self.settings
-        ):
-            raise RouteInvalidTargetError("云端调度目标当前不可运行")
-        return target
-
-    def route_cloud_response(self, answer: str, request: AgentRequest) -> RouteDecision:
-        try:
-            payload = json.loads(answer)
-            target_id = payload["target_agent_id"]
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise RouteInvalidTargetError(
-                "云端调度响应必须包含 target_agent_id JSON"
-            ) from exc
-        if not isinstance(target_id, str):
-            raise RouteInvalidTargetError("云端调度 target_agent_id 必须是字符串")
-        target = self.validate_cloud_target(target_id, request)
-        confidence = payload.get("confidence", 0.5)
-        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
-            confidence = 0.5
-        target_intent = AGENT_INTENT.get(target.agent_id, request.intent.value)
-        routing = request.options.get("_routing", {})
-        prior_recognition = (
-            routing.get("intent_recognition", {})
-            if isinstance(routing, dict)
-            else {}
-        )
-        aligned_recognition = IntentRecognitionService.align_to_intent(
-            IntentRecognition.model_validate(prior_recognition), target_intent
-        )
-        return RouteDecision(
-            agent_id=target.agent_id,
-            scene=target.scene,
-            course_id=request.course_id.upper(),
-            intent=target_intent,
-            route_status=RouteStatus.SELECTED,
-            reason="validated one-pass cloud dispatch target",
-            retrieval_required=target.mode != "routing_only",
-            provider_required=target.provider == "xingchen",
-            route_source="cloud_fallback",
-            route_confidence=max(0.0, min(1.0, float(confidence))),
-            fallback_used=True,
-            original_agent_id="ROUTER_01_FALLBACK_V1",
-            intent_recognition=aligned_recognition.model_dump(mode="json"),
-            capabilities=list(aligned_recognition.capabilities),
-            selected_tools=list(aligned_recognition.selected_tools),
-            selected_skills=list(aligned_recognition.selected_skills),
-            route_mode=aligned_recognition.route_mode,
-            complexity=aligned_recognition.complexity,
-            needs_subagents=aligned_recognition.needs_subagents,
-            parallelizable=aligned_recognition.parallelizable,
-            route_trace=[
-                {
-                    "stage": "cloud_refinement",
-                    "source": "cloud_fallback",
-                    "from_agent_id": "ROUTER_01_FALLBACK_V1",
-                    "to_agent_id": target.agent_id,
-                    "intent": target_intent,
-                    "confidence": max(0.0, min(1.0, float(confidence))),
-                }
-            ],
         )

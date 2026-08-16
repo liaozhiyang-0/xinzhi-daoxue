@@ -20,7 +20,7 @@ from app.core.errors import ValidationAppError
 from app.providers.base import AgentProvider
 from app.services.agent_runtime import AgentExecutionPlanner, AgentInputMapper
 
-MOCK_WARNING = "当前结果来自开发态Mock，不代表正式云端能力"
+MOCK_WARNING = "当前结果来自开发态 Mock，仅用于协议联调"
 
 
 class DevelopmentMockProvider(AgentProvider):
@@ -145,7 +145,7 @@ class DevelopmentMockProvider(AgentProvider):
 
     @staticmethod
     def _planned_result(agent_id: str, request: AgentRequest) -> AgentResult:
-        answer = "该工作流仍处于计划或本地协议准备阶段，未调用云端或Mock。"
+        answer = "该 Agent 仍处于计划或本地协议准备阶段，未执行本地 Runtime 或 Mock。"
         return AgentResult(
             agent_id=agent_id,
             provider="none",

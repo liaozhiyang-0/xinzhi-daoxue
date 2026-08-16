@@ -9,6 +9,7 @@ from app.runtime.contracts import (
     DecisionAction,
     RuntimeDecision,
     RuntimeEffectStatus,
+    RuntimeNodeActivation,
     RuntimeNodeState,
     RuntimeNodeStatus,
     RuntimeObservation,
@@ -21,7 +22,7 @@ class RuntimeStateMachine:
 
     This class intentionally performs no I/O and invokes no Provider. Keeping
     transitions deterministic makes replay, checkpointing, and event testing
-    possible before the legacy TaskRunner is migrated.
+    possible without coupling state transitions to task transport.
     """
 
     TERMINAL_NODE_STATUSES = frozenset(
@@ -43,10 +44,9 @@ class RuntimeStateMachine:
             if state.status != RuntimeNodeStatus.PENDING:
                 continue
             dependencies = [states[item].status for item in node.depends_on]
-            if all(
-                status
-                in {RuntimeNodeStatus.SUCCEEDED, RuntimeNodeStatus.SKIPPED}
-                for status in dependencies
+            if RuntimeStateMachine._activation_satisfied(
+                node.activation,
+                dependencies,
             ):
                 ready.append(node.node_id)
         return ready
@@ -89,6 +89,8 @@ class RuntimeStateMachine:
                 and previous_state is not None
                 and previous.handler_id == node.handler_id
                 and previous.depends_on == node.depends_on
+                and previous.activation == node.activation
+                and previous.recovery_for == node.recovery_for
                 and previous_state.status
                 in {RuntimeNodeStatus.SUCCEEDED, RuntimeNodeStatus.SKIPPED}
             )
@@ -193,6 +195,21 @@ class RuntimeStateMachine:
         return run
 
     @staticmethod
+    def skip_node(run: AgentRun, node_id: str, *, reason: str) -> AgentRun:
+        state = RuntimeStateMachine._node(run, node_id)
+        if state.status not in {
+            RuntimeNodeStatus.PENDING,
+            RuntimeNodeStatus.READY,
+        }:
+            raise ValueError(f"runtime node cannot be skipped: {node_id}")
+        state.status = RuntimeNodeStatus.SKIPPED
+        state.error_code = reason
+        state.completed_at = datetime.now(UTC)
+        run.updated_at = datetime.now(UTC)
+        RuntimeStateMachine._refresh_run_status(run)
+        return run
+
+    @staticmethod
     def block_unreachable_nodes(run: AgentRun) -> AgentRun:
         """Mark nodes whose required dependencies can no longer succeed."""
 
@@ -207,15 +224,30 @@ class RuntimeStateMachine:
                 }:
                     continue
                 dependency_states = [run.nodes[item] for item in node.depends_on]
-                if any(
-                    dependency.status
-                    in {RuntimeNodeStatus.FAILED, RuntimeNodeStatus.BLOCKED}
-                    for dependency in dependency_states
+                dependency_statuses = [item.status for item in dependency_states]
+                if node.activation == RuntimeNodeActivation.ALL_SUCCEEDED and any(
+                    status in {RuntimeNodeStatus.FAILED, RuntimeNodeStatus.BLOCKED}
+                    for status in dependency_statuses
                 ):
                     RuntimeStateMachine.block_node(
                         run,
                         node.node_id,
                         error_code="dependency_failed",
+                    )
+                    changed = True
+                elif (
+                    node.activation == RuntimeNodeActivation.ANY_FAILED
+                    and RuntimeStateMachine._dependencies_terminal(
+                        dependency_statuses
+                    )
+                    and not RuntimeStateMachine._has_failed_dependency(
+                        dependency_statuses
+                    )
+                ):
+                    RuntimeStateMachine.skip_node(
+                        run,
+                        node.node_id,
+                        reason="failure_condition_not_met",
                     )
                     changed = True
         return run
@@ -292,16 +324,58 @@ class RuntimeStateMachine:
             status in RuntimeStateMachine.TERMINAL_NODE_STATUSES
             for status in statuses
         ):
+            recovered = {
+                recovered_node
+                for node in run.plan.nodes
+                if run.nodes[node.node_id].status == RuntimeNodeStatus.SUCCEEDED
+                for recovered_node in node.recovery_for
+            }
+            unrecovered_failures = {
+                node_id
+                for node_id, state in run.nodes.items()
+                if state.status in {
+                    RuntimeNodeStatus.FAILED,
+                    RuntimeNodeStatus.BLOCKED,
+                }
+                and node_id not in recovered
+            }
             run.status = (
                 RuntimeRunStatus.COMPLETED
-                if all(
-                    status
-                    in {RuntimeNodeStatus.SUCCEEDED, RuntimeNodeStatus.SKIPPED}
-                    for status in statuses
-                )
+                if not unrecovered_failures
                 else RuntimeRunStatus.FAILED
             )
             if run.completed_at is None:
                 run.completed_at = datetime.now(UTC)
         elif any(status == RuntimeNodeStatus.READY for status in statuses):
             run.status = RuntimeRunStatus.RUNNING
+
+    @staticmethod
+    def _dependencies_terminal(statuses: list[RuntimeNodeStatus]) -> bool:
+        return all(
+            status in RuntimeStateMachine.TERMINAL_NODE_STATUSES
+            for status in statuses
+        )
+
+    @staticmethod
+    def _has_failed_dependency(statuses: list[RuntimeNodeStatus]) -> bool:
+        return any(
+            status in {RuntimeNodeStatus.FAILED, RuntimeNodeStatus.BLOCKED}
+            for status in statuses
+        )
+
+    @staticmethod
+    def _activation_satisfied(
+        activation: RuntimeNodeActivation,
+        statuses: list[RuntimeNodeStatus],
+    ) -> bool:
+        if activation == RuntimeNodeActivation.ALL_SUCCEEDED:
+            return all(
+                status
+                in {RuntimeNodeStatus.SUCCEEDED, RuntimeNodeStatus.SKIPPED}
+                for status in statuses
+            )
+        if not RuntimeStateMachine._dependencies_terminal(statuses):
+            return False
+        if activation == RuntimeNodeActivation.ANY_FAILED:
+            return RuntimeStateMachine._has_failed_dependency(statuses)
+        return True

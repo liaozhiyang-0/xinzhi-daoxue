@@ -271,7 +271,7 @@ class XZDSupervisor:
             route = self._safe_local_fallback(legacy, route)
             route = route.model_copy(
                 update={
-                    "reason": ("多图/PDF 先在本地拆分，禁止直接发送给单图星辰接口"),
+                    "reason": ("多图/PDF 先在本地拆分，禁止直接发送给单图视觉接口"),
                     "reason_codes": [
                         *route.reason_codes,
                         "local_multimodal_preprocessing_required",

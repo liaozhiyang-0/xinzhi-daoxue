@@ -165,7 +165,9 @@ class GeneralQuestionRuntimeService:
                     ),
                     target_id=self.agent_id if self.use_typed_subagent else "",
                     depends_on=execute_dependencies,
-                    timeout_ms=120_000,
+                    timeout_ms=self._subagent_timeout_ms()
+                    if self.use_typed_subagent
+                    else 120_000,
                     max_retries=1,
                 ),
                 RuntimeNode(
@@ -288,6 +290,18 @@ class GeneralQuestionRuntimeService:
 
     def _subagent_handler_id(self) -> str:
         return f"subagent.{self.agent_id}"
+
+    def _subagent_timeout_ms(self) -> int:
+        """Use the registered local Agent timeout for typed sub-agent nodes."""
+
+        if self.subagent_registry is not None:
+            try:
+                definition = self.subagent_registry.describe(self.agent_id)
+            except RuntimeSubagentRegistryError:
+                pass
+            else:
+                return max(100, min(900_000, int(definition.max_timeout_ms)))
+        return 120_000
 
     def _register_typed_subagent_handler(
         self,
@@ -536,6 +550,8 @@ class GeneralQuestionRuntimeService:
                     ) from exc
                 options = dict(request_for_attempt.options)
                 options["retrieved_context"] = packet.to_retrieved_context()
+                options["runtime_retrieval_evidence_status"] = packet.evidence_status
+                options["runtime_retrieval_warnings"] = list(packet.warnings[:8])
                 options["runtime_retrieval_trace_id"] = packet.retrieval_trace_id
                 options["runtime_retrieval_evidence_ids"] = [
                     hit.evidence_id for hit in packet.evidence if hit.evidence_id
@@ -960,7 +976,23 @@ class GeneralQuestionRuntimeService:
                 result = self._apply_retrieval_metadata(result, run)
                 result_holder["result"] = result
         if result is None:
-            raise RuntimeNodeError(f"{self.runtime_name}_result_missing")
+            failure_code = next(
+                (
+                    node_state.error_code
+                    for node_state in run.nodes.values()
+                    if node_state.status == RuntimeNodeStatus.FAILED
+                    and node_state.error_code
+                ),
+                "",
+            )
+            raise RuntimeNodeError(
+                failure_code or f"{self.runtime_name}_result_missing",
+                (
+                    f"{self.runtime_name} execution failed: {failure_code}"
+                    if failure_code
+                    else f"{self.runtime_name} runtime produced no result"
+                ),
+            )
         # The first execution result is held in memory through verification,
         # so the verify handler may not restore it from a durable observation.
         # Apply the same retrieval metadata in both paths before the result is

@@ -28,16 +28,6 @@ def main() -> int:
     )
     settings = Settings(
         app_env="test",
-        xingchen_enabled=True,
-        xingchen_api_key="benchmark-key",
-        xingchen_api_secret="benchmark-secret",
-        xingchen_solver_ct_flow_id="configured",
-        xingchen_knowledge_qa_flow_id="configured",
-        xingchen_lesson_prep_flow_id="configured",
-        xingchen_assignment_review_flow_id="configured",
-        xingchen_academic_writing_flow_id="configured",
-        xingchen_data_analysis_flow_id="configured",
-        xingchen_fallback_router_flow_id="",
         _env_file=None,
     )
     router = TaskRouter(AgentRegistry(), settings)

@@ -16,7 +16,7 @@ from app.runtime import (
     RuntimeNodeStatus,
     evaluate_runtime_canary_suite,
 )
-from app.services import research_analysis_runtime, task_runner
+from app.services import research_analysis_runtime, runtime_task_engine
 from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.runtime_launch_policy import RuntimeLaunchMode, RuntimeLaunchPolicy
 
@@ -119,16 +119,12 @@ class ProviderFreeInternalAgent:
         )
 
 
-def test_research03_code_has_distinct_legacy_runtime_and_capability_edges() -> None:
-    legacy_source = inspect.getsource(task_runner)
+def test_research03_code_has_distinct_runtime_and_capability_edges() -> None:
+    task_engine_source = inspect.getsource(runtime_task_engine)
     runtime_source = inspect.getsource(research_analysis_runtime)
 
-    # Structural evidence only: these names prove the current seams exist;
-    # they do not prove production equivalence or release readiness.
-    assert AGENT_ID in legacy_source
-    assert "self.runtime_boundary.execute" in legacy_source
-    assert "self.internal_agents.run" in legacy_source
-    assert "self.provider.run" in legacy_source
+    assert "TaskRuntimeLifecycle" in task_engine_source
+    assert "self.runtime_execution.execute" in task_engine_source
 
     assert "self.internal_agents.run" in runtime_source
     assert "provider.run" not in runtime_source
@@ -216,8 +212,8 @@ def test_research03_candidate_is_explicit_and_default_stays_legacy() -> None:
         lifecycle_enabled=True,
         runtime_option_key="research_analysis_v2",
     )
-    assert default_decision.mode == RuntimeLaunchMode.LEGACY
-    assert candidate_decision.mode == RuntimeLaunchMode.CANARY
+    assert default_decision.mode == RuntimeLaunchMode.DEFAULT
+    assert candidate_decision.mode == RuntimeLaunchMode.DEFAULT
 
 
 def test_synthetic_fixture_is_not_release_evidence() -> None:

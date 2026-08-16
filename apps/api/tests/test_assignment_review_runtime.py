@@ -163,6 +163,31 @@ def test_assignment_review_partial_or_degraded_validation_waits_for_approval(
     assert fake.calls == 1
 
 
+def test_assignment_review_returns_evidence_incomplete_diagnosis_without_blocking(
+) -> None:
+    fake = FakeAssignmentAgents(
+        [
+            make_result(
+                business_data=review_data(
+                    review_required=True,
+                    evidence_status="insufficient",
+                    missing_information=["题目标准答案未提供"],
+                )
+            )
+        ]
+    )
+    service = AssignmentReviewRuntimeService(fake, enabled=True)
+    request = make_request("task-assignment-preliminary-evidence")
+    run = make_run(service, request)
+
+    result = asyncio.run(service.run(request, run))
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert run.status == RuntimeRunStatus.COMPLETED
+    assert result.business_data["review_required"] is True
+    assert fake.calls == 1
+
+
 def test_assignment_review_checkpoint_recovery_preserves_approval_and_effects() -> None:
     fake = FakeAssignmentAgents(
         [make_result(business_data=review_data(review_required=True))]

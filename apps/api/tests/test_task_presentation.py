@@ -1,8 +1,6 @@
 from app.agents import AgentRegistry
 from app.contracts import (
-    AgentRequest,
     AgentResult,
-    Intent,
     KnowledgeCourseId,
     KnowledgeHit,
     RAGInteractionMode,
@@ -10,7 +8,6 @@ from app.contracts import (
     WorkflowContextBundle,
 )
 from app.services.task_presentation import _clean_evidence_excerpt, build_task_views
-from app.services.task_runner import TaskRunner
 
 
 def hit(evidence_id: str = "S1") -> KnowledgeHit:
@@ -148,11 +145,11 @@ def test_learn_presentation_uses_only_validated_evidence() -> None:
     definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
     result = AgentResult(
         agent_id=definition.agent_id,
-        provider="xingchen",
+        provider="local",
         course_id="CT",
         intent="explain_concept",
         answer="因为电荷变化需要有限时间。[S1]",
-        cloud_status="cloud_success",
+        cloud_status="not_required",
         evidence_status="sufficient",
         structured_result={
             "citation_validation": {
@@ -289,11 +286,11 @@ def test_solver_evidence_is_labeled_method_reference_not_answer_basis() -> None:
     definition = AgentRegistry().get("SOLVER_CT_V1")
     result = AgentResult(
         agent_id=definition.agent_id,
-        provider="xingchen",
+        provider="local",
         course_id="CT",
         intent="solve_problem",
         answer="回路电流为 2 A。",
-        cloud_status="cloud_success",
+        cloud_status="not_required",
     )
     context = bundle(RAGInteractionMode.METHOD_REFERENCE)
     presentation, summary, evidence = build_task_views(
@@ -332,7 +329,7 @@ def test_fallback_and_mock_presentation_are_explicit() -> None:
     assert presentation.status_label == "开发演示"
     assert presentation.provider_label == "开发态 Mock"
     assert presentation.fallback_message == (
-        "云端响应超时，本次已切换到本地安全后备结果。"
+        "本地 Runtime 响应超时，已保留安全后备结果。"
     )
     assert "provider_timeout" not in presentation.fallback_message
     assert summary.mock is True
@@ -443,7 +440,7 @@ def test_lesson_fallback_keeps_retrieved_materials_visible_but_not_cited() -> No
         intent="lesson_prep",
         answer="本地可编辑教案框架",
         fallback_used=True,
-        fallback_reason="xingchen_response_parse_error",
+        fallback_reason="provider_response_parse_error",
         evidence_status="sufficient",
     )
     context = bundle(RAGInteractionMode.GROUNDED_GENERATION)
@@ -463,26 +460,6 @@ def test_lesson_fallback_keeps_retrieved_materials_visible_but_not_cited() -> No
     assert summary.used_evidence_count == 0
     assert evidence[0].used_by_answer is False
 
-
-def test_lesson_fallback_returns_an_actual_editable_structure() -> None:
-    request = AgentRequest(
-        session_id="session-test",
-        user_id="teacher-test",
-        user_role="teacher",
-        scene="teaching",
-        course_id="CT",
-        intent=Intent.LESSON_PREP,
-        canonical_input={"text": "请设计电容电压连续性教案"},
-    )
-
-    answer, data = TaskRunner._lesson_prep_fallback_template(request)
-
-    assert "本地教案框架" in answer
-    assert "电容电压连续性" in answer
-    assert data["learning_objectives"]
-    assert data["lesson_flow"]
-    assert data["activities"]
-    assert data["formative_assessment"]
 
 
 def test_research_presentation_distinguishes_failed_external_search() -> None:

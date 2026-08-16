@@ -17,8 +17,8 @@ async def run_worker() -> None:
     from app.main import create_app
 
     configured = get_settings()
-    # The worker must own the local TaskRunner. The API uses the same config
-    # with TASK_EXECUTOR_MODE=redis and only publishes IDs to Redis.
+    # The worker owns the local RuntimeTaskEngine through TaskExecutor. The API
+    # uses the same config with TASK_EXECUTOR_MODE=redis and only publishes IDs.
     settings = configured.model_copy(update={"task_executor_mode": "local"})
     app = create_app(settings)
     queue = RedisTaskQueue(
@@ -29,7 +29,7 @@ async def run_worker() -> None:
     async with app.router.lifespan_context(app):
         try:
             await TaskWorker(
-                app.state.task_runner,
+                app.state.task_executor,
                 queue,
                 block_timeout_seconds=settings.task_queue_block_timeout_seconds,
                 recovery_interval_seconds=(

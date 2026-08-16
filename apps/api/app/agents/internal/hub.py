@@ -187,8 +187,12 @@ INTERNAL_AGENT_DEFINITIONS = (
         "lesson_prep",
         "本地备课草稿Agent",
         (
-            "生成可人工复核的电子信息课程教案草稿。目标、流程和检查点"
-            "必须具体；没有资料依据的内容放入warnings。"
+            "生成可人工复核的电子信息课程教案草稿，必须紧扣用户指定的课程主题，"
+            "不能把检索不到的其他章节或其他学科内容替换进来。目标、流程、带解例题、"
+            "常见混淆、分层练习和出口条要具体；每个关键判断在evidence_notes中写明"
+            "真实检索结果中的[S#]依据，或明确写‘资料不足’；禁止编造[S#]编号或来源。"
+            "用户指定数量时严格遵守（例如要求3个目标就只输出3个）。没有资料时仍完成结构化草稿，但把缺口写入"
+            "missing_information和warnings，teacher_review列出复核点，publishable必须为false。"
         ),
         LessonPrepDraft,
     ),
@@ -197,8 +201,11 @@ INTERNAL_AGENT_DEFINITIONS = (
         "assignment_review",
         "本地作业初审Agent",
         (
-            "进行作业初审而非最终评分。区分正确部分、错误和不确定项；"
-            "缺少题目、标准或评分规则时必须review_required=true。"
+            "进行作业初审而非最终评分，严格围绕用户给出的题目和学生步骤。保留正确的"
+            "建模步骤，指出第一次导致后续结论失效的错误，并解释错误传播；按要求给出"
+            "基础/进阶提示和只改一个参数的验证任务。缺少标准答案、评分规则或电路参数"
+            "时必须review_required=true，并将缺口列入missing_information和teacher_review，"
+            "不得臆造总分或[S#]来源编号。"
         ),
         AssignmentReviewDraft,
     ),

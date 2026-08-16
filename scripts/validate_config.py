@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.agents import AgentDefinition, AgentRegistry  # type: ignore[import-untyped]  # noqa: E402, I001
 from app.capabilities import default_capability_registry  # type: ignore[import-untyped]  # noqa: E402
-from app.core.config import XINGCHEN_TIMEOUT_MAX_SECONDS, Settings  # type: ignore[import-untyped]  # noqa: E402
+from app.core.config import Settings  # type: ignore[import-untyped]  # noqa: E402
 from app.courses import default_course_registry  # type: ignore[import-untyped]  # noqa: E402
 from app.services.error_pool import ErrorPoolRegistry  # type: ignore[import-untyped]  # noqa: E402
 from app.services.learning_outcome import LearningOutcomeService  # type: ignore[import-untyped]  # noqa: E402
@@ -37,7 +37,7 @@ def agent_status(
         "agent_id": agent_id,
         "enabled": agent.enabled,
         "publication_status": agent.publication_status,
-        "flow_configured": bool(registry.resolve_flow_id(agent_id, settings)),
+        "local_ready": registry.is_runtime_available(agent_id, settings),
         "runtime_available": (
             False if frozen else registry.is_runtime_available(agent_id, settings)
         ),
@@ -110,29 +110,11 @@ def validate(settings: Settings) -> dict[str, object]:
             ),
         },
         "provider": {
-            "requested": "xingchen" if settings.xingchen_enabled else "mock",
+            "requested": settings.default_agent_provider,
             "allow_mock_fallback": settings.allow_mock_fallback,
-            "publication_status": settings.xingchen_publication_status,
-            "runtime_configuration_required": settings.xingchen_enabled,
-            "runtime_available": settings.xingchen_runtime_available,
-            "xingchen_credentials": (
-                "configured"
-                if settings.xingchen_api_key.get_secret_value()
-                and settings.xingchen_api_secret.get_secret_value()
-                else "missing"
-                if settings.xingchen_enabled
-                else "not_required"
-            ),
-            "xingchen_base_url": safe_status(
-                settings.xingchen_base_url, required=settings.xingchen_enabled
-            ),
-            "xingchen_workflow_id": safe_status(
-                settings.xingchen_solver_ct_flow_id,
-                required=settings.xingchen_enabled,
-            ),
-            "timeout_seconds": settings.xingchen_timeout_seconds,
-            "timeout_max_seconds": XINGCHEN_TIMEOUT_MAX_SECONDS,
-            "use_local_kb_context": settings.xingchen_use_local_kb_context,
+            "publication_status": "local_only",
+            "runtime_configuration_required": False,
+            "runtime_available": True,
         },
         "agents": [
             agent_status(agent, registry, settings)

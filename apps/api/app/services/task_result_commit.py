@@ -54,7 +54,7 @@ def ensure_terminal_success(
 
 
 class TaskResultCommitService:
-    """Persist a terminal result through the existing Task/SSE compatibility API."""
+    """Persist a terminal Runtime result through the Task/SSE API."""
 
     def __init__(self, runtime_boundary: RuntimeExecutionBoundary) -> None:
         self.runtime_boundary = runtime_boundary

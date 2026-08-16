@@ -14,12 +14,13 @@ from app.contracts import (
 from app.core.errors import ModelProviderError
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
 from app.services.model_service import ModelService
+from app.services.response_depth import policy_for
 
 logger = logging.getLogger(__name__)
 
 
 class GeneralQuestionService:
-    """Answer low-confidence text requests without invoking a Xingchen workflow."""
+    """Answer low-confidence text requests through the local model gateway."""
 
     agent_id = "GENERAL_QUESTION_V1"
     fallback_agent_id = "GENERAL_MODEL_FALLBACK_V1"
@@ -139,6 +140,9 @@ class GeneralQuestionService:
                 if direct_fallback.get("method_reference")
                 else "no_course_evidence_claimed"
             ),
+            "response_depth": policy_for(
+                request.options, "general_question"
+            ).metadata(),
         }
         artifact = Artifact(
             artifact_type=ArtifactType.ANSWER,
@@ -495,11 +499,7 @@ class GeneralQuestionService:
 
     @staticmethod
     def _max_tokens(request: AgentRequest) -> int:
-        return {
-            "brief": 2048,
-            "standard": 4096,
-            "deep": 6144,
-        }.get(str(request.options.get("response_depth", "standard")), 4096)
+        return policy_for(request.options, "general_question").max_output_tokens
 
     @staticmethod
     def _usage(responses: list[ModelResponse]) -> tuple[int | None, int | None]:
@@ -543,7 +543,7 @@ class GeneralQuestionService:
             provider="local_agent",
             answer=answer,
             structured_result=content,
-            warnings=["通用回答模型暂不可用，未调用星辰工作流"],
+            warnings=["通用回答模型暂不可用，已返回本地安全降级结果"],
             fallback_used=True,
             fallback_reason="general_model_unavailable",
             rag_status="disabled",

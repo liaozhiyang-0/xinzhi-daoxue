@@ -1,4 +1,4 @@
-"""Runtime adapter for the local, evidence-grounded Knowledge QA Agent."""
+"""Runtime adapter for evidence-grounded Knowledge QA and synthesis."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from app.services.knowledge_qa_service import KnowledgeQAService
 
 
 class KnowledgeQARuntimeService:
-    """Execute retrieval-only QA through a durable execute/verify Plan."""
+    """Execute bounded retrieval and configured model synthesis through Runtime."""
 
     agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
     runtime_option_key = "knowledge_qa_runtime"
@@ -65,7 +65,7 @@ class KnowledgeQARuntimeService:
         return AgentRunPlan(
             plan_id="knowledge-qa-runtime",
             version="knowledge-qa-v1",
-            goal="answer the learner using bounded local evidence",
+            goal="answer using bounded course evidence and configured synthesis",
             nodes=[
                 RuntimeNode(
                     node_id=execute_node_id,
@@ -241,8 +241,24 @@ class KnowledgeQARuntimeService:
             passed = (
                 result.status != AgentResultStatus.FAILED
                 and bool(result.answer.strip())
-                and mode in {"retrieval_only", "local_rag_model_generation"}
+                and mode
+                in {
+                    "retrieval_only",
+                    "local_rag_model_generation",
+                    "learning_path_model_generation",
+                    "governance_model_generation",
+                }
             )
+            # Governance and learning-path synthesis have a valid evidence
+            # boundary even when the local course index contributes no hit:
+            # the former audits asset records in the prompt and the latter
+            # audits user-supplied learning evidence.  Keep the result
+            # completed-with-gaps so the user can review it, rather than
+            # converting a useful model synthesis into a generic task failure.
+            incomplete_synthesis = mode in {
+                "learning_path_model_generation",
+                "governance_model_generation",
+            }
             facts = {
                 "passed": passed,
                 "result_status": result.status.value,
@@ -266,7 +282,9 @@ class KnowledgeQARuntimeService:
                     },
                     warnings=list(result.warnings[:8]),
                 )
-            if evidence_status in {"insufficient", "none"}:
+            if evidence_status in {"insufficient", "none"} and not (
+                passed and incomplete_synthesis
+            ):
                 return RuntimeObservation(
                     node_id=_node.node_id,
                     terminal_status=RuntimeNodeStatus.PARTIAL,
@@ -276,6 +294,24 @@ class KnowledgeQARuntimeService:
                         "passed": False,
                         "needs_review": True,
                         "reason_code": "knowledge_evidence_insufficient",
+                    },
+                    warnings=list(result.warnings[:8]),
+                )
+            if passed and incomplete_synthesis and evidence_status in {
+                "insufficient",
+                "none",
+                "partial",
+            }:
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.SUCCEEDED,
+                    artifact_ids=[item.artifact_id for item in result.artifacts],
+                    facts={
+                        **facts,
+                        "passed": True,
+                        "evidence_incomplete": True,
+                        "needs_review": True,
+                        "reason_code": "knowledge_evidence_incomplete_review",
                     },
                     warnings=list(result.warnings[:8]),
                 )

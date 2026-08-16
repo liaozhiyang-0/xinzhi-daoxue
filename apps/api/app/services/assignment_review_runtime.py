@@ -133,6 +133,12 @@ class AssignmentReviewRuntimeService(GeneralQuestionRuntimeService):
         result = self._restore_result(run)
         if result is None or not self._requires_review(result):
             return False
+        # An evidence-incomplete first-pass review is useful as a provisional
+        # diagnosis.  It must be visible to the requester with an explicit
+        # review marker, but it must not be held behind the approval API (there
+        # is no score or publication side effect to approve yet).
+        if self._is_preliminary_evidence_review(result):
+            return False
         return (
             verify_state.status == RuntimeNodeStatus.PARTIAL
             or verification.facts.get("passed") is True
@@ -186,6 +192,28 @@ class AssignmentReviewRuntimeService(GeneralQuestionRuntimeService):
         quality_status = result.metrics.quality_status.strip().casefold()
         return quality_status in cls._REVIEW_STATUS_VALUES
 
+    @staticmethod
+    def _is_preliminary_evidence_review(result: AgentResult) -> bool:
+        """Identify a non-blocking review caused only by missing evidence.
+
+        Assignment review is an instructional diagnosis, not publication or
+        grading.  When the model explicitly reports an insufficient/partial
+        evidence packet and lists what is missing, return the draft now while
+        preserving ``review_required`` for the teacher.  Other quality or
+        correctness failures continue to use the approval gate.
+        """
+
+        for container in (result.business_data, result.structured_result):
+            if not isinstance(container, Mapping):
+                continue
+            evidence_status = str(container.get("evidence_status", "")).strip()
+            missing = container.get("missing_information")
+            if evidence_status in {"insufficient", "partial"} and isinstance(
+                missing, list
+            ) and any(str(item).strip() for item in missing):
+                return True
+        return False
+
     def _is_valid_result(self, result: AgentResult) -> bool:
         if not super()._is_valid_result(result):
             return False
@@ -198,5 +226,8 @@ class AssignmentReviewRuntimeService(GeneralQuestionRuntimeService):
         }
         return (
             required_fields <= set(result.business_data)
-            and not self._requires_review(result)
+            and (
+                not self._requires_review(result)
+                or self._is_preliminary_evidence_review(result)
+            )
         )

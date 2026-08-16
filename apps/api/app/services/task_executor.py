@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from app.application.tasks import TaskExecutionCoordinator
 from app.services.task_queue import TaskQueue
-from app.services.task_runner import TaskRunner
 
 
 class TaskExecutor(Protocol):
@@ -17,17 +17,17 @@ class TaskExecutor(Protocol):
 
 
 class LocalTaskExecutor:
-    def __init__(self, runner: TaskRunner) -> None:
-        self.runner = runner
+    def __init__(self, coordinator: TaskExecutionCoordinator) -> None:
+        self.coordinator = coordinator
 
     async def submit(self, task_id: str) -> bool:
-        return self.runner.submit(task_id)
+        return self.coordinator.submit(task_id)
 
     async def recover(self) -> int:
-        return await self.runner.recover_pending_tasks()
+        return await self.coordinator.recover()
 
     async def shutdown(self) -> None:
-        await self.runner.shutdown()
+        await self.coordinator.shutdown()
 
 
 class QueueTaskExecutor:
@@ -41,8 +41,8 @@ class QueueTaskExecutor:
         return True
 
     async def recover(self) -> int:
-        # Recovery is owned by the worker because it has the TaskRunner and
-        # can claim database leases before dispatching. The API still pings
+        # Recovery is owned by the worker because it owns the coordinator and
+        # database lease manager. The API still pings
         # Redis here so a misconfigured queue fails during startup, not on the
         # first user request.
         await self.queue.ping()

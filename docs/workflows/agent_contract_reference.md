@@ -2,7 +2,7 @@
 
 ## AgentDefinition
 
-必需区块为身份/版本、`provider`、`capabilities`、`input_contract`、`input_mapping`、`output_mapping`、`retrieval_policy` 和 `fallback`。旧式字符串 `provider`、`flow_env`、扁平 input/output mapping、`knowledge_top_k` 与 `knowledge_context_mode` 仍可加载，但会在 schema v2 后续主版本移除。
+必需区块为身份/版本、`provider`、`capabilities`、`input_contract`、`input_mapping`、`output_mapping`、`retrieval_policy` 和 `fallback`。旧式字符串 `provider`、扁平 input/output mapping、`knowledge_top_k` 与 `knowledge_context_mode` 仍可加载，但会在 schema v2 后续主版本移除。
 
 Provider Parser：`json`、`fixed_line_fields`、`plain_text`、`json_or_fixed_line`、`custom_registered_parser`。
 
@@ -20,8 +20,8 @@ Fallback handler：`local_retrieval_answer`、`static_template`、`planned_respo
 
 ## 运行时规则
 
-- enabled 星辰 Agent 必须 published；published 但 Flow/凭据缺失时 `configured=false`。
+- enabled 的本地 Agent 必须声明可用 handler；handler 缺失时 `local_ready=false`。
 - planned Agent 可在 Debug 展示和 dry-run，但正式 Router 不选中。
-- `route_when_unconfigured` 仅用于兼容冻结基线：可选中后在 TaskRunner 提前失败，不会发云端请求。
+- `route_when_unconfigured` 仅用于兼容冻结基线：可选中后在 TaskRunner 提前失败，不会绕过本地 Runtime。
 - 图片二进制不进入通用字符串 Context；SOLVER 的单图仍走现有安全上传字段。
-- Cloud 4xx、业务 failed 和解析错误不重试；瞬时网络重试上限1且必须在 deadline 内（当前默认0）。
+- Provider 业务 failed 和解析错误不重试；本地 Runtime 重试由计划预算和 deadline 共同限制。

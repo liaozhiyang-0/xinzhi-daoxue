@@ -2,25 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Protocol
 
 from app.services.task_queue import TaskQueue
-from app.services.task_runner import TaskRunner
 
 logger = logging.getLogger(__name__)
 
 
+class TaskDispatcher(Protocol):
+    async def submit(self, task_id: str) -> bool: ...
+
+    async def recover(self) -> int: ...
+
+
 class TaskWorker:
-    """Consume task IDs and execute them through the shared TaskRunner."""
+    """Consume Redis task IDs and dispatch them through the new executor boundary."""
 
     def __init__(
         self,
-        runner: TaskRunner,
+        dispatcher: TaskDispatcher,
         queue: TaskQueue,
         *,
         block_timeout_seconds: int,
         recovery_interval_seconds: int,
     ) -> None:
-        self.runner = runner
+        self.dispatcher = dispatcher
         self.queue = queue
         self.block_timeout_seconds = block_timeout_seconds
         self.recovery_interval_seconds = recovery_interval_seconds
@@ -33,7 +39,7 @@ class TaskWorker:
                     "another task worker already owns the Redis worker lease"
                 )
             logger.info("task_worker_started")
-            await self.runner.recover_pending_tasks()
+            await self.dispatcher.recover()
             recovery_task = asyncio.create_task(
                 self._recovery_loop(stop_event),
                 name="xzd-task-worker-recovery",
@@ -47,7 +53,7 @@ class TaskWorker:
                         raise RuntimeError("task worker Redis lease was lost")
                     if task_id is None:
                         continue
-                    accepted = self.runner.submit(task_id)
+                    accepted = await self.dispatcher.submit(task_id)
                     logger.info(
                         "task_worker_dispatched task_id=%s accepted=%s",
                         task_id,
@@ -60,7 +66,7 @@ class TaskWorker:
     async def _recovery_loop(self, stop_event: asyncio.Event) -> None:
         while not stop_event.is_set():
             try:
-                recovered = await self.runner.recover_pending_tasks()
+                recovered = await self.dispatcher.recover()
                 if recovered:
                     logger.info("task_worker_recovered count=%s", recovered)
             except Exception:

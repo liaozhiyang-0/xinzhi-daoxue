@@ -93,6 +93,7 @@ class TaskRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     artifact_ids: list[str] = Field(default_factory=list)
+    retryable: bool = False
 
 
 class TaskRuntimeControlRead(BaseModel):
@@ -211,7 +212,5 @@ class HealthRead(BaseModel):
     requested_provider: str
     active_provider: str
     provider_mode: str
-    xingchen_publication_status: str
-    xingchen_runtime_available: bool
     version: str
     external_retrieval: dict[str, Any] = Field(default_factory=dict)

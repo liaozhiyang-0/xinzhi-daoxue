@@ -1,5 +1,5 @@
 [
-  {"case_id":"ROUTER_01_001","agent_id":"ROUTER_01_FALLBACK_V1","input":{"question":"解释戴维宁定理","course_id":"CT"},"expected_status":"success","required_business_fields":["target_agent_id","confidence","reason"],"forbidden_strings":["Authorization","XINGCHEN_API_KEY"],"manual_review_required":true},
+  {"case_id":"ROUTER_01_001","agent_id":"ROUTER_01_FALLBACK_V1","input":{"question":"解释戴维宁定理","course_id":"CT"},"expected_status":"success","required_business_fields":["target_agent_id","confidence","reason"],"forbidden_strings":["Authorization","REMOTE_API_KEY"],"manual_review_required":true},
   {"case_id":"ROUTER_01_002","agent_id":"ROUTER_01_FALLBACK_V1","input":{},"expected_status":"validation_error","required_business_fields":[],"forbidden_strings":[],"manual_review_required":false},
   {"case_id":"ROUTER_01_003","agent_id":"ROUTER_01_FALLBACK_V1","input":{"question":"无法确定课程的边界问题","course_id":"CT"},"expected_status":"success","required_business_fields":["target_agent_id"],"forbidden_strings":[],"manual_review_required":true},
 

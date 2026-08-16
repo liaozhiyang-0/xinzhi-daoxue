@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "xinzhi-daoxue-api",
-    "description": "芯智导学阶段 2.2 API。统一 Agent 注册、快速路由、受控降级与多星辰工作流共用同一 Provider 调用链。",
+    "description": "芯智导学阶段 2.2 API。统一 Agent 注册、快速路由、受控降级与本地 Runtime 共用同一执行边界。",
     "version": "0.1.0"
   },
   "paths": {
@@ -719,6 +719,7 @@
                   "enum": [
                     "student",
                     "teacher",
+                    "researcher",
                     "operator",
                     "admin"
                   ],
@@ -1330,6 +1331,29 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response List Agent Status Api V1 Agents Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/runtime-readiness": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "查看每个 Agent 的 Runtime 迁移就绪度与阻塞原因",
+        "operationId": "list_runtime_readiness_api_v1_agents_runtime_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Runtime Readiness Api V1 Agents Runtime Readiness Get"
                 }
               }
             }
@@ -2535,6 +2559,49 @@
         }
       }
     },
+    "/api/v1/tasks/{task_id}/runtime-controls": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Read redacted Runtime controls for a task",
+        "description": "Return only the state-aware task controls available to its owner.\n\nThe normal workspace must not scrape the debug execution endpoint for\ncheckpoint details. This projection is intentionally small and performs\nno Runtime mutation or Provider call.",
+        "operationId": "task_runtime_controls_api_v1_tasks__task_id__runtime_controls_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRuntimeControlProjectionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}/retry": {
       "post": {
         "tags": [
@@ -2597,6 +2664,411 @@
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/pause": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Pause Task",
+        "operationId": "pause_task_api_v1_tasks__task_id__pause_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "runtime_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runtime Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/resume": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Resume Task",
+        "operationId": "resume_task_api_v1_tasks__task_id__resume_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "runtime_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runtime Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/approve": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Approve Task",
+        "operationId": "approve_task_api_v1_tasks__task_id__approve_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "runtime_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runtime Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RuntimeApprovalSubmission"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Submission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/input": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Submit Runtime Input",
+        "operationId": "submit_runtime_input_api_v1_tasks__task_id__input_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeInputSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/reconcile": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Reconcile Runtime Node",
+        "operationId": "reconcile_runtime_node_api_v1_tasks__task_id__reconcile_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeReconciliationSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/runtime-plan-proposals": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "List Runtime Plan Proposals",
+        "operationId": "list_runtime_plan_proposals_api_v1_tasks__task_id__runtime_plan_proposals_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuntimePlanProposal"
+                  },
+                  "title": "Response List Runtime Plan Proposals Api V1 Tasks  Task Id  Runtime Plan Proposals Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/runtime-plan-proposals/{proposal_id}/decision": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Decide Runtime Plan Proposal",
+        "operationId": "decide_runtime_plan_proposal_api_v1_tasks__task_id__runtime_plan_proposals__proposal_id__decision_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "proposal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimePlanProposalDecisionSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -3847,10 +4319,16 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 60000,
-              "minimum": 4000,
-              "default": 24000,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 60000,
+                  "minimum": 4000
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Limit"
             }
           },
@@ -3993,6 +4471,218 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/runtime/{run_id}/approve": {
+      "post": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Approve a teaching interaction Runtime run",
+        "operationId": "approve_learning_runtime_api_v1_learning_runtime__run_id__approve_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningRuntimeApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningActionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/runtime/{run_id}/controls": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Read LearningLoop Runtime operator controls",
+        "description": "Project the domain control boundary without advancing the Run.",
+        "operationId": "learning_runtime_controls_api_v1_learning_runtime__run_id__controls_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningRuntimeControlProjectionRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/runtime/{run_id}/control": {
+      "post": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Apply an explicit LearningLoop Runtime operator control",
+        "description": "Apply one durable LearningLoop control with a state-version CAS.\n\nThe status projection performs ownership and checkpoint checks before any\naction is considered.  ``approve`` is delegated to the existing\nLearningLoop approval flow so its LearningAction result contract remains\nunchanged; pause/resume/input use the durable checkpoint control method.",
+        "operationId": "control_learning_runtime_api_v1_learning_runtime__run_id__control_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningRuntimeControlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningRuntimeControlResultRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/runtime/{run_id}": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Read a redacted LearningLoop Runtime checkpoint",
+        "operationId": "learning_runtime_status_api_v1_learning_runtime__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningRuntimeStatusRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/learning/runtime-readiness": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Read LearningLoop Runtime capability readiness",
+        "description": "Project LearningLoop descriptors without entering an execution path.",
+        "operationId": "learning_runtime_readiness_api_v1_learning_runtime_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningRuntimeReadinessRead"
                 }
               }
             }
@@ -5400,60 +6090,6 @@
         }
       }
     },
-    "/api/v1/debug/agents/{agent_id}/compare": {
-      "post": {
-        "tags": [
-          "agent-debug"
-        ],
-        "summary": "Compare Mock Cloud",
-        "operationId": "compare_mock_cloud_api_v1_debug_agents__agent_id__compare_post",
-        "parameters": [
-          {
-            "name": "agent_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Agent Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentCompareRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Compare Mock Cloud Api V1 Debug Agents  Agent Id  Compare Post"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/debug/agents/{agent_id}/contract-tests": {
       "post": {
         "tags": [
@@ -6242,6 +6878,7 @@
             "enum": [
               "student",
               "teacher",
+              "researcher",
               "operator",
               "admin"
             ],
@@ -6359,6 +6996,7 @@
                 "enum": [
                   "student",
                   "teacher",
+                  "researcher",
                   "operator",
                   "admin"
                 ]
@@ -6948,60 +7586,6 @@
         ],
         "title": "AdminTaskSummaryRead"
       },
-      "AgentCompareRequest": {
-        "properties": {
-          "question": {
-            "type": "string",
-            "maxLength": 4000,
-            "title": "Question",
-            "default": "开发态契约测试输入"
-          },
-          "course_id": {
-            "type": "string",
-            "maxLength": 16,
-            "title": "Course Id",
-            "default": "CT"
-          },
-          "intent": {
-            "$ref": "#/components/schemas/Intent",
-            "default": "explain_concept"
-          },
-          "canonical_input": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Canonical Input"
-          },
-          "options": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Options"
-          },
-          "allow_mock": {
-            "type": "boolean",
-            "title": "Allow Mock",
-            "default": false
-          },
-          "allow_cloud": {
-            "type": "boolean",
-            "title": "Allow Cloud",
-            "default": false
-          },
-          "cloud_sample": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cloud Sample"
-          }
-        },
-        "type": "object",
-        "title": "AgentCompareRequest"
-      },
       "AgentDebugRequest": {
         "properties": {
           "question": {
@@ -7138,6 +7722,10 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Options"
+          },
+          "response_depth": {
+            "$ref": "#/components/schemas/ResponseDepth",
+            "default": "standard"
           }
         },
         "additionalProperties": false,
@@ -7347,6 +7935,72 @@
           "elapsed_ms"
         ],
         "title": "AgentResponse"
+      },
+      "AgentRunPlan": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Plan Id"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Version",
+            "default": "1"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Goal"
+          },
+          "goal_contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeGoal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RuntimeNode"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Nodes"
+          },
+          "success_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Success Criteria"
+          },
+          "max_parallelism": {
+            "type": "integer",
+            "maximum": 32.0,
+            "minimum": 1.0,
+            "title": "Max Parallelism",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "goal",
+          "nodes"
+        ],
+        "title": "AgentRunPlan",
+        "description": "Validated plan snapshot; it is immutable once a run starts."
       },
       "AnswerReviewResult": {
         "properties": {
@@ -8009,11 +8663,6 @@
             "title": "Use Reranker",
             "default": false
           },
-          "allow_cloud": {
-            "type": "boolean",
-            "title": "Allow Cloud",
-            "default": false
-          },
           "request_id": {
             "type": "string",
             "maxLength": 128,
@@ -8022,10 +8671,7 @@
           },
           "comparison_mode": {
             "type": "string",
-            "enum": [
-              "rag_vs_no_rag",
-              "cloud_vs_local"
-            ],
+            "const": "rag_vs_no_rag",
             "title": "Comparison Mode",
             "default": "rag_vs_no_rag"
           }
@@ -9095,11 +9741,6 @@
             "title": "Use Reranker",
             "default": false
           },
-          "allow_cloud": {
-            "type": "boolean",
-            "title": "Allow Cloud",
-            "default": false
-          },
           "request_id": {
             "type": "string",
             "maxLength": 128,
@@ -9204,11 +9845,6 @@
             "title": "Group",
             "default": "all"
           },
-          "allow_cloud": {
-            "type": "boolean",
-            "title": "Allow Cloud",
-            "default": false
-          },
           "limit": {
             "type": "integer",
             "maximum": 60.0,
@@ -9245,8 +9881,7 @@
               "live",
               "local_deterministic",
               "local_mock",
-              "real_model",
-              "real_xingchen"
+              "real_model"
             ],
             "title": "Mode"
           },
@@ -9475,8 +10110,6 @@
         "type": "string",
         "enum": [
           "local",
-          "xingchen",
-          "hybrid",
           "disabled"
         ],
         "title": "ExecutionMode"
@@ -10579,14 +11212,6 @@
             "type": "string",
             "title": "Provider Mode"
           },
-          "xingchen_publication_status": {
-            "type": "string",
-            "title": "Xingchen Publication Status"
-          },
-          "xingchen_runtime_available": {
-            "type": "boolean",
-            "title": "Xingchen Runtime Available"
-          },
           "version": {
             "type": "string",
             "title": "Version"
@@ -10607,8 +11232,6 @@
           "requested_provider",
           "active_provider",
           "provider_mode",
-          "xingchen_publication_status",
-          "xingchen_runtime_available",
           "version"
         ],
         "title": "HealthRead"
@@ -11944,6 +12567,27 @@
             },
             "type": "array",
             "title": "Retest Plans"
+          },
+          "runtime_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Run Id"
+          },
+          "runtime_status": {
+            "type": "string",
+            "title": "Runtime Status",
+            "default": ""
+          },
+          "approval_required": {
+            "type": "boolean",
+            "title": "Approval Required",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -12151,6 +12795,588 @@
         ],
         "title": "LearningMetricsRead",
         "description": "Aggregated learning telemetry for teacher/admin review.\n\nCounts are operational telemetry, not learner accuracy or causal impact\nmeasurements. Student identifiers are intentionally excluded."
+      },
+      "LearningRuntimeApprovalRequest": {
+        "properties": {
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LearningRuntimeApprovalRequest",
+        "description": "Approve a teaching interaction Runtime waiting for teacher review."
+      },
+      "LearningRuntimeCapabilityRead": {
+        "properties": {
+          "capability_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Capability Id"
+          },
+          "domain": {
+            "type": "string",
+            "const": "learning_loop",
+            "title": "Domain",
+            "default": "learning_loop"
+          },
+          "runtime_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Runtime Id"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Version"
+          },
+          "agent_version": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Agent Version",
+            "default": ""
+          },
+          "runtime_plan_version": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Runtime Plan Version",
+            "default": ""
+          },
+          "structural_release_eligible": {
+            "type": "boolean",
+            "title": "Structural Release Eligible",
+            "default": false
+          },
+          "semantic_release_eligible": {
+            "type": "boolean",
+            "title": "Semantic Release Eligible",
+            "default": false
+          },
+          "canary_release_eligible": {
+            "type": "boolean",
+            "title": "Canary Release Eligible",
+            "default": false
+          },
+          "canary_reason": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Canary Reason",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "supported_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Supported Actions"
+          },
+          "supports_pause": {
+            "type": "boolean",
+            "title": "Supports Pause",
+            "default": false
+          },
+          "supports_resume": {
+            "type": "boolean",
+            "title": "Supports Resume",
+            "default": false
+          },
+          "supports_approval": {
+            "type": "boolean",
+            "title": "Supports Approval",
+            "default": false
+          },
+          "supports_input": {
+            "type": "boolean",
+            "title": "Supports Input",
+            "default": false
+          },
+          "control_scope": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Control Scope"
+          },
+          "result_contract": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Result Contract"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Blockers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "capability_id",
+          "runtime_id",
+          "version",
+          "enabled",
+          "control_scope",
+          "result_contract"
+        ],
+        "title": "LearningRuntimeCapabilityRead",
+        "description": "Provider-free descriptor for one LearningLoop Runtime capability."
+      },
+      "LearningRuntimeControlProjectionRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "provider_called": {
+            "type": "boolean",
+            "const": false,
+            "title": "Provider Called",
+            "default": false
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "runtime_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Runtime Id"
+          },
+          "run_kind": {
+            "type": "string",
+            "enum": [
+              "teaching_interaction",
+              "learning_progress"
+            ],
+            "title": "Run Kind"
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "control_scope": {
+            "type": "string",
+            "const": "learning_loop",
+            "title": "Control Scope",
+            "default": "learning_loop"
+          },
+          "controls": {
+            "items": {
+              "$ref": "#/components/schemas/LearningRuntimeControlRead"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Controls"
+          },
+          "available_controls": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "pause",
+                "resume",
+                "input"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Available Controls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "runtime_id",
+          "run_kind",
+          "status",
+          "state_version"
+        ],
+        "title": "LearningRuntimeControlProjectionRead",
+        "description": "Redacted control projection for one owned LearningLoop Runtime run."
+      },
+      "LearningRuntimeControlRead": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "pause",
+              "resume",
+              "input"
+            ],
+            "title": "Action"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason_code": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Reason Code",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "available"
+        ],
+        "title": "LearningRuntimeControlRead",
+        "description": "One state-aware, provider-free LearningLoop operator control."
+      },
+      "LearningRuntimeControlRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "pause",
+              "resume",
+              "input"
+            ],
+            "title": "Action"
+          },
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "maxProperties": 64,
+            "title": "Data"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Idempotency Key",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "LearningRuntimeControlRequest",
+        "description": "Request one durable, optimistic-concurrency control operation."
+      },
+      "LearningRuntimeControlResultRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "provider_called": {
+            "type": "boolean",
+            "const": false,
+            "title": "Provider Called",
+            "default": false
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "pause",
+              "resume",
+              "input"
+            ],
+            "title": "Action"
+          },
+          "accepted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Accepted",
+            "default": true
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LearningActionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "action",
+          "status",
+          "state_version"
+        ],
+        "title": "LearningRuntimeControlResultRead",
+        "description": "Result envelope for an accepted LearningLoop operator action."
+      },
+      "LearningRuntimeNodeStatusRead": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status"
+          },
+          "effect_status": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Effect Status"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Error Code",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "status",
+          "effect_status",
+          "attempt"
+        ],
+        "title": "LearningRuntimeNodeStatusRead",
+        "description": "Redacted node state for the LearningLoop Runtime status projection."
+      },
+      "LearningRuntimeReadinessRead": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "v1",
+            "title": "Version",
+            "default": "v1"
+          },
+          "provider_called": {
+            "type": "boolean",
+            "const": false,
+            "title": "Provider Called",
+            "default": false
+          },
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/LearningRuntimeCapabilityRead"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Capabilities"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Blockers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LearningRuntimeReadinessRead",
+        "description": "Read-only readiness projection for the LearningLoop Runtime boundary."
+      },
+      "LearningRuntimeStatusRead": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "task_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Task Id"
+          },
+          "runtime_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Runtime Id"
+          },
+          "run_kind": {
+            "type": "string",
+            "enum": [
+              "teaching_interaction",
+              "learning_progress"
+            ],
+            "title": "Run Kind"
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Status"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Goal"
+          },
+          "success_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Success Criteria"
+          },
+          "required_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Required Capabilities"
+          },
+          "goal_source": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Goal Source",
+            "default": "request"
+          },
+          "node_statuses": {
+            "items": {
+              "$ref": "#/components/schemas/LearningRuntimeNodeStatusRead"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Node Statuses"
+          },
+          "control_scope": {
+            "type": "string",
+            "const": "learning_loop",
+            "title": "Control Scope",
+            "default": "learning_loop"
+          },
+          "available_controls": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "approve",
+                "pause",
+                "resume",
+                "input"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Available Controls"
+          },
+          "approval_required": {
+            "type": "boolean",
+            "title": "Approval Required",
+            "default": false
+          },
+          "resumable": {
+            "type": "boolean",
+            "title": "Resumable",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "task_id",
+          "runtime_id",
+          "run_kind",
+          "status",
+          "state_version",
+          "goal"
+        ],
+        "title": "LearningRuntimeStatusRead",
+        "description": "Provider-free, ownership-checked LearningLoop Runtime snapshot."
       },
       "LoginRequest": {
         "properties": {
@@ -13223,6 +14449,16 @@
         "title": "ResearchReviewSubmission",
         "description": "Request body for the dedicated reviewer operation."
       },
+      "ResponseDepth": {
+        "type": "string",
+        "enum": [
+          "brief",
+          "standard",
+          "deep"
+        ],
+        "title": "ResponseDepth",
+        "description": "User-facing response detail level shared by all task workflows."
+      },
       "RetestPlanStatus": {
         "type": "string",
         "enum": [
@@ -13492,6 +14728,559 @@
         ],
         "title": "RichTextSegment"
       },
+      "RuntimeApprovalSubmission": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "default": "approved"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Reason",
+            "default": ""
+          },
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RuntimeApprovalSubmission",
+        "description": "Explicit decision for a Runtime side-effect approval gate."
+      },
+      "RuntimeGoal": {
+        "properties": {
+          "objective": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Objective"
+          },
+          "success_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Success Criteria"
+          },
+          "constraints": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Constraints"
+          },
+          "required_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Required Capabilities"
+          },
+          "parallel_groups": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Parallel Groups"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Context"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Source",
+            "default": "request"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "objective"
+        ],
+        "title": "RuntimeGoal",
+        "description": "Structured objective carried by every executable Runtime plan."
+      },
+      "RuntimeInputSubmission": {
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "maxProperties": 64,
+            "minProperties": 1,
+            "title": "Data"
+          },
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RuntimeInputSubmission",
+        "description": "User data submitted to a Runtime run waiting for input."
+      },
+      "RuntimeNode": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "node_type": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Node Type"
+          },
+          "handler_id": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Handler Id"
+          },
+          "target_id": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Target Id",
+            "default": ""
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Depends On"
+          },
+          "activation": {
+            "$ref": "#/components/schemas/RuntimeNodeActivation",
+            "default": "all_succeeded"
+          },
+          "recovery_for": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Recovery For"
+          },
+          "parallel_group": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Parallel Group",
+            "default": ""
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "maximum": 900000.0,
+            "minimum": 100.0,
+            "title": "Timeout Ms",
+            "default": 30000
+          },
+          "max_retries": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Max Retries",
+            "default": 0
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional",
+            "default": false
+          },
+          "input_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Input Artifact Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "node_type",
+          "handler_id"
+        ],
+        "title": "RuntimeNode",
+        "description": "A declarative node that can be dispatched by PlanExecutor."
+      },
+      "RuntimeNodeActivation": {
+        "type": "string",
+        "enum": [
+          "all_succeeded",
+          "any_failed",
+          "always"
+        ],
+        "title": "RuntimeNodeActivation",
+        "description": "Declare when a node becomes executable after its dependencies settle."
+      },
+      "RuntimePlanBudgetImpact": {
+        "properties": {
+          "model_calls": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Model Calls",
+            "default": 0
+          },
+          "tool_calls": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Tool Calls",
+            "default": 0
+          },
+          "subagent_runs": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Subagent Runs",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RuntimePlanBudgetImpact",
+        "description": "Conservative upper-bound cost declared by a proposed plan."
+      },
+      "RuntimePlanProposal": {
+        "properties": {
+          "proposal_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Proposal Id"
+          },
+          "task_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Task Id"
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "base_iteration": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Iteration"
+          },
+          "target_iteration": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Target Iteration"
+          },
+          "base_state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base State Version"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "base_plan_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Base Plan Id"
+          },
+          "base_plan_version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Base Plan Version"
+          },
+          "proposed_plan": {
+            "$ref": "#/components/schemas/AgentRunPlan"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Reason Codes"
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Rationale"
+          },
+          "affected_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Affected Node Ids"
+          },
+          "budget_impact": {
+            "$ref": "#/components/schemas/RuntimePlanBudgetImpact"
+          },
+          "approval_required": {
+            "type": "boolean",
+            "title": "Approval Required",
+            "default": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/RuntimePlanProposalStatus",
+            "default": "pending"
+          },
+          "decision_reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Decision Reason",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "applied_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "proposal_id",
+          "task_id",
+          "run_id",
+          "base_iteration",
+          "target_iteration",
+          "base_state_version",
+          "state_version",
+          "base_plan_id",
+          "base_plan_version",
+          "proposed_plan",
+          "reason_codes",
+          "rationale",
+          "budget_impact"
+        ],
+        "title": "RuntimePlanProposal",
+        "description": "Versioned, reviewable plan replacement awaiting an explicit decision."
+      },
+      "RuntimePlanProposalDecisionSubmission": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Reason",
+            "default": ""
+          },
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "RuntimePlanProposalDecisionSubmission",
+        "description": "Explicit approval or rejection of a persisted plan proposal."
+      },
+      "RuntimePlanProposalStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "applied"
+        ],
+        "title": "RuntimePlanProposalStatus"
+      },
+      "RuntimeReconciliationSubmission": {
+        "properties": {
+          "runtime_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Run Id"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "reconciliation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reconciliation Id"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ],
+            "title": "Outcome"
+          },
+          "facts": {
+            "additionalProperties": true,
+            "type": "object",
+            "maxProperties": 64,
+            "title": "Facts"
+          },
+          "artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Artifact Ids"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Evidence Ids"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Warnings"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Errors"
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Error Code",
+            "default": ""
+          },
+          "expected_state_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected State Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "outcome"
+        ],
+        "title": "RuntimeReconciliationSubmission",
+        "description": "Human acknowledgement for a non-replay-safe in-flight node."
+      },
       "ScenarioDefinition": {
         "properties": {
           "id": {
@@ -13601,6 +15390,14 @@
             "minItems": 1,
             "title": "Demo Steps"
           },
+          "demo_cases": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioDemoCase"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Demo Cases"
+          },
           "enabled": {
             "type": "boolean",
             "title": "Enabled",
@@ -13628,6 +15425,94 @@
           "demo_steps"
         ],
         "title": "ScenarioDefinition"
+      },
+      "ScenarioDemoCase": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{2,63}$",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Role"
+          },
+          "course": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Course"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 80,
+            "title": "Prompt"
+          },
+          "expected_agent": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Expected Agent"
+          },
+          "expected_output": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 24,
+            "minItems": 1,
+            "title": "Expected Output"
+          },
+          "business_context": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Business Context"
+          },
+          "evidence_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Evidence Requirements"
+          },
+          "review_boundary": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Review Boundary"
+          },
+          "acceptance_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Acceptance Conditions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "course",
+          "prompt",
+          "expected_agent",
+          "expected_output",
+          "business_context",
+          "evidence_requirements",
+          "review_boundary",
+          "acceptance_conditions"
+        ],
+        "title": "ScenarioDemoCase",
+        "description": "Reproducible product-facing demonstration contract for one scenario."
       },
       "ScenarioEvidenceReviewRequest": {
         "properties": {
@@ -14724,6 +16609,11 @@
             },
             "type": "array",
             "title": "Artifact Ids"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable",
+            "default": false
           }
         },
         "type": "object",
@@ -14759,6 +16649,165 @@
           "completed_at"
         ],
         "title": "TaskRead"
+      },
+      "TaskRuntimeControlProjectionRead": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "runtime_run_id": {
+            "type": "string",
+            "title": "Runtime Run Id",
+            "default": ""
+          },
+          "run_kind": {
+            "type": "string",
+            "title": "Run Kind",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": ""
+          },
+          "state_version": {
+            "type": "integer",
+            "title": "State Version",
+            "default": 0
+          },
+          "control_request": {
+            "type": "string",
+            "title": "Control Request",
+            "default": ""
+          },
+          "control_scope": {
+            "type": "string",
+            "enum": [
+              "runtime",
+              "runtime_plan_proposal"
+            ],
+            "title": "Control Scope",
+            "default": "runtime"
+          },
+          "plan_proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskRuntimePlanProposalRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "controls": {
+            "items": {
+              "$ref": "#/components/schemas/TaskRuntimeControlRead"
+            },
+            "type": "array",
+            "title": "Controls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "title": "TaskRuntimeControlProjectionRead",
+        "description": "Redacted Runtime control state for the student-facing task workspace.\n\nThis deliberately excludes checkpoint state, request snapshots, Provider\nidentifiers and raw control data. Mutations remain on the existing Task\ncontrol endpoints, which enforce ownership and state transitions."
+      },
+      "TaskRuntimeControlRead": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "approve",
+              "input"
+            ],
+            "title": "Action"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "action",
+          "available"
+        ],
+        "title": "TaskRuntimeControlRead",
+        "description": "One state-aware Runtime action safe for the task owner to inspect."
+      },
+      "TaskRuntimePlanProposalRead": {
+        "properties": {
+          "proposal_id": {
+            "type": "string",
+            "title": "Proposal Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "applied"
+            ],
+            "title": "Status"
+          },
+          "state_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "State Version"
+          },
+          "base_iteration": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Iteration"
+          },
+          "target_iteration": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Target Iteration"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Reason Codes"
+          },
+          "affected_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Affected Node Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "proposal_id",
+          "status",
+          "state_version",
+          "base_iteration",
+          "target_iteration"
+        ],
+        "title": "TaskRuntimePlanProposalRead",
+        "description": "Redacted summary of a pending adaptive Runtime plan proposal."
       },
       "TaskStatus": {
         "type": "string",
@@ -15092,13 +17141,9 @@
             "type": "boolean",
             "title": "Enabled"
           },
-          "flow_configured": {
+          "local_ready": {
             "type": "boolean",
-            "title": "Flow Configured"
-          },
-          "local_handler_available": {
-            "type": "boolean",
-            "title": "Local Handler Available"
+            "title": "Local Ready"
           },
           "available": {
             "type": "boolean",
@@ -15127,8 +17172,7 @@
           "agent_id",
           "execution_mode",
           "enabled",
-          "flow_configured",
-          "local_handler_available",
+          "local_ready",
           "available"
         ],
         "title": "WorkflowStatus"

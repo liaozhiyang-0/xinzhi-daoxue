@@ -88,8 +88,8 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 | `DISPATCH_LOCAL_FAST_V1` | 路由快速分发，`routing_only` | 否 | readiness 可列出，但无业务 Runtime 计划 | 路由基础设施，不应直接迁移为业务 Agent |
 | `ROUTER_01_FALLBACK_V1` | `XZDSupervisor`，`routing_only` | 否 | readiness 可列出，但无业务 Runtime 计划 | 路由基础设施，不应作为业务 Runtime 节点执行 |
 | `ACADEMIC_PROBLEM_SOLVER` | 本地图与 Solver 适配 | 是：`AcademicSolverRuntimeService` | 是，受 launch policy/release gate 约束 | 已进入 Task Runtime |
-| `SOLVER_CT_V1` | Xingchen/冻结 CT 基线，受控回退/比较 | 否 | 作为 Agent 状态存在，但不纳入新 Runtime 迁移 | **冻结，不修改、不重写、不接学习动作** |
-| `LEARN_01_KNOWLEDGE_QA_V1` | Provider/本地知识问答 | 否；其本地检索 Runtime 对应另一个 ID | readiness 有 Agent 条目，但该 ID 没有直接 Runtime plan | 仍需明确 Provider 兼容路径与 Runtime 计划的关系 |
+| `SOLVER_CT_V1` | 冻结 CT 历史基线，只读审计 | 否 | 作为 Agent 状态存在，但不纳入当前 Runtime 路由 | **冻结，不修改、不重写、不接学习动作** |
+| `LEARN_01_KNOWLEDGE_QA_V1` | Local Runtime/本地知识问答 | 是：本地知识问答 Runtime | readiness 与 Runtime plan 已接通 | 当前统一走本地执行边界 |
 | `LEARN_01_LOCAL_RETRIEVAL_V1` | 本地检索/知识问答 | 是：`KnowledgeQARuntimeService` | 是 | 已进入 Task Runtime，但与 Provider QA ID 分离 |
 | `GENERAL_QUESTION_V1` | 本地一般问题服务 | 是：`GeneralQuestionRuntimeService` | 是 | 已进入 Task Runtime |
 | `TEACH_01_LESSON_PREP_V1` | 教学备课 | 是：`LessonPrepRuntimeService` | 是 | 已进入 Task Runtime |
@@ -172,7 +172,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 **验收**：
 
 - Agent Registry ID、Learning Runtime ID、Task API、Learning API 和来源路径均可逐项追溯；
-- `SOLVER_CT v1.0`、其原始 YAML、Provider 凭据和现有 Task/SSE 合同没有变更；
+- `SOLVER_CT v1.0`、其原始 YAML 和现有 Task/SSE 合同没有变更；
 - 测试能证明学习动作仍由 `LearningActionRequest` 接收，且没有通过 `AgentRequest` 路由进入 Task。
 
 ### 阶段 1：建立跨域能力描述，不迁移执行
@@ -239,7 +239,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 - 不把 `LearningActionRequest` 塞入 `AgentRequest.options`，不把学习动作伪装成聊天任务，不用 `source_task_id` 代替学习领域身份/幂等校验。
 - 不因 Teaching/LearningProgress 已创建 `AgentRun` 就把它们标成已进入统一 `RuntimeBusinessRegistry` 或统一 Agent readiness。
 - 不在 TaskRunner 中直接执行学习 Provider；学习 Runtime 的领域副作用仍由 LearningLoop 及其注入的领域执行器承担。
-- 不修改 `SOLVER_CT v1.0`、`SOLVER_CT_V1` 的冻结实现、原始星辰 YAML、Flow ID 或真实凭据；只能做只读适配、hash/parity 和受控回退验证。
+- 不修改 `SOLVER_CT v1.0`、`SOLVER_CT_V1` 的冻结实现、历史原始输入或真实凭据；只能做只读适配与 hash/parity 验证。
 - 不用一次成功的本地 Mock 或单条 trace 宣称完成迁移；必须有授权、可复现、成对、版本绑定的结构与语义证据。
 
 ## 9. 维护规则

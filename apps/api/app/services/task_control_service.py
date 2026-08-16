@@ -39,9 +39,8 @@ RETRYABLE_FAILURES = {
     "model_provider_error",
     "provider_error",
     "provider_timeout",
+    "provider_runtime_result_missing",
     "runner_shutdown",
-    "xingchen_connection_error",
-    "xingchen_timeout",
 }
 TERMINAL_STATUSES = {
     TaskStatus.COMPLETED,

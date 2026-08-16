@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import ipaddress
 import re
@@ -83,18 +84,28 @@ class ExternalContentFetcher:
         max_redirects: int = 2,
         resolver: PUBLIC_RESOLVER | None = None,
     ) -> None:
-        self._client = client or httpx.AsyncClient(
-            follow_redirects=False,
-            timeout=httpx.Timeout(15),
-        )
+        self._client = client
         self._owns_client = client is None
+        self._client_lock = asyncio.Lock()
         self.max_bytes = max(1, max_bytes)
         self.max_redirects = max(0, max_redirects)
         self._resolver = resolver or _resolve_public_addresses
 
     async def close(self) -> None:
-        if self._owns_client:
+        if self._owns_client and self._client is not None:
             await self._client.aclose()
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is not None:
+            return self._client
+        async with self._client_lock:
+            if self._client is None:
+                self._client = httpx.AsyncClient(
+                    follow_redirects=False,
+                    timeout=httpx.Timeout(15),
+                )
+        assert self._client is not None
+        return self._client
 
     async def fetch(
         self,
@@ -102,11 +113,12 @@ class ExternalContentFetcher:
         *,
         max_chars: int = 12_000,
     ) -> ExternalEvidenceItem:
+        client = await self._ensure_client()
         current_url = str(item.canonical_url)
         for redirect_count in range(self.max_redirects + 1):
             await self._assert_public_target(current_url)
             try:
-                async with self._client.stream(
+                async with client.stream(
                     "GET",
                     current_url,
                     headers={"accept": "text/html, text/plain, application/json"},

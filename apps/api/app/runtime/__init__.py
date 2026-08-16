@@ -1,8 +1,7 @@
 """Stateful Agent Runtime domain primitives.
 
 This package deliberately has no database, HTTP, Provider, or model imports.
-It defines the contracts that the durable executor will use when the legacy
-TaskRunner is migrated incrementally.
+It defines the contracts used by the durable production executor.
 """
 
 from app.runtime.adapters import (
@@ -23,6 +22,7 @@ from app.runtime.contracts import (
     RuntimeGoal,
     RuntimeLaunchSnapshot,
     RuntimeNode,
+    RuntimeNodeActivation,
     RuntimeNodeState,
     RuntimeNodeStatus,
     RuntimeObservation,
@@ -114,6 +114,7 @@ __all__ = [
     "RuntimeDecision",
     "RuntimeGoal",
     "RuntimeNode",
+    "RuntimeNodeActivation",
     "RuntimeNodeState",
     "RuntimeNodeStatus",
     "RuntimeEffectStatus",

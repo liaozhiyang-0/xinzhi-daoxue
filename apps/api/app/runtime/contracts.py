@@ -73,6 +73,14 @@ class RuntimeNodeStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+class RuntimeNodeActivation(StrEnum):
+    """Declare when a node becomes executable after its dependencies settle."""
+
+    ALL_SUCCEEDED = "all_succeeded"
+    ANY_FAILED = "any_failed"
+    ALWAYS = "always"
+
+
 class RuntimeEffectStatus(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
@@ -264,6 +272,8 @@ class RuntimeNode(BaseModel):
     handler_id: str = Field(min_length=1, max_length=160)
     target_id: str = Field(default="", max_length=160)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
+    activation: RuntimeNodeActivation = RuntimeNodeActivation.ALL_SUCCEEDED
+    recovery_for: list[str] = Field(default_factory=list, max_length=32)
     parallel_group: str = Field(default="", max_length=80)
     timeout_ms: int = Field(default=30_000, ge=100, le=900_000)
     max_retries: int = Field(default=0, ge=0, le=5)
@@ -310,6 +320,26 @@ class AgentRunPlan(BaseModel):
                 raise ValueError(
                     "runtime plan node cannot depend on itself: "
                     f"{node.node_id}"
+                )
+            if (
+                node.activation == RuntimeNodeActivation.ANY_FAILED
+                and not node.depends_on
+            ):
+                raise ValueError(
+                    "any_failed runtime node requires at least one dependency"
+                )
+            invalid_recovery = set(node.recovery_for) - set(node.depends_on)
+            if invalid_recovery:
+                raise ValueError(
+                    f"runtime plan node {node.node_id} recovers non-dependencies: "
+                    f"{sorted(invalid_recovery)}"
+                )
+            if (
+                node.recovery_for
+                and node.activation != RuntimeNodeActivation.ANY_FAILED
+            ):
+                raise ValueError(
+                    "runtime recovery nodes must use any_failed activation"
                 )
 
         # A small deterministic topological check prevents plans from entering

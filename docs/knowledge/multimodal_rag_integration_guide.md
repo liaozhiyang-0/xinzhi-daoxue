@@ -13,13 +13,13 @@ POST /api/v1/tasks
   -> Qdrant 强课程过滤
   -> RRF -> BGE reranker -> EvidenceQualityEvaluator
   -> RetrievalContextPacket
-  -> 既有 TaskRunner / XingchenCloudProvider
+  -> 既有 TaskRunner / Local Runtime
   -> CitationValidator
 ```
 
 生产代码不包含哈希、随机或固定测试向量。测试确定性 Provider 只存在于 `apps/api/tests/rag_fakes.py`。模型或 Qdrant 失败时返回 degraded/failed，并保留 BM25 结果，不会伪装为神经网络检索成功。
 
-SOLVER_CT_V1 的云端输入只有 `AGENT_USER_INPUT` 和图片字段，没有已验证的独立知识上下文字段。因此本地仍检索 method/formula/concept/common_error 供日志和界面查看，但保持 `solver_rag_generation_injection=false`，不修改冻结的云端工作流。
+`SOLVER_CT_V1` 的原始输入合同属于冻结历史资产，不再作为当前业务执行路径。本地仍检索 method/formula/concept/common_error 供日志和界面查看，当前求解统一由本地 Runtime 处理。
 
 ## 2. 安装
 
@@ -56,7 +56,7 @@ IMAGE_EMBEDDING_BATCH_SIZE=2
 RERANKER_DEVICE=cpu
 ```
 
-本仓库本次生成的本地 Qdrant 索引使用上述低资源配置。启动前点加载无密钥 profile；它不会修改现有 `.env`，星辰凭据仍由 `.env` 提供：
+本仓库本次生成的本地 Qdrant 索引使用上述低资源配置。启动前点加载无密钥 profile；它不会修改现有 `.env`：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass

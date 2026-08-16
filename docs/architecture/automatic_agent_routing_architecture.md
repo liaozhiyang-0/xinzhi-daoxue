@@ -18,7 +18,7 @@ POST /api/v1/tasks
 → AgentExecutionPlan
 → Agent 专属 RAG/材料准备
 → AgentInputMapper
-→ 共享 XingchenCloudProvider
+→ Local Runtime / ModelService
 → WorkflowOutputParserRegistry
 → AgentResultValidatorRegistry
 → 专属 fallback 或最多一次重路由
@@ -33,8 +33,8 @@ POST /api/v1/tasks
 路由器综合课程、意图词、结构化材料、输入模式、角色、会话连续性、负向规则和运行时可用性。结构信号优先于普通关键词，例如 `student_answer + rubric` 优先批改，`source_text + writing_task` 优先写作。
 
 - 高置信且分差充分：本地直接选择。
-- 低置信、候选接近、短追问无上下文、课程冲突或多个强任务：仅当 Router 已发布且 Flow 已配置时调用云端 Router。
-- Router 不可用：返回 `unresolved`，不把模糊请求随意塞给 LEARN。
+- 低置信、候选接近、短追问无上下文、课程冲突或多个强任务：进入本地确定性 fallback 或返回 `unresolved`。
+- 本地 Router 不可用：返回 `unresolved`，不把模糊请求随意塞给 LEARN。
 - Router 只能返回当前已启用、已发布、已配置并支持课程/输入模式的业务 Agent，不能返回自身。
 
 候选分数、`reason_codes`、本地置信度、材料摘要和可用性检查进入任务 Trace；完整用户正文不会写入普通路由日志。
@@ -44,7 +44,7 @@ POST /api/v1/tasks
 | Agent | 模式 | 注入规则 |
 |---|---|---|
 | LEARN | `text_rag` / grounded generation | 课程证据进入生成并校验引用 |
-| SOLVER_CT | `method_only_rag` | 仅方法参考，不冒充云端生成依据 |
+| SOLVER_CT | `method_only_rag` | 仅方法参考，不冒充生成依据 |
 | TEACH_01 | `multimodal_rag` | 课程概念、方法、例题进入教案上下文 |
 | TEACH_02 | `text_rag` / reference only | 方法和常见错误可参考；评分以 rubric 为准 |
 | RESEARCH_02 | `external_source_context` | 仅用户可信来源，课程 RAG 关闭 |
@@ -55,7 +55,7 @@ POST /api/v1/tasks
 
 ## 重路由与循环保护
 
-只有云端明确 `misrouted`、本地 Validator 确认能力不匹配且存在唯一可用目标时才重路由。当前自动规则是 `LEARN + CT完整求解 → SOLVER_CT`。`visited_agents` 防止回到已访问 Agent，`reroute_count` 最大为 1；AE/DE 完整求解没有对应 Solver 时返回未开放，不交给 LEARN 完整求解。
+只有本地 Validator 确认能力不匹配且存在唯一可用目标时才重路由。当前自动规则是 `LEARN + CT完整求解 → ACADEMIC_PROBLEM_SOLVER`。`visited_agents` 防止回到已访问 Agent，`reroute_count` 最大为 1。
 
 ## 顺序流水线
 

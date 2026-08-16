@@ -7,8 +7,20 @@ def test_root_and_v1_health_show_only_mock(client) -> None:
         assert payload["requested_provider"] == "mock"
         assert payload["active_provider"] == "mock"
         assert payload["provider_mode"] == "mock"
-        assert payload["xingchen_publication_status"] == "published"
-        assert payload["xingchen_runtime_available"] is False
+        assert "xingchen" not in response.text.casefold()
+        assert payload["provider_mode"] == "mock"
+        assert set(payload) == {
+            "status",
+            "environment",
+            "database",
+            "redis",
+            "minio",
+            "requested_provider",
+            "active_provider",
+            "provider_mode",
+            "version",
+            "external_retrieval",
+        }
         assert payload["external_retrieval"]["configured"] is True
         assert payload["external_retrieval"]["cache"]["enabled"] is True
         assert response.headers["X-Request-ID"] == "req-test"

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 
 import pytest
@@ -14,8 +13,6 @@ from app.contracts import (
     TaskRequestContext,
 )
 from app.core.config import Settings
-from app.main import create_app
-from app.providers.mock import MockAgentProvider
 from app.services.agent_runtime import (
     AgentExecutionPlanner,
     AgentInputMapper,
@@ -113,6 +110,27 @@ def test_output_parser_supports_json_fence_and_fixed_lines() -> None:
     assert fixed.structured["source_references"] == ["E1"]
 
 
+def test_output_parser_normalizes_nullable_warnings_before_status_validation() -> None:
+    definition = AgentRegistry().get("RESEARCH_02_ACADEMIC_WRITING_V1")
+    parsed = WorkflowOutputParserRegistry().parse(
+        json.dumps(
+            {
+                "status": "provider-specific-status",
+                "answer": "摘要草稿",
+                "warnings": None,
+                "confidence": 0.6,
+            },
+            ensure_ascii=False,
+        ),
+        definition,
+        input_type="text",
+    )
+
+    assert parsed.structured["status"] == "failed"
+    assert parsed.warnings
+    assert parsed.structured["warnings"] == parsed.warnings
+
+
 def test_execution_plan_is_policy_driven_and_does_not_load_models() -> None:
     registry = AgentRegistry()
     request = _request()
@@ -182,67 +200,5 @@ def test_agent_debug_status_and_dry_run_are_redacted(client: TestClient) -> None
     )
     assert dry_run.status_code == 200
     payload = dry_run.json()
-    assert payload["cloud_called"] is False
+    assert payload["remote_provider_called"] is False
     assert payload["execution_plan"]["retrieval_policy_name"] == "learn_knowledge_qa"
-
-
-def test_cloud_failure_uses_agent_configured_local_fallback(tmp_path: Path) -> None:
-    settings = Settings(
-        app_env="test",
-        test_database_url=f"sqlite+aiosqlite:///{tmp_path / 'fallback.db'}",
-        default_agent_provider="mock",
-        xingchen_enabled=True,
-        xingchen_api_key="test-key",
-        xingchen_api_secret="test-secret",
-        xingchen_knowledge_qa_flow_id="test-learn-flow",
-        knowledge_enabled=False,
-        knowledge_ct_path=tmp_path / "knowledge" / "CT",
-        knowledge_ae_path=tmp_path / "knowledge" / "AE",
-        knowledge_de_path=tmp_path / "knowledge" / "DE",
-        knowledge_ss_path=tmp_path / "knowledge" / "SS",
-        knowledge_dsp_path=tmp_path / "knowledge" / "DSP",
-        knowledge_comm_path=tmp_path / "knowledge" / "COMM",
-        local_storage_path=tmp_path / "storage",
-        _env_file=None,
-    )
-    with TestClient(create_app(settings)) as local_client:
-        mock_provider = MockAgentProvider()
-        local_client.app.state.provider = mock_provider
-        local_client.app.state.task_runner.provider = mock_provider
-        session = local_client.post(
-            "/api/v1/sessions",
-            json={"user_id": "fallback-user", "course_id": "CT"},
-        ).json()
-        created = local_client.post(
-            "/api/v1/tasks",
-            json={
-                "session_id": session["id"],
-                "user_id": "fallback-user",
-                "scene": "learning",
-                "course_id": "CT",
-                "intent": "general_qa",
-                "user_role": "admin",
-                "canonical_input": {"question": "解释KCL"},
-                "options": {
-                    "allow_cloud": True,
-                    "debug_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
-                    "mock_force_failure": True,
-                },
-            },
-        )
-        assert created.status_code == 202
-        task_id = created.json()["id"]
-        deadline = time.monotonic() + 5
-        task: dict[str, object] = {}
-        while time.monotonic() < deadline:
-            task = local_client.get(f"/api/v1/tasks/{task_id}").json()
-            if task.get("status") in {"completed", "failed"}:
-                break
-            time.sleep(0.02)
-
-    assert task["status"] == "completed"
-    assert task["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
-    result = task["result_content"]
-    assert isinstance(result, dict)
-    assert result["structured_result"]["fallback_used"] is True
-    assert result["structured_result"]["fallback_reason"] == "provider_error"

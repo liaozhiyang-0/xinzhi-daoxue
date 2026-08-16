@@ -9,14 +9,14 @@ POST /api/v1/tasks
 → TaskCreationService（user message + task）
 → TaskExecutor
 → TaskRunner（ConversationContextBundle + 现有 RAG）
-→ Agent / Model / SOLVER_CT_V1
+→ Local Runtime / Model / SOLVER_CT_V1
 → TaskPresentation
 → assistant message + WorkingState + Summary + metrics
 ```
 
 `POST /api/v1/chat` 仍是适配器。实现没有新增 TaskRunner、模型入口、队列、
-顶层 Agent 或学习掌握度数据库，也没有修改冻结的 `SOLVER_CT_V1`。云端工作流
-默认授权仍为 `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`。
+顶层 Agent 或学习掌握度数据库，也没有修改冻结的 `SOLVER_CT_V1`。当前任务链
+只允许本地 Runtime，远程工作流不再属于运行时配置。
 
 ## 数据职责
 
@@ -37,8 +37,8 @@ POST /api/v1/tasks
 
 安全规则和当前明确输入始终优先于历史、记忆和 RAG。组装只读取同一用户、
 同一会话；课程切换会排除旧课程消息，用户纠正被标记并优先保留。路由只获得
-最近少量消息和结构化状态，完整历史不会进入本地确定性路由。星辰仅复用已有
-安全文本映射，不添加未知 Flow 字段。
+最近少量消息和结构化状态，完整历史不会进入本地确定性路由。Runtime 只接收
+经过合同校验的本地输入，不添加未登记字段。
 
 ## Token 预算与压缩
 

@@ -44,7 +44,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "local_deterministic",
             "local_mock",
             "real_model",
-            "real_xingchen",
         ),
     )
     parser.add_argument(
@@ -68,7 +67,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def validate_paid_guard(args: argparse.Namespace) -> None:
-    paid = args.live or args.mode in {"real_model", "real_xingchen"}
+    paid = args.live or args.mode in {"real_model"}
     if paid and not args.confirm_paid:
         raise ValueError("真实模型模式必须同时提供 --confirm-paid，未发送任何模型请求")
     if args.confirm_paid and not paid:
@@ -90,7 +89,7 @@ def validate_cases(
         case_id=args.case_id,
         max_cases=(
             3
-            if (args.live or args.mode in {"real_model", "real_xingchen"})
+            if (args.live or args.mode in {"real_model"})
             and args.max_cases is None
             else args.max_cases
         ),
@@ -162,8 +161,6 @@ def evaluation_settings(*, live: bool) -> Settings:
         default_agent_provider="mock",
         allow_mock_fallback=True,
         allow_agent_mocks=True,
-        xingchen_enabled=False,
-        enable_xingchen_fallback=False,
         iflytek_spark_enabled=False,
         dashscope_enabled=False,
         enable_spark_reasoner=False,
@@ -186,7 +183,7 @@ async def run(args: argparse.Namespace) -> int:
     cases = list(raw_cases)
     case_source_root = CASE_ROOT / args.suite if args.suite else CASE_ROOT
     mode = args.mode or ("live" if args.live else "offline")
-    live = mode in {"live", "real_model", "real_xingchen"}
+    live = mode in {"live", "real_model"}
     app = create_app(evaluation_settings(live=live))
     cache = EvaluationCache(
         CACHE_ROOT,

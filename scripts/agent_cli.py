@@ -44,7 +44,7 @@ def _summary(
         "enabled": definition.enabled,
         "publication_status": definition.publication_status,
         "provider": definition.provider,
-        "flow_env_key": definition.flow_env,
+        "local_handler": definition.local_handler,
         "configured": registry.is_configured(agent_id, settings),
         "runtime_available": registry.is_runtime_available(agent_id, settings),
         "parser_type": definition.provider_config.parser_type,
@@ -87,7 +87,7 @@ def _dry_run(
         route_status=RouteStatus.SELECTED,
         reason="CLI dry-run",
         retrieval_required=definition.retrieval_policy.enabled,
-        provider_required=definition.provider == "xingchen",
+        provider_required=False,
     )
     plan = AgentExecutionPlanner(registry, settings).build(decision, request)
     context = TaskRequestContext.from_agent_request(request, input_mode="text")
@@ -99,7 +99,7 @@ def _dry_run(
     return {
         **_summary(registry, settings, agent_id),
         "dry_run": True,
-        "cloud_called": False,
+        "remote_provider_called": False,
         "required_inputs": sorted(definition.input_contract.required),
         "field_lengths": mapped.field_lengths,
         "mapping_preview": mapped.redacted_preview,
@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="列出 Agent 的脱敏状态")
     sub.add_parser("validate", help="加载并校验全部 AgentDefinition")
-    for name in ("show", "check-flow", "test-contract"):
+    for name in ("show", "check-runtime", "test-contract"):
         command = sub.add_parser(name)
         command.add_argument("agent_id")
     dry = sub.add_parser("dry-run")
@@ -137,15 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     scaffold.add_argument("--retrieval-policy", default="no_rag")
     scaffold.add_argument("--fallback-type", default="planned_response")
     scaffold.add_argument("--mock-profile", default="generic_planned_v1")
-    scaffold.add_argument("--flow-env-key", default="")
     scaffold.add_argument(
         "--output-dir", default=str(PROJECT_ROOT / "agent_configs" / "scaffolds")
     )
     scaffold.add_argument("--dry-run", action="store_true")
     scaffold.add_argument("--force", action="store_true")
-    compare = sub.add_parser("compare-mock-cloud", help="比较Mock与脱敏Cloud样例结构")
-    compare.add_argument("agent_id")
-    compare.add_argument("--cloud-sample", type=Path, required=True)
     return parser
 
 
@@ -184,7 +180,6 @@ def main() -> int:
                 retrieval_policy=args.retrieval_policy,
                 fallback_type=args.fallback_type,
                 mock_profile=args.mock_profile,
-                flow_env_key=args.flow_env_key,
             )
             service = AgentScaffoldService()
             if args.dry_run:
@@ -195,7 +190,7 @@ def main() -> int:
                         "agent_id": args.agent_id,
                         "files": sorted(files),
                         "schema_valid": True,
-                        "real_cloud_called": False,
+                        "remote_provider_called": False,
                     }
                 )
             else:
@@ -212,45 +207,18 @@ def main() -> int:
                         ),
                     }
                 )
-        elif args.command == "compare-mock-cloud":
-            cloud_sample = json.loads(args.cloud_sample.read_text(encoding="utf-8"))
-            definition = registry.get(args.agent_id)
-            expected = {
-                "agent_id": definition.agent_id,
-                "business_data": {
-                    rule.target.rsplit(".", 1)[-1]: None
-                    for rule in definition.output_rules
-                    if rule.target.startswith("business_data.")
-                },
-            }
-            _print(
-                {
-                    "agent_id": args.agent_id,
-                    "mock_contract_shape": _shape(expected),
-                    "cloud_sample_shape": _shape(cloud_sample),
-                    "cloud_called": False,
-                    "semantic_quality_compared": False,
-                }
-            )
-        elif args.command == "list":
-            _print(
-                [
-                    _summary(registry, settings, item.agent_id)
-                    for item in registry.list_agents()
-                ]
-            )
         elif args.command == "validate":
             _print({"valid": True, "agent_count": len(registry.list_agents())})
         elif args.command == "show":
             _print(_summary(registry, settings, args.agent_id))
-        elif args.command == "check-flow":
+        elif args.command == "check-runtime":
             item = _summary(registry, settings, args.agent_id)
             _print(
                 {
                     "agent_id": args.agent_id,
-                    "flow_env_key": item["flow_env_key"],
+                    "local_handler": item["local_handler"],
                     "configured": item["configured"],
-                    "flow_value_exposed": False,
+                    "runtime_available": item["runtime_available"],
                 }
             )
         elif args.command == "test-contract":

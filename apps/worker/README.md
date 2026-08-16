@@ -2,8 +2,8 @@
 
 `TaskWorker` is the process boundary for Redis-backed task execution. The API
 publishes task IDs when `TASK_EXECUTOR_MODE=redis`; this process owns the
-`TaskRunner`, database lease claims, heartbeats, Runtime checkpoints, and
-provider calls.
+`TaskExecutor`/`RuntimeTaskEngine`, database lease claims, heartbeats, Runtime
+checkpoints, and provider calls.
 
 Run locally from the repository root:
 

@@ -10,14 +10,11 @@ from uuid import uuid4
 from app.agents import AgentRegistry, TaskRouter
 from app.contracts import AgentRequest, AgentResult, Intent, RetrievalResult, Scene
 from app.core.config import Settings
-from app.core.errors import AppError
 from app.providers.base import AgentProvider
-from app.providers.xingchen import build_workflow_payload
 from app.services.citation_validator import CitationValidator
 from app.services.knowledge_qa_service import KnowledgeQAService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.retrieval_context import RetrievalContextService
-from app.services.task_runner import TaskRunner
 
 
 def utc_iso() -> str:
@@ -130,7 +127,6 @@ class RAGDebugService:
                 ),
                 "include_images": bool(payload.get("include_images", False)),
                 "use_reranker": bool(payload.get("use_reranker", False)),
-                "allow_cloud": bool(payload.get("allow_cloud", False)),
             },
         )
         stage("request_received", "success", accepted, input_count=1)
@@ -257,64 +253,11 @@ class RAGDebugService:
                 warnings=packet.warnings,
             )
 
-        cloud: dict[str, Any] = {"status": "not_run"}
+        provider_trace: dict[str, Any] = {"status": "local_runtime"}
         citation: dict[str, Any] = {"status": "not_run"}
         fallback_used = decision.fallback_used
-        fallback_reason = "route_cloud_unavailable" if decision.fallback_used else ""
+        fallback_reason = "local_route_fallback" if decision.fallback_used else ""
         result = None
-        selected_definition = self.registry.get(decision.agent_id)
-        allow_cloud = bool(payload.get("allow_cloud", False))
-        if (
-            allow_cloud
-            and selected_definition.provider == "xingchen"
-            and self.registry.is_runtime_available(decision.agent_id, self.settings)
-        ):
-            provider_request = (
-                TaskRunner._with_learning_context(request, packet)
-                if packet is not None
-                else request
-            )
-            cloud_started = perf_counter()
-            definition = self.registry.get(decision.agent_id)
-            redacted_payload = build_workflow_payload(
-                self.settings,
-                provider_request,
-                definition=definition,
-                flow_id="[configured]",
-            )
-            redacted_payload["uid"] = "[redacted]"
-            try:
-                result = await self.provider.run(
-                    decision.agent_id, provider_request, stream=False
-                )
-                cloud_latency = int((perf_counter() - cloud_started) * 1000)
-                cloud = {
-                    "status": str(result.structured_result.get("status", "completed")),
-                    "request": redacted_payload,
-                    "response": result.structured_result,
-                    "source_references": result.structured_result.get(
-                        "source_references", []
-                    ),
-                    "latency_ms": cloud_latency,
-                }
-                stage("cloud", "success", cloud_started, input_count=1, output_count=1)
-                if (
-                    str(result.structured_result.get("status", "")).casefold()
-                    == "failed"
-                ):
-                    result = None
-                    fallback_used = True
-                    fallback_reason = "cloud_failed_status"
-            except AppError as exc:
-                fallback_used = True
-                fallback_reason = exc.code
-                cloud = {
-                    "status": "cloud_failed",
-                    "request": redacted_payload,
-                    "error_code": exc.code,
-                    "latency_ms": int((perf_counter() - cloud_started) * 1000),
-                }
-                stage("cloud", "failed", cloud_started, warnings=[exc.code])
 
         if (
             result is not None
@@ -364,31 +307,23 @@ class RAGDebugService:
                     agent_id=decision.agent_id,
                     provider="not_run",
                     answer=(
-                        "本次对比已关闭 RAG，且未允许云端调用，因此没有生成回答。"
-                        "开启云端后可执行真正的无 RAG 云端对照。"
+                        "本次对比已关闭 RAG，且未启用本地回答器，因此没有生成回答。"
+                        "启用本地回答器后可执行无 RAG 对照。"
                     ),
-                    structured_result={"status": "no_rag_no_cloud"},
-                    warnings=["no_rag_no_cloud"],
+                    structured_result={"status": "no_rag_no_local_answer"},
+                    warnings=["no_rag_no_local_answer"],
                 )
                 fallback_used = False
                 fallback_reason = ""
                 stage(
-                    "no_rag_no_cloud",
+                    "no_rag_no_local_answer",
                     "not_run",
                     fallback_started,
                     summary="comparison branch intentionally did not retrieve",
                 )
             else:
-                fallback_used = (
-                    fallback_used
-                    or allow_cloud
-                    or (selected_definition.provider == "xingchen")
-                )
-                fallback_reason = fallback_reason or (
-                    "cloud_disabled_for_debug"
-                    if not allow_cloud
-                    else "cloud_unavailable"
-                )
+                fallback_used = True
+                fallback_reason = fallback_reason or "local_retrieval_fallback"
             if retrieval is None and result is None:
                 retrieval = await asyncio.to_thread(
                     self.rag.search,
@@ -437,7 +372,7 @@ class RAGDebugService:
             "retrieval": retrieval.model_dump(mode="json") if retrieval else {},
             "context": packet.model_dump(mode="json") if packet else {},
             "retrieved_context": packet.to_retrieved_context() if packet else "",
-            "cloud": cloud,
+            "provider_trace": provider_trace,
             "citation_validation": citation,
             "final": final,
         }

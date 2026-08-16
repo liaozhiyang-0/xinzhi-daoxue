@@ -18,7 +18,7 @@ Python Runner 中硬编码路由或答案。
 # 只校验案例、注册表和模型路由，不创建任务或调用模型
 .\.venv\Scripts\python.exe scripts\run_evaluation.py --validate-only
 
-# 关闭星辰和国产模型 Provider，通过正式 sessions/tasks API 与 TaskRunner 执行
+# 使用本地 Runtime 和 Mock Provider，通过正式 sessions/tasks API 与 TaskRunner 执行
 .\.venv\Scripts\python.exe scripts\run_evaluation.py --offline
 
 # 课程、标签、单案例和数量过滤
@@ -28,8 +28,8 @@ Python Runner 中硬编码路由或答案。
 .\.venv\Scripts\python.exe scripts\run_evaluation.py --tag teaching_loop_phase2 --offline --no-cache
 ```
 
-离线模式可以产生真实路由、RAG、工具、任务事件和评分结果，但不会证明云端答案
-质量。真实模式必须同时显式提供 `--live --confirm-paid`，未指定 `--max-cases` 时
+离线模式可以产生真实路由、RAG、工具、任务事件和评分结果，但不会证明真实模型答案
+质量。真实模型模式必须同时显式提供 `--live --confirm-paid`，未指定 `--max-cases` 时
 最多执行 3 条：
 
 ```powershell

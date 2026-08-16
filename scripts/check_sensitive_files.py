@@ -18,7 +18,7 @@ PROHIBITED_PATH_PARTS = {
     "数字信号处理",
     "通信原理",
 }
-PROHIBITED_SUFFIXES = (".xingchen.raw.yml", ".xingchen.raw.yaml")
+PROHIBITED_SUFFIXES = (".remote.raw.yml", ".remote.raw.yaml")
 SECRET_PATTERNS = {
     "private_key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "github_token": re.compile(r"\bgh[opsu]_[A-Za-z0-9]{20,}\b"),

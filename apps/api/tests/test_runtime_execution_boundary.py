@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from app.contracts import AgentRequest, AgentResult, AgentResultStatus
-from app.core.errors import NotConfiguredError
+from app.contracts import AgentRequest
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -15,10 +14,8 @@ from app.services.research_analysis_runtime import ResearchAnalysisRuntimeServic
 from app.services.runtime_execution_boundary import (
     RuntimeExecutionBoundary,
     RuntimeResumeInvariantError,
-    RuntimeTaskHandoff,
 )
 from app.services.runtime_launch_policy import (
-    RuntimeLaunchDecision,
     RuntimeLaunchMode,
 )
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
@@ -46,27 +43,6 @@ def make_request() -> AgentRequest:
                 }
             }
         },
-    )
-
-
-def make_handoff_run(status: RuntimeRunStatus) -> AgentRun:
-    return AgentRun(
-        run_id="handoff-run",
-        task_id="handoff-task",
-        goal="handoff test",
-        status=status,
-        plan=AgentRunPlan(
-            plan_id="handoff-plan",
-            version="1",
-            goal="handoff test",
-            nodes=[
-                RuntimeNode(
-                    node_id="execute",
-                    node_type="workflow",
-                    handler_id="test.execute",
-                )
-            ],
-        ),
     )
 
 
@@ -202,79 +178,4 @@ def test_runtime_boundary_rejects_checkpoint_route_drift() -> None:
             task_agent_id="GENERAL_QUESTION_V1",
             request=request,
             execution_plan=None,
-        )
-
-
-def test_runtime_handoff_prevents_legacy_execution_after_runtime_result() -> None:
-    decision = RuntimeLaunchDecision(
-        agent_id="GENERAL_QUESTION_V1",
-        mode=RuntimeLaunchMode.CANARY,
-        source="test",
-        reason="test",
-    )
-    result = AgentResult(
-        agent_id="GENERAL_QUESTION_V1",
-        provider="local_agent",
-        answer="runtime result",
-    )
-    run = make_handoff_run(RuntimeRunStatus.COMPLETED)
-
-    handoff = RuntimeExecutionBoundary.handoff_result(
-        result,
-        decision=decision,
-        run=run,
-    )
-
-    assert isinstance(handoff, RuntimeTaskHandoff)
-    assert handoff.result is result
-    assert handoff.bypass_legacy_execution is True
-
-
-def test_failed_runtime_result_cannot_bypass_legacy_execution() -> None:
-    decision = RuntimeLaunchDecision(
-        agent_id="GENERAL_QUESTION_V1",
-        mode=RuntimeLaunchMode.CANARY,
-        source="test",
-        reason="test",
-    )
-    result = AgentResult(
-        agent_id="GENERAL_QUESTION_V1",
-        provider="local_agent",
-        answer="partial answer",
-    )
-    run = make_handoff_run(RuntimeRunStatus.FAILED)
-
-    handoff = RuntimeExecutionBoundary.handoff_result(
-        result,
-        decision=decision,
-        run=run,
-    )
-
-    assert handoff.bypass_legacy_execution is False
-    assert handoff.legacy_fallback is True
-    assert handoff.runtime_status == RuntimeRunStatus.FAILED.value
-    assert handoff.result is not None
-    assert handoff.result.status == AgentResultStatus.FAILED
-    assert run.control_data["runtime_handoff"]["status"] == "legacy_fallback"
-
-
-def test_default_failed_runtime_is_fail_closed() -> None:
-    decision = RuntimeLaunchDecision(
-        agent_id="GENERAL_QUESTION_V1",
-        mode=RuntimeLaunchMode.DEFAULT,
-        source="test",
-        reason="test",
-    )
-    run = make_handoff_run(RuntimeRunStatus.FAILED)
-    result = AgentResult(
-        agent_id="GENERAL_QUESTION_V1",
-        provider="local_agent",
-        answer="incorrectly completed result",
-    )
-
-    with pytest.raises(NotConfiguredError, match="status=failed"):
-        RuntimeExecutionBoundary.handoff_result(
-            result,
-            decision=decision,
-            run=run,
         )

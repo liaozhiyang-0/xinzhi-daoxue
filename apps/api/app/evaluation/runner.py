@@ -70,7 +70,7 @@ def evaluation_timeout_decision(case: EvaluationCase) -> tuple[int, list[str]]:
 
 
 class EvaluationRunner:
-    """Drive the production sessions/tasks API and collect TaskRunner results."""
+    """Drive the production sessions/tasks API and collect Runtime results."""
 
     def __init__(
         self,
@@ -82,7 +82,6 @@ class EvaluationRunner:
             "local_deterministic",
             "local_mock",
             "real_model",
-            "real_xingchen",
         ],
         cache: EvaluationCache,
         report_root: Path,
@@ -304,8 +303,6 @@ class EvaluationRunner:
                         "input_type": case.input_type,
                         "evaluation_case_id": case.case_id,
                         "evaluation_mode": self.mode,
-                        "allow_cloud": self.mode
-                        in {"live", "real_model", "real_xingchen"},
                         **task_options,
                     },
                 },

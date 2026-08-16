@@ -6,10 +6,10 @@
 
 - 范围：仓库根目录下所有 Git 已跟踪文件，以及未被 `.gitignore` 排除、准备随本轮发布的文件。
 - 不在范围：本机 `.env`、真实密钥、教材原文、Qdrant/知识索引、模型缓存、上传物、数据库、测试临时目录和 Python/Node 缓存。
-- 当前形态：一个 FastAPI 单体应用承载 API、任务生命周期、自动路由、Supervisor、本地多学科 Agent、本地 RAG、模型 Provider、星辰工作流适配和静态 Web 页面。
+- 当前形态：一个 FastAPI 单体应用承载 API、任务生命周期、自动路由、Supervisor、本地多学科 Agent、本地 RAG、模型 Provider 和静态 Web 页面。
 - 核心原则：继续复用唯一的 `POST /api/v1/tasks`、TaskRunner、数据库、SSE、上传和 Provider 链，不建立第二套路由器或任务队列。
-- 学生入口：`/workspace` 和 `/student` 使用一个自然语言输入自动选择能力，不暴露 Provider、Flow ID 和内部 Agent ID。
-- 云端策略：本地能力优先；星辰工作流默认关闭，只有请求显式允许云端且配置完整时才可能执行。
+- 学生入口：`/workspace` 和 `/student` 使用一个自然语言输入自动选择能力，不暴露 Provider 和内部 Agent ID。
+- 执行策略：业务任务统一通过本地 Runtime；历史请求中的 `allow_cloud` 仅作为兼容字段接收并丢弃，不会启用远程工作流。
 - 历史策略：有审计价值但退出活动架构的文件进入 `archive_legacy/`，不参与导入、测试发现、Docker 构建或 Agent 注册。
 
 ## 2. 系统框架
@@ -26,7 +26,7 @@ flowchart LR
     RT --> APS["ACADEMIC_PROBLEM_SOLVER"]
     RT --> IA["教学 / 学习 / 研究内部 Agent"]
     RT --> LR["本地 RAG"]
-    RT --> XC["星辰工作流，默认不调用"]
+    RT --> LP["Local Provider / Runtime"]
     GQ --> MS["统一 ModelService"]
     APS --> GF["LangGraph + CoursePack + CapabilityPack"]
     IA --> MS
@@ -50,7 +50,7 @@ flowchart LR
 | 编排层 | `agents/`、`orchestrator/` | 快速路由、Supervisor、内部 Agent Hub、LangGraph 图工厂和状态合同。 |
 | 专业能力层 | `courses/`、`capabilities/`、`tools/` | CT/AE/DE/SS 课程包、共享专业能力、计算器、符号求解和单位校验。 |
 | 知识层 | `services/knowledge_*`、`rag_*`、`providers/embedding/` | 资料发现、文本/图像检索、上下文组装、证据质量、引用校验和 RAG 调试。 |
-| 模型与工作流层 | `providers/llm/`、`providers/workflow/` | Spark、Qwen、OpenAI-compatible 接口、星辰同步工作流和明确标识的开发 Mock。 |
+| 模型与运行时层 | `providers/llm/`、`providers/local.py`、`providers/mock.py` | Spark、Qwen、OpenAI-compatible 接口、本地 Agent Runtime 和明确标识的开发 Mock。 |
 | 数据与基础设施层 | `database/`、`alembic/`、`docker-compose.yml` | SQLAlchemy 会话、增量迁移、PostgreSQL、Redis、MinIO 和 Qdrant。 |
 | 评测与治理层 | `evaluation/`、`app/evaluation/`、`docs/reviews/` | 多学科题集、自动路由、RAG、模型 Agent、HIGH_RISK 校验、报告和基线比较。 |
 
@@ -81,7 +81,7 @@ flowchart LR
 
 ### 3.4 多学科求解
 
-`ACADEMIC_PROBLEM_SOLVER` 是 CT（电路理论）、AE（模拟电子技术）、DE（数字电子技术）和 SS（信号与系统）的统一入口。Supervisor 选择课程包，GraphFactory 创建同一求解图，图内按需调用模型与确定性工具。`SOLVER_CT_V1` 作为冻结的星辰基线和受控回退保留，不作为本地核心。
+`ACADEMIC_PROBLEM_SOLVER` 是 CT（电路理论）、AE（模拟电子技术）、DE（数字电子技术）和 SS（信号与系统）的统一入口。Supervisor 选择课程包，GraphFactory 创建同一求解图，图内按需调用模型与确定性工具。`SOLVER_CT_V1` 作为冻结的历史基线只读保留，不作为当前本地 Runtime 的外部回退。
 
 ### 3.5 本地 RAG
 
@@ -94,8 +94,7 @@ flowchart LR
 ### 3.6 云端与降级
 
 - Spark/Qwen 通过统一 `ModelService` 调用，错误、超时和追踪信息统一脱敏。
-- 星辰通过唯一 `XingchenCloudProvider` 与已有环境变量调用链执行，不猜测或硬编码协议字段。
-- `XINGCHEN_WORKFLOWS_DEFAULT_ENABLED=false`；学生请求只有显式 `options.allow_cloud=true` 才授予本次星辰调度权限。
+- 历史请求中的 `options.allow_cloud` 在合同校验阶段被移除；它不能改变本地 Provider、Runtime 或路由选择。
 - Provider HTTP 200 或 workflow complete 只说明调用完成，不代表回答质量验收通过。
 - Mock 结果始终带明确 Mock 标识，不描述为真实云端结果。
 
@@ -105,9 +104,9 @@ flowchart LR
 |---|---|---|---|
 | 学生统一工作台 | 活动 | `/workspace`、`workspace.*` | 单输入自动路由，隐藏内部实现名。 |
 | 学生简化入口 | 活动 | `/student` → `workspace.*` | 支持文字、多图、历史与证据展示。 |
-| 通用随机问答 | 活动 | `GENERAL_QUESTION_V1` | 不要求命中课程路由；默认不调用星辰。 |
+| 通用随机问答 | 活动 | `GENERAL_QUESTION_V1` | 不要求命中课程路由；统一使用本地 Runtime。 |
 | 多学科专业求解 | 活动 | `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 共享图，不伪造缺失题设。 |
-| 电路冻结基线 | 保留 | `SOLVER_CT_V1` | 只作为已验证星辰文字/单图基线与回退。 |
+| 电路冻结基线 | 保留 | `SOLVER_CT_V1` | 只读历史审计基线，不参与当前运行时路由。 |
 | 教学任务 | 活动 | 备课、作业初审内部 Agent | 复用任务上下文与本地资料。 |
 | 学习问答 | 活动 | Knowledge QA / Local Retrieval | 明确区分课程证据、方法参考和无资料回答。 |
 | 有限诊断与分级辅导 | 活动 | TeachingPlanner / Verification / Hint / Disclosure | 三模式；H0—H2；复杂过程转人工复核，不自动评分。 |
@@ -118,7 +117,7 @@ flowchart LR
 | 任务生命周期 | 活动 | tasks API + TaskRunner | 非阻塞创建、事件、SSE、取消、重试。 |
 | 文件与产物 | 活动 | files/artifacts API + StorageService | MinIO 可用时使用对象存储，开发态允许本地回退。 |
 | 调试与可观测 | 活动 | `/debug/*`、traces、execution | 只暴露脱敏摘要，不暴露密钥。 |
-| 真实评测闭环 | 活动 | `evaluation/` + scripts + API | 区分本地、Mock、真实模型和真实星辰证据。 |
+| 真实评测闭环 | 活动 | `evaluation/` + scripts + API | 区分本地、Mock 和真实模型证据。 |
 
 ## 5. HTTP 与页面入口
 
@@ -145,7 +144,7 @@ flowchart LR
 
 ```text
 xinzhi-daoxue/
-├─ agent_configs/          # Agent 注册、Mock 配置、CoursePack、冻结工作流
+├─ agent_configs/          # Agent 注册、Mock 配置、CoursePack、冻结基线
 ├─ apps/
 │  ├─ api/                 # FastAPI 主应用、迁移、测试、静态 Web
 │  └─ worker/              # 未来独立 Worker 的边界说明，不是第二运行时
@@ -170,7 +169,7 @@ xinzhi-daoxue/
 | `api/v1/` | REST/SSE 接口；每个资源一个小路由模块。 |
 | `capabilities/` | 可复用能力包合同与注册表。 |
 | `contracts/` | Agent、API、模型、路由、运行时、求解和数学内容 Pydantic 合同。 |
-| `core/` | Settings、日志、脱敏、错误和内部工作流元数据。 |
+| `core/` | Settings、日志、脱敏、错误和内部 Runtime 元数据。 |
 | `courses/` | CT/AE/DE/SS CoursePack 接口与注册表。 |
 | `database/` | SQLAlchemy Base、异步引擎和会话。 |
 | `evaluation/` | 评测用例加载、缓存、评分、报告与运行器。 |
@@ -179,7 +178,7 @@ xinzhi-daoxue/
 | `multimodal/` | 图片输入解析、验证、多图拼接和复杂批次逐图降级合同。 |
 | `observability/` | 模型调用追踪与内存 TraceStore。 |
 | `orchestrator/` | Supervisor、GraphFactory、学术求解 LangGraph 和共享状态。 |
-| `providers/` | Agent、LLM、Embedding、Vision、Workflow 和 Mock Provider。 |
+| `providers/` | Agent、LLM、Embedding、Vision、本地 Runtime 和 Mock Provider。 |
 | `repositories/` | Session、Task、Event、File、Artifact 数据访问。 |
 | `services/` | 任务、模型、知识、RAG、治理、展示和专业求解业务服务。 |
 | `static/debug/` | 无前端构建步骤的 HTML/CSS/JS 页面、本地 KaTeX 和字体。 |
@@ -210,7 +209,7 @@ xinzhi-daoxue/
 
 | 数据 | 本机位置 | 是否上传 GitHub | 原因 |
 |---|---|---:|---|
-| API Key、Secret、Flow ID | `.env` | 否 | 凭据与外部工作流标识。 |
+| API Key、Secret | `.env` | 否 | 模型与基础设施凭据。 |
 | 安全配置模板 | `.env.example` | 是 | 只含空值和非敏感默认值。 |
 | 原始教材 | `电路理论/`、`模电/`、`数电/`、`知识库/` | 否 | 版权、体积与本机路径差异。 |
 | 向量/词法索引 | `knowledge_indexes/`、Qdrant volume | 否 | 可重建运行数据。 |
@@ -238,11 +237,11 @@ archive_legacy/apps/api/app/services/task_service.py
 ### 8.3 未判定为冗余的轻量文件
 
 - `__init__.py`：定义包边界与稳定导出。
-- `providers/llm/spark.py`、`providers/xingchen.py`：受控兼容导出，仍属于 Provider 公共入口。
+- `providers/llm/spark.py`、`providers/local.py`：受控 Provider 公共入口；本地 Runtime 不依赖外部工作流。
 - `integrations/__init__.py`：明确的可扩展集成边界。
 - `apps/worker/README.md`：记录未来拆分边界，不启动第二运行时。
 - Alembic migration：即使逻辑已被新版本覆盖也必须保留，不能修改历史迁移。
-- `SOLVER_CT_V1`：冻结基线和已验证星辰兼容能力，按仓库规则保留。
+- `SOLVER_CT_V1`：冻结历史基线，按仓库规则原样保留，不作为当前执行能力。
 
 隔离详情和判据见 [旧文件与功能清理记录](legacy_cleanup_report.md)。
 
@@ -263,7 +262,7 @@ archive_legacy/apps/api/app/services/task_service.py
 .\xzd.cmd start -Reload
 ```
 
-默认地址为 `http://127.0.0.1:8000/workspace`。普通启动不加 `-WithCloud`，避免无意触发星辰 Preflight。
+默认地址为 `http://127.0.0.1:8000/workspace`。启动器只执行本地依赖检查和 Runtime Preflight。
 
 ### 9.2 完整校验
 
@@ -282,7 +281,7 @@ archive_legacy/apps/api/app/services/task_service.py
 .\.venv\Scripts\python.exe scripts\generate_repository_catalog.py --check
 ```
 
-真实模型、真实星辰和完整多模态索引属于外部依赖验收，必须单独报告，不能用本地单元测试结果替代。
+真实模型和完整多模态索引属于外部依赖验收，必须单独报告，不能用本地单元测试结果替代。
 
 ## 10. 扩展方式
 
@@ -305,14 +304,14 @@ archive_legacy/apps/api/app/services/task_service.py
 
 `TaskExecutor` 是 TaskRunner 前的稳定调度边界。当前 `LocalTaskExecutor` 保持原进程内行为，`QueueTaskExecutor` 仅作为显式未配置扩展点；任务表新增幂等键、最大尝试次数、执行所有者、租约、心跳、取消时间与失败分类。显式重试只接受可重试失败且不得超过 `max_attempts`。
 
-评测继续复用既有 `EvaluationRunner`，支持 `local_deterministic`、`local_mock`、`real_model`、`real_xingchen` 四种证据隔离模式。仓库样例标记为 synthetic/not_official；私有真实案例目录默认被 Git 忽略。
+评测继续复用既有 `EvaluationRunner`，支持 `local_deterministic`、`local_mock` 和 `real_model` 三种证据隔离模式。仓库样例标记为 synthetic/not_official；私有真实案例目录默认被 Git 忽略。
 
 ## 12. 已知风险与后续检查
 
 - TaskRunner 当前是进程内执行器，适合本地和单实例；多实例部署前需要把执行权迁移到可靠队列，但不能改变现有任务协议。
 - 本地 BGE/SigLIP2/Reranker 首次下载和 CPU 推理成本较高；健康页的 200 不等同于所有模型已预热。
-- 星辰回答质量仍需对已发布 Flow 做真实验收；配置完整和 HTTP 成功只证明连通性。
-- 评测报告应继续注明 local、Mock、模型 Provider、星辰 workflow 四种证据层级。
+- 本地模型回答质量仍需按课程和任务类型做真实验收；配置完整只证明运行边界可用。
+- 评测报告应继续注明 local、Mock 和模型 Provider 三种证据层级。
 - 每次目录变动后运行目录生成脚本并提交更新，防止本文档与实际仓库漂移。
 
 ## 13. 逐文件索引

@@ -33,7 +33,7 @@ FastAPI 页面路由
 ## 兼容与安全
 
 - `/debug` 保留并进入新的演示中心；其余旧 URL 不变。
-- 学生端不展示完整 Trace、point ID、Prompt、向量或完整 Flow ID。
+- 学生端不展示完整 Trace、point ID、Prompt 或向量。
 - Agent 与系统页面只显示 configured 布尔值和脱敏摘要。
 - 真实云端动作需要用户确认；页面载入不会触发云端调用。
 - Mock 使用紫色“开发模拟”状态，不作为开放能力展示。

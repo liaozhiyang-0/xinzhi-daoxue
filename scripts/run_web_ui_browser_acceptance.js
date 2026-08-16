@@ -26,7 +26,7 @@ async function startServer() {
     cwd: root,
     windowsHide: true,
     stdio: "ignore",
-    env: { ...process.env, APP_ENV: "test", TEST_DATABASE_URL: testDatabaseURL, DEFAULT_AGENT_PROVIDER: "mock", XINGCHEN_ENABLED: "false", IFLYTEK_SPARK_ENABLED: "false", DASHSCOPE_ENABLED: "false", SPARK_ENABLED: "false", OVERALL_ROUTING_ENABLED: "false", RAG_ENABLED: "false", RAG_WARMUP_ON_STARTUP: "false", RESEARCH_KNOWLEDGE_ENABLED: "false", RESEARCH_KNOWLEDGE_MAINTENANCE_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
+    env: { ...process.env, APP_ENV: "test", TEST_DATABASE_URL: testDatabaseURL, DEFAULT_AGENT_PROVIDER: "mock", IFLYTEK_SPARK_ENABLED: "false", DASHSCOPE_ENABLED: "false", SPARK_ENABLED: "false", OVERALL_ROUTING_ENABLED: "false", RAG_ENABLED: "false", RAG_WARMUP_ON_STARTUP: "false", RESEARCH_KNOWLEDGE_ENABLED: "false", RESEARCH_KNOWLEDGE_MAINTENANCE_ENABLED: "false", IMAGE_EMBEDDING_ENABLED: "false", RERANKER_ENABLED: "false", ALLOW_AGENT_MOCKS: "true", IFLYTEK_SPARK_API_KEY: "", DASHSCOPE_API_KEY: "", MINIO_ENDPOINT: "127.0.0.1:1" },
   });
   await waitForSpawnedHealth({ server, baseURL, label: "browser acceptance" });
 }

@@ -1,14 +1,13 @@
-"""Boundary between the durable Agent Runtime and the legacy TaskRunner.
+"""Boundary around the durable Agent Runtime.
 
 This module deliberately contains no routing, retrieval, presentation, or
 Task status policy. It owns only Runtime lifecycle decisions so business
-Runtime implementations can be moved out of TaskRunner incrementally.
+Runtime implementations remain independent from task transport concerns.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,11 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts import (
     AgentRequest,
     AgentResult,
-    AgentResultStatus,
     IntentExecutionPlan,
     RouteDecision,
 )
-from app.core.errors import NotConfiguredError
 from app.repositories import AgentRunRepository
 from app.runtime import (
     AgentRun,
@@ -36,30 +33,18 @@ from app.services.runtime_business_registry import (
     RuntimeBusinessRegistry,
     RuntimeBusinessService,
 )
-from app.services.runtime_compatibility_preparation import (
-    RuntimeCompatibilityPreparation,
-    RuntimeCompatibilityPreparationService,
-)
 from app.services.runtime_launch_policy import (
-    RuntimeLaunchDecision,
     RuntimeLaunchMode,
+)
+from app.services.runtime_request_preparation import (
+    RuntimeRequestPreparation,
+    RuntimeRequestPreparationService,
 )
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 
 
 class RuntimeResumeInvariantError(RuntimeError):
     """Raised when durable compatibility state no longer matches a resume."""
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeTaskHandoff:
-    """Decide whether a Runtime result owns the remainder of the Task."""
-
-    result: AgentResult | None
-    bypass_legacy_execution: bool
-    legacy_fallback: bool = False
-    runtime_status: str = ""
-    fallback_reason: str = ""
 
 
 class RuntimeExecutionBoundary:
@@ -81,12 +66,11 @@ class RuntimeExecutionBoundary:
         lifecycle: RuntimeRunLifecycleService,
         research_analysis: ResearchAnalysisRuntimeService | None,
         business_services: Iterable[RuntimeBusinessService] | None = None,
-        compatibility_preparation: RuntimeCompatibilityPreparationService
-        | None = None,
+        request_preparation: RuntimeRequestPreparationService | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.research_analysis = research_analysis
-        self.compatibility_preparation = compatibility_preparation
+        self.request_preparation = request_preparation
         services = list(business_services or [])
         if research_analysis is not None and research_analysis not in services:
             services.insert(0, research_analysis)
@@ -134,92 +118,16 @@ class RuntimeExecutionBoundary:
 
         service = self.business_registry.resolve(agent_id, request)
         option_key = getattr(service, "runtime_option_key", None)
-        return option_key if isinstance(option_key, str) and option_key else None
+        if isinstance(option_key, str) and option_key:
+            return option_key
+        # ``supports`` intentionally requires the execution option to be
+        # enabled. During launch resolution that option is not present yet,
+        # so a direct business adapter would otherwise look unavailable and
+        # be sent to Legacy before the candidate can inject its option.
+        return self.business_registry.runtime_option_key(agent_id)
 
     def runtime_plan_version(self, agent_id: str) -> str | None:
         return self.business_registry.runtime_plan_version(agent_id)
-
-    @staticmethod
-    def handoff_result(
-        runtime_result: AgentResult | None,
-        *,
-        decision: RuntimeLaunchDecision,
-        run: AgentRun | None = None,
-    ) -> RuntimeTaskHandoff:
-        """Make Runtime/legacy ownership explicit after Runtime execution."""
-
-        if runtime_result is not None:
-            runtime_status = (
-                run.status.value
-                if run is not None
-                else runtime_result.status.value
-            )
-            runtime_completed = (
-                (run is None or run.status == RuntimeRunStatus.COMPLETED)
-                and runtime_result.status == AgentResultStatus.COMPLETED
-            )
-            if not runtime_completed:
-                reason = f"runtime_execution_{runtime_status}"
-                failed_result = runtime_result.model_copy(
-                    update={
-                        "status": AgentResultStatus.FAILED,
-                        "fallback_used": True,
-                        "fallback_reason": reason,
-                    }
-                )
-                if run is not None:
-                    RuntimeExecutionBoundary._record_handoff_failure(
-                        run,
-                        runtime_status=runtime_status,
-                        reason=reason,
-                    )
-                if decision.requires_runtime:
-                    raise NotConfiguredError(
-                        "default Runtime execution did not complete "
-                        f"(status={runtime_status})"
-                    )
-                return RuntimeTaskHandoff(
-                    result=failed_result,
-                    bypass_legacy_execution=False,
-                    legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
-                    runtime_status=runtime_status,
-                    fallback_reason=reason,
-                )
-            return RuntimeTaskHandoff(
-                result=runtime_result,
-                bypass_legacy_execution=True,
-                runtime_status=RuntimeRunStatus.COMPLETED.value,
-            )
-        if decision.requires_runtime:
-            raise NotConfiguredError(
-                "default Runtime launch did not resolve a business service"
-            )
-        return RuntimeTaskHandoff(
-            result=None,
-            bypass_legacy_execution=False,
-            legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
-            runtime_status=(
-                "missing" if decision.mode == RuntimeLaunchMode.CANARY else ""
-            ),
-            fallback_reason=(
-                "runtime_result_missing"
-                if decision.mode == RuntimeLaunchMode.CANARY
-                else ""
-            ),
-        )
-
-    @staticmethod
-    def _record_handoff_failure(
-        run: AgentRun, *, runtime_status: str, reason: str
-    ) -> None:
-        control_data = dict(run.control_data)
-        control_data["runtime_handoff"] = {
-            "status": "legacy_fallback",
-            "runtime_status": runtime_status,
-            "bypass_legacy_execution": False,
-            "fallback_reason": reason,
-        }
-        run.control_data = control_data
 
     @staticmethod
     def validate_resume_invariants(
@@ -273,7 +181,7 @@ class RuntimeExecutionBoundary:
                 "runtime route revision differs from compatibility snapshot"
             )
 
-    async def prepare_compatibility(
+    async def prepare_request(
         self,
         db: AsyncSession,
         *,
@@ -286,12 +194,12 @@ class RuntimeExecutionBoundary:
         course_id: str,
         fallback_task_family: str,
         runtime_resume: bool,
-    ) -> RuntimeCompatibilityPreparation:
+    ) -> RuntimeRequestPreparation:
         """Prepare the resumable request envelope before Runtime execution."""
 
-        if self.compatibility_preparation is None:
-            raise RuntimeError("Runtime compatibility preparation is not configured")
-        return await self.compatibility_preparation.prepare(
+        if self.request_preparation is None:
+            raise RuntimeError("Runtime request preparation is not configured")
+        return await self.request_preparation.prepare(
             db,
             request=request,
             decision=decision,
@@ -312,12 +220,19 @@ class RuntimeExecutionBoundary:
         *,
         runtime_resume: bool = False,
     ) -> AgentRequest:
-        if runtime_resume or mode != RuntimeLaunchMode.DEFAULT:
+        if runtime_resume:
             # A resumed Run already persisted the request after all launch
             # compatibility preparation.  Re-applying the default-mode
             # option injection would change the checkpoint identity.
             return request
-        return self.business_registry.prepare_default_request(agent_id, request)
+        if mode in {RuntimeLaunchMode.DEFAULT, RuntimeLaunchMode.CANARY}:
+            # A registered Runtime candidate is allowed to launch without an
+            # implementation-specific option in the public task payload. The
+            # launch policy has already performed the release decision; now
+            # materialize the service's bounded execution option so its
+            # ``supports`` contract can resolve the same Runtime plan.
+            return self.business_registry.prepare_default_request(agent_id, request)
+        return request
 
     async def start_or_restore(
         self,
@@ -375,38 +290,9 @@ class RuntimeExecutionBoundary:
             decision_event_hook=decision_event_hook,
             plan_proposal_provider=plan_proposal_provider,
         )
-        if result is not None and run.status != RuntimeRunStatus.COMPLETED:
-            reason = f"runtime_execution_{run.status.value}"
-            self._record_handoff_failure(
-                run,
-                runtime_status=run.status.value,
-                reason=reason,
-            )
-            result = result.model_copy(
-                update={
-                    "status": AgentResultStatus.FAILED,
-                    "fallback_used": True,
-                    "fallback_reason": reason,
-                }
-            )
         return result
 
     async def finalize(self, db: AsyncSession, **kwargs: Any) -> AgentRun | None:
         """Persist terminal state without exposing lifecycle details to callers."""
 
-        run = kwargs.get("run")
-        if (
-            isinstance(run, AgentRun)
-            and run.control_data.get("runtime_handoff", {}).get("status")
-            == "legacy_fallback"
-            and kwargs.get("status")
-            in {RuntimeRunStatus.COMPLETED, RuntimeRunStatus.COMPLETED.value}
-        ):
-            kwargs["status"] = RuntimeRunStatus.FAILED
-            kwargs["error_code"] = kwargs.get("error_code", "") or (
-                "runtime_handoff_failed"
-            )
-            kwargs["terminal_reason"] = kwargs.get("terminal_reason", "") or (
-                "runtime failed; legacy fallback was used"
-            )
         return await self.lifecycle.finalize(db, **kwargs)

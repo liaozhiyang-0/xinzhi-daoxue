@@ -22,16 +22,6 @@ def _cases() -> list[dict[str, Any]]:
 def _settings() -> Settings:
     return Settings(
         app_env="test",
-        xingchen_enabled=True,
-        xingchen_api_key="test-key",
-        xingchen_api_secret="test-secret",
-        xingchen_solver_ct_flow_id="solver",
-        xingchen_knowledge_qa_flow_id="learn",
-        xingchen_lesson_prep_flow_id="lesson",
-        xingchen_assignment_review_flow_id="review",
-        xingchen_academic_writing_flow_id="writing",
-        xingchen_data_analysis_flow_id="analysis",
-        xingchen_fallback_router_flow_id="",
         _env_file=None,
     )
 
@@ -56,7 +46,6 @@ def _request(case: dict[str, Any]) -> AgentRequest:
         canonical_input={"text": case["user_input"]},
         attachments=attachments,
         options={
-            "allow_cloud": True,
             **dict(case.get("session_context", {})),
         },
     )

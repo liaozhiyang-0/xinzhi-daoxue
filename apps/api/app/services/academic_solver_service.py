@@ -34,6 +34,11 @@ from app.services.ae_validator import AEValidator
 from app.services.ct_validator import CTValidator
 from app.services.de_validator import DEValidator
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
+from app.services.response_depth import (
+    ResponseDepthPolicy,
+    depth_instruction,
+    policy_for,
+)
 from app.services.solver_boundary_policy import SolverBoundaryPolicy
 from app.services.solver_runtime_policy import (
     FallbackTracker,
@@ -49,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 
 class AcademicProblemSolverService:
-    """Adapts the universal graph to the existing TaskRunner contract."""
+    """Adapt the universal graph to the shared Agent request/result contract."""
 
     agent_id = "ACADEMIC_PROBLEM_SOLVER"
     completion_marker = "<!-- XZD_ACADEMIC_COMPLETE -->"
@@ -159,6 +164,7 @@ class AcademicProblemSolverService:
             )
         )
         request_id = str(request.options.get("request_id", request.task_id))
+        depth_policy = policy_for(request.options, "academic_solver")
         if boundary.intercepted:
             result = self.boundary_policy.apply(result, boundary)
             model_execution = {
@@ -176,6 +182,7 @@ class AcademicProblemSolverService:
                 complexity=complexity,
                 allow_route_fallback=fallback_tracker.count == 0,
                 knowledge_context=self._retrieved_context(context),
+                depth_policy=depth_policy,
             )
             node_timings.append(
                 self._node_timing(
@@ -206,7 +213,8 @@ class AcademicProblemSolverService:
             complexity=complexity,
             confidence=result.confidence,
             professional_conflicts=not professional_validation.valid,
-            explicitly_requested=bool(request.options.get("verify_answer")),
+            explicitly_requested=bool(request.options.get("verify_answer"))
+            or depth_policy.level.value == "deep",
         )
         verification_model_execution: dict[str, Any]
         if model_execution.get("output_status") == "partial":
@@ -295,6 +303,7 @@ class AcademicProblemSolverService:
         if answer != result.final_answer:
             result = result.model_copy(update={"final_answer": answer})
         structured = result.model_dump(mode="json")
+        structured["response_depth"] = depth_policy.metadata()
         if vision_execution:
             structured["vision_execution"] = vision_execution
         if model_execution:
@@ -831,7 +840,9 @@ class AcademicProblemSolverService:
         complexity: ProblemComplexity,
         allow_route_fallback: bool,
         knowledge_context: str = "",
+        depth_policy: ResponseDepthPolicy | None = None,
     ) -> tuple[Any, dict[str, Any]]:
+        depth_policy = depth_policy or policy_for({}, "academic_solver")
         model_task_type = self._generation_task_type(complexity)
         if self.model_service is None or not self._model_route_available(
             model_task_type
@@ -872,6 +883,7 @@ class AcademicProblemSolverService:
                 pack.build_planning_prompt(problem),
                 pack.build_solving_prompt(problem),
                 self._mode_instruction(problem),
+                depth_instruction(depth_policy),
                 "必须明确假设、关键方程和适用范围；不得补造题目事实。",
                 (
                     "先在内部完成推导、方向/符号检查和全部小问核对，再输出唯一的"
@@ -905,7 +917,7 @@ class AcademicProblemSolverService:
             max_tokens,
             max_continuations,
             configured_timeout_seconds,
-        ) = self._generation_limits()
+        ) = self._generation_limits(depth_policy)
         call_budget = self.runtime_policy.model_call_budget(
             complexity,
             task_mode=problem.task_mode,
@@ -1109,17 +1121,24 @@ class AcademicProblemSolverService:
             return cls.complex_model_task_type
         return cls.standard_model_task_type
 
-    def _generation_limits(self) -> tuple[int, int, float]:
+    def _generation_limits(
+        self, depth_policy: ResponseDepthPolicy | None = None
+    ) -> tuple[int, int, float]:
         if self.model_service is None:
             return 4096, 2, 240
         settings = getattr(self.model_service, "settings", None)
         if settings is None:
             return 4096, 2, 240
+        configured_max_tokens = min(
+            int(settings.academic_solver_max_tokens),
+            int(settings.iflytek_spark_max_tokens),
+        )
+        if depth_policy is not None:
+            configured_max_tokens = min(
+                configured_max_tokens, depth_policy.max_output_tokens
+            )
         return (
-            min(
-                int(settings.academic_solver_max_tokens),
-                int(settings.iflytek_spark_max_tokens),
-            ),
+            configured_max_tokens,
             int(settings.academic_solver_max_continuations),
             float(settings.academic_solver_timeout_seconds),
         )

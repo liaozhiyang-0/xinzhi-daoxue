@@ -46,12 +46,17 @@ def test_terminal_session_effects_are_idempotent_after_assistant_message(
                 options=dict(request_data.get("options", {})),
             )
             result = AgentResult.model_validate(stored_result)
-            usage = await app.state.task_runner.session_commit.commit(
-                db,
-                task=model,
-                request=request,
-                result=result,
-                conversation_bundle=None,
+            session_commit = (
+                app.state.task_engine.completion.terminal_boundary.session_commit
+            )
+            usage = await (
+                session_commit.commit(
+                    db,
+                    task=model,
+                    request=request,
+                    result=result,
+                    conversation_bundle=None,
+                )
             )
             await db.commit()
 

@@ -14,7 +14,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "agent_run_nodes",
-        sa.Column("target_id", sa.String(length=160), nullable=False, server_default=""),
+        sa.Column(
+            "target_id", sa.String(length=160), nullable=False, server_default=""
+        ),
     )
 
 

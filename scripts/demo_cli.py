@@ -23,7 +23,7 @@ def request_json(
         return value
 
 
-def preflight(base_url: str, with_cloud: bool) -> int:
+def preflight(base_url: str) -> int:
     checks: list[tuple[str, bool, str]] = []
     for name in (
         "home.html",
@@ -54,8 +54,6 @@ def preflight(base_url: str, with_cloud: bool) -> int:
         _check_rag_status(base_url, checks)
         _check_agent_status(base_url, checks)
 
-    if with_cloud and online:
-        _check_cloud(base_url, checks)
 
     print("芯智导学会议演示 Preflight")
     for name, passed, detail in checks:
@@ -107,10 +105,10 @@ def _check_rag_status(base_url: str, checks: list[tuple[str, bool, str]]) -> Non
                     ),
                 ),
                 (
-                    "LEARN Flow",
-                    bool(rag.get("learn_flow_configured")),
+                    "LEARN Runtime",
+                    bool(rag.get("local_ready")),
                     "configured"
-                    if rag.get("learn_flow_configured")
+                    if rag.get("local_ready")
                     else "not configured",
                 ),
             ]
@@ -134,7 +132,7 @@ def _check_agent_status(base_url: str, checks: list[tuple[str, bool, str]]) -> N
         )
         checks.append(
             (
-                "SOLVER_CT Flow",
+                "SOLVER_CT Runtime",
                 bool(solver.get("configured")),
                 "configured" if solver.get("configured") else "not configured",
             )
@@ -146,25 +144,8 @@ def _check_agent_status(base_url: str, checks: list[tuple[str, bool, str]]) -> N
         checks.append(("Agent 注册表", False, str(exc)))
 
 
-def _check_cloud(base_url: str, checks: list[tuple[str, bool, str]]) -> None:
-    try:
-        result = request_json(
-            f"{base_url}/api/v1/debug/rag/run",
-            payload={
-                "question": "为什么电容电压不能突变？",
-                "course_id": "CT",
-                "intent": "explain_concept",
-                "allow_cloud": True,
-            },
-        )
-        cloud = result.get("cloud") or {}
-        status = cloud.get("status") if isinstance(cloud, dict) else None
-        checks.append(("显式云端探测", status in {"success", "completed"}, str(status)))
-    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        checks.append(("显式云端探测", False, str(exc)))
 
-
-def legacy_start(port: int, with_cloud: bool) -> int:
+def legacy_start(port: int) -> int:
     print("[xzd] demo_cli.py start 已兼容转接到统一启动器。")
     command = [
         sys.executable,
@@ -173,8 +154,6 @@ def legacy_start(port: int, with_cloud: bool) -> int:
         "--port",
         str(port),
     ]
-    if with_cloud:
-        command.append("--with-cloud")
     return subprocess.run(command, cwd=ROOT, check=False).returncode
 
 
@@ -183,18 +162,12 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     check = subparsers.add_parser("preflight", help="检查会议演示依赖")
     check.add_argument("--base-url", default="http://127.0.0.1:8000")
-    check.add_argument(
-        "--with-cloud",
-        action="store_true",
-        help="显式执行一次真实 LEARN 探测，可能消耗额度",
-    )
     start = subparsers.add_parser("start", help="兼容入口；转接统一启动器")
     start.add_argument("--port", type=int, default=8000)
-    start.add_argument("--with-cloud", action="store_true")
     args = parser.parse_args()
     if args.command == "start":
-        return legacy_start(args.port, args.with_cloud)
-    return preflight(args.base_url.rstrip("/"), args.with_cloud)
+        return legacy_start(args.port)
+    return preflight(args.base_url.rstrip("/"))
 
 
 if __name__ == "__main__":

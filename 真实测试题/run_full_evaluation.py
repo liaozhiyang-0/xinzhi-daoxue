@@ -109,7 +109,6 @@ class RealQuestionEvaluationRunner(EvaluationRunner):
                     "input_type": case.input_type,
                     "evaluation_case_id": case.case_id,
                     "evaluation_mode": self.mode,
-                    "allow_cloud": self.mode in {"live", "real_model", "real_xingchen"},
                     **task_options,
                 },
             },

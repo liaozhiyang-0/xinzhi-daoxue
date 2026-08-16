@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -31,7 +32,14 @@ class ScenarioOutputContractService:
 
         contract = dict(raw_contract)
         expected_agent = str(contract.get("expected_agent", ""))
-        if result.fallback_used or expected_agent != result.agent_id:
+        scenario_id = str(
+            request.options.get("scenario_id") or request.scenario_id or ""
+        )
+        governance = scenario_id == "department_knowledge_governance_v1"
+        if (
+            (result.fallback_used and not governance)
+            or expected_agent != result.agent_id
+        ):
             result.structured_result["scenario_contract"] = {
                 **contract,
                 "status": "not_applied",
@@ -55,9 +63,6 @@ class ScenarioOutputContractService:
                 "external_retrieval",
                 result.structured_result.get("external_retrieval"),
             )
-        scenario_id = str(
-            request.options.get("scenario_id") or request.scenario_id or ""
-        )
         evidence = self._evidence(result)
         fields = self._build_fields(scenario_id, data, evidence, contract, request)
         data.update(fields)
@@ -75,16 +80,29 @@ class ScenarioOutputContractService:
         missing_fields = [key for key in expected_output if key not in present_fields]
         has_unavailable = any(
             isinstance(data.get(key), Mapping)
-            and data[key].get("status") == "not_available"
+            and data[key].get("status")
+            in {
+                "not_available",
+                "unknown",
+                "not_determinable",
+                "possible_conflict_needs_review",
+            }
             for key in expected_output
         )
         evidence_status = str(
             result.evidence_status or evidence.get("status", "insufficient")
         )
+        model_synthesis_required = governance and (
+            result.structured_result.get("mode") != "governance_model_generation"
+        )
         contract_status = (
-            "completed_with_gaps"
-            if has_unavailable or evidence_status != "sufficient"
-            else "completed"
+            "model_synthesis_required"
+            if model_synthesis_required
+            else (
+                "completed_with_gaps"
+                if has_unavailable or evidence_status != "sufficient"
+                else "completed"
+            )
         )
         result.structured_result["scenario_contract"] = {
             **contract,
@@ -95,6 +113,10 @@ class ScenarioOutputContractService:
             "missing_fields": missing_fields,
             "evidence_status": evidence_status,
             "evidence_source_refs": evidence.get("source_refs", []),
+            "model_synthesis": {
+                "status": "required" if model_synthesis_required else "completed",
+                "publishable": contract_status == "completed",
+            },
         }
         result.structured_result["scenario_id"] = scenario_id
         result.answer = self._append_contract_answer(
@@ -117,7 +139,7 @@ class ScenarioOutputContractService:
         if scenario_id == "student_learning_path_v1":
             return self._student_fields(data, evidence, review)
         if scenario_id == "department_knowledge_governance_v1":
-            return self._governance_fields(data, evidence, review)
+            return self._governance_fields(data, evidence, review, request)
         if scenario_id == "research_frontier_radar_v1":
             return self._research_fields(data, evidence, review)
         if scenario_id == "faculty_course_copilot_v1":
@@ -215,46 +237,140 @@ class ScenarioOutputContractService:
 
     @classmethod
     def _governance_fields(
-        cls, data: Mapping[str, Any], evidence: dict[str, Any], review: str
+        cls,
+        data: Mapping[str, Any],
+        evidence: dict[str, Any],
+        review: str,
+        request: AgentRequest,
     ) -> dict[str, Any]:
-        inventory = data.get("asset_inventory") or [
-            {
-                "title": item.get("title", "未命名资料"),
-                "source_ref": item.get("source_ref", ""),
-                "content_type": item.get("content_type", "unknown"),
-            }
-            for item in evidence.get("items", [])
-        ]
-        return {
-            "asset_inventory": inventory
-            or cls._not_available("当前检索未返回课程资产清单"),
-            "version_conflicts": data.get(
-                "version_conflicts", cls._not_available("未提供可核验的资产版本清单")
-            ),
-            "source_audit": data.get(
-                "source_audit",
-                {
-                    "status": evidence.get("status", "insufficient"),
-                    "sources": evidence.get("items", []),
-                    "missing": "来源所有者、版本和审批记录未在当前证据中提供。",
-                },
-            ),
-            "approval_status": data.get(
-                "approval_status",
-                cls._not_available("未提供审批记录，不能标记为已批准"),
-            ),
-            "publication_blockers": data.get(
-                "publication_blockers",
-                [
+        """Build governance fields strictly from the asset records in input."""
+
+        # Governance is an input-audit contract. Never let a model response or
+        # retrieval evidence invent assets that were not present in the request.
+        inventory = cls._assets_from_request(request)
+        if not inventory:
+            return {
+                "asset_inventory": cls._not_available("输入中未提供资产记录"),
+                "version_conflicts": cls._not_available("未提供可核验的资产版本清单"),
+                "source_audit": cls._not_available("输入中未提供资产来源"),
+                "approval_status": cls._not_available(
+                    "未提供审批记录，不能标记为已批准"
+                ),
+                "publication_blockers": [
                     "缺少可核验的版本清单",
                     "缺少来源所有者和审批记录",
                     "发布前必须由授权教师或管理员复核",
                 ],
-            ),
-            "traceability_links": data.get(
-                "traceability_links", evidence.get("source_refs", [])
-            ),
+                "traceability_links": [],
+                "publication_checklist_before": [
+                    "补齐资产清单、来源、审批状态和可追溯链接"
+                ],
+                "publication_checklist_after": ["核对已发布版本与访问权限"],
+                "rollback_checklist": ["恢复到已批准且可追溯的上一版本"],
+                "review_boundary": review,
+            }
+        names = [
+            str(item.get("title", "未知资产"))
+            for item in inventory
+            if isinstance(item, Mapping)
+        ]
+        missing = (
+            [f"{name}：来源" for name in names]
+            + [f"{name}：最近审批状态" for name in names]
+            + [f"{name}：可追溯链接" for name in names]
+        )
+        return {
+            "asset_inventory": inventory or cls._not_available("输入中未提供资产记录"),
+            "version_conflicts": cls._version_audit(inventory),
+            "source_audit": {
+                "status": "unknown",
+                "sources": [{"asset": name, "source": "未知"} for name in names],
+                "missing": missing,
+            },
+            "approval_status": {
+                "status": "unknown",
+                "by_asset": [
+                    {"asset": name, "last_approval_status": "未知"} for name in names
+                ],
+                "missing": "输入中未提供审批记录、审批人或权限信息",
+            },
+            "publication_blockers": [
+                "来源、最近审批状态和可追溯链接未知",
+                "讲义与练习题包的版本配套关系尚未核对",
+                "发布权限、审批人和审批记录未提供",
+                "未经授权教师或管理员复核不得发布",
+            ],
+            "traceability_links": [
+                {"asset": name, "link": "未知"} for name in names
+            ],
+            "publication_checklist_before": [
+                "核对每项资产标题、版本号与配套关系",
+                "补齐来源、审批状态、审批人/权限和可追溯链接",
+                "教师复核讲义与练习题包内容一致后再提交发布",
+            ],
+            "publication_checklist_after": [
+                "核对发布版本、可见范围和访问权限",
+                "记录发布人、时间、版本与追溯链接",
+                "抽查讲义与练习题包可访问且版本一致",
+            ],
+            "rollback_checklist": [
+                "冻结当前发布并记录触发原因",
+                "恢复到已批准且可追溯的上一版本",
+                "复核回滚后的权限、链接和课程引用",
+            ],
             "review_boundary": review,
+        }
+
+    @staticmethod
+    def _assets_from_request(request: AgentRequest) -> list[dict[str, str]]:
+        pattern = re.compile(
+            r"(讲义|练习题包|教师修订说明)\s*(?:《([^》]+)》\s*)?v\s*(\d+(?:\.\d+)?)",
+            re.IGNORECASE,
+        )
+        assets: list[dict[str, str]] = []
+        for kind, title, version in pattern.findall(request.input_text()):
+            assets.append(
+                {
+                    "asset_type": kind,
+                    "title": title.strip() or kind,
+                    "version": f"v{version}",
+                    "source": "未知",
+                    "last_approval_status": "未知",
+                    "traceability_link": "未知",
+                }
+            )
+        return assets
+
+    @staticmethod
+    def _version_audit(inventory: list[Any]) -> dict[str, Any]:
+        if len(inventory) < 2:
+            return {"status": "not_determinable", "items": []}
+        pairs: list[dict[str, Any]] = []
+        for index, left in enumerate(inventory[:-1]):
+            for right in inventory[index + 1 :]:
+                if not isinstance(left, Mapping) or not isinstance(right, Mapping):
+                    continue
+                pairs.append(
+                    {
+                        "assets": [
+                            {
+                                "title": str(left.get("title", "未知")),
+                                "version": str(left.get("version", "未知")),
+                            },
+                            {
+                                "title": str(right.get("title", "未知")),
+                                "version": str(right.get("version", "未知")),
+                            },
+                        ],
+                        "finding": (
+                            "版本号不同不能单独证明内容冲突，需核对发布时间、配套关系和引用范围"
+                        ),
+                    }
+                )
+        return {
+            "status": "possible_conflict_needs_review",
+            "items": pairs,
+            "missing": ["发布时间", "配套关系", "内容引用范围"],
         }
 
     @staticmethod
@@ -454,7 +570,9 @@ class ScenarioOutputContractService:
             rendered = (
                 value
                 if isinstance(value, str)
-                else json.dumps(value, ensure_ascii=False, indent=2)
+                else "```json\n"
+                + json.dumps(value, ensure_ascii=False, indent=2)
+                + "\n```"
             )
             lines.extend([f"### {key}", str(rendered)])
         if review_boundary:

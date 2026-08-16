@@ -146,6 +146,12 @@ class KnowledgeBaseService:
         self._document_frequency: Counter[str] = Counter()
         self._average_length = 1.0
         self._statuses: list[KnowledgeSourceStatus] = []
+        # Derived search data is kept outside ``IndexedChunk`` so the chunk
+        # contract stays stable while repeated queries avoid re-tokenizing the
+        # same title/content/image captions.
+        self._token_index: dict[str, set[str]] = {}
+        self._normalized_titles: dict[str, str] = {}
+        self._image_context_tokens: dict[str, Counter[str]] = {}
         self._metadata = {
             course_id: self._load_metadata(course_id) for course_id in COURSE_NAMES
         }
@@ -175,10 +181,16 @@ class KnowledgeBaseService:
                 )
 
             frequencies: Counter[str] = Counter()
+            token_index: defaultdict[str, set[str]] = defaultdict(set)
             for chunk in chunks:
                 frequencies.update(chunk.tokens.keys())
+                for token in chunk.tokens:
+                    token_index[token].add(chunk.chunk_id)
             self._chunks = chunks
             self._document_frequency = frequencies
+            self._token_index = dict(token_index)
+            self._normalized_titles = {}
+            self._image_context_tokens = {}
             self._average_length = (
                 sum(chunk.token_count for chunk in chunks) / len(chunks)
                 if chunks
@@ -270,9 +282,18 @@ class KnowledgeBaseService:
 
         with self._lock:
             total = max(1, len(self._chunks))
+            candidate_ids = {
+                chunk_id
+                for token in query_tokens
+                for chunk_id in self._token_index.get(token, ())
+            }
             scored: list[tuple[float, IndexedChunk, dict[str, float]]] = []
             for chunk in self._chunks:
-                if chunk.course_id not in selected or chunk.excluded_v2:
+                if (
+                    chunk.course_id not in selected
+                    or chunk.excluded_v2
+                    or chunk.chunk_id not in candidate_ids
+                ):
                     continue
                 components = self._score_v2(
                     chunk,
@@ -560,7 +581,6 @@ class KnowledgeBaseService:
         k1 = 1.5
         b = 0.75
         length_ratio = chunk.token_count / self._average_length
-        title_tokens = set(tokenize(chunk.title))
         for token, query_frequency in query_tokens.items():
             term_frequency = chunk.tokens.get(token, 0)
             if not term_frequency:
@@ -572,7 +592,7 @@ class KnowledgeBaseService:
             saturation = (term_frequency * (k1 + 1)) / (
                 term_frequency + k1 * (1 - b + b * length_ratio)
             )
-            title_boost = 1.35 if token in title_tokens else 1.0
+            title_boost = 1.35 if token in chunk.title_tokens else 1.0
             token_weight = 0.25 if len(token) == 1 and CJK_RE.fullmatch(token) else 1.0
             score += (
                 inverse_frequency
@@ -602,9 +622,12 @@ class KnowledgeBaseService:
             for token in chunk.filename_tokens
             if token in query_tokens
         )
-        image_context_tokens = Counter(
-            tokenize(" ".join(image.caption for image in chunk.related_images))
-        )
+        image_context_tokens = self._image_context_tokens.get(chunk.chunk_id)
+        if image_context_tokens is None:
+            image_context_tokens = Counter(
+                tokenize(" ".join(image.caption for image in chunk.related_images))
+            )
+            self._image_context_tokens[chunk.chunk_id] = image_context_tokens
         image_context_overlap = sum(
             query_tokens[token]
             for token in image_context_tokens
@@ -612,7 +635,11 @@ class KnowledgeBaseService:
         )
         exact_phrase = 0.0
         if len(normalized_query_text) >= 2:
-            if normalized_query_text in normalize_query(chunk.title):
+            normalized_title = self._normalized_titles.get(chunk.chunk_id)
+            if normalized_title is None:
+                normalized_title = normalize_query(chunk.title)
+                self._normalized_titles[chunk.chunk_id] = normalized_title
+            if normalized_query_text in normalized_title:
                 exact_phrase = 3.0
             elif normalized_query_text in chunk.normalized_content:
                 exact_phrase = 1.8
@@ -647,7 +674,7 @@ class KnowledgeBaseService:
                 >= self.settings.knowledge_max_hits_per_document
             ):
                 continue
-            signature = set(tokenize(chunk.content))
+            signature = set(chunk.content_tokens)
             if any(
                 signature and len(signature & prior) / len(signature | prior) >= 0.88
                 for prior in signatures[chunk.document_path]

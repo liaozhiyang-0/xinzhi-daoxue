@@ -24,7 +24,6 @@ SENSITIVE_KEYS = {
     "api_key",
     "authorization",
     "cookie",
-    "flow_id",
     "raw_prompt",
     "secret",
     "token",

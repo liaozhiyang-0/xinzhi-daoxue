@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from app.runtime.contracts import (
     AgentRun,
     AgentRunPlan,
     DecisionAction,
     RuntimeDecision,
+    RuntimeNodeStatus,
     RuntimeObservation,
     RuntimePlanProposal,
     RuntimePlanProposalStatus,
@@ -132,7 +133,19 @@ class RuntimeController:
                     agent_run,
                     node_ids=decision.node_ids,
                 )
-                if agent_run.status.value == "completed":
+                # ``PARTIAL`` is a terminal node state, but not a terminal
+                # Runtime outcome: the decision provider still needs to
+                # choose fail, ask-user, or replan from the verification
+                # facts. Returning here would silently turn an unverified
+                # result into a successful task.
+                has_partial_node = any(
+                    state.status == RuntimeNodeStatus.PARTIAL
+                    for state in agent_run.nodes.values()
+                )
+                if (
+                    agent_run.status.value == "completed"
+                    and not has_partial_node
+                ):
                     await self._checkpoint_after_executor(agent_run)
                     return agent_run
                 if (
@@ -166,7 +179,8 @@ class RuntimeController:
     async def _control(self, agent_run: AgentRun) -> RuntimeDecision | None:
         if self.control_provider is None:
             return None
-        return await _resolve(self.control_provider(agent_run))
+        value = await _resolve(self.control_provider(agent_run))
+        return cast(RuntimeDecision | None, value)
 
     async def _verify(self, agent_run: AgentRun) -> RuntimeObservation | None:
         if self.verifier is None:

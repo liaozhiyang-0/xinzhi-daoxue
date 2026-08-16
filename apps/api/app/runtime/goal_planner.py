@@ -66,7 +66,7 @@ class RuntimeGoalPlanner:
             raise RuntimeGoalPlannerError("goal_has_no_required_capabilities")
 
         # Runtime handlers can be registered by an enabled extension after the
-        # TaskRunner is constructed. Build the bounded alias index per plan so
+        # RuntimeTaskEngine is constructed. Build the bounded alias index per plan so
         # an explicit goal sees the current registry rather than a stale
         # startup snapshot.
         candidates = self._index(self._registry.descriptors())

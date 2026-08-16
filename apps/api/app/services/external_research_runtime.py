@@ -15,6 +15,7 @@ from app.contracts import (
     ExternalRetrievalPolicy,
     ExternalRetrievalResult,
 )
+from app.core.config import Settings
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -36,6 +37,7 @@ from app.runtime import (
 from app.services.external_retrieval import ExternalCitationValidator
 from app.services.external_retrieval_intent import ExternalRetrievalIntentRecognizer
 from app.services.research_frontier_service import ResearchFrontierService
+from app.services.response_depth import policy_for
 
 ExternalRetrievalExecutor = Callable[..., Awaitable[ExternalRetrievalResult]]
 ExternalEventHook = Callable[..., Any]
@@ -68,6 +70,7 @@ class ExternalResearchRuntimeService:
         external_event_hook: ExternalEventHook | None = None,
         external_enabled: bool,
         enabled: bool,
+        settings: Settings | None = None,
     ) -> None:
         self.research_frontier = research_frontier
         self.policy = policy
@@ -75,6 +78,11 @@ class ExternalResearchRuntimeService:
         self.external_event_hook = external_event_hook
         self.external_enabled = external_enabled
         self.enabled = enabled
+        # Keep the feature gate observable at runtime. Test fixtures and
+        # administrative toggles may update Settings after app construction;
+        # a copied boolean would otherwise leave the Runtime permanently
+        # disabled until the process is rebuilt.
+        self.settings = settings
         self.intent_recognizer = ExternalRetrievalIntentRecognizer()
         self.citation_validator = ExternalCitationValidator()
 
@@ -86,6 +94,11 @@ class ExternalResearchRuntimeService:
             and isinstance(options, dict)
             and options.get("execute", True) is True
         )
+
+    def _external_is_enabled(self) -> bool:
+        if self.settings is not None:
+            return bool(self.settings.external_retrieval_enabled)
+        return self.external_enabled
 
     def build_plan(
         self,
@@ -284,13 +297,13 @@ class ExternalResearchRuntimeService:
                 decision = self.intent_recognizer.classify(
                     request_for_attempt,
                     self.policy,
-                    gate_enabled=self.external_enabled,
+                    gate_enabled=self._external_is_enabled(),
                 )
             request_for_attempt = request_for_attempt.model_copy(
                 update={"options": options}
             )
             allowed = bool(
-                self.external_enabled
+                self._external_is_enabled()
                 and self.policy.enabled
                 and self.policy.source_scopes
                 and decision.decision == "retrieve"
@@ -334,9 +347,30 @@ class ExternalResearchRuntimeService:
                         "execution_key": node_state.execution_key,
                     },
                 )
+                depth_policy = policy_for(
+                    request_for_effect.options, "academic_search"
+                )
+                retrieval_policy = self.policy.model_copy(
+                    update={
+                        "max_results": min(
+                            self.policy.max_results, depth_policy.retrieval_limit
+                        ),
+                        "max_fetches": min(
+                            self.policy.max_fetches, depth_policy.evidence_limit
+                        ),
+                        "max_iterations": min(
+                            self.policy.max_iterations,
+                            1
+                            if depth_policy.level.value == "brief"
+                            else 2
+                            if depth_policy.level.value == "standard"
+                            else 3,
+                        ),
+                    }
+                )
                 result = await self.retrieve(
                     request_for_effect,
-                    self.policy,
+                    retrieval_policy,
                     allow_degraded_review=True,
                 )
             else:

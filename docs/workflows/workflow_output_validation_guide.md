@@ -16,4 +16,4 @@
 
 降级遵循 AgentDefinition：LEARN 使用本地检索回答；备课使用明确标记的模板；批改进入人工复核且不产生正式成绩；科研任务返回边界清晰的复核或计划。不会把所有失败都降级到 LEARN。
 
-空 `choices[0].delta.content` 必须抛出 `XingchenResponseParseError`。当前真实检查中 TEACH_01/02 正是此状态，Presentation 必须显示 fallback，不得显示“云端成功”。
+空模型输出必须抛出统一的 Provider 解析错误。Presentation 必须显示 fallback，不得把空回答标记为成功。

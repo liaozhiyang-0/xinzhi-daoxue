@@ -12,7 +12,6 @@ if (-not (Test-Path $Python)) {
 $env:APP_ENV = "test"
 $env:DEFAULT_AGENT_PROVIDER = "mock"
 $env:ALLOW_MOCK_FALLBACK = "true"
-$env:XINGCHEN_ENABLED = "false"
 
 Write-Host "[xzd] Validating configuration..."
 & $Python scripts/validate_config.py

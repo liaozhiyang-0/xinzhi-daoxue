@@ -86,10 +86,10 @@ LLM 只负责问题结构化、候选方法、解释和报告草稿；数值计�
 
 ## 当前接入结果与剩余工作
 
-1. 已由版本化适配器把 v2 请求映射到 TaskRunner；保留 `request_id`、`session_id`、`evidence_ids` 和数据集 checksum 边界，并在 Xingchen 配置存在时验证 v2 Provider 调用数为 0。
+1. 已由版本化适配器把 v2 请求映射到 TaskRunner；保留 `request_id`、`session_id`、`evidence_ids` 和数据集 checksum 边界，并验证 v2 不会绕过本地 Runtime 调用外部工作流。
 2. `execute=true` 的 CSV/TSV/JSON/XLSX/Parquet 已接入受控附件路径：任务只能读取文件服务已登记的附件，执行前复制到配置化临时目录，结果写入配置化 Artifact 根目录下的任务隔离目录；用户提交的服务器路径和任意 `output_dir` 不会被使用。SSE/任务响应不广播原始行数据，任务读取会剥离 source/output 绝对路径。
 3. `/workspace?scenario_id=research_data_workbench_v1&analysis_v2=1` 已增加研究问题、研究设计、分析目标、假设、变量角色、数据清单、数据字典、重采样和多重比较入口；没有结构化主数据时默认 `execute=false`，上传 CSV/TSV/JSON/XLSX/Parquet 后由前端自动生成受控 `data_manifest` 并启用本地执行。用户问题会同时进入 `research_question`、`canonical_input.text` 和 `canonical_input.data_description`；对于未填写的实验比较字段，前端根据用户问题与已提取的数据表头补齐设计、效应目标、结局变量和分组变量。V2 受控本地执行不依赖云端模型密钥，前端不接收服务器绝对路径。
-4. 合成测试已覆盖正常四类 MVP、缺失、形状不一致、计划篡改、证据角色隔离、Xingchen 配置边界和旧治理兼容；真实本地 API 与前端资源冒烟已执行。
+4. 合成测试已覆盖正常四类 MVP、缺失、形状不一致、计划篡改、证据角色隔离、本地执行边界和旧治理兼容；真实本地 API 与前端资源冒烟已执行。
 
 ## 可复现本地演示
 
@@ -107,4 +107,4 @@ $env:PYTHONPATH = "apps/api"
 
 剩余工作是生产化证据而非当前 V2 合同的绕过：以授权试点验证复杂真实设计、复现日志、隐私/伦理流程和商业证据；更复杂的重复测量、多因子设计和长期审查留存仍需按试点需求扩展。
 
-当前适配器约定：`AgentRequest.options.research_analysis_v2` 才会启用 v2 分支；默认 `RESEARCH_03_DATA_ANALYSIS_V1` 行为保持不变。`execute=false` 只冻结计划，`execute=true` 必须提供授权 manifest、checksum 和已登记附件；Artifact 与临时目录由 `RESEARCH_ANALYSIS_ARTIFACT_ROOT`、`RESEARCH_ANALYSIS_TEMP_ROOT` 配置。模型主导模式默认优先调用 `DATA_ANALYSIS_LOCAL_V1`，把研究请求和受控表格内容以有界文本发送给 Qwen，路由失败时按 `data_analysis_explanation` 配置尝试 Spark。系统只负责解析、脱敏、截断和结果合同校验，不替代模型选择分析方法；模型输出必须标记人工复核，模型不可用或输出不合规时才回退到本地确定性执行器。`model_direct=false` 可显式关闭模型主导模式；v2 执行失败也不回退到星辰服务，而是返回结构化失败状态。
+当前适配器约定：`AgentRequest.options.research_analysis_v2` 才会启用 v2 分支；默认 `RESEARCH_03_DATA_ANALYSIS_V1` 行为保持不变。`execute=false` 只冻结计划，`execute=true` 必须提供授权 manifest、checksum 和已登记附件；Artifact 与临时目录由 `RESEARCH_ANALYSIS_ARTIFACT_ROOT`、`RESEARCH_ANALYSIS_TEMP_ROOT` 配置。模型主导模式默认优先调用 `DATA_ANALYSIS_LOCAL_V1`，把研究请求和受控表格内容以有界文本发送给 Qwen，路由失败时按 `data_analysis_explanation` 配置尝试 Spark。系统只负责解析、脱敏、截断和结果合同校验，不替代模型选择分析方法；模型输出必须标记人工复核，模型不可用或输出不合规时才回退到本地确定性执行器。`model_direct=false` 可显式关闭模型主导模式；v2 执行失败返回结构化失败状态，不启动外部工作流回退。

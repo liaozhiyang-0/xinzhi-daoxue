@@ -125,7 +125,7 @@ def test_agent_debug_api_is_redacted_and_runs_contracts(settings: Settings) -> N
         )
         assert mock.status_code == 200
         assert mock.json()["mock_used"] is True
-        assert mock.json()["cloud_called"] is False
+        assert mock.json()["remote_provider_called"] is False
 
         contracts = client.post(
             "/api/v1/debug/agents/TEACH_01_LESSON_PREP_V1/contract-tests"
@@ -147,28 +147,6 @@ def test_production_debug_actions_are_disabled(settings: Settings) -> None:
             json={"question": "不会执行", "allow_mock": True},
         )
         assert response.status_code == 403
-
-
-def test_compare_mock_with_redacted_cloud_sample(settings: Settings) -> None:
-    app = create_app(settings.model_copy(update={"allow_agent_mocks": True}))
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/debug/agents/TEACH_01_LESSON_PREP_V1/compare",
-            json={
-                "question": "备课",
-                "allow_mock": True,
-                "cloud_sample": {
-                    "business_data": {
-                        "learning_objectives": [],
-                        "lesson_flow": [],
-                    }
-                },
-            },
-        )
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["cloud_called"] is False
-        assert payload["semantic_quality_compared"] is False
 
 
 def test_all_active_workflow_fixture_sets_pass(settings: Settings) -> None:

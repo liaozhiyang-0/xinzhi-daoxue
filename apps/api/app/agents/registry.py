@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,7 +9,6 @@ import yaml
 
 from app.contracts.external_retrieval import ExternalRetrievalPolicy
 from app.core.config import PROJECT_ROOT, Settings
-from app.core.internal_workflows import internal_workflow_models_configured
 
 VALID_PARSERS = {
     "json",
@@ -63,7 +61,7 @@ VALID_INPUT_MODES = {
     "image",
     "pdf",
 }
-VALID_EXECUTION_MODES = {"local", "xingchen", "hybrid", "disabled"}
+VALID_EXECUTION_MODES = {"local", "disabled"}
 VALID_PUBLICATION_STATUSES = {"published", "local"}
 VALID_VALIDATORS = {
     "generic",
@@ -102,7 +100,6 @@ VALID_OUTPUT_ROOTS = {
     "parse_status",
     "request_id",
 }
-FLOW_ENV_RE = re.compile(r"^XINGCHEN_[A-Z0-9_]+_FLOW_ID$")
 _DEPRECATION_WARNED = False
 
 
@@ -131,7 +128,6 @@ UniqueKeyLoader.add_constructor(
 @dataclass(frozen=True, slots=True)
 class ProviderDefinition:
     type: str
-    flow_env_key: str | None
     timeout_seconds: float
     max_retries: int
     parser_type: str
@@ -223,7 +219,6 @@ class AgentDefinition:
     enabled: bool
     publication_status: str
     mode: str
-    flow_env: str | None
     course_ids: frozenset[str]
     supports: frozenset[str]
     fallback_agent_id: str | None
@@ -270,7 +265,7 @@ class RoutingRule:
 
 
 class AgentRegistry:
-    """Validated, read-only view of all local and cloud workflow definitions."""
+    """Validated, read-only view of all local Agent definitions."""
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or PROJECT_ROOT / "agent_configs" / "registry.yaml"
@@ -321,11 +316,7 @@ class AgentRegistry:
             provider_raw = raw.get("provider", "local")
             if isinstance(provider_raw, str) and any(
                 key in raw
-                for key in (
-                    "flow_env",
-                    "knowledge_top_k",
-                    "knowledge_context_mode",
-                )
+                for key in ("knowledge_top_k", "knowledge_context_mode")
             ):
                 deprecated_agents.append(agent_id)
             provider_payload = provider_raw if isinstance(provider_raw, dict) else {}
@@ -333,10 +324,6 @@ class AgentRegistry:
                 provider_payload.get(
                     "type", provider_raw if isinstance(provider_raw, str) else "local"
                 )
-            )
-            flow_env = (
-                str(provider_payload.get("flow_env_key", raw.get("flow_env", "")))
-                or None
             )
             parser_type = str(provider_payload.get("parser_type", "plain_text"))
             parser_options = provider_payload.get("parser_options", {})
@@ -420,7 +407,6 @@ class AgentRegistry:
                 enabled=bool(raw.get("enabled", True)),
                 publication_status=str(raw.get("publication_status", "local")),
                 mode=str(raw.get("mode", "provider")),
-                flow_env=flow_env,
                 course_ids=courses,
                 supports=input_modes,
                 fallback_agent_id=fallback_agent_id,
@@ -443,7 +429,6 @@ class AgentRegistry:
                 schema_version=str(raw.get("schema_version", "1")),
                 provider_config=ProviderDefinition(
                     type=provider_type,
-                    flow_env_key=flow_env,
                     timeout_seconds=float(provider_payload.get("timeout_seconds", 45)),
                     max_retries=max(
                         0, min(1, int(provider_payload.get("max_retries", 0)))
@@ -540,7 +525,11 @@ class AgentRegistry:
                         str(item)
                         for item in fallback_raw.get(
                             "trigger_on",
-                            ["cloud_timeout", "cloud_http_error", "cloud_parse_error"],
+                            [
+                                "provider_timeout",
+                                "provider_error",
+                                "provider_parse_error",
+                            ],
                         )
                     ),
                     target_agent_id=fallback_agent_id,
@@ -563,7 +552,7 @@ class AgentRegistry:
                         if provider_type == "local"
                         else "disabled"
                         if not bool(raw.get("enabled", True))
-                        else "xingchen",
+                        else "disabled",
                     )
                 ),
                 local_handler=str(raw.get("local_handler", "")),
@@ -692,17 +681,6 @@ class AgentRegistry:
                     f"Agent output target 无效: {definition.agent_id}: "
                     f"{output_rule.target}"
                 )
-        if definition.provider == "xingchen" and definition.flow_env:
-            if not FLOW_ENV_RE.fullmatch(definition.flow_env):
-                raise ValueError(f"Agent Flow 环境变量名称无效: {definition.agent_id}")
-        if (
-            definition.enabled
-            and definition.provider == "xingchen"
-            and definition.publication_status != "published"
-        ):
-            raise ValueError(
-                f"启用的星辰 Agent 必须为 published: {definition.agent_id}"
-            )
         mapped_sources = {item.source for item in definition.input_rules}
         missing = definition.input_contract.required - mapped_sources
         if missing:
@@ -763,40 +741,17 @@ class AgentRegistry:
     def list_agents(self) -> tuple[AgentDefinition, ...]:
         return tuple(self._agents.values())
 
-    def resolve_flow_id(self, agent_id: str, settings: Settings) -> str | None:
-        return settings.resolve_flow_env(self.get(agent_id).flow_env)
-
     def is_runtime_available(self, agent_id: str, settings: Settings) -> bool:
         agent = self.get(agent_id)
         if not self.is_execution_eligible(agent_id):
             return False
-        if internal_workflow_models_configured(settings, agent_id):
-            return True
-        if agent.provider == "local":
-            return True
-        return bool(
-            agent.provider == "xingchen"
-            and agent.publication_status == "published"
-            and settings.xingchen_enabled
-            and settings.xingchen_api_key.get_secret_value()
-            and settings.xingchen_api_secret.get_secret_value()
-            and self.resolve_flow_id(agent_id, settings)
-        )
+        return agent.provider == "local" and self.has_local_execution_contract(agent_id)
 
     def is_configured(self, agent_id: str, settings: Settings) -> bool:
         agent = self.get(agent_id)
         if not self.is_execution_eligible(agent_id):
             return False
-        if internal_workflow_models_configured(settings, agent_id):
-            return True
-        if agent.provider == "local":
-            return True
-        return bool(
-            agent.provider == "xingchen"
-            and settings.xingchen_api_key.get_secret_value()
-            and settings.xingchen_api_secret.get_secret_value()
-            and self.resolve_flow_id(agent_id, settings)
-        )
+        return agent.provider == "local"
 
     def is_execution_eligible(self, agent_id: str) -> bool:
         """Return whether an Agent may be selected for execution."""
@@ -814,12 +769,12 @@ class AgentRegistry:
         agent = self.get(agent_id)
         return bool(
             self.is_execution_eligible(agent_id)
-            and agent.execution_mode in {"local", "hybrid"}
+            and agent.execution_mode == "local"
             and agent.local_handler
         )
 
     def allows_unconfigured_route(self, agent_id: str) -> bool:
-        """Return whether the local/hybrid fallback contract permits routing."""
+        """Return whether the local fallback contract permits routing."""
 
         agent = self.get(agent_id)
         return bool(

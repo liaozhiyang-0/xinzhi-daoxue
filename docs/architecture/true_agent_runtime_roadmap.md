@@ -226,7 +226,7 @@ Phase 3 的剩余工作是业务接入与发布证据：真实 Provider/检索�
 - 不直接把旧的三节点元数据计划重新执行，因为 `_retrieve_external()` 已经包含规划、搜索、审阅和修正。
 - 先把旧复合链封装成一个兼容 handler，证明 Runtime 能承载现有结果。
 - 再逐步拆出独立 handler，每拆一个就增加“不重复 Provider 调用”和结果等价测试。
-- 只有已发布且 Flow ID 配置完整的 Agent 才能执行真实星辰调用。
+- 只有通过本地 Runtime readiness 和模型 Provider 配置校验的 Agent 才能进入真实模型验收。
 
 退出条件：研究任务能在至少一次观察不足时触发重规划，并留下完整证据链和可恢复 checkpoint。
 
@@ -267,7 +267,7 @@ Phase 3 的剩余工作是业务接入与发布证据：真实 Provider/检索�
 
 - 直接重写或修改 `SOLVER_CT v1.0`。
 - 在路由中同步执行 Provider，破坏任务创建非阻塞约束。
-- 把原始星辰 YAML、真实 API key、Bearer token 或学生隐私写入仓库。
+- 把历史基线原始输入、真实 API key、Bearer token 或学生隐私写入仓库。
 - 用一次成功的 mock 结果替代真实 Provider 验证。
 - 在没有 checkpoint、幂等策略和 SSE 测试的情况下切换生产默认路径。
 
@@ -342,7 +342,7 @@ Research Analysis V2 now exercises the observe -> decide -> act -> verify -> rep
 Phase 5/6 work is still in progress. Runtime suspension now exits the worker without converting `waiting_input`, `waiting_approval`, or `paused` into task failure; research results can be reconstructed from durable observations after restart. The remaining gates are richer event ordering/reconnect coverage, a versioned evaluation corpus, and the TaskRunner resume fast path.
 Runtime node states now persist a stable execution key and effect status. Handler descriptors declare `side_effecting` and `replay_safe`; safe handlers may be replayed with the same key, while an in-flight non-replay-safe side effect is paused with `in_flight_execution_requires_reconciliation` instead of being invoked a second time. This safety policy is persisted by migration `20260808_0019`.
 
-The current resume path skips repeated overall routing, context assembly, external retrieval, and RAG retrieval when a queued task resumes from a waiting Runtime state. The remaining optimization is to split TaskRunner's compatibility preparation from Runtime execution and result presentation more cleanly, so all already-checkpointed preparation can be bypassed without relying on legacy local variables. No real Xingchen flow is enabled by this change.
+The current resume path skips repeated overall routing, context assembly, external retrieval, and RAG retrieval when a queued task resumes from a waiting Runtime state. The remaining optimization is to split TaskRunner's compatibility preparation from Runtime execution and result presentation more cleanly, so all already-checkpointed preparation can be bypassed without relying on legacy local variables. No external workflow is enabled by this change.
 
 The first result-pipeline extraction is now in place through
 `TaskResultPresentationService`. Deterministic business rendering, execution and
@@ -559,7 +559,7 @@ cannot redirect a registered handler to an arbitrary target; each sub-agent
 call also receives a deterministic child execution key and bounded parent/run
 metadata. The generic `agent.internal` adapter remains available to isolated
 compatibility tests, but the production application wiring uses the typed
-allowlist and does not auto-register Xingchen Agents. The next required step
+allowlist and does not auto-register external workflow Agents. The next required step
 is to migrate one real business DAG to a typed sub-agent node and verify its
 child trace, budget consumption, recovery behavior, and end-to-end SSE events.
 

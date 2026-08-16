@@ -18,7 +18,7 @@
 - “已发布”只表示教师确认该版本可用于课程知识空间，不表示模型答案正确，也不表示向量索引已完成。
 - “Mock”只用于离线联调，所有 Mock 结果都必须显式标识。
 - 任务创建仍然非阻塞；资料解析属于上传后的资料处理，不在任务路由中直接执行 Provider。
-- 原始星辰 YAML、真实 API Key、Flow ID 和未脱敏学生数据不进入公共目录。
+- 历史基线原始输入、真实 API Key 和未脱敏学生数据不进入公共目录。
 
 ## 任务分解
 
@@ -36,7 +36,6 @@
 $env:APP_ENV = "test"
 $env:DEFAULT_AGENT_PROVIDER = "mock"
 $env:ALLOW_MOCK_FALLBACK = "true"
-$env:XINGCHEN_ENABLED = "false"
 .\.venv\Scripts\python.exe scripts\validate_config.py
 .\.venv\Scripts\python.exe scripts\check_sensitive_files.py
 .\.venv\Scripts\python.exe -m ruff check .
@@ -46,7 +45,7 @@ $env:XINGCHEN_ENABLED = "false"
 git diff --check
 ```
 
-真实模型、真实星辰和 Docker 验收必须另行显式执行并单独报告，不能由上述离线命令替代。
+真实模型和 Docker 验收必须另行显式执行并单独报告，不能由上述离线命令替代。
 ## P0-1/P0-2 接口用法
 
 课程资料必须带课程、逻辑资料标识和版本号，并通过现有文件上传链路解析为 chunks：

@@ -126,6 +126,21 @@ def test_explicit_opt_in_canary_works_without_agent_allowlist() -> None:
     assert decision.explicit_opt_in is True
 
 
+def test_registered_runtime_candidate_canary_launches_without_option() -> None:
+    policy = RuntimeLaunchPolicy()
+
+    decision = policy.resolve(
+        "GENERAL_QUESTION_V1",
+        _request(),
+        lifecycle_enabled=True,
+        runtime_option_key="general_question_runtime",
+    )
+
+    assert decision.mode == RuntimeLaunchMode.CANARY
+    assert decision.source == "runtime_registry_candidate"
+    assert decision.reason == "registered_runtime_auto_candidate"
+
+
 def test_explicit_opt_in_cannot_bypass_required_release_gate() -> None:
     policy = RuntimeLaunchPolicy(
         release_registry=RuntimeCanaryReleaseRegistry(),
@@ -143,6 +158,27 @@ def test_explicit_opt_in_cannot_bypass_required_release_gate() -> None:
     assert decision.mode == RuntimeLaunchMode.LEGACY
     assert decision.source == "canary_release_gate"
     assert decision.reason == "canary_release_evidence_missing"
+
+
+def test_local_runtime_explicit_opt_in_bypasses_cloud_release_gate() -> None:
+    policy = RuntimeLaunchPolicy(
+        release_registry=RuntimeCanaryReleaseRegistry(),
+        release_gate_required=True,
+        local_agents={"TEACH_01_LESSON_PREP_V1"},
+    )
+
+    decision = policy.resolve(
+        "TEACH_01_LESSON_PREP_V1",
+        _request({"lesson_prep_runtime": {"execute": True}}),
+        lifecycle_enabled=True,
+        runtime_option_key="lesson_prep_runtime",
+        expected_agent_version=AGENT_VERSION,
+        expected_runtime_plan_version=RUNTIME_PLAN_VERSION,
+    )
+
+    assert decision.mode == RuntimeLaunchMode.DEFAULT
+    assert decision.source == "explicit_opt_in"
+    assert decision.explicit_opt_in is True
 
 
 def test_configured_runtime_mode_fails_closed_without_canary_artifact() -> None:

@@ -8,9 +8,6 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
-XINGCHEN_TIMEOUT_DEFAULT_SECONDS = 300
-XINGCHEN_TIMEOUT_MIN_SECONDS = 30
-XINGCHEN_TIMEOUT_MAX_SECONDS = 600
 
 
 class Settings(BaseSettings):
@@ -162,41 +159,8 @@ class Settings(BaseSettings):
     minio_bucket: str = "xzd-files"
     minio_secure: bool = False
 
-    default_agent_provider: Literal["mock", "xingchen"] = "mock"
+    default_agent_provider: Literal["local", "mock"] = "local"
     allow_mock_fallback: bool = True
-    xingchen_enabled: bool = False
-    xingchen_workflows_default_enabled: bool = False
-    xingchen_publication_status: str = "published"
-    xingchen_base_url: str = "https://xingchen-api.xf-yun.com"
-    xingchen_workflow_path: str = "/workflow/v1/chat/completions"
-    xingchen_upload_path: str = "/workflow/v1/upload_file"
-    xingchen_api_key: SecretStr = SecretStr("")
-    xingchen_api_secret: SecretStr = SecretStr("")
-    xingchen_solver_ct_flow_id: str = ""
-    xingchen_fallback_flow_id: str = ""
-    xingchen_fallback_router_flow_id: str = ""
-    xingchen_knowledge_qa_flow_id: str = ""
-    xingchen_lesson_prep_flow_id: str = ""
-    xingchen_assignment_review_flow_id: str = ""
-    xingchen_academic_writing_flow_id: str = ""
-    xingchen_data_analysis_flow_id: str = ""
-    xingchen_uid: str = "local-demo-user"
-    xingchen_timeout_seconds: float = Field(
-        default=XINGCHEN_TIMEOUT_DEFAULT_SECONDS,
-        ge=XINGCHEN_TIMEOUT_MIN_SECONDS,
-        le=XINGCHEN_TIMEOUT_MAX_SECONDS,
-    )
-    xingchen_connect_timeout_seconds: float = Field(default=10, gt=0, le=120)
-    xingchen_read_timeout_seconds: float = Field(default=300, gt=0, le=600)
-    xingchen_write_timeout_seconds: float = Field(default=30, gt=0, le=120)
-    xingchen_pool_timeout_seconds: float = Field(default=10, gt=0, le=120)
-    xingchen_max_connections: int = Field(default=20, ge=1, le=100)
-    xingchen_max_keepalive_connections: int = Field(default=10, ge=1, le=100)
-    cloud_concurrency_limit: int = Field(default=4, ge=1, le=32)
-    cloud_circuit_failure_threshold: int = Field(default=3, ge=1, le=20)
-    cloud_circuit_reset_seconds: float = Field(default=30, gt=0, le=600)
-    xingchen_use_local_kb_context: bool = True
-    xingchen_bot_id: str = ""
     workflow_default_timeout_seconds: int = Field(default=120, ge=1, le=600)
     workflow_max_retries: int = Field(default=1, ge=0, le=3)
 
@@ -490,7 +454,6 @@ class Settings(BaseSettings):
     # Product freeze: keep the data-analysis path reversible but unavailable.
     data_analysis_enabled: bool = False
     enable_local_solver_ct: bool = False
-    enable_xingchen_fallback: bool = False
 
     vision_enabled: bool = False
     vision_endpoint: str = ""
@@ -542,21 +505,7 @@ class Settings(BaseSettings):
     task_worker_lock_ttl_seconds: int = Field(default=120, ge=30, le=3600)
     task_lease_seconds: int = Field(default=120, ge=30, le=3600)
     task_recovery_enabled: bool = True
-    agent_runtime_shadow_enabled: bool = False
-    agent_runtime_launch_modes: str = ""
-    agent_runtime_research_enabled: bool = False
-    # Academic writing has its own Runtime gate so enabling it does not
-    # implicitly enable the isolated research-analysis adapter.
-    agent_runtime_academic_writing_enabled: bool = False
-    agent_runtime_solver_enabled: bool = False
-    agent_runtime_general_enabled: bool = False
-    agent_runtime_general_auto_enabled: bool = False
-    agent_runtime_general_canary_enabled: bool = False
-    agent_runtime_teaching_enabled: bool = False
-    agent_runtime_teaching_interaction_enabled: bool = False
-    agent_runtime_learning_progress_enabled: bool = False
-    agent_runtime_knowledge_qa_enabled: bool = False
-    agent_runtime_external_research_enabled: bool = False
+    task_max_concurrency: int = Field(default=4, ge=1, le=64)
     agent_runtime_plan_proposals_enabled: bool = False
     agent_runtime_goal_capabilities: str = ""
     agent_runtime_canary_artifacts: str = ""
@@ -626,35 +575,6 @@ class Settings(BaseSettings):
     @property
     def active_database_url(self) -> str:
         return self.test_database_url if self.app_env == "test" else self.database_url
-
-    @property
-    def xingchen_runtime_available(self) -> bool:
-        return self.xingchen_enabled and all(
-            (
-                self.xingchen_api_key.get_secret_value(),
-                self.xingchen_api_secret.get_secret_value(),
-                self.xingchen_solver_ct_flow_id,
-            )
-        )
-
-    def resolve_flow_env(self, env_name: str | None) -> str | None:
-        """Resolve an allow-listed Flow setting without reading process env directly."""
-
-        if (
-            not env_name
-            or not env_name.startswith("XINGCHEN_")
-            or not env_name.endswith("_FLOW_ID")
-        ):
-            return None
-        if env_name == "XINGCHEN_FALLBACK_FLOW_ID":
-            value = (
-                self.xingchen_fallback_flow_id or self.xingchen_fallback_router_flow_id
-            )
-        else:
-            value = getattr(self, env_name.lower(), "")
-        if not isinstance(value, str):
-            return None
-        return value.strip() or None
 
     @property
     def knowledge_paths(self) -> dict[str, Path]:

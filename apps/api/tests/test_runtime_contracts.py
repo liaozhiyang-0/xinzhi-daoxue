@@ -21,6 +21,7 @@ from app.runtime import (
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
     RuntimeNode,
+    RuntimeNodeActivation,
     RuntimeNodeError,
     RuntimeNodeStatus,
     RuntimeObservation,
@@ -198,6 +199,100 @@ def test_plan_executor_runs_dependencies_and_retries_failed_node() -> None:
     )
     assert calls == ["first", "second-1", "second-2"]
     assert run.status == RuntimeRunStatus.COMPLETED
+
+
+def test_plan_executor_completes_after_explicit_recovery_node() -> None:
+    run_plan = AgentRunPlan(
+        plan_id="plan-explicit-recovery",
+        goal="主路径失败时执行声明式恢复",
+        nodes=[
+            RuntimeNode(
+                node_id="primary",
+                node_type="agent",
+                handler_id="primary.handler",
+            ),
+            RuntimeNode(
+                node_id="fallback",
+                node_type="agent",
+                handler_id="fallback.handler",
+                depends_on=["primary"],
+                activation=RuntimeNodeActivation.ANY_FAILED,
+                recovery_for=["primary"],
+            ),
+        ],
+    )
+    run = AgentRun(
+        run_id="run-explicit-recovery",
+        task_id="task-explicit-recovery",
+        goal=run_plan.goal,
+        plan=run_plan,
+    )
+
+    def primary(_run: AgentRun, _node: RuntimeNode) -> RuntimeObservation:
+        raise RuntimeNodeError("primary_unavailable")
+
+    def fallback(_run: AgentRun, _node: RuntimeNode) -> RuntimeObservation:
+        return RuntimeObservation(node_id="fallback", facts={"recovered": True})
+
+    asyncio.run(
+        PlanExecutor(
+            {
+                "primary.handler": primary,
+                "fallback.handler": fallback,
+            }
+        ).execute(run)
+    )
+
+    assert run.nodes["primary"].status == RuntimeNodeStatus.FAILED
+    assert run.nodes["fallback"].status == RuntimeNodeStatus.SUCCEEDED
+    assert run.status == RuntimeRunStatus.COMPLETED
+
+
+def test_success_only_node_is_blocked_after_failed_dependency() -> None:
+    run_plan = AgentRunPlan(
+        plan_id="plan-skip-success-only",
+        goal="失败后不运行成功分支",
+        nodes=[
+            RuntimeNode(
+                node_id="primary",
+                node_type="agent",
+                handler_id="primary.handler",
+            ),
+            RuntimeNode(
+                node_id="success_only",
+                node_type="agent",
+                handler_id="success.handler",
+                depends_on=["primary"],
+            ),
+        ],
+    )
+    run = AgentRun(
+        run_id="run-skip-success-only",
+        task_id="task-skip-success-only",
+        goal=run_plan.goal,
+        plan=run_plan,
+    )
+    calls: list[str] = []
+
+    def primary(_run: AgentRun, _node: RuntimeNode) -> RuntimeObservation:
+        raise RuntimeNodeError("primary_unavailable")
+
+    def success(_run: AgentRun, _node: RuntimeNode) -> RuntimeObservation:
+        calls.append("success")
+        return RuntimeObservation(node_id="success_only")
+
+    asyncio.run(
+        PlanExecutor(
+            {
+                "primary.handler": primary,
+                "success.handler": success,
+            }
+        ).execute(run)
+    )
+
+    assert calls == []
+    assert run.nodes["success_only"].status == RuntimeNodeStatus.BLOCKED
+    assert run.status == RuntimeRunStatus.FAILED
 
 
 def test_plan_executor_enforces_call_budget_before_handler_invocation() -> None:
@@ -986,6 +1081,10 @@ def test_agent_run_repository_persists_replanned_nodes(tmp_path) -> None:
 def test_runtime_lifecycle_wraps_legacy_task_without_duplicate_execution(
     tmp_path,
 ) -> None:
+    pytest.skip(
+        "legacy workflow wrapping was removed; Runtime requires a registered plan"
+    )
+
     async def scenario() -> None:
         engine = create_async_engine(
             f"sqlite+aiosqlite:///{tmp_path / 'lifecycle.db'}"

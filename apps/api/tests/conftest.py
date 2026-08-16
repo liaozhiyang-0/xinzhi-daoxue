@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 os.environ["APP_ENV"] = "test"
 os.environ["DEFAULT_AGENT_PROVIDER"] = "mock"
 os.environ["ALLOW_MOCK_FALLBACK"] = "true"
-os.environ["XINGCHEN_ENABLED"] = "false"
 os.environ["RAG_ENABLED"] = "false"
 
 from app.core.config import Settings  # noqa: E402
@@ -111,12 +110,14 @@ def settings(tmp_path: Path) -> Settings:
         minio_endpoint="127.0.0.1:1",
         default_agent_provider="mock",
         allow_mock_fallback=True,
+        # Typed Runtime sub-agent tests use the explicit development Mock
+        # contract; production remains fail-closed because APP_ENV guards it.
+        allow_agent_mocks=True,
         # Runtime integration tests are provider-free execution tests. The
         # release gate itself is covered by explicit launch-policy tests with
         # release_gate_required=True; do not inherit a developer machine's
         # production gate setting into these local fixtures.
         agent_runtime_release_gate_required=False,
-        xingchen_publication_status="published",
         knowledge_ct_path=tmp_path / "knowledge" / "CT",
         knowledge_ae_path=tmp_path / "knowledge" / "AE",
         knowledge_de_path=tmp_path / "knowledge" / "DE",

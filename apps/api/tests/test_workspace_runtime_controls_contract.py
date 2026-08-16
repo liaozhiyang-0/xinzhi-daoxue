@@ -110,7 +110,7 @@ def test_pending_plan_proposal_is_not_exposed_as_side_effect_approval() -> None:
 def test_task_runtime_controls_endpoint_uses_public_projection(
     api: Any, app: Any
 ) -> None:
-    app.state.task_runner.runtime_lifecycle.enabled = True
+    app.state.task_engine.runtime_lifecycle.enabled = True
     session = api.create_session()
     task = api.create_task(session["id"])
     completed = api.wait_for_task(task["id"])
@@ -183,18 +183,27 @@ def test_workspace_markup_uses_public_runtime_control_projection() -> None:
 
 def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
     static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
-    script = (static_root / "workspace.js").read_text(encoding="utf-8")
+    script = "\n".join(
+        (
+            (static_root / "workspace.js").read_text(encoding="utf-8"),
+            (static_root / "workspace-task-transport.js").read_text(
+                encoding="utf-8"
+            ),
+        )
+    )
     error_block = script.split("events.onerror = () => {", 1)[1].split("};", 1)[0]
 
     assert "Last-Event-ID" in error_block
     assert "events.close()" not in error_block
-    assert "pollTimer = setInterval" in error_block
+    assert "reconnectPollTimer = setInterval" in error_block
     assert "refreshRuntimeTaskControls(id)" in error_block
 
 
 def test_workspace_reconciles_controls_while_sse_is_open() -> None:
     static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
-    script = (static_root / "workspace.js").read_text(encoding="utf-8")
+    script = (static_root / "workspace-task-transport.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "let controlRefreshTimer = null" in script
     assert "controlRefreshTimer = setInterval" in script

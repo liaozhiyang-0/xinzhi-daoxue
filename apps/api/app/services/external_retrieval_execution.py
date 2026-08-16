@@ -2,8 +2,8 @@
 
 This service owns query planning, provider fan-out, paper review, result
 merging, bounded full-text enrichment, and cooperative timeout handling. The
-Runtime and TaskRunner layers depend on this capability boundary rather than
-reimplementing provider policy themselves.
+Runtime services depend on this capability boundary rather than reimplementing
+provider policy themselves.
 """
 
 from __future__ import annotations
@@ -363,8 +363,8 @@ class ExternalRetrievalExecutionService:
     ) -> ExternalRetrievalResult:
         """Bound one retrieval call and retain late tasks for shutdown.
 
-        ``retrieval`` is an injectable compatibility hook used by the old
-        TaskRunner seam and by hard-deadline tests. Normal callers use this
+        ``retrieval`` is an injectable hook used by the Runtime gateway and
+        hard-deadline tests. Normal callers use this
         service's own ``retrieve`` implementation.
         """
 

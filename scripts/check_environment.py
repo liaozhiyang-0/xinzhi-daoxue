@@ -28,13 +28,12 @@ def main() -> int:
             "RESEARCH_03_DATA_ANALYSIS_V1",
         }:
             continue
-        flow_configured = bool(registry.resolve_flow_id(definition.agent_id, settings))
-        local_available = definition.execution_mode in {"local", "hybrid"}
+        local_available = registry.is_runtime_available(definition.agent_id, settings)
         workflows.append(
             {
                 "agent_id": definition.agent_id,
                 "execution_mode": definition.execution_mode,
-                "flow_configured": flow_configured,
+                "local_ready": local_available,
                 "local_handler_available": local_available,
             }
         )
@@ -66,11 +65,7 @@ def main() -> int:
             "registry_valid": not model_registry.errors,
             "registry_errors": model_registry.errors,
         },
-        "xingchen_credentials_configured": bool(
-            settings.xingchen_enabled
-            and settings.xingchen_api_key.get_secret_value()
-            and settings.xingchen_api_secret.get_secret_value()
-        ),
+        "provider_mode": settings.default_agent_provider,
         "workflows": workflows,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))

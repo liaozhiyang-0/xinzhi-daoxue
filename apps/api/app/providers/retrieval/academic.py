@@ -74,8 +74,9 @@ class HttpAcademicProvider(ABC):
         max_concurrency: int = 1,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = max(0.1, timeout_seconds)
         self._client = client or httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
             trust_env=trust_env,
         )
@@ -225,6 +226,7 @@ class HttpAcademicProvider(ABC):
                     request_url,
                     params=params,
                     headers=request_headers,
+                    timeout=self.timeout_seconds,
                 )
             )
 
@@ -251,6 +253,7 @@ class HttpAcademicProvider(ABC):
                     request_url,
                     json=payload,
                     headers=headers,
+                    timeout=self.timeout_seconds,
                 )
             )
 
@@ -866,6 +869,7 @@ class AcademicSearchService:
         max_provider_concurrency: int = 4,
         max_query_variants: int = 2,
         provider_tiers: Sequence[Sequence[str]] | None = None,
+        owned_clients: Sequence[httpx.AsyncClient] = (),
     ) -> None:
         self.providers = tuple(providers)
         self.cache_size = max(0, cache_size)
@@ -874,6 +878,7 @@ class AcademicSearchService:
         self.rate_limit_cooldown_seconds = max(0.0, rate_limit_cooldown_seconds)
         self.max_provider_concurrency = max(1, max_provider_concurrency)
         self.max_query_variants = max(1, max_query_variants)
+        self._owned_clients = tuple(owned_clients)
         self._provider_semaphore = asyncio.Semaphore(
             self.max_provider_concurrency
         )
@@ -1376,6 +1381,8 @@ class AcademicSearchService:
             closer = getattr(provider, "close", None)
             if closer is not None:
                 await closer()
+        for client in self._owned_clients:
+            await client.aclose()
 
 
 def merge_academic_results(

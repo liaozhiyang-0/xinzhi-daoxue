@@ -95,6 +95,44 @@ def test_governance_case_does_not_turn_unknown_approval_into_success() -> None:
     assert result.structured_result["scenario_contract"]["missing_fields"] == []
 
 
+def test_governance_case_audits_only_assets_present_in_input() -> None:
+    agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
+    expected = [
+        "asset_inventory",
+        "version_conflicts",
+        "source_audit",
+        "approval_status",
+        "publication_blockers",
+        "traceability_links",
+        "publication_checklist_before",
+        "publication_checklist_after",
+        "rollback_checklist",
+        "review_boundary",
+    ]
+    request = _request(
+        "department_knowledge_governance_v1", agent_id, expected
+    ).model_copy(
+        update={
+            "canonical_input": {
+                "text": (
+                    "请检查 CT 课程知识库：讲义《节点电压法》v3、"
+                    "练习题包《直流网络》v2、教师修订说明 v1。"
+                )
+            }
+        }
+    )
+
+    result = ScenarioOutputContractService().enrich(_result(agent_id), request)
+
+    inventory = result.business_data["asset_inventory"]
+    assert [item["version"] for item in inventory] == ["v3", "v2", "v1"]
+    assert result.business_data["approval_status"]["status"] == "unknown"
+    assert result.business_data["traceability_links"] == [
+        {"asset": item["title"], "link": "未知"} for item in inventory
+    ]
+    assert len(result.business_data["version_conflicts"]["items"]) == 3
+
+
 def test_generic_fallback_is_not_presented_as_professional_contract() -> None:
     expected = ["evidence_summary", "weak_knowledge_points", "staged_plan"]
     result = _result("GENERAL_MODEL_FALLBACK_V1").model_copy(

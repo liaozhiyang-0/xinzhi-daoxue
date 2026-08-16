@@ -58,7 +58,7 @@ async def build_health(
         _redis_status(settings.redis_url),
         _minio_status(settings.minio_endpoint),
     )
-    provider_mode = "xingchen_sync" if provider.provider_name == "xingchen" else "mock"
+    provider_mode = "local_runtime" if provider.provider_name == "local" else "mock"
     return HealthRead(
         status=(
             "ok" if database == "ok" and redis == "ok" and minio == "ok" else "degraded"
@@ -67,11 +67,9 @@ async def build_health(
         database=database,
         redis=redis,
         minio=minio,
-        requested_provider="xingchen" if settings.xingchen_enabled else "mock",
+        requested_provider=settings.default_agent_provider,
         active_provider=provider.provider_name,
         provider_mode=provider_mode,
-        xingchen_publication_status=settings.xingchen_publication_status,
-        xingchen_runtime_available=settings.xingchen_runtime_available,
         version=settings.app_version,
         external_retrieval=(
             external_search.health() if external_search is not None else {}

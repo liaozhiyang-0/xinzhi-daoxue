@@ -37,7 +37,7 @@ class RuntimeBusinessService(Protocol):
 
 
 class RuntimeBusinessRegistry:
-    """Resolve Runtime business capabilities without TaskRunner branching."""
+    """Resolve Runtime business capabilities by registered Agent ID."""
 
     def __init__(self, services: Iterable[RuntimeBusinessService]) -> None:
         self._services = tuple(services)
@@ -124,34 +124,30 @@ class RuntimeBusinessRegistry:
         # Wildcard services may resolve an explicitly opted-in request, but
         # must not advertise a default option key for every Agent. Returning
         # that key would make DEFAULT launch modes inject a goal-less generic
-        # request into unrelated legacy Agents.
-        service = next(
-            (
-                candidate
-                for candidate in self._services
-                if getattr(candidate, "agent_id", "") == agent_id
-            ),
-            None,
-        )
+        # request into unrelated Agents.
+        service = self._service_for_agent(agent_id)
         option_key = getattr(service, "runtime_option_key", None)
         return option_key if isinstance(option_key, str) and option_key else None
 
     def runtime_plan_version(self, agent_id: str) -> str | None:
         """Return the declared plan version for a direct Runtime service."""
 
-        service = next(
-            (
-                candidate
-                for candidate in self._services
-                if getattr(candidate, "agent_id", "") == agent_id
-            ),
-            None,
-        )
+        service = self._service_for_agent(agent_id)
         for attribute in ("runtime_plan_version", "plan_version"):
             version = getattr(service, attribute, None)
             if isinstance(version, str) and version:
                 return version
         return None
+
+    def _service_for_agent(self, agent_id: str) -> RuntimeBusinessService | None:
+        return next(
+            (
+                service
+                for service in self._services
+                if getattr(service, "agent_id", "") == agent_id
+            ),
+            None,
+        )
 
     def prepare_default_request(
         self, agent_id: str, request: AgentRequest
@@ -169,6 +165,6 @@ class RuntimeBusinessRegistry:
         current = options.get(option_key)
         if current is None:
             options[option_key] = {"execute": True}
-        elif isinstance(current, dict) and "execute" not in current:
+        elif isinstance(current, dict):
             options[option_key] = {**current, "execute": True}
         return request.model_copy(update={"options": options})

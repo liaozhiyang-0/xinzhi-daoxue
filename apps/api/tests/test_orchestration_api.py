@@ -11,11 +11,20 @@ def test_capabilities_and_workflow_status(client: TestClient) -> None:
 
     assert capabilities.status_code == 200
     assert capabilities.json()["supervisor"] == "XZD_SUPERVISOR"
-    assert len(workflows.json()) == 9
+    showcase_ids = {
+        item["id"] for item in capabilities.json()["workspace_features"]
+    }
+    assert {
+        "lesson_prep",
+        "assignment_review",
+        "student_learning_path",
+        "academic_search",
+        "knowledge_governance",
+        "solve_problem",
+    } <= showcase_ids
+    assert len(workflows.json()) >= 9
     assert {item["execution_mode"] for item in workflows.json()} <= {
         "local",
-        "xingchen",
-        "hybrid",
         "disabled",
     }
     lesson_prep = next(
@@ -23,17 +32,16 @@ def test_capabilities_and_workflow_status(client: TestClient) -> None:
         for item in workflows.json()
         if item["agent_id"] == "TEACH_01_LESSON_PREP_V1"
     )
-    assert lesson_prep["execution_mode"] == "hybrid"
-    assert lesson_prep["local_handler_available"] is True
-    assert lesson_prep["available"] is False
-    assert lesson_prep["unavailable_reason"] == "model_api_or_legacy_provider_missing"
+    assert lesson_prep["execution_mode"] == "local"
+    assert lesson_prep["local_ready"] is True
+    assert lesson_prep["available"] is True
     general = next(
         item
         for item in workflows.json()
         if item["agent_id"] == "GENERAL_QUESTION_V1"
     )
     assert general["execution_mode"] == "local"
-    assert general["local_handler_available"] is True
+    assert general["local_ready"] is True
     assert general["available"] is True
 
 

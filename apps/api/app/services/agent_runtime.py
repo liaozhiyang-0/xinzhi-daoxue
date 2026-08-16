@@ -52,7 +52,7 @@ class ParsedWorkflowOutput:
 
 
 class AgentInputMapper:
-    """Safe, finite transform mapper for Xingchen string start-node inputs."""
+    """Safe, finite transform mapper for local Agent inputs."""
 
     def map(
         self,
@@ -108,7 +108,7 @@ class AgentInputMapper:
 
     @staticmethod
     def _workflow_prompt(context: TaskRequestContext, retrieval_context: str) -> str:
-        """Pack local business fields into one verified Xingchen text parameter."""
+        """Pack local business fields into one verified workflow prompt."""
         lines = [context.question.strip()]
         metadata = {
             "course_id": context.course_id,
@@ -324,6 +324,10 @@ class WorkflowOutputParserRegistry:
             structured["answer_text"] = mapped_answer.strip()
         if isinstance(payload.get("answer_text"), str):
             structured["answer_text"] = payload["answer_text"].strip() or answer
+        # Provider payloads may explicitly return ``warnings: null``. Normalize
+        # nullable list fields before applying status validation so malformed
+        # output becomes a structured failure instead of an AttributeError.
+        structured["warnings"] = cls._list_value(structured.get("warnings", []))
         status = str(structured.get("status", "completed")).casefold()
         structured["status"] = status if status in VALID_OUTPUT_STATUSES else "failed"
         if status not in VALID_OUTPUT_STATUSES:
@@ -458,16 +462,11 @@ class AgentExecutionPlanner:
             availability_checks={
                 "enabled": definition.enabled,
                 "published": definition.publication_status in {"published", "local"},
-                "flow_configured": self.registry.is_configured(
+                "local_ready": self.registry.is_configured(
                     definition.agent_id, self.settings
                 ),
-                "provider_available": (
-                    definition.provider == "local"
-                    or (
-                        self.settings.xingchen_enabled
-                        and bool(self.settings.xingchen_api_key.get_secret_value())
-                        and bool(self.settings.xingchen_api_secret.get_secret_value())
-                    )
+                "provider_available": self.registry.is_runtime_available(
+                    definition.agent_id, self.settings
                 ),
                 "input_mode_supported": input_mode in definition.supports,
                 "course_supported": request.course_id in definition.course_ids,

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.contracts.math_content import MathRichContent
 
@@ -51,6 +51,14 @@ class Intent(StrEnum):
     ACADEMIC_WRITING = "academic_writing"
     DATA_ANALYSIS = "data_analysis"
     ACADEMIC_SEARCH = "academic_search"
+
+
+class ResponseDepth(StrEnum):
+    """User-facing response detail level shared by all task workflows."""
+
+    BRIEF = "brief"
+    STANDARD = "standard"
+    DEEP = "deep"
 
 
 class AgentResultStatus(StrEnum):
@@ -247,6 +255,37 @@ class AgentRequest(BaseModel):
     attachments: list[AttachmentRef] = Field(default_factory=list)
     context_refs: list[str] = Field(default_factory=list)
     options: dict[str, Any] = Field(default_factory=dict)
+    response_depth: ResponseDepth = ResponseDepth.STANDARD
+
+    def input_text(self) -> str:
+        for key in ("text", "question", "problem", "query", "prompt"):
+            value = self.canonical_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_response_depth(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        data = dict(values)
+        options = dict(data.get("options") or {})
+        # Remote workflow execution was retired. Keep old clients compatible
+        # by discarding the legacy flag at the request boundary so it can
+        # never influence routing or provider selection.
+        options.pop("allow_cloud", None)
+        raw = data.get("response_depth", options.get("response_depth", "standard"))
+        try:
+            depth = raw if isinstance(raw, ResponseDepth) else ResponseDepth(str(raw))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "response_depth must be one of: brief, standard, deep"
+            ) from exc
+        data["response_depth"] = depth
+        options["response_depth"] = depth.value
+        data["options"] = options
+        return data
 
 
 class AgentResult(BaseModel):
@@ -298,19 +337,6 @@ class AgentEvent(BaseModel):
     agent_id: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
     data: dict[str, Any] = Field(default_factory=dict)
-
-
-class CoursePack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    course_id: str
-    course_name: str
-    domain_id: str
-    version: str
-    knowledge_spaces: dict[str, str] = Field(default_factory=dict)
-    agents: dict[str, str] = Field(default_factory=dict)
-    tools: dict[str, bool] = Field(default_factory=dict)
-    evaluation: dict[str, str] = Field(default_factory=dict)
 
 
 class ProviderAvailability(BaseModel):

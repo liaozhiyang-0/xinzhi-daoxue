@@ -104,7 +104,7 @@ class AcademicProblemSolverGraph:
         state: XZDGraphState | None = None,
         thread_id: str | None = None,
     ) -> AcademicSolutionResult:
-        """Run the graph without blocking the TaskRunner event loop."""
+        """Run the graph without blocking the RuntimeTaskEngine event loop."""
 
         completed = await self.ainvoke_state(
             problem,

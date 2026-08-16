@@ -15,7 +15,7 @@
 STUDENT_VERIFICATION_MODEL_ENABLED=false
 ```
 
-该值必须保持默认关闭；当前版本没有启用模型裁判路径。星辰和付费 Provider 不因
+该值必须保持默认关闭；当前版本没有启用模型裁判路径。外部模型 Provider 不因
 选择教学模式而自动开启。
 
 专项验证：

@@ -1,9 +1,9 @@
-"""Capture small, authorized Legacy/Runtime development E2E pairs.
+"""Capture small, authorized Runtime development E2E pairs.
 
 This runner intentionally exercises the public Task API rather than importing
-TaskRunner.  It is for a controlled development environment only: the chosen
-test cases contain no student data, and all artifacts are written to an
-ignored directory supplied by the operator.  It never changes launch modes,
+internal execution services.  It is for a controlled development environment
+only. The chosen test cases contain no student data, and all artifacts are
+written to an ignored directory supplied by the operator. It never changes launch modes,
 release evidence, or provider configuration.
 """
 
@@ -27,7 +27,6 @@ SENSITIVE_KEYS = {
     "api_key",
     "authorization",
     "cookie",
-    "flow_id",
     "raw_prompt",
     "secret",
     "token",

@@ -45,6 +45,24 @@ class FakeKnowledgeQA:
         )
 
 
+class IncompleteSynthesisKnowledgeQA(FakeKnowledgeQA):
+    async def run_with_generation(
+        self, _agent_id: str, _request: AgentRequest
+    ) -> SimpleNamespace:
+        self.calls += 1
+        result = AgentResult(
+            agent_id="LEARN_01_LOCAL_RETRIEVAL_V1",
+            provider="test-model",
+            answer="根据用户记录整理的暂定学习路径。",
+            structured_result={"mode": "learning_path_model_generation"},
+            evidence_status="insufficient",
+        )
+        return SimpleNamespace(
+            result=result,
+            context=SimpleNamespace(evidence_status="insufficient", evidence=[]),
+        )
+
+
 def test_knowledge_qa_runtime_plan_version_is_exposed_to_registry() -> None:
     service = KnowledgeQARuntimeService(FakeKnowledgeQA(), enabled=True)  # type: ignore[arg-type]
     registry = RuntimeBusinessRegistry([service])
@@ -175,4 +193,34 @@ async def test_knowledge_qa_verifier_records_insufficient_evidence_as_needs_revi
     assert observation.facts["evidence_count"] == 0
     assert observation.facts["citation_count"] == 0
     assert observation.facts["passed"] is False
+    assert observation.facts["needs_review"] is True
+
+
+@pytest.mark.asyncio
+async def test_incomplete_showcase_synthesis_completes_with_review_marker() -> None:
+    service = KnowledgeQARuntimeService(
+        IncompleteSynthesisKnowledgeQA(), enabled=True  # type: ignore[arg-type]
+    )
+    request = AgentRequest(
+        task_id="knowledge-runtime-incomplete-synthesis",
+        session_id="knowledge-runtime-incomplete-session",
+        user_id="knowledge-runtime-incomplete-user",
+        course_id="CT",
+        options={"knowledge_qa_runtime": {"execute": True}},
+    )
+    plan = service.build_plan(request)
+    run = AgentRun(
+        run_id="knowledge-runtime-incomplete-run",
+        task_id=request.task_id,
+        goal=plan.goal,
+        plan=plan,
+    )
+
+    await service.run(request, run)
+
+    observation = run.nodes["knowledge.verify"].observation
+    assert run.status.value == "completed"
+    assert observation is not None
+    assert observation.terminal_status == RuntimeNodeStatus.SUCCEEDED
+    assert observation.facts["evidence_incomplete"] is True
     assert observation.facts["needs_review"] is True

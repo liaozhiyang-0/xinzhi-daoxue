@@ -150,7 +150,7 @@ def test_task_api_pauses_and_resumes_explicit_goal_after_approval(settings) -> N
             ),
             approved_handler,
         )
-        generic_runtime = app.state.task_runner.generic_goal_runtime
+        generic_runtime = app.state.task_engine.generic_goal_runtime
         assert generic_runtime is not None
         generic_runtime.intake_policy = RuntimeGoalIntakePolicy.from_config(
             "GENERAL_QUESTION_V1=tool.approved_fixture"

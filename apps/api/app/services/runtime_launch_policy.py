@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -75,11 +76,13 @@ class RuntimeLaunchPolicy:
             RuntimeReleaseAuthorizationRegistry | None
         ) = None,
         release_gate_required: bool = False,
+        local_agents: Iterable[str] = (),
     ) -> None:
         self._modes = self._parse_modes(launch_modes)
         self._release_registry = release_registry
         self._release_authorization_registry = release_authorization_registry
         self._release_gate_required = release_gate_required
+        self._local_agents = frozenset(local_agents)
 
     def resolve(
         self,
@@ -102,6 +105,7 @@ class RuntimeLaunchPolicy:
             )
         explicit = self._explicit_runtime_option(request, runtime_option_key)
         configured = self._modes.get(agent_id)
+        is_local_runtime = agent_id in self._local_agents
         if explicit is False:
             return RuntimeLaunchDecision(
                 agent_id=agent_id,
@@ -157,11 +161,15 @@ class RuntimeLaunchPolicy:
                     source="configured_launch_mode",
                     reason="runtime_lifecycle_disabled",
                 )
-            release_reason = self._release_gate_reason(
-                agent_id,
-                target_mode=configured,
-                expected_agent_version=expected_agent_version,
-                expected_runtime_plan_version=expected_runtime_plan_version,
+            release_reason = (
+                None
+                if is_local_runtime
+                else self._release_gate_reason(
+                    agent_id,
+                    target_mode=configured,
+                    expected_agent_version=expected_agent_version,
+                    expected_runtime_plan_version=expected_runtime_plan_version,
+                )
             )
             if (
                 release_reason is not None
@@ -181,6 +189,28 @@ class RuntimeLaunchPolicy:
                 explicit_opt_in=explicit is True,
             )
         if explicit is True:
+            # Local business Runtimes are already governed by the local
+            # implementation registry and human review boundary.  An
+            # explicit ``*_runtime.execute=true`` request must not send them
+            # through the cloud canary release gate; doing so turns a valid
+            # local task into a misleading ``registered Runtime disabled``
+            # failure whenever the deployment keeps the cloud gate enabled.
+            if is_local_runtime:
+                return RuntimeLaunchDecision(
+                    agent_id=agent_id,
+                    mode=(
+                        RuntimeLaunchMode.DEFAULT
+                        if lifecycle_enabled
+                        else RuntimeLaunchMode.LEGACY
+                    ),
+                    source="explicit_opt_in",
+                    reason=(
+                        "explicit_runtime_option"
+                        if lifecycle_enabled
+                        else "runtime_lifecycle_disabled"
+                    ),
+                    explicit_opt_in=True,
+                )
             release_reason = (
                 self._release_gate_reason(
                     agent_id,
@@ -212,6 +242,43 @@ class RuntimeLaunchPolicy:
                     else "runtime_lifecycle_disabled"
                 ),
                 explicit_opt_in=True,
+            )
+        # A business Runtime may advertise itself as an automatic candidate
+        # when the registry resolves the request without a runtime option
+        # (for example, the general-question Runtime).  Preserve the
+        # migration safety boundary by requiring the lifecycle flag, while
+        # allowing that registered candidate to enter the canary path without
+        # making callers add an internal implementation option manually.
+        if is_local_runtime and lifecycle_enabled and runtime_option_key is not None:
+            return RuntimeLaunchDecision(
+                agent_id=agent_id,
+                mode=RuntimeLaunchMode.DEFAULT,
+                source="local_runtime_registry",
+                reason="registered_local_runtime",
+            )
+        if lifecycle_enabled and runtime_option_key is not None:
+            release_reason = (
+                self._release_gate_reason(
+                    agent_id,
+                    target_mode=RuntimeLaunchMode.CANARY,
+                    expected_agent_version=expected_agent_version,
+                    expected_runtime_plan_version=expected_runtime_plan_version,
+                )
+                if self._release_gate_required
+                else None
+            )
+            if release_reason is not None:
+                return RuntimeLaunchDecision(
+                    agent_id=agent_id,
+                    mode=RuntimeLaunchMode.LEGACY,
+                    source="canary_release_gate",
+                    reason=release_reason,
+                )
+            return RuntimeLaunchDecision(
+                agent_id=agent_id,
+                mode=RuntimeLaunchMode.CANARY,
+                source="runtime_registry_candidate",
+                reason="registered_runtime_auto_candidate",
             )
         return RuntimeLaunchDecision(
             agent_id=agent_id,

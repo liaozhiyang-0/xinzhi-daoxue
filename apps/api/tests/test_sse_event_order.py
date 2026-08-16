@@ -231,9 +231,7 @@ def test_concurrent_event_appends_keep_unique_contiguous_sequences(
 
 
 def test_general_runtime_sse_reconnect_preserves_node_order(api, app, client) -> None:
-    app.state.task_runner.runtime_lifecycle.enabled = True
-    assert app.state.task_runner.general_question_runtime is not None
-    app.state.task_runner.general_question_runtime.enabled = True
+    app.state.task_engine.runtime_lifecycle.enabled = True
     session = api.create_session()
     payload = api.task_payload(
         session["id"],
@@ -303,9 +301,7 @@ def test_general_runtime_sse_reconnect_preserves_node_order(api, app, client) ->
 def test_academic_solver_runtime_sse_reconnect_preserves_node_order(
     api, app, client
 ) -> None:
-    app.state.task_runner.runtime_lifecycle.enabled = True
-    assert app.state.task_runner.academic_solver_runtime is not None
-    app.state.task_runner.academic_solver_runtime.enabled = True
+    app.state.task_engine.runtime_lifecycle.enabled = True
     session = api.create_session()
     payload = api.task_payload(
         session["id"],

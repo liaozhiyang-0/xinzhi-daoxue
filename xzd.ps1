@@ -7,8 +7,6 @@ param(
     [switch]$Reload,
     [switch]$ForceReload,
     [switch]$RefreshDeps,
-    [switch]$WithCloud,
-    [switch]$RuntimeDev,
     [switch]$OpenBrowser,
     [ValidateSet("CT", "AE", "DE", "SS", "DSP", "COMM")]
     [string]$Course,
@@ -49,16 +47,12 @@ if ($Command -eq "start") {
     if ($Reload) { $Arguments += "--reload" }
     if ($ForceReload) { $Arguments += "--force-reload" }
     if ($RefreshDeps) { $Arguments += "--refresh-deps" }
-    if ($WithCloud) { $Arguments += "--with-cloud" }
-    if ($RuntimeDev) { $Arguments += "--runtime-dev" }
     if ($OpenBrowser) { $Arguments += "--open-browser" }
 } elseif ($Command -eq "stop" -or $Command -eq "doctor") {
     $Arguments += @("--port", "$Port")
 } elseif ($Command -eq "repair") {
     $Arguments += @("--port", "$Port")
-    if ($RuntimeDev) { $Arguments += "--runtime-dev" }
 } elseif ($Command -eq "preflight") {
-    if ($WithCloud) { $Arguments += "--with-cloud" }
 } elseif ($Command -eq "index") {
     if ($Course) { $Arguments += @("--course", $Course) }
     if ($TextOnly) { $Arguments += "--text-only" }

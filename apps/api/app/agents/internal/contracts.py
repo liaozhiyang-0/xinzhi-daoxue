@@ -103,9 +103,22 @@ class LessonPrepDraft(BaseModel):
     # Lesson Prep human-quality gate. Missing fields remain invalid because
     # these fields have no default value.
     learning_objectives: list[str] = Field(max_length=8)
-    lesson_flow: list[str] = Field(max_length=12)
+    lesson_flow: list[str] = Field(max_length=16)
     formative_assessment: list[str] = Field(default_factory=list, max_length=8)
     warnings: list[str] = Field(default_factory=list, max_length=8)
+    # These fields keep the model output aligned with the actual teaching
+    # request.  They are optional for backward compatibility with older
+    # drafts, but the prompt asks the model to populate them when requested.
+    worked_example: str = Field(default="", max_length=3000)
+    common_confusions: list[str] = Field(default_factory=list, max_length=10)
+    tiered_practice: list[str] = Field(default_factory=list, max_length=6)
+    evidence_notes: list[str] = Field(default_factory=list, max_length=12)
+    teacher_review: list[str] = Field(default_factory=list, max_length=12)
+    missing_information: list[str] = Field(default_factory=list, max_length=10)
+    evidence_status: Literal["sufficient", "partial", "insufficient", "unknown"] = (
+        "unknown"
+    )
+    publishable: bool = False
 
 
 class AssignmentReviewDraft(BaseModel):
@@ -114,6 +127,17 @@ class AssignmentReviewDraft(BaseModel):
     errors: list[str] = Field(default_factory=list, max_length=10)
     feedback: str = Field(min_length=1, max_length=2000)
     review_required: bool = True
+    first_error: str = Field(default="", max_length=2000)
+    error_propagation: list[str] = Field(default_factory=list, max_length=10)
+    basic_hint: str = Field(default="", max_length=1000)
+    advanced_hint: str = Field(default="", max_length=1000)
+    verification_task: str = Field(default="", max_length=2000)
+    evidence_notes: list[str] = Field(default_factory=list, max_length=10)
+    teacher_review: list[str] = Field(default_factory=list, max_length=10)
+    missing_information: list[str] = Field(default_factory=list, max_length=10)
+    evidence_status: Literal["sufficient", "partial", "insufficient", "unknown"] = (
+        "unknown"
+    )
 
 
 class AcademicWritingDraft(BaseModel):

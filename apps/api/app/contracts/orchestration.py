@@ -28,8 +28,6 @@ class InputType(StrEnum):
 
 class ExecutionMode(StrEnum):
     LOCAL = "local"
-    XINGCHEN = "xingchen"
-    HYBRID = "hybrid"
     DISABLED = "disabled"
 
 
@@ -193,8 +191,7 @@ class WorkflowStatus(BaseModel):
     agent_id: str
     execution_mode: ExecutionMode
     enabled: bool
-    flow_configured: bool
-    local_handler_available: bool
+    local_ready: bool
     available: bool
     unavailable_reason: str | None = None
     last_health_check: str = "not_run"

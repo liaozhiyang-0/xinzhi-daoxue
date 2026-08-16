@@ -1,0 +1,41 @@
+name: xinzhi-daoxue
+
+# Private team access through the host's Tailscale IPv4.
+# Set TAILSCALE_IP in the PowerShell session before starting Compose.
+services:
+  api:
+    environment:
+      # The Tailnet is the access boundary for this local deployment.
+      AUTH_REQUIRED: "true"
+      AUTH_ALLOW_REGISTRATION: "true"
+      AUTH_ALLOW_GUEST: "false"
+      # This profile uses HTTP on the private Tailnet. Use true after adding HTTPS.
+      AUTH_COOKIE_SECURE: "false"
+      ALLOW_MOCK_FALLBACK: "false"
+      ALLOW_AGENT_MOCKS: "false"
+      IFLYTEK_SPARK_ENABLED: "false"
+      ENABLE_SPARK_REASONER: "false"
+      DASHSCOPE_ENABLED: "true"
+      QWEN_MAX_CONCURRENCY: "2"
+      TEXT_EMBEDDING_CONCURRENCY_LIMIT: "1"
+      IMAGE_EMBEDDING_CONCURRENCY_LIMIT: "1"
+      RAG_RETRIEVAL_WORKER_COUNT: "1"
+    ports: !override
+      - "127.0.0.1:8000:8000"
+      - "${TAILSCALE_IP:-127.0.0.1}:8000:8000"
+
+  queue-worker:
+    environment:
+      AUTH_REQUIRED: "true"
+      AUTH_ALLOW_REGISTRATION: "true"
+      AUTH_ALLOW_GUEST: "false"
+      AUTH_COOKIE_SECURE: "false"
+      ALLOW_MOCK_FALLBACK: "false"
+      ALLOW_AGENT_MOCKS: "false"
+      IFLYTEK_SPARK_ENABLED: "false"
+      ENABLE_SPARK_REASONER: "false"
+      DASHSCOPE_ENABLED: "true"
+      QWEN_MAX_CONCURRENCY: "2"
+      TEXT_EMBEDDING_CONCURRENCY_LIMIT: "1"
+      IMAGE_EMBEDDING_CONCURRENCY_LIMIT: "1"
+      RAG_RETRIEVAL_WORKER_COUNT: "1"

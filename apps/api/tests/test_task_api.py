@@ -48,7 +48,31 @@ def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:
     assert (
         created["input_content"]["options"]["_scenario_catalog_bound"] is True
     )
-    completed = api.wait_for_task(created["id"])
+    completed = api.wait_for_task(
+        created["id"],
+        statuses={"completed", "waiting_review"},
+        timeout=15,
+    )
+    if completed["status"] == "waiting_review":
+        controls = api.client.get(
+            f"/api/v1/tasks/{created['id']}/runtime-controls"
+        )
+        assert controls.status_code == 200, controls.text
+        projection = controls.json()
+        approval = api.client.post(
+            f"/api/v1/tasks/{created['id']}/approve",
+            params={"runtime_run_id": projection["runtime_run_id"]},
+            json={
+                "decision": "approved",
+                "reason": (
+                    "Approve the legacy catalog-bound lesson draft for this test."
+                ),
+                "expected_state_version": projection["state_version"],
+            },
+        )
+        assert approval.status_code in {200, 202}, approval.text
+        completed = api.wait_for_task(created["id"], timeout=15)
+    assert completed["status"] == "completed"
     assert completed["result_content"]["structured_result"]["scenario_id"] == (
         "faculty_course_copilot_v1"
     )

@@ -40,7 +40,7 @@ class SequencedKnowledgeQA:
 def test_student_task_api_exposes_waiting_input_and_resumes_checkpoint(
     api, app
 ) -> None:
-    runner = app.state.task_runner
+    runner = app.state.task_engine
     runner.runtime_launch_policy = RuntimeLaunchPolicy(
         "LEARN_01_LOCAL_RETRIEVAL_V1=default"
     )

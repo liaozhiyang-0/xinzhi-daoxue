@@ -21,10 +21,6 @@ from app.contracts import (
     WorkflowStatus,
 )
 from app.contracts.api import SessionCreate
-from app.core.internal_workflows import (
-    WORKFLOW_INTERNAL_AGENT_MAP,
-    internal_workflow_models_configured,
-)
 from app.dependencies import (
     effective_user_id,
     get_current_principal,
@@ -46,14 +42,14 @@ router = APIRouter(tags=["orchestration"])
 WORKFLOW_MODES: dict[str, ExecutionMode] = {
     "GENERAL_QUESTION_V1": ExecutionMode.LOCAL,
     "GENERAL_MODEL_FALLBACK_V1": ExecutionMode.LOCAL,
-    "ROUTER_01_FALLBACK_V1": ExecutionMode.HYBRID,
-    "LEARN_01_KNOWLEDGE_QA_V1": ExecutionMode.HYBRID,
+    "ROUTER_01_FALLBACK_V1": ExecutionMode.LOCAL,
+    "LEARN_01_KNOWLEDGE_QA_V1": ExecutionMode.LOCAL,
     "ACADEMIC_PROBLEM_SOLVER": ExecutionMode.LOCAL,
-    "SOLVER_CT_V1": ExecutionMode.HYBRID,
-    "TEACH_01_LESSON_PREP_V1": ExecutionMode.HYBRID,
-    "TEACH_02_ASSIGNMENT_REVIEW_V1": ExecutionMode.HYBRID,
-    "RESEARCH_02_ACADEMIC_WRITING_V1": ExecutionMode.HYBRID,
-    "RESEARCH_03_DATA_ANALYSIS_V1": ExecutionMode.HYBRID,
+    "SOLVER_CT_V1": ExecutionMode.LOCAL,
+    "TEACH_01_LESSON_PREP_V1": ExecutionMode.LOCAL,
+    "TEACH_02_ASSIGNMENT_REVIEW_V1": ExecutionMode.LOCAL,
+    "RESEARCH_02_ACADEMIC_WRITING_V1": ExecutionMode.LOCAL,
+    "RESEARCH_03_DATA_ANALYSIS_V1": ExecutionMode.LOCAL,
 }
 
 
@@ -324,13 +320,35 @@ async def capabilities(request: Request) -> dict[str, Any]:
             "SYSTEM_SAFETY_AUDITOR",
         ],
         "spark_available": request.app.state.spark_provider.available,
-        "xingchen_fallback": settings.enable_xingchen_fallback,
+        "provider_mode": "local_runtime",
         "cpu_default": True,
         "workspace_features": [
             {
                 "id": "course_qa",
                 "label": "课程知识问答",
                 "available": bool(settings.enable_local_knowledge_qa),
+                "knowledge_enhanced": True,
+            },
+            # Keep the six workspace showcase buttons on the same readiness
+            # surface as their underlying Runtime/Agent.  Previously these
+            # three IDs were absent, so the UI left stale "ready" labels even
+            # when the shared knowledge or solver boundary was unavailable.
+            {
+                "id": "student_learning_path",
+                "label": "学生个性化学习路径",
+                "available": bool(settings.enable_local_knowledge_qa),
+                "knowledge_enhanced": True,
+            },
+            {
+                "id": "knowledge_governance",
+                "label": "学院知识库治理",
+                "available": bool(settings.enable_local_knowledge_qa),
+                "knowledge_enhanced": True,
+            },
+            {
+                "id": "solve_problem",
+                "label": "学科问题求解",
+                "available": internal.available("ACADEMIC_PROBLEM_SOLVER"),
                 "knowledge_enhanced": True,
             },
             {
@@ -396,22 +414,17 @@ async def workflows(request: Request) -> list[WorkflowStatus]:
                     agent_id=agent_id,
                     execution_mode=ExecutionMode.DISABLED,
                     enabled=False,
-                    flow_configured=False,
-                    local_handler_available=False,
+                    local_ready=False,
                     available=False,
                     unavailable_reason="registry_entry_missing",
                 )
             )
             continue
         execution_mode = ExecutionMode(definition.execution_mode)
-        flow_configured = bool(registry.resolve_flow_id(agent_id, settings))
         local_handler_available = _local_handler_available(definition.local_handler)
-        local_available = local_handler_available
-        if agent_id in WORKFLOW_INTERNAL_AGENT_MAP:
-            local_available = (
-                local_handler_available
-                and internal_workflow_models_configured(settings, agent_id)
-            )
+        local_available = local_handler_available and registry.is_configured(
+            agent_id, settings
+        )
         frozen = (
             agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
             and not settings.data_analysis_enabled
@@ -419,7 +432,7 @@ async def workflows(request: Request) -> list[WorkflowStatus]:
         available = bool(
             definition.enabled
             and not frozen
-            and (local_available or (flow_configured and settings.xingchen_enabled))
+            and local_available
         )
         reason = None
         if not definition.enabled:
@@ -428,17 +441,14 @@ async def workflows(request: Request) -> list[WorkflowStatus]:
             reason = "data_analysis_frozen"
         elif not available:
             reason = (
-                "model_api_or_legacy_provider_missing"
-                if agent_id in WORKFLOW_INTERNAL_AGENT_MAP
-                else "flow_id_or_credentials_missing"
+                "local_runtime_handler_missing"
             )
         values.append(
             WorkflowStatus(
                 agent_id=agent_id,
                 execution_mode=execution_mode,
                 enabled=definition.enabled,
-                flow_configured=flow_configured,
-                local_handler_available=local_handler_available,
+                local_ready=local_available,
                 available=available,
                 unavailable_reason=reason,
             )

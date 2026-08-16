@@ -14,7 +14,6 @@ SENSITIVE_KEYS = {
     "password",
     "secret",
     "token",
-    "xingchen_api_key",
 }
 SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s]+"),

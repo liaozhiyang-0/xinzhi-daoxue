@@ -11,10 +11,6 @@ from app.contracts.research_analysis import (
     ResearchDataManifest,
     ResearchEvidenceReference,
 )
-from app.services.research_analysis_state import (
-    InvalidResearchAnalysisTransition,
-    transition_analysis_status,
-)
 
 
 def test_analysis_request_requires_authorized_dataset_for_execution_metadata() -> None:
@@ -61,18 +57,6 @@ def test_analysis_plan_requires_design_and_conclusion_boundary() -> None:
             conclusion_boundaries=[],
             design="unknown",
         )
-
-
-def test_analysis_status_requires_quality_gate_before_execution() -> None:
-    assert transition_analysis_status("planning", "ready_for_execution") == (
-        "ready_for_execution"
-    )
-    with pytest.raises(InvalidResearchAnalysisTransition):
-        transition_analysis_status("planning", "executed")
-
-
-def test_analysis_can_return_to_planning_after_insufficient_data() -> None:
-    assert transition_analysis_status("insufficient_data", "planning") == "planning"
 
 
 def test_cited_method_reference_requires_safe_verifiable_source() -> None:

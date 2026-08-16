@@ -1,7 +1,12 @@
+import { createMaterialManager } from "./workspace-materials.js";
+import { createTaskTransport } from "./workspace-task-transport.js";
+
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
 const scenarioId = params.get("scenario_id") || "";
 const courseLabels = {
+  AUTO: "自动识别",
+  UNKNOWN: "待定课程",
   CT: "电路理论",
   AE: "模拟电子技术",
   DE: "数字电子技术",
@@ -17,8 +22,27 @@ const externalProviderLabels = {
   cnki: "中国知网",
   web_json: "网页检索",
 };
-const taskLabels = { explain_concept: "知识问答", general_qa: "知识问答", solve_problem: "电路解题", lesson_prep: "教案设计", assignment_review: "作业批改", academic_search: "科研前沿检索", academic_writing: "学术写作", data_analysis: "数据分析" };
-const intentLabels = { unknown: "自动识别", explain_concept: "概念解释", general_qa: "知识问答", solve_problem: "电路分析", lesson_prep: "教案设计", assignment_review: "作业初审", academic_search: "科研前沿检索", academic_writing: "学术写作", data_analysis: "数据分析" };
+const taskLabels = {
+  explain_concept: "知识理解与关联",
+  general_qa: "综合知识支持",
+  solve_problem: "学科分析与验证",
+  lesson_prep: "教学设计与课程组织",
+  assignment_review: "学习证据与作业诊断",
+  academic_search: "科研证据与前沿检索",
+  academic_writing: "学术写作与引用校验",
+  data_analysis: "研究设计与数据分析",
+};
+const intentLabels = {
+  unknown: "自动识别",
+  explain_concept: "概念理解",
+  general_qa: "综合知识支持",
+  solve_problem: "问题分析与验证",
+  lesson_prep: "教学设计",
+  assignment_review: "学习证据诊断",
+  academic_search: "科研前沿检索",
+  academic_writing: "学术写作",
+  data_analysis: "数据分析",
+};
 const ragLabels = { grounded_generation: "课程资料支撑", method_reference: "方法参考", reference_only: "资料参考", user_sources_only: "用户材料", data_context_only: "数据上下文", no_rag: "无需课程检索" };
 const maxMultiImageFiles = 8;
 const researchTabularExtensions = new Set(["csv", "tsv", "json", "xlsx", "parquet"]);
@@ -26,8 +50,6 @@ const panelWidthStorage = {
   left: "xinzhi_workspace_left_width",
   right: "xinzhi_workspace_right_width",
 };
-let pendingMaterialFiles = [];
-let materialPreviewUrls = [];
 let conversationMaterialUrls = [];
 let pendingLearningFollowUp = null;
 let runtimeTaskControls = null;
@@ -46,7 +68,7 @@ const state = {
   sessionId: localStorage.getItem("xinzhi_student_session") || "",
   userId: localStorage.getItem("xinzhi_student_user") || `student_${crypto.randomUUID()}`,
   taskId: "",
-  activeCourse: params.get("course") || localStorage.getItem("xinzhi_student_course") || "AUTO",
+  activeCourse: "AUTO",
   lastQuestion: "",
   lastAnswer: "",
   evidence: [],
@@ -62,8 +84,15 @@ const state = {
   liveProcessSteps: new Map(),
   intentOverride: params.get("intent") || "",
   activeScenarioId: scenarioId,
+  activeScenarioPrompt: "",
   userRole: "student",
 };
+const materialManager = createMaterialManager({
+  api,
+  maxFiles: maxMultiImageFiles,
+  onChanged: (files) => showMaterialPreview(files),
+});
+let materialPreviewUrls = [];
 let identityReady = Promise.resolve();
 localStorage.setItem("xinzhi_student_user", state.userId);
 
@@ -73,7 +102,65 @@ function effectiveWorkspaceRole(identity) {
 }
 
 function selectedCourse() {
-  return $("#course-select").value;
+  return "AUTO";
+}
+
+function inferLearningMode(question = "", studentAttempt = "") {
+  const normalized = String(question || "").toLowerCase();
+  if (String(studentAttempt || "").trim()) return "check_my_work";
+  // Planning, diagnosis, and governance prompts need their complete result.
+  // Do not infer an interactive hint loop from generic words such as
+  // “练习” or “学习路径”; only an explicit student attempt opts into review.
+  if (normalized.trim()) return "direct_answer";
+  return "direct_answer";
+}
+
+const showcaseScenarioByCapability = {
+  lesson_prep: "faculty_course_copilot_v1",
+  assignment_review: "assessment_diagnosis_v1",
+  student_learning_path: "student_learning_path_v1",
+  academic_search: "research_frontier_radar_v1",
+  knowledge_governance: "department_knowledge_governance_v1",
+};
+
+function inferCoursePreview(question = "", hasMaterials = false) {
+  const normalized = String(question || "").toLowerCase();
+  if (!normalized.trim() && !hasMaterials) return "等待提问";
+  if (/科研|论文|doi|arxiv|前沿|学术|research|paper/i.test(normalized)) return "科研任务";
+  if (/模拟电子|运算放大器|晶体管|负反馈|滤波器/i.test(normalized)) return courseLabels.AE;
+  if (/数字电子|逻辑门|触发器|锁存器|时序/i.test(normalized)) return courseLabels.DE;
+  if (/信号与系统|傅里叶|采样|连续时间/i.test(normalized)) return courseLabels.SS;
+  if (/通信|调制|信道|讯号/i.test(normalized)) return courseLabels.COMM;
+  if (/电路|电阻|电容|电感|节点电压|kcl|kvl|电流/i.test(normalized)) return courseLabels.CT;
+  return hasMaterials ? "根据附件识别" : "等待系统识别";
+}
+
+function updateAutoDetection(
+  question = $("#question-input")?.value || "",
+  studentAttempt = $("#student-attempt-input")?.value || "",
+) {
+  const mode = inferLearningMode(question, studentAttempt);
+  const modeLabels = {
+    direct_answer: "综合回答",
+    guided_learning: "引导学习",
+    check_my_work: "检查与诊断",
+  };
+  const descriptions = {
+    direct_answer: "系统会组织知识、证据和可执行建议。",
+    guided_learning: "系统会分阶段给出提示、检查点和下一步行动。",
+    check_my_work: "系统会优先核对已有步骤，并标出需要人工复核的部分。",
+  };
+  const hiddenMode = $("#teaching-mode");
+  if (hiddenMode) hiddenMode.value = mode;
+  const attemptPanel = $("#student-attempt-panel");
+  if (attemptPanel) attemptPanel.hidden = mode !== "check_my_work";
+  const modeNode = $("#detected-learning-mode");
+  if (modeNode) modeNode.textContent = `学习方式：${modeLabels[mode] || "综合回答"}`;
+  const courseNode = $("#detected-course");
+  if (courseNode) courseNode.textContent = `课程：${inferCoursePreview(question, selectedMaterialFiles().length > 0)}`;
+  const boundary = $("#teaching-mode-boundary");
+  if (boundary) boundary.textContent = descriptions[mode] || descriptions.direct_answer;
+  return mode;
 }
 
 function researchAnalysisQuestionDetected(text = "") {
@@ -251,15 +338,7 @@ function buildResearchAnalysisV2(question, materials = []) {
 }
 
 function updateTeachingMode() {
-  const mode = $("#teaching-mode").value;
-  const checking = mode === "check_my_work";
-  $("#student-attempt-panel").hidden = !checking;
-  const descriptions = {
-    direct_answer: "直接给出完整思路与结论。",
-    guided_learning: "先给一层提示和一个理解检查，不提前展示最终答案。",
-    check_my_work: "核对明确数值、单位、符号和有限课程规则；复杂推导会标记人工复核。",
-  };
-  $("#teaching-mode-boundary").textContent = descriptions[mode] || descriptions.direct_answer;
+  return updateAutoDetection();
 }
 
 function ownedTaskUrl(id) {
@@ -278,7 +357,7 @@ async function ensureSession(force = false) {
   }
   const session = await api("/api/v1/sessions", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: state.userId, course_id: state.activeCourse === "AUTO" ? "CT" : state.activeCourse, title: "" }),
+    body: JSON.stringify({ user_id: state.userId, course_id: "UNKNOWN", title: "" }),
   });
   state.sessionId = session.id;
   localStorage.setItem("xinzhi_student_session", session.id);
@@ -310,6 +389,8 @@ function resetConversation() {
   runtimeTaskControls = null;
   state.lastQuestion = ""; state.lastAnswer = "";
   state.activeCourse = "AUTO";
+  state.activeScenarioId = scenarioId;
+  state.activeScenarioPrompt = "";
   localStorage.removeItem("xinzhi_student_course");
   const questionInput = $("#question-input");
   if (questionInput) questionInput.value = "";
@@ -321,9 +402,8 @@ function resetConversation() {
   if (studentAttemptInput) studentAttemptInput.value = "";
   $("#messages").replaceChildren(); $("#answer-panel").hidden = true; $("#welcome").hidden = false;
   $("#context-task-title").textContent = "等待提问";
+  updateAutoDetection("");
   updateResearchAnalysisPanel();
-  $("#teaching-loop-panel").hidden = true;
-  $("#learning-progress-panel").hidden = true;
   state.activeMemoryIds.clear();
   renderEvidence([], {}); renderProcess([]);
   $("#context-usage").replaceChildren();
@@ -479,6 +559,17 @@ function presentationFor(task, result) {
       evidence_message: "本次任务已停止，未生成新的资料依据。",
     };
   }
+  if (task?.status === "failed") {
+    return {
+      ...raw,
+      status_label: raw.status_label === "已完成" ? "执行失败" : raw.status_label || "执行失败",
+      requires_review: true,
+      generation_complete: false,
+      answer_quality_status: "failed",
+      answer_quality_message: task.error_message || "任务未完成，请根据提示处理后重试。",
+      evidence_message: "本次没有可确认的完整结果；已有资料不会被当作成功答案。",
+    };
+  }
   if (!fallback && task?.status === "completed" && !taskHasRenderableAnswer(task, result)) {
     return {
       ...raw,
@@ -494,10 +585,10 @@ function presentationFor(task, result) {
     route_unavailable: "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。",
     target_agent_unavailable: "这是通用模型回答；目标 Agent 不可用，专业 Agent 未完成本次任务。",
     runtime_execution_failed: "这是通用模型回答；Runtime 执行失败，专业 Agent 未完成本次任务。",
-    cloud_opt_out: "已按本地优先策略处理，本次未调用星辰工作流。",
-    xingchen_response_parse_error: "云端结果格式校验未通过，本次已切换到本地安全后备结果。",
+    provider_opt_out: "已按本地 Runtime 策略处理。",
+    provider_response_parse_error: "本地 Runtime 结果格式校验未通过，本次已保留安全后备结果。",
     provider_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
-    xingchen_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
+    provider_timeout: "本地 Runtime 响应超时，本次已保留安全后备结果。",
     not_configured: "该云端能力尚未配置，本次已切换到本地安全后备结果。",
     academic_generation_direct_model: "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。",
   };
@@ -1323,6 +1414,7 @@ function renderContextUsage(result = {}) {
 }
 
 function renderInfo(task, result, summary, presentation, renderMs = 0) {
+  const structured = result.structured_result || {};
   const externalEvidenceCount = externalItemsForDisplay(result.structured_result).length;
   const scenarioReview = result.structured_result?.scenario_evidence_review || {};
   const scenarioReviewStatus = scenarioReview.status === "approved"
@@ -1338,10 +1430,16 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
     ? "通用模型回答"
     : result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
   const rows = [
+    ["实际提问", taskQuestion(task).slice(0, 800)],
     ["完成能力", presentation.title || summary.agent_label || "智能任务"],
     ["协作方式", collaboration],
-    ["课程", courseLabels[task.course_id] || task.course_id],
+    ["自动识别课程", courseLabels[task.course_id] || task.course_id || "自动识别"],
     ["任务类型", intentLabels[task.intent] || "自动识别"],
+    ["自动识别学习方式", intentLabels[structured.teaching?.teaching_mode] || ({
+      direct_answer: "综合回答",
+      guided_learning: "引导学习",
+      check_my_work: "检查与诊断",
+    }[structured.teaching?.teaching_mode] || "综合回答")],
     ["知识增强", ragLabels[summary.rag_mode] || "按需启用"],
     [
       externalEvidenceCount ? "外部证据" : "资料使用",
@@ -1706,6 +1804,50 @@ function prepareTaskFeedback(task) {
   $("#submit-task-feedback").disabled = false;
 }
 
+function renderRetryAction(task) {
+  const button = $("#retry-task");
+  if (!button) return;
+  const available = task?.status === "failed" && task.retryable === true;
+  button.hidden = !available;
+  button.disabled = false;
+  if (available) {
+    button.textContent = `重试本次任务（${task.attempt}/${task.max_attempts}）`;
+    button.title = task.failure_category || "该失败可以安全重试";
+  }
+}
+
+async function retryCurrentTask() {
+  const original = state.currentTask;
+  if (!original?.id || original.status !== "failed" || original.retryable !== true) return;
+  const runSequence = state.runSequence + 1;
+  state.runSequence = runSequence;
+  state.cancelRequested = false;
+  state.taskId = original.id;
+  setBusy(true);
+  markAnswerPending();
+  $("#form-error").textContent = "";
+  try {
+    const task = await api(`/api/v1/tasks/${original.id}/retry`, { method: "POST" });
+    state.taskId = task.id;
+    state.currentTask = task;
+    const finishedTask = await waitForTask(task.id, runSequence);
+    if (finishedTask && runSequence === state.runSequence) {
+      renderResult(finishedTask);
+      await loadSessionList();
+    }
+  } catch (error) {
+    if (runSequence === state.runSequence) {
+      $("#form-error").textContent = `${error.message || "重试未完成"}。请稍后再试。`;
+      renderResult({ ...original, error_message: error.message || original.error_message });
+    }
+  } finally {
+    if (runSequence === state.runSequence) {
+      state.taskId = "";
+      setBusy(false);
+    }
+  }
+}
+
 async function loadFeedbackFeatureStatus() {
   try {
     const status = await api("/api/v1/feedback/status");
@@ -1755,6 +1897,13 @@ async function submitTaskFeedback() {
   }
 }
 
+function rememberRuntimeRun(taskId, result = {}) {
+  const runId = String(result.runtime_run_id || "").trim();
+  if (!runId) return;
+  runtimeLearningRunId = runId;
+  runtimeLearningTaskId = taskId;
+}
+
 function renderResult(task) {
   const renderStarted = performance.now();
   const result = task.result_content || {}; const structured = result.structured_result || {};
@@ -1764,7 +1913,10 @@ function renderResult(task) {
   const externalItems = externalItemsForDisplay(structured);
   state.lastAnswer = displayAnswer(task, result);
   state.currentTask = task;
+  updateAutoDetection(taskQuestion(task), structured.teaching?.student_attempt_present ? "provided" : "");
+  renderRetryAction(task);
   prepareTaskFeedback(task);
+  rememberRuntimeRun(task.id, result);
   void refreshRuntimeTaskControls(task.id);
   $("#answer-panel").hidden = false;
   $("#answer-status").textContent = presentation.status_label || "已完成";
@@ -1772,8 +1924,9 @@ function renderResult(task) {
   $("#answer-source-chip").textContent = presentation.source_summary;
   $("#context-task-title").textContent = presentation.title;
   renderMarkdown($("#answer-text"), state.lastAnswer);
-  renderTeachingLoop(structured);
-  void loadLearningProgress(task);
+  // The legacy hint/progress panels are intentionally not part of the
+  // workspace result surface. They previously replaced complete workflow
+  // answers with a generic H0 prompt and fetched unrelated learning state.
   renderBusinessView(structured.business_view || researchBriefView(structured.research_brief), state.lastAnswer, structured);
   const notices = [];
   if (summary.mock || result.provider === "mock" || result.mock_used) notices.push({ status: "mock", text: "当前为开发态模拟结果，不代表正式智能能力输出。" });
@@ -1854,144 +2007,6 @@ function verificationPresentation(report) {
     title: "本轮仅作启发式检查",
     text: (report.warnings || [])[0] || "尚无足够规则证据确认正误。",
   };
-}
-
-function usesInteractiveTeaching(structured = {}) {
-  const mode = structured.teaching?.teaching_mode;
-  if (mode) return ["guided_learning", "check_my_work"].includes(mode);
-  const path = structured.teaching_loop?.execution_plan?.path;
-  return ["guided", "check"].includes(path);
-}
-
-function renderTeachingLoop(structured) {
-  const loop = structured.teaching_loop;
-  const panel = $("#teaching-loop-panel");
-  if (!loop || !usesInteractiveTeaching(structured)) {
-    panel.hidden = true;
-    return;
-  }
-  panel.hidden = false;
-  const plan = loop.execution_plan || {};
-  const full = loop.disclosure_policy?.reveal_final_answer || loop.full_solution_disclosed;
-  const pathLabels = { direct: "直接解答", guided: "分步辅导", check: "检查步骤" };
-  $("#teaching-path-badge").textContent = full
-    ? "完整解答已开启"
-    : pathLabels[plan.path] || "学习闭环";
-
-  const hint = loop.hint;
-  $("#teaching-hint-badge").hidden = !hint || full;
-  if (hint) $("#teaching-hint-badge").textContent = hint.hint_level;
-  $("#teaching-hint-card").hidden = !hint || full;
-  if (hint) $("#teaching-hint-text").textContent = hint.hint_text;
-
-  const verification = verificationPresentation(loop.verification || structured.verification_report_v1);
-  const verificationCard = $("#teaching-verification-card");
-  verificationCard.hidden = !verification;
-  verificationCard.className = `teaching-status-card${verification ? ` ${verification.kind}` : ""}`;
-  if (verification) {
-    $("#teaching-verification-title").textContent = verification.title;
-    $("#teaching-verification-text").textContent = verification.text;
-  }
-
-  const nextCheck = loop.next_check;
-  $("#teaching-next-card").hidden = !nextCheck || full;
-  if (nextCheck) $("#teaching-next-question").textContent = nextCheck.question_text;
-  $("#submit-teaching-response").hidden = !nextCheck || full;
-  $("#request-more-hint").hidden = !hint || full;
-  $("#switch-direct-answer").hidden = full;
-  $("#teaching-scope-note").hidden = !loop.verification && plan.path !== "check";
-}
-
-function formatLearningTime(value) {
-  if (!value) return "时间未记录";
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? "时间未记录" : date.toLocaleString("zh-CN", { hour12: false });
-}
-
-function renderAttemptHistory(attempts) {
-  const container = $("#attempt-history");
-  if (!attempts.length) {
-    container.replaceChildren(el("p", { class: "learning-empty", text: "本题还没有正式提交的尝试。" }));
-    return;
-  }
-  const verificationLabels = {
-    verified_correct: "有限核对通过",
-    verified_incorrect: "发现可确认差异",
-    manual_review: "需要人工复核",
-    not_checked: "未自动核对",
-  };
-  container.replaceChildren(...attempts
-    .slice()
-    .sort((a, b) => a.attempt_sequence - b.attempt_sequence)
-    .map((attempt) => el("article", { class: "attempt-item" }, [
-      el("strong", { text: `第${attempt.attempt_sequence}次尝试` }),
-      el("span", { text: `${verificationLabels[attempt.verification_status] || "已提交"} · 提示 ${attempt.hint_level_used || "未使用"}` }),
-      el("small", { text: `${formatLearningTime(attempt.submitted_at)} · ${attempt.full_solution_seen ? "已查看完整答案" : "未查看完整答案"}${attempt.status === "superseded" ? " · 已由新版本替代" : ""}` }),
-    ])));
-}
-
-function renderMasteryProgress(states, attempts) {
-  const container = $("#mastery-progress-list");
-  if (!states.length) {
-    container.replaceChildren(el("p", { class: "learning-empty", text: "完成可验证练习后，这里会显示辅助估计。" }));
-    return;
-  }
-  const latest = attempts.slice().sort((a, b) => b.attempt_sequence - a.attempt_sequence)[0];
-  container.replaceChildren(...states.map((item) => {
-    const estimate = Math.round(Number(item.mastery_score || 0) * 100);
-    return el("article", { class: "mastery-item" }, [
-      el("strong", { text: item.knowledge_point }),
-      el("span", { text: `学习进度估计 ${estimate}/100` }),
-      el("small", { text: `最近练习 ${latest ? formatLearningTime(latest.submitted_at) : "暂无"} · 提示使用 ${item.hint_count || 0} 次` }),
-    ]);
-  }));
-}
-
-function renderRetestPlans(plans) {
-  const container = $("#retest-plan-list");
-  const active = plans.filter((item) => ["scheduled", "due"].includes(item.status));
-  if (!active.length) {
-    container.replaceChildren(el("p", { class: "learning-empty", text: "当前没有待处理的复习项。" }));
-    return;
-  }
-  container.replaceChildren(...active.map((plan) => {
-    const actions = el("div", { class: "retest-item-actions" }, [
-      el("button", { class: "button", type: "button", text: "开始复习", "data-start-retest": plan.retest_plan_id }),
-      el("button", { class: "text-button", type: "button", text: "稍后处理", "data-dismiss-retest": plan.retest_plan_id }),
-    ]);
-    actions.querySelector("[data-start-retest]").addEventListener("click", () => learningAction("start_retest", { retest_plan_id: plan.retest_plan_id }));
-    actions.querySelector("[data-dismiss-retest]").addEventListener("click", () => learningAction("dismiss_retest", { retest_plan_id: plan.retest_plan_id }));
-    return el("article", { class: "retest-item" }, [
-      el("strong", { text: plan.skill_id }),
-      el("span", { text: `${plan.status === "due" ? "已到期" : "计划复习"} · ${formatLearningTime(plan.due_at)}` }),
-      el("small", { text: `来源题目 ${plan.source_task_id.slice(0, 12)}` }),
-      actions,
-    ]);
-  }));
-}
-
-async function loadLearningProgress(task = state.currentTask) {
-  if (!task?.id) return;
-  const structured = task.result_content?.structured_result || {};
-  if (!usesInteractiveTeaching(structured)) {
-    $("#learning-progress-panel").hidden = true;
-    return;
-  }
-  try {
-    const query = `user_id=${encodeURIComponent(state.userId)}`;
-    const [attempts, mastery, retests] = await Promise.all([
-      api(`/api/v1/learning/attempts?${query}&source_task_id=${encodeURIComponent(task.id)}&limit=50`),
-      api(`/api/v1/learning/states?${query}&course_id=${encodeURIComponent(task.course_id || "")}`),
-      api(`/api/v1/learning/retests?${query}&limit=50`),
-    ]);
-    if (state.currentTask?.id !== task.id) return;
-    $("#learning-progress-panel").hidden = false;
-    renderAttemptHistory(attempts);
-    renderMasteryProgress(mastery, attempts);
-    renderRetestPlans(retests.filter((item) => item.source_task_id === task.id));
-  } catch (error) {
-    console.warn("learning progress unavailable", error);
-  }
 }
 
 async function loadSessionHistory() {
@@ -2198,7 +2213,7 @@ function businessValueText(key, value) {
   if (typeof value === "boolean" && booleanLabels[key]) {
     return booleanLabels[key][String(value)];
   }
-  if (value && typeof value === "object") return JSON.stringify(value);
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value ?? "");
 }
 
@@ -2341,150 +2356,37 @@ function renderBusinessView(view, answer = "", structured = {}) {
   });
 }
 
-function selectedMaterialFiles() {
-  return [...pendingMaterialFiles];
+const selectedMaterialFiles = () => materialManager.selected();
+const appendMaterialFiles = (files) => materialManager.append(files);
+const attachExampleImage = (button) => materialManager.attachExample(button);
+const uploadMaterials = () => materialManager.upload();
+function attachmentRef(file) {
+  return {
+    file_id: file.id,
+    filename: file.filename,
+    content_type: file.content_type,
+    size_bytes: file.size_bytes,
+    storage_key: file.storage_key,
+    checksum_sha256: file.checksum_sha256,
+  };
 }
 
-function validateMaterialFiles(files) {
-  const allowed = ["image/jpeg", "image/png", "image/webp", "text/plain", "text/markdown", "text/csv", "text/tab-separated-values", "application/json", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.apache.parquet"];
-  if (files.length > maxMultiImageFiles) throw new Error(`一次最多上传 ${maxMultiImageFiles} 个材料`);
-  files.forEach((file) => {
-    if (!allowed.includes(file.type) && !/\.(md|txt|csv|json|pdf|doc|docx|xlsx|parquet)$/i.test(file.name)) throw new Error(`暂不支持材料类型：${file.name}`);
-    if (file.size > 20 * 1024 * 1024) throw new Error(`材料不能超过 20MB：${file.name}`);
-  });
-}
-
-function materialFileKey(file) {
-  return [file.name, file.size, file.type, file.lastModified].join(":");
-}
-
-function appendMaterialFiles(files) {
-  const known = new Set(pendingMaterialFiles.map(materialFileKey));
-  const additions = files.filter((file) => !known.has(materialFileKey(file)));
-  const combined = [...pendingMaterialFiles, ...additions];
-  validateMaterialFiles(combined);
-  pendingMaterialFiles = combined;
-}
-
-async function attachExampleImage(button) {
-  const imageSrc = button.dataset.imageSrc;
-  if (!imageSrc) return;
-  const response = await fetch(imageSrc);
-  if (!response.ok) throw new Error("示例题图片暂时无法读取");
-  const blob = await response.blob();
-  const file = new File(
-    [blob],
-    button.dataset.imageName || "analog-opamp-question.jpg",
-    { type: blob.type || "image/jpeg" },
-  );
-  appendMaterialFiles([file]);
-  showMaterialPreview(selectedMaterialFiles());
-}
-
-async function uploadMaterials() {
-  const files = selectedMaterialFiles(); if (!files.length) return [];
-  validateMaterialFiles(files);
-  const materials = [];
-  for (const file of files) {
-    const form = new FormData(); form.append("upload", file); form.append("purpose", "unified_task_material");
-    const uploaded = await api("/api/v1/files", { method: "POST", body: form });
-    if (["failed", "processing", "pending"].includes(uploaded.ingestion_status)) throw new Error(uploaded.extraction_error || `材料解析失败：${file.name}`);
-    materials.push({ uploaded, extractedText: uploaded.extracted_text || "", originalType: file.type });
-  }
-  return materials;
-}
-function attachmentRef(file) { return { file_id: file.id, filename: file.filename, content_type: file.content_type, size_bytes: file.size_bytes, storage_key: file.storage_key, checksum_sha256: file.checksum_sha256 }; }
-
-async function waitForTask(id, runSequence) {
-  state.liveProcessSteps.clear();
-  return new Promise((resolve, reject) => {
-    let settled = false; let pollTimer = null; let terminalPollTimer = null; let controlRefreshTimer = null; let longWaitTimer = null; const waitStartedAt = performance.now(); const events = new EventSource(`/api/v1/tasks/${id}/stream`);
-    const cleanup = () => {
-      events.close();
-      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-      if (terminalPollTimer) { clearInterval(terminalPollTimer); terminalPollTimer = null; }
-      if (controlRefreshTimer) { clearInterval(controlRefreshTimer); controlRefreshTimer = null; }
-      if (longWaitTimer) { clearInterval(longWaitTimer); longWaitTimer = null; }
-      if (state.activeTaskWait?.runSequence === runSequence) state.activeTaskWait = null;
-    };
-    const cancel = () => { if (settled) return; settled = true; cleanup(); resolve(null); };
-    state.activeTaskWait = { runSequence, cancel };
-    const finish = async () => { if (settled) return; try { const task = await api(ownedTaskUrl(id)); if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); } } catch (error) { settled = true; cleanup(); reject(error); } };
-    ["task.completed", "task.failed", "task.cancelled"].forEach((name) => events.addEventListener(name, finish));
-    events.addEventListener("intent.recognized", () => addMessage("已识别用户意图，正在选择能力与执行方式…", "system"));
-    events.addEventListener("plan.created", () => { addMessage("已生成执行计划，按依赖关系调度本地 Agent 与检索能力…", "system"); selectContextTab("process"); });
-    events.addEventListener("agent.started", () => addMessage("已完成能力编排，内部 Agent 正在协作处理…", "system"));
-    events.addEventListener("knowledge.retrieved", () => { addMessage("已完成课程资料检索，正在整理本次证据…", "system"); selectContextTab("process"); });
-    const progressEventLabels = {
-      "plan.node_started": "\u6b63\u5728\u6267\u884c\u8ba1\u5212\u8282\u70b9",
-      "plan.node_completed": "\u8ba1\u5212\u8282\u70b9\u5df2\u5b8c\u6210",
-      "knowledge.query_normalized": "\u5df2\u5b8c\u6210\u77e5\u8bc6\u68c0\u7d22\u5b9a\u4f4d",
-      "knowledge.context_built": "\u5df2\u7ec4\u88c5\u8bfe\u7a0b\u8bc1\u636e",
-      "knowledge.insufficient": "\u8bfe\u7a0b\u8bc1\u636e\u4e0d\u8db3\uff0c\u8fdb\u5165\u4fdd\u5b88\u56de\u7b54",
-      "external_retrieval.started": "\u6b63\u5728\u68c0\u7d22\u5916\u90e8\u8bc1\u636e",
-      "external_retrieval.completed": "\u5916\u90e8\u8bc1\u636e\u68c0\u7d22\u5b8c\u6210",
-      "external_retrieval.failed": "\u5916\u90e8\u8bc1\u636e\u68c0\u7d22\u672a\u5b8c\u6210",
-    };
-    Object.entries(progressEventLabels).forEach(([name, label]) => {
-      events.addEventListener(name, (event) => {
-        const data = liveProgressData(event);
-        const terminal = name.endsWith(".completed") || name.endsWith(".failed")
-          || name === "knowledge.context_built" || name === "knowledge.insufficient";
-        updateLiveProgress(data, {
-          stage_id: String(data.stage_id || data.node_id || name),
-          status: terminal
-            ? (name.endsWith(".failed") || name === "knowledge.insufficient" ? "failed" : "completed")
-            : "running",
-          label,
-        });
-        void refreshRuntimeTaskControls(id);
-      });
-    });
-    events.addEventListener("agent.progress", (event) => {
-      updateLiveProgress(liveProgressData(event));
-      void refreshRuntimeTaskControls(id);
-    });
-    // SSE progress events can arrive while an earlier control projection is
-    // still in flight. Reconcile the public control surface periodically so a
-    // waiting approval is rendered even when event and request completion
-    // order differs.
-    controlRefreshTimer = setInterval(() => {
-      if (!settled) void refreshRuntimeTaskControls(id);
-    }, 900);
-    longWaitTimer = setInterval(() => {
-      if (!settled) renderLongWaitNotice(performance.now() - waitStartedAt);
-    }, 5000);
-    // The stream may stay open without delivering a terminal event when the
-    // worker finishes between SSE heartbeats. Keep task completion independent
-    // from the EventSource lifecycle so the UI cannot spin after the API has
-    // already persisted a terminal result.
-    terminalPollTimer = setInterval(() => {
-      if (!settled) void finish();
-    }, 1200);
-    events.onerror = () => {
-      if (settled) return;
-      // Keep EventSource open so the browser retries the same stream and
-      // sends its Last-Event-ID cursor; polling reconciles controls while it
-      // is reconnecting.
-      if (pollTimer) return;
-      pollTimer = setInterval(async () => {
-        if (settled) return;
-        try {
-          const task = await api(ownedTaskUrl(id));
-          void refreshRuntimeTaskControls(id);
-          if (["completed", "failed", "cancelled"].includes(task.status)) { settled = true; cleanup(); resolve(task); }
-        } catch (error) { settled = true; cleanup(); reject(error); }
-      }, 900);
-    };
-  });
-}
+const taskTransport = createTaskTransport({
+  api,
+  ownedTaskUrl,
+  state,
+  addMessage,
+  selectContextTab,
+  liveProgressData,
+  updateLiveProgress,
+  refreshRuntimeTaskControls,
+  renderLongWaitNotice,
+});
+const waitForTask = (id, runSequence) => taskTransport.waitForTask(id, runSequence);
 
 function setBusy(busy) {
   $("#send-button").disabled = busy; $("#stop-button").disabled = !busy; $("#question-input").disabled = busy; $("#student-attempt-input").disabled = busy; $("#teaching-mode").disabled = busy; $("#image-input").disabled = busy; $("#remove-image").disabled = busy;
-  $("#teaching-response-input").disabled = busy;
-  $("#submit-teaching-response").disabled = busy;
-  $("#request-more-hint").disabled = busy;
-  $("#switch-direct-answer").disabled = busy;
+  $("#retry-task").disabled = busy;
 }
 
 function markAnswerPending() {
@@ -2563,15 +2465,16 @@ async function submit(event) {
   state.runSequence = runSequence;
   state.cancelRequested = false;
   $("#form-error").textContent = "";
-  const question = $("#question-input").value.trim(); const course = selectedCourse();
-  const teachingMode = $("#teaching-mode").value;
+  const question = $("#question-input").value.trim();
   const studentAttempt = $("#student-attempt-input").value.trim();
+  const teachingMode = inferLearningMode(question, studentAttempt);
+  $("#teaching-mode").value = teachingMode;
   const learningFollowUp = pendingLearningFollowUp;
-  const requestedCourse = learningFollowUp?.course_id || course;
-  const requestedIntent = learningFollowUp?.intent || state.intentOverride || "unknown";
+  const requestedCourse = learningFollowUp?.course_id || "AUTO";
+  const requestedIntent = learningFollowUp?.intent || "unknown";
   const selectedFiles = selectedMaterialFiles();
   if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
-  if (teachingMode === "check_my_work" && !studentAttempt) { $("#form-error").textContent = "请填写你的解题过程或答案"; return; }
+  updateAutoDetection(question, studentAttempt);
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
   markAnswerPending();
   renderProcess([{ label: "正在理解你的需求", status: "running" }]);
@@ -2580,7 +2483,7 @@ async function submit(event) {
     el("p", { text: "任务完成后会展示实际使用的消息、记忆和预算。" }),
   ]));
   try {
-    await ensureSession(); state.activeCourse = requestedCourse; localStorage.setItem("xinzhi_student_course", requestedCourse); archiveCurrentAnswer(); if (question) addMessage(question, "user", "", selectedFiles); else addMessage(`已上传 ${selectedFiles.length} 张题目图片`, "user", "", selectedFiles);
+    await ensureSession(); state.activeCourse = "AUTO"; localStorage.removeItem("xinzhi_student_course"); archiveCurrentAnswer(); if (question) addMessage(question, "user", "", selectedFiles); else addMessage(`已上传 ${selectedFiles.length} 个材料`, "user", "", selectedFiles);
     const materials = await uploadMaterials();
     const canonical = { text: question };
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
@@ -2592,13 +2495,13 @@ async function submit(event) {
         uploadedText || `已上传结构化数据文件：${tabularMaterials[0].uploaded.filename}`,
       ].filter(Boolean).join("\n\n");
     }
-    const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: teachingMode === "check_my_work" ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, allow_cloud: false, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
+    const options = { request_id: `student_${crypto.randomUUID()}`, response_depth: $("#depth-select").value, teaching_mode: teachingMode, student_attempt: studentAttempt ? { raw_text: studentAttempt } : undefined, prefer_internal_agents: true, use_local_rag: true, source_task_id: learningFollowUp?.source_task_id || "", learning_action: learningFollowUp?.action || "" };
     const researchAnalysis = buildResearchAnalysisV2(question, materials);
     if (researchAnalysis) options.research_analysis_v2 = researchAnalysis;
     const payload = { session_id: state.sessionId, user_id: state.userId, user_role: state.userRole, scene: "dispatch", course_id: requestedCourse, intent: requestedIntent, scenario_id: state.activeScenarioId || null, canonical_input: canonical, attachments: materials.map((item) => attachmentRef(item.uploaded)), context_refs: [], options };
     const task = await api("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     pendingLearningFollowUp = null;
-    state.taskId = task.id; state.currentTask = task; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：自动识别", "system");
+    state.taskId = task.id; state.currentTask = task; localStorage.setItem("xinzhi_last_task", task.id); addMessage("已识别：课程、任务与学习方式将由系统自动协作", "system");
     void refreshRuntimeTaskControls(task.id);
     const finishedTask = await waitForTask(task.id, runSequence);
     if (!finishedTask || runSequence !== state.runSequence || state.cancelRequested) return;
@@ -2655,8 +2558,7 @@ function showMaterialPreview(files) {
     remove.setAttribute("aria-label", `移除 ${file.name}`);
     remove.textContent = "×";
     remove.addEventListener("click", () => {
-      pendingMaterialFiles.splice(index, 1);
-      showMaterialPreview(selectedMaterialFiles());
+      materialManager.removeAt(index);
     });
     item.append(meta, remove);
     previewList.append(item);
@@ -2664,7 +2566,7 @@ function showMaterialPreview(files) {
   $("#image-preview").hidden = false;
 }
 function clearImage() {
-  pendingMaterialFiles = [];
+  materialManager.clear();
   revokeMaterialPreviews();
   $("#image-input").value = "";
   $("#preview-images").replaceChildren();
@@ -2741,75 +2643,10 @@ function initializeResizablePanels() {
     });
   });
 }
-function applyParams() { if (params.get("course")) $("#course-select").value = params.get("course"); if (params.get("prompt")) $("#question-input").value = params.get("prompt"); updateResearchAnalysisPanel(); }
-
-async function learningAction(action, payload = {}) {
-  if (!state.currentTask?.id) { toast("请先完成一道题或一次知识问答"); return; }
-  const phase2Action = ["request_more_hint", "submit_check_response", "switch_to_direct_answer"].includes(action);
-  const revisionAction = action === "submit_attempt_revision";
-  const studentAnswer = revisionAction
-    ? $("#attempt-revision-input").value.trim()
-    : phase2Action ? $("#teaching-response-input").value.trim() : $("#question-input").value.trim();
-  if (action === "submit_check_response" && !studentAnswer) {
-    $("#teaching-response-input").focus(); toast("请先回答当前这一步理解检查"); return;
-  }
-  if (action === "check_answer" && !studentAnswer) {
-    $("#question-input").placeholder = "在这里写下你的答案，再点击“检查我的答案”";
-    $("#question-input").focus(); toast("请先输入你的答案"); return;
-  }
-  if (revisionAction && !studentAnswer) {
-    $("#attempt-revision-input").focus(); toast("请先写下修改后的步骤或答案"); return;
-  }
-  try {
-    const result = await api("/api/v1/learning/actions", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source_task_id: state.currentTask.id,
-        user_id: state.userId,
-        action,
-        idempotency_key: `learn_${crypto.randomUUID()}`,
-        student_answer: studentAnswer,
-        payload,
-      }),
-    });
-    toast(result.message);
-    if (result.runtime_run_id && state.currentTask?.id) {
-      await refreshRuntimeTaskControls(
-        state.currentTask.id,
-        result.runtime_run_id,
-      );
-    }
-    if (result.feedback_uptake || revisionAction) {
-      $("#feedback-uptake-message").hidden = false;
-      $("#feedback-uptake-message").textContent = result.message;
-    }
-    if (phase2Action) {
-      const task = await api(ownedTaskUrl(state.currentTask.id));
-      renderResult(task);
-      if (action === "submit_check_response") $("#teaching-response-input").value = "";
-      return;
-    }
-    if (["submit_attempt_revision", "dismiss_retest", "complete_retest"].includes(action)) {
-      if (revisionAction) $("#attempt-revision-input").value = "";
-      await loadLearningProgress();
-    }
-    if (result.review) {
-      const feedback = (result.review.feedback || []).join("；") || result.review.status;
-      addMessage(`答案检查：${feedback}`, "system");
-      return;
-    }
-    const nextPrompt = result.practice?.status === "ready"
-      ? result.practice.problem_text
-      : result.follow_up_prompt;
-    if (nextPrompt) {
-      pendingLearningFollowUp = result.follow_up_context || null;
-      if (pendingLearningFollowUp?.course_id && $(`#course-select option[value="${pendingLearningFollowUp.course_id}"]`)) {
-        $("#course-select").value = pendingLearningFollowUp.course_id;
-      }
-      $("#question-input").value = nextPrompt; autoGrow();
-      $("#student-form").requestSubmit();
-    }
-  } catch (error) { toast(`学习动作未完成：${error.message}`); }
+function applyParams() {
+  if (params.get("prompt")) $("#question-input").value = params.get("prompt");
+  updateResearchAnalysisPanel();
+  updateAutoDetection();
 }
 
 async function loadCapabilities() {
@@ -2831,7 +2668,7 @@ async function loadCapabilities() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "workspace", title: "智能任务工作台", description: "统一问题输入与自动调度", context: "自动识别 · 本地知识增强", audience: "student" });
+  initShell({ page: "workspace", title: "智能任务工作台", description: "目标输入与学科智能体协作", context: "自动识别 · 本地知识增强", audience: "student" });
   applyParams(); updateShell(); updateTeachingMode(); autoGrow(); initializeResizablePanels();
   identityReady = initIdentityGate({ next: `${location.pathname}${location.search}` }).then((identity) => {
     state.userRole = effectiveWorkspaceRole(identity);
@@ -2858,16 +2695,20 @@ window.addEventListener("DOMContentLoaded", () => {
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
   all("[data-prompt]").forEach((button) => button.addEventListener("click", async () => {
     $("#question-input").value = button.dataset.prompt;
-    $("#course-select").value = button.dataset.course || "AUTO";
-    state.intentOverride = button.dataset.intent || "";
-    state.activeScenarioId = "";
+    $("#course-select").value = "AUTO";
+    state.activeCourse = "AUTO";
+    state.intentOverride = "";
+    state.activeScenarioPrompt = button.dataset.prompt || "";
+    state.activeScenarioId = button.dataset.scenarioId
+      || showcaseScenarioByCapability[button.dataset.capability]
+      || "";
     $("#form-error").textContent = "";
     try {
       await attachExampleImage(button);
     } catch (error) {
       $("#form-error").textContent = error.message;
     }
-    updateResearchAnalysisPanel(); updateShell(); autoGrow(); $("#question-input").focus();
+    updateResearchAnalysisPanel(); updateAutoDetection(); updateShell(); autoGrow(); $("#question-input").focus();
   }));
   all("[data-context-tab]").forEach((button) => button.addEventListener("click", () => selectContextTab(button.dataset.contextTab)));
   $("#student-form").addEventListener("submit", submit);
@@ -2882,10 +2723,18 @@ window.addEventListener("DOMContentLoaded", () => {
     reason: "The proposed Runtime recovery plan was rejected from the workspace.",
   }));
   $("#runtime-task-input-form").addEventListener("submit", submitRuntimeTaskInput);
-  $("#question-input").addEventListener("input", autoGrow);
-  $("#teaching-mode").addEventListener("change", updateTeachingMode);
+  $("#question-input").addEventListener("input", (event) => {
+    if (state.activeScenarioPrompt && event.target.value !== state.activeScenarioPrompt) {
+      // A showcase contract belongs to its original prompt. Do not let a
+      // later edit keep routing an unrelated question to that scenario.
+      state.activeScenarioId = "";
+      state.activeScenarioPrompt = "";
+    }
+    autoGrow(); updateAutoDetection(); updateResearchAnalysisPanel();
+  });
+  $("#student-attempt-input").addEventListener("input", () => updateAutoDetection());
   $("#question-input").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("#student-form").requestSubmit(); } });
-  $("#course-select").addEventListener("change", () => { if ($("#course-select").value !== "AUTO") state.activeCourse = $("#course-select").value; updateShell(); });
+  $("#course-select").value = "AUTO";
   $("#image-input").addEventListener("change", (event) => {
     const files = Array.from(event.target.files || []);
     $("#form-error").textContent = "";
@@ -2934,12 +2783,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("#answer-text").addEventListener("click", (event) => { const ref = event.target.closest("[data-evidence-ref]"); if (ref) focusEvidence(ref.dataset.evidenceRef); });
   $("#copy-answer").addEventListener("click", async () => { await navigator.clipboard.writeText(state.lastAnswer); toast("回答已复制"); });
   $("#follow-up").addEventListener("click", () => { $("#question-input").focus(); $("#question-input").placeholder = "继续追问这一回答…"; });
+  $("#retry-task").addEventListener("click", () => void retryCurrentTask());
   $("#reask").addEventListener("click", () => { $("#question-input").value = state.lastQuestion; autoGrow(); $("#question-input").focus(); });
-  all("[data-learning-action]").forEach((button) => button.addEventListener("click", () => learningAction(button.dataset.learningAction)));
-  $("#submit-teaching-response").addEventListener("click", () => learningAction("submit_check_response"));
-  $("#request-more-hint").addEventListener("click", () => learningAction("request_more_hint"));
-  $("#switch-direct-answer").addEventListener("click", () => learningAction("switch_to_direct_answer"));
-  $("#submit-attempt-revision").addEventListener("click", () => learningAction("submit_attempt_revision"));
   $("#close-image-dialog").addEventListener("click", () => $("#image-dialog").close());
   $("#document-page-previous").addEventListener("click", () => {
     if (documentPageState.item && documentPageState.previousOffset != null) {

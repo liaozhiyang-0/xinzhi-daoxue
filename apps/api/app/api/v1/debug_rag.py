@@ -37,19 +37,17 @@ class DebugRunRequest(BaseModel):
     use_rag: bool = True
     include_images: bool = False
     use_reranker: bool = False
-    allow_cloud: bool = False
     request_id: str = Field(default="", max_length=128)
 
 
 class CompareRequest(DebugRunRequest):
-    comparison_mode: Literal["rag_vs_no_rag", "cloud_vs_local"] = "rag_vs_no_rag"
+    comparison_mode: Literal["rag_vs_no_rag"] = "rag_vs_no_rag"
 
 
 class EvalRequest(BaseModel):
     group: Literal[
         "all", "CT", "AE", "DE", "SS", "DSP", "COMM", "boundary", "degradation"
     ] = "all"
-    allow_cloud: bool = False
     limit: int = Field(default=60, ge=1, le=60)
 
 
@@ -110,8 +108,8 @@ async def status(request: Request) -> dict[str, Any]:
         ),
         "learn_enabled": learner.enabled,
         "learn_publication_status": learner.publication_status,
-        "learn_flow_configured": bool(
-            request.app.state.agent_registry.resolve_flow_id(learner.agent_id, settings)
+        "local_ready": request.app.state.agent_registry.is_runtime_available(
+            learner.agent_id, settings
         ),
         "cpu_mode": settings.text_embedding_device == "cpu",
         "rag_enabled": settings.rag_enabled,
@@ -156,8 +154,10 @@ async def compare(payload: CompareRequest, request: Request) -> dict[str, Any]:
         a = {**base, "use_rag": True}
         b = {**base, "use_rag": False}
     else:
-        a = {**base, "allow_cloud": True}
-        b = {**base, "allow_cloud": False}
+        raise HTTPException(
+            status_code=400,
+            detail="Only RAG vs no-RAG comparison is available in local mode",
+        )
     return {
         "mode": payload.comparison_mode,
         "a": await request.app.state.rag_debug.run(a),
@@ -213,7 +213,6 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
                     "use_rag": True,
                     "include_images": case.get("should_have_images", False),
                     "use_reranker": False,
-                    "allow_cloud": payload.allow_cloud,
                 }
             )
         except Exception as exc:
@@ -227,7 +226,7 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
                     "cross_course": False,
                     "citation_legal": True,
                     "citation_used": False,
-                    "cloud_success": False,
+                    "provider_success": False,
                     "local_fallback": False,
                     "latency_ms": 0,
                     "manual_review_required": False,
@@ -280,12 +279,12 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
         )
         citation_status = trace_result["citation_validation"].get("status")
         final_citations = trace_result["final"].get("citations", [])
-        cloud_status = trace_result["cloud"].get("status")
+        provider_status = trace_result["provider_trace"].get("status")
         expects_misroute = case.get("expected_status") == "misrouted"
         misrouted_evaluated = bool(
             expects_misroute
-            and payload.allow_cloud
-            and cloud_status not in {None, "not_run", "cloud_failed"}
+            and False
+            and provider_status not in {None, "not_run"}
         )
         results.append(
             {
@@ -301,16 +300,19 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
                 "cross_course": bool(cross_course),
                 "citation_legal": citation_status in {"passed", "not_run"},
                 "citation_used": bool(final_citations),
-                "cloud_status": cloud_status,
-                "cloud_success": cloud_status in {"success", "completed", "partial"},
+                "provider_status": provider_status,
+                "provider_success": provider_status
+                in {"success", "completed", "partial"},
                 "misrouted_evaluated": misrouted_evaluated,
                 "misrouted_ok": (
-                    cloud_status == "misrouted" if misrouted_evaluated else None
+                    provider_status == "misrouted" if misrouted_evaluated else None
                 ),
                 "local_fallback": bool(trace_result["final"].get("fallback_used")),
                 "latency_ms": trace_result["final"]["total_latency_ms"],
                 "retrieval_latency_ms": retrieval.get("latency_ms", 0),
-                "cloud_latency_ms": trace_result["cloud"].get("latency_ms", 0),
+                "provider_latency_ms": trace_result["provider_trace"].get(
+                    "latency_ms", 0
+                ),
                 "manual_review_required": True,
                 "trace_id": trace_result["trace_id"],
             }
@@ -320,10 +322,10 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
     retrieval_latencies = [
         float(item.get("retrieval_latency_ms", 0)) for item in results
     ]
-    cloud_latencies = [
-        float(item.get("cloud_latency_ms", 0))
+    provider_latencies = [
+        float(item.get("provider_latency_ms", 0))
         for item in results
-        if item.get("cloud_latency_ms")
+        if item.get("provider_latency_ms")
     ]
     misrouted_results = [item for item in results if item.get("misrouted_evaluated")]
     return {
@@ -374,8 +376,8 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
             if total
             else 0
         ),
-        "cloud_success_rate": (
-            sum(bool(item.get("cloud_success")) for item in results) / total
+        "provider_success_rate": (
+            sum(bool(item.get("provider_success")) for item in results) / total
             if total
             else 0
         ),
@@ -394,8 +396,8 @@ async def evaluate(payload: EvalRequest, request: Request) -> dict[str, Any]:
         "average_latency_ms": mean(latencies) if latencies else 0,
         "p50_retrieval_latency_ms": _percentile(retrieval_latencies, 0.5),
         "p95_retrieval_latency_ms": _percentile(retrieval_latencies, 0.95),
-        "p50_cloud_latency_ms": _percentile(cloud_latencies, 0.5),
-        "p95_cloud_latency_ms": _percentile(cloud_latencies, 0.95),
+        "p50_provider_latency_ms": _percentile(provider_latencies, 0.5),
+        "p95_provider_latency_ms": _percentile(provider_latencies, 0.95),
         "p50_total_latency_ms": _percentile(latencies, 0.5),
         "p95_total_latency_ms": _percentile(latencies, 0.95),
         "results": results,

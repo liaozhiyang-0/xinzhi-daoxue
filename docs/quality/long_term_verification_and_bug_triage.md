@@ -15,7 +15,7 @@
 4. 前端/后端接口不一致、演示边界漂移和提交材料不一致；
 5. 真实 Provider 误调用、Mock/合成结果冒充真实结果的问题。
 
-默认所有检查离线、Mock 或 dry-run。不得修改冻结的 SOLVER_CT v1.0 或 SOLVER_CT_V1，不得写入密钥、Flow ID、学生隐私或原始星辰 YAML。
+默认所有检查离线、Mock 或 dry-run。不得修改冻结的 SOLVER_CT v1.0 或 SOLVER_CT_V1，不得写入密钥、学生隐私或历史基线原始输入。
 
 ## 统一位置与记录原则
 
@@ -34,8 +34,6 @@
     $env:APP_ENV = "test"
     $env:DEFAULT_AGENT_PROVIDER = "mock"
     $env:ALLOW_MOCK_FALLBACK = "true"
-    $env:XINGCHEN_ENABLED = "false"
-
     .\.venv\Scripts\python.exe scripts\validate_config.py
     .\.venv\Scripts\python.exe scripts\check_sensitive_files.py
     .\.venv\Scripts\python.exe -m ruff check .
@@ -54,7 +52,7 @@
 Runtime、迁移、任务执行边界或控制协议变化后执行：
 
     .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_runtime_*.py -q --no-cov
-    .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_task_runner_uses_routed_agent.py apps/api/tests/test_task_executor_reliability.py apps/api/tests/test_task_idempotency.py apps/api/tests/test_task_retry.py apps/api/tests/test_sse_reconnect.py -q --no-cov
+    .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_runtime_uses_routed_agent.py apps/api/tests/test_task_executor_reliability.py apps/api/tests/test_task_idempotency.py apps/api/tests/test_task_retry.py apps/api/tests/test_sse_reconnect.py -q --no-cov
 
 必须覆盖：正常完成、Provider 失败、限次重试、取消、等待用户输入、等待审批、暂停/恢复、进程重启后的恢复、重复提交幂等、子 Run 归属、checkpoint/observation 可重放，以及异常时不把 waiting_* 错误转换为 failed。
 

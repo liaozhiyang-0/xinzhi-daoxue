@@ -51,12 +51,13 @@ from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
 from app.services.event_service import append_task_event
+from app.services.intent_recognition import IntentRecognitionService
 from app.services.research_analysis_review import ResearchAnalysisReviewService
 from app.services.runtime_control_policy import control_policy_for_runtime_kind
 from app.services.runtime_plan_proposals import RuntimePlanProposalService
 from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
-from app.services.task_control_service import TaskControlService
+from app.services.task_control_service import RETRYABLE_FAILURES, TaskControlService
 from app.services.task_creation_service import TaskCreationService
 from app.services.task_query_service import TaskQueryService
 
@@ -79,6 +80,38 @@ _RESEARCH_RUNTIME_APPROVAL_AGENT_IDS = frozenset(
         "RESEARCH_02_ACADEMIC_WRITING_V1",
     }
 )
+
+_AUTO_SCENARIO_BY_INTENT = {
+    "lesson_prep": "faculty_course_copilot_v1",
+    "assignment_review": "assessment_diagnosis_v1",
+    "learning_advice": "student_learning_path_v1",
+    "academic_search": "research_frontier_radar_v1",
+}
+
+
+def _bind_auto_scenario(data: AgentRequest) -> AgentRequest:
+    """Attach a bounded showcase contract when the user did not choose one.
+
+    The workspace normally supplies ``scenario_id`` for showcase buttons, but
+    pasted or bookmarked prompts must receive the same contract.  Only the
+    recognizer's high-confidence business intents are eligible; ordinary
+    questions stay on the normal route.
+    """
+
+    if data.scenario_id:
+        return data
+    recognizer = IntentRecognitionService()
+    recognition = recognizer.recognize(data)
+    intent = recognition.intent
+    if intent == "summarize_knowledge" and recognizer.is_knowledge_governance(
+        data.input_text()
+    ):
+        scenario_id: str | None = "department_knowledge_governance_v1"
+    else:
+        scenario_id = _AUTO_SCENARIO_BY_INTENT.get(intent)
+    if not scenario_id:
+        return data
+    return data.model_copy(update={"scenario_id": scenario_id})
 
 
 def task_read(
@@ -113,6 +146,11 @@ def task_read(
         model.result_content,
         include_private_teaching=requester_user_id == task.user_id,
     )
+    model.retryable = bool(
+        task.status == TaskStatus.FAILED
+        and task.failure_category in RETRYABLE_FAILURES
+        and task.attempt < task.max_attempts
+    )
     artifacts = task.__dict__.get("artifacts")
     model.artifact_ids = [artifact.id for artifact in artifacts or []]
     return model
@@ -138,6 +176,7 @@ async def create_task(
         except ValueError:
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
+    data = _bind_auto_scenario(data)
     if (
         data.intent.value == "data_analysis"
         and not request.app.state.settings.data_analysis_enabled

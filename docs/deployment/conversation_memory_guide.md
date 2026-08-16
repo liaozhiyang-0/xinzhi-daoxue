@@ -38,7 +38,7 @@ SQLite 的升级—降级—升级由专项测试覆盖。
 - `memory_enabled=true`：允许用户显式“记住”、手动添加和召回；
 - `auto_memory_enabled=false`：不会从普通聊天自动写入长期记忆；
 - `context_compaction_enabled=true`：仅在阈值触发时做确定性压缩；
-- 星辰工作流授权策略不因历史或记忆而改变。
+- 历史 `allow_cloud` 字段不因历史或记忆而恢复远程执行能力。
 
 Workspace 的记忆面板可关闭召回、查看来源、添加和软删除记忆。删除后记忆立即
 退出 active 召回；恢复 API 可撤销软删除。关闭记忆不会删除已有记录。

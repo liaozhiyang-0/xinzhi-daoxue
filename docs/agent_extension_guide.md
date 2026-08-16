@@ -7,7 +7,7 @@
 5. 新 Capability：向 CapabilityRegistry 注册跨课程能力及 tool IDs；不生成最终教学回答。
 6. 新工具：向唯一 ToolRegistry 注册完整 ToolDefinition 与 handler；代码执行/文件副作用必须声明 sandbox 和 side effect。
 7. 模型路由：在 `config/models.yaml` 注册模型，在 `config/model_routes.yaml` 配置 primary/fallback/verifier；代码只调用 ModelService。
-8. 星辰回退：复用 XingchenCloudProvider 与已有环境变量解析。Flow 必须发布且 Flow ID 完整；CoursePack 只返回 fallback target，不直接调用。
+8. 本地回退：复用统一 Runtime 与 ModelService。Agent 必须声明 local handler；CoursePack 只返回 fallback target，不直接绕过 Runtime。
 9. 测试：覆盖注册、路由、输入边界、结果、失败/回退、RAG 复用、SSE 顺序和敏感信息。外部结果须标注真实云验证或本地/Mock。
 10. 避免复制：新增前搜索 GraphState、Registry、Router、Provider、RAG、file parser、Trace 和同名工具；兼容入口只转发到新核心。
 

@@ -6,4 +6,4 @@ LangGraph 用于 Supervisor、复杂 Knowledge QA、Academic Problem Solver、�
 
 禁止在状态中放完整 Base64、PDF、DataFrame、密钥、教材全文、隐藏推理或超大原始响应。XZDGraphState 只保存引用、摘要、结构化结果和 bounded trace。
 
-简单教案、固定格式、单步摘要、旧星辰封装、健康检查和文件预处理不强制包装为图节点。
+简单教案、固定格式、单步摘要、健康检查和文件预处理不强制包装为图节点。

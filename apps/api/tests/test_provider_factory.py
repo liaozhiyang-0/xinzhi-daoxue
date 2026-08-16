@@ -1,26 +1,24 @@
 from app.core.config import Settings
-from app.providers.factory import get_agent_provider
+from app.providers.factory import get_agent_provider, get_provider_availability
 
 
-def test_unpublished_xingchen_falls_back_to_mock() -> None:
+def test_local_runtime_is_the_default_provider() -> None:
     provider = get_agent_provider(
-        Settings(
-            app_env="test",
-            default_agent_provider="xingchen",
-            allow_mock_fallback=True,
-        )
+        Settings(app_env="test", default_agent_provider="local", _env_file=None)
     )
+
+    assert provider.provider_name == "local"
+    availability = get_provider_availability(
+        Settings(app_env="test", default_agent_provider="local", _env_file=None),
+        provider,
+    )
+    assert availability.available is True
+    assert availability.publication_status == "local_only"
+
+
+def test_mock_provider_is_explicit_and_local_only() -> None:
+    provider = get_agent_provider(
+        Settings(app_env="test", default_agent_provider="mock", _env_file=None)
+    )
+
     assert provider.provider_name == "mock"
-
-
-def test_enabled_complete_xingchen_uses_real_provider() -> None:
-    provider = get_agent_provider(
-        Settings(
-            app_env="test",
-            xingchen_enabled=True,
-            xingchen_api_key="test-key",
-            xingchen_api_secret="test-secret",
-            xingchen_solver_ct_flow_id="test-flow",
-        )
-    )
-    assert provider.provider_name == "xingchen"

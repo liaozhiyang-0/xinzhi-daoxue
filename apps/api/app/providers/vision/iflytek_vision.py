@@ -26,7 +26,7 @@ class IFlytekVisionProvider(VisionProvider):
             raise FileNotFoundError(image)
         if not self.available:
             raise NotConfiguredError(
-                "图像理解 Provider 未配置；现有星辰单图链路仍保持可用"
+                "图像理解 Provider 未配置；请先配置本地视觉链路"
             )
         raise NotConfiguredError(
             "VISION_ENDPOINT 已配置，但专用图像协议尚未完成验证；禁止猜测字段"

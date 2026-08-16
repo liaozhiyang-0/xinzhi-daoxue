@@ -28,26 +28,11 @@ HOST_OVERRIDES = {
 SECRET_NAMES = (
     "IFLYTEK_SPARK_API_KEY",
     "DASHSCOPE_API_KEY",
-    "XINGCHEN_API_KEY",
-    "XINGCHEN_API_SECRET",
-    "XINGCHEN_SOLVER_CT_FLOW_ID",
-    "XINGCHEN_KNOWLEDGE_QA_FLOW_ID",
 )
 COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
-FRONTEND_BUILD_ID = "20260814-evidence-card-links-v53"
+FRONTEND_BUILD_ID = "20260815-subject-agents-v1"
 SERVICE_READY_TIMEOUT_SECONDS = 90
-RUNTIME_DEVELOPMENT_LAUNCH_MODES = {
-    "ACADEMIC_PROBLEM_SOLVER": "default",
-    "GENERAL_QUESTION_V1": "default",
-    "LEARN_01_LOCAL_RETRIEVAL_V1": "default",
-    "TEACH_01_LESSON_PREP_V1": "default",
-    "TEACH_02_ASSIGNMENT_REVIEW_V1": "default",
-    "RESEARCH_01_ACADEMIC_SEARCH_V1": "default",
-    "RESEARCH_02_ACADEMIC_WRITING_V1": "default",
-}
-
-
 class LaunchError(RuntimeError):
     """A safe, user-facing launcher failure."""
 
@@ -217,84 +202,12 @@ def build_host_environment(dotenv: dict[str, str]) -> dict[str, str]:
     return environment
 
 
-def enable_runtime_development_profile(
-    environment: dict[str, str],
-) -> dict[str, str]:
-    """Return an explicit local Runtime profile for the student entry paths.
-
-    The profile enables every non-Xingchen business Runtime with a durable
-    plan, including bounded external-research retrieval. It is a local
-    development execution aid, not a production promotion: production keeps
-    the normal semantic-evidence release gate.
-    """
-
-    app_env = environment.get("APP_ENV", "development").strip().lower()
-    if app_env not in {"development", "test"}:
-        raise LaunchError("--runtime-dev is only available in development or test")
-    configured_modes = environment.get("AGENT_RUNTIME_LAUNCH_MODES", "").strip()
-    if configured_modes:
-        raise LaunchError(
-            "--runtime-dev requires AGENT_RUNTIME_LAUNCH_MODES to be empty; "
-            "configure production/canary launch modes explicitly instead"
-        )
-    runtime_environment = dict(environment)
-    runtime_environment.update(
-        {
-            "AGENT_RUNTIME_SOLVER_ENABLED": "true",
-            "AGENT_RUNTIME_GENERAL_ENABLED": "true",
-            "AGENT_RUNTIME_KNOWLEDGE_QA_ENABLED": "true",
-            "AGENT_RUNTIME_TEACHING_ENABLED": "true",
-            "AGENT_RUNTIME_TEACHING_INTERACTION_ENABLED": "true",
-            "AGENT_RUNTIME_LEARNING_PROGRESS_ENABLED": "true",
-            "AGENT_RUNTIME_ACADEMIC_WRITING_ENABLED": "true",
-            # RESEARCH_03 remains explicit-opt-in: enabling the local service
-            # does not add it to the default launch-mode list below.
-            "AGENT_RUNTIME_RESEARCH_ENABLED": "true",
-            "AGENT_RUNTIME_EXTERNAL_RESEARCH_ENABLED": "true",
-            "AGENT_RUNTIME_LAUNCH_MODES": ",".join(
-                f"{agent_id}={mode}"
-                for agent_id, mode in RUNTIME_DEVELOPMENT_LAUNCH_MODES.items()
-            ),
-            # This profile is a local development launch, never a release
-            # promotion. Production remains fail-closed on semantic evidence.
-            "AGENT_RUNTIME_RELEASE_GATE_REQUIRED": "false",
-            "AGENT_RUNTIME_PLAN_PROPOSALS_ENABLED": "true",
-        }
-    )
-    return runtime_environment
-
-
-def should_enable_default_runtime_profile(
-    environment: dict[str, str], *, legacy_opt_out: bool = False
-) -> bool:
-    """Decide whether the normal local application entry uses Runtime.
-
-    The application entry point is intentionally Runtime-first in development
-    and test environments. An explicit launch-mode configuration remains the
-    source of truth, and ``AGENT_RUNTIME_DEFAULT_ENABLED=false`` is the safe
-    local opt-out for diagnosing the Legacy path. Production never receives
-    this implicit profile.
-    """
-
-    if legacy_opt_out:
-        return False
-    app_env = environment.get("APP_ENV", "development").strip().lower()
-    if app_env not in {"development", "test"}:
-        return False
-    if environment.get("AGENT_RUNTIME_DEFAULT_ENABLED", "true").strip().lower() in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }:
-        return False
-    return not environment.get("AGENT_RUNTIME_LAUNCH_MODES", "").strip()
 
 
 def configuration_summary(dotenv: dict[str, str]) -> dict[str, object]:
     return {
         "env_file": "configured" if (ROOT / ".env").is_file() else "missing",
-        "xingchen_enabled": dotenv.get("XINGCHEN_ENABLED", "false").lower() == "true",
+        "provider_mode": "local_runtime",
         "secrets": {
             name: "configured" if bool(dotenv.get(name, "").strip()) else "missing"
             for name in SECRET_NAMES
@@ -754,9 +667,7 @@ def print_runtime_checks(checks: list[RuntimeCheck]) -> int:
     return 0 if failed == 0 else 1
 
 
-def repair_runtime_environment(
-    *, port: int = 8000, runtime_dev: bool = False
-) -> int:
+def repair_runtime_environment(*, port: int = 8000) -> int:
     """Repair only project-owned, restartable local services.
 
     This intentionally does not remove containers, volumes, images, or files.
@@ -797,11 +708,8 @@ def repair_runtime_environment(
                     port=port,
                     reload=False,
                     open_browser=False,
-                    with_cloud=False,
                 ),
-                enable_runtime_development_profile(environment)
-                if runtime_dev
-                else environment,
+                environment,
             )
         print(f"[xzd] API 已运行且前端版本正确：{base_url}")
         return print_runtime_checks(runtime_checks(port=port, environment=environment))
@@ -815,9 +723,8 @@ def repair_runtime_environment(
             port=port,
             reload=False,
             open_browser=False,
-            with_cloud=False,
         ),
-        enable_runtime_development_profile(environment) if runtime_dev else environment,
+        environment,
     )
 
 
@@ -1208,20 +1115,6 @@ def start_api(args: argparse.Namespace, environment: dict[str, str]) -> int:
         if args.open_browser:
             open_workspace(base_url)
         launch_lock.release()
-        if args.with_cloud:
-            result = run_command(
-                [
-                    str(VENV_PYTHON),
-                    str(ROOT / "scripts/demo_cli.py"),
-                    "preflight",
-                    "--base-url",
-                    base_url,
-                    "--with-cloud",
-                ],
-                env=environment,
-            )
-            if result.returncode != 0:
-                print("[xzd] 云端 Preflight 存在失败项；Web 仍保持运行。")
         assert process is not None
         return int(process.wait())
     except KeyboardInterrupt:
@@ -1248,8 +1141,6 @@ def command_start(args: argparse.Namespace) -> int:
         raise LaunchError("需要 Python 3.11-3.13；当前 Python 版本不受支持。")
     base_url = f"http://127.0.0.1:{args.port}"
     running_pids = owned_api_pids(args.port)
-    runtime_dev = bool(getattr(args, "runtime_dev", False))
-    legacy_opt_out = bool(getattr(args, "legacy", False))
     force_reloaded = False
     if getattr(args, "force_reload", False) and api_ready(base_url):
         if not running_pids:
@@ -1261,11 +1152,6 @@ def command_start(args: argparse.Namespace) -> int:
         running_pids = []
         force_reloaded = True
     if api_ready(base_url):
-        if runtime_dev and not getattr(args, "force_reload", False):
-            raise LaunchError(
-                "--runtime-dev needs --force-reload when the local API is "
-                "already running"
-            )
         if len(running_pids) == 0:
             raise LaunchError(
                 f"端口 {args.port} 上运行的是未知服务，未自动复用；请先手动停止后重试。"
@@ -1290,16 +1176,6 @@ def command_start(args: argparse.Namespace) -> int:
         return 0
     dotenv = parse_dotenv(ensure_env_file())
     environment = build_host_environment(dotenv)
-    runtime_default = should_enable_default_runtime_profile(
-        environment, legacy_opt_out=legacy_opt_out
-    )
-    if runtime_dev or runtime_default:
-        environment = enable_runtime_development_profile(environment)
-        if runtime_default and not runtime_dev:
-            print(
-                "[xzd] development 默认使用 Agent Runtime；"
-                "如需诊断 Legacy，请使用 --legacy"
-            )
     repair_python_environment()
     ensure_python_environment(refresh=args.refresh_deps)
     start_dependencies(environment)
@@ -1347,16 +1223,13 @@ def command_doctor(args: argparse.Namespace) -> int:
     dotenv = parse_dotenv(ROOT / ".env")
     summary = configuration_summary(dotenv)
     result = print_runtime_checks(checks)
-    print("[INFO] 云端配置（仅显示是否配置，不显示值）：")
+    print("[INFO] Runtime 配置（仅显示是否配置，不显示值）：")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return result
 
 
 def command_repair(args: argparse.Namespace) -> int:
-    return repair_runtime_environment(
-        port=args.port,
-        runtime_dev=bool(args.runtime_dev),
-    )
+    return repair_runtime_environment(port=args.port)
 
 
 def command_preflight(args: argparse.Namespace) -> int:
@@ -1369,8 +1242,6 @@ def command_preflight(args: argparse.Namespace) -> int:
         "--base-url",
         args.base_url,
     ]
-    if args.with_cloud:
-        command.append("--with-cloud")
     return run_command(
         command, env=build_host_environment(parse_dotenv(ROOT / ".env"))
     ).returncode
@@ -1415,20 +1286,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--refresh-deps", action="store_true", help="强制刷新 Python 依赖"
     )
     start.add_argument(
-        "--with-cloud", action="store_true", help="启动后执行一次真实云端检查"
-    )
-    start.add_argument(
         "--open-browser", action="store_true", help="就绪后打开学生工作台"
-    )
-    start.add_argument(
-        "--runtime-dev",
-        action="store_true",
-        help="development/test：以 Runtime 默认接管本地通用问答与知识问答",
-    )
-    start.add_argument(
-        "--legacy",
-        action="store_true",
-        help="development/test：关闭隐式 Runtime 默认（不覆盖显式 launch modes）",
     )
     start.set_defaults(handler=command_start)
     stop = commands.add_parser("stop", help="停止 API/Worker 与本地基础服务")
@@ -1445,15 +1303,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="修复项目自有容器、迁移和单实例 API（不删除数据）",
     )
     repair.add_argument("--port", type=int, default=8000)
-    repair.add_argument(
-        "--runtime-dev",
-        action="store_true",
-        help="启用本地非星辰 Runtime 开发配置",
-    )
     repair.set_defaults(handler=command_repair)
     preflight = commands.add_parser("preflight", help="检查会议演示所需能力")
     preflight.add_argument("--base-url", default="http://127.0.0.1:8000")
-    preflight.add_argument("--with-cloud", action="store_true")
     preflight.set_defaults(handler=command_preflight)
     index = commands.add_parser("index", help="为本机课程资料构建 RAG 索引")
     index.add_argument("--course", choices=("CT", "AE", "DE", "SS", "DSP", "COMM"))

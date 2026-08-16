@@ -1,10 +1,13 @@
 from io import BytesIO
+from unittest.mock import AsyncMock
 
 from PIL import Image
 
 
 def test_queued_task_can_be_cancelled(api, client, monkeypatch) -> None:
-    monkeypatch.setattr(client.app.state.task_runner, "submit", lambda task_id: True)
+    monkeypatch.setattr(
+        client.app.state.task_executor, "submit", AsyncMock(return_value=True)
+    )
     session = api.create_session()
     task = api.create_task(session["id"])
     response = client.post(f"/api/v1/tasks/{task['id']}/cancel")
@@ -15,7 +18,9 @@ def test_queued_task_can_be_cancelled(api, client, monkeypatch) -> None:
 def test_queued_evaluation_task_cleans_attachment_on_cancel(
     api, client, settings, monkeypatch
 ) -> None:
-    monkeypatch.setattr(client.app.state.task_runner, "submit", lambda task_id: True)
+    monkeypatch.setattr(
+        client.app.state.task_executor, "submit", AsyncMock(return_value=True)
+    )
     image_data = BytesIO()
     with Image.new("RGB", (2, 2), color="white") as image:
         image.save(image_data, format="PNG")

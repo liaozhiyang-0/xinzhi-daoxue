@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from time import sleep
-from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -39,7 +38,7 @@ from app.services.external_retrieval import (
     ExternalContentFetcher,
     ExternalFetchError,
 )
-from app.services.task_runner import TaskRunner
+from app.services.external_retrieval_execution import ExternalRetrievalExecutionService
 from pydantic import AnyHttpUrl
 
 
@@ -47,19 +46,18 @@ from pydantic import AnyHttpUrl
 async def test_external_retrieval_hard_deadline_does_not_wait_for_late_cancellation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runner = object.__new__(TaskRunner)
-    object.__setattr__(
-        runner,
-        "knowledge_base",
-        SimpleNamespace(
-            settings=Settings(
-                app_env="test",
-                external_retrieval_timeout_seconds=0.02,
-                _env_file=None,  # type: ignore[call-arg]
-            )
+    del monkeypatch
+    service = ExternalRetrievalExecutionService(
+        settings=Settings(
+            app_env="test",
+            external_retrieval_timeout_seconds=0.02,
+            _env_file=None,  # type: ignore[call-arg]
         ),
+        external_search=None,
+        external_fetcher=None,
+        external_paper_reviewer=None,
+        external_search_planner=None,
     )
-    object.__setattr__(runner, "_external_tasks", set())
     request = AgentRequest(
         task_id="task-hard-deadline",
         session_id="session-test",
@@ -92,9 +90,12 @@ async def test_external_retrieval_hard_deadline_does_not_wait_for_late_cancellat
             status="failed",
         )
 
-    monkeypatch.setattr(runner, "_retrieve_external", non_cooperative_retrieval)
     result = await asyncio.wait_for(
-        runner._retrieve_external_with_deadline(request, policy),
+        service.retrieve_with_deadline(
+            request,
+            policy,
+            retrieval=non_cooperative_retrieval,
+        ),
         timeout=0.1,
     )
 
@@ -102,7 +103,7 @@ async def test_external_retrieval_hard_deadline_does_not_wait_for_late_cancellat
     assert result.warnings == ["external retrieval timed out"]
     assert result.retrieval_trace_id == "runtime:deadline:fetch"
     await asyncio.sleep(0.55)
-    assert not runner._external_tasks  # type: ignore[attr-defined]
+    assert not service._external_tasks
 
 
 def test_academic_writing_follow_up_reuses_a_prior_paper() -> None:
@@ -571,8 +572,9 @@ def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) 
 
     app.state.settings.external_retrieval_enabled = True
     app.state.knowledge_base.settings.external_retrieval_enabled = True
-    app.state.task_runner.external_search = FakeSearch()
-    app.state.task_runner.external_paper_reviewer = None
+    execution = app.state.task_engine.external_retrieval_gateway.execution
+    execution.external_search = FakeSearch()
+    execution.external_paper_reviewer = None
     session = api.create_session()
     payload = api.task_payload(session["id"], intent="unknown")
     payload["canonical_input"]["text"] = "帮我查找最新的电子信息相关论文并提供链接"
@@ -636,9 +638,10 @@ def test_research_knowledge_ingest_does_not_block_task_completion(
     slow = SlowResearchKnowledge()
     app.state.settings.external_retrieval_enabled = True
     app.state.knowledge_base.settings.external_retrieval_enabled = True
-    app.state.task_runner.external_search = FakeSearch()
-    app.state.task_runner.external_paper_reviewer = None
-    app.state.task_runner.research_knowledge = slow
+    execution = app.state.task_engine.external_retrieval_gateway.execution
+    execution.external_search = FakeSearch()
+    execution.external_paper_reviewer = None
+    app.state.task_engine.post_processing.research_knowledge = slow
 
     session = api.create_session()
     payload = api.task_payload(session["id"], intent="unknown")

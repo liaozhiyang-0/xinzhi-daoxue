@@ -394,7 +394,7 @@ function renderAdminAgents(items) {
       el("td", {}, [el("strong", { text: item.display_name || item.agent_id }), el("span", { text: item.agent_id })]),
       el("td", {}, badge(item.lifecycle_status, item.lifecycle_status)),
       el("td", { text: item.provider || "-" }),
-      el("td", {}, [badge(item.configured ? "ready" : "planned", item.configured ? "已配置" : "未配置"), el("span", { text: item.flow_configured ? "Flow 已配置" : "Flow 未配置" })]),
+      el("td", {}, [badge(item.configured ? "ready" : "planned", item.configured ? "已配置" : "未配置"), el("span", { text: item.local_ready ? "本地 Runtime 已就绪" : "本地 Runtime 未就绪" })]),
       el("td", { text: (item.course_ids || []).join("、") || "-" }),
       el("td", { text: item.recent_contract_test?.status || "未运行" }),
       el("td", {}, el("div", { class: "table-actions" }, [detail, validate])),

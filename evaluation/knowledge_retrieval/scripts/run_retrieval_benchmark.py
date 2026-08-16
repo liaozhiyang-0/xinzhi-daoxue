@@ -19,7 +19,14 @@ from app.core.config import Settings  # noqa: E402
 from app.services.knowledge_base import KnowledgeBaseService  # noqa: E402
 
 EVAL_ROOT = Path(__file__).resolve().parents[1]
-COURSE_DIRS = {"CT": "电路理论", "AE": "模电", "DE": "数电"}
+COURSE_DIRS = {
+    "CT": "电路理论",
+    "AE": "模电",
+    "DE": "数电",
+    "SS": "信号与系统版本一",
+    "DSP": "数字信号处理",
+    "COMM": "通信原理",
+}
 
 
 def discover_path(course_id: str, explicit: str | None) -> Path:
@@ -62,6 +69,12 @@ def percentile_95(values: list[int]) -> float:
     return float(ordered[index])
 
 
+def percentile_50(values: list[int]) -> float:
+    if not values:
+        return 0.0
+    return float(sorted(values)[len(values) // 2])
+
+
 def source_rank(case: dict[str, Any], hits: list[Any]) -> int | None:
     expected = {
         source["document_path"]
@@ -83,9 +96,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         knowledge_ct_path=paths["CT"],
         knowledge_ae_path=paths["AE"],
         knowledge_de_path=paths["DE"],
+        knowledge_ss_path=paths["SS"],
+        knowledge_dsp_path=paths["DSP"],
+        knowledge_comm_path=paths["COMM"],
+        _env_file=None,
     )
     service = KnowledgeBaseService(settings)
+    refresh_started = perf_counter()
     statuses = service.refresh()
+    refresh_latency_ms = max(0, round((perf_counter() - refresh_started) * 1000))
     cases = load_cases()
     rows: list[dict[str, Any]] = []
     latencies: list[int] = []
@@ -146,7 +165,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "zero_hit_rate": sum(not row["hits"] for row in rows) / count,
             "wrong_course_rate": sum(row["wrong_course"] for row in rows) / count,
             "mean_latency_ms": statistics.fmean(latencies) if latencies else 0.0,
+            "p50_latency_ms": percentile_50(latencies),
             "p95_latency_ms": percentile_95(latencies),
+            "index_refresh_latency_ms": refresh_latency_ms,
         }
     )
     return {
@@ -180,6 +201,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ct-path")
     parser.add_argument("--ae-path")
     parser.add_argument("--de-path")
+    parser.add_argument("--ss-path")
+    parser.add_argument("--dsp-path")
+    parser.add_argument("--comm-path")
     parser.add_argument("--output")
     return parser.parse_args()
 

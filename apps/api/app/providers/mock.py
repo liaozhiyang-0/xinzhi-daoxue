@@ -40,7 +40,7 @@ class MockAgentProvider(AgentProvider):
             raise ProviderCancelledError("Mock 任务已取消")
 
         answer = (
-            "这是本地 Mock Provider 的演示结果，不是讯飞星辰真实输出。"
+            "这是本地 Mock Provider 的演示结果，不是远程模型真实输出。"
             "它仅用于验证任务、事件、文件和产物链路。"
         )
         artifact = Artifact(
@@ -64,7 +64,7 @@ class MockAgentProvider(AgentProvider):
             artifacts=[artifact],
             warnings=[
                 "mock_result",
-                "当前为本地 Mock 演示结果，不是讯飞星辰真实输出",
+            "当前为本地 Mock 演示结果，不是远程模型真实输出",
             ],
             confidence=None,
             metrics=RunMetrics(provider_latency_ms=latency_ms),

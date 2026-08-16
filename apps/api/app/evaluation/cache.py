@@ -97,7 +97,7 @@ def evaluation_fingerprint(project_root: Path) -> str:
         / "api"
         / "app"
         / "services"
-        / "task_runner.py",
+        / "runtime_task_engine.py",
         project_root
         / "apps"
         / "api"

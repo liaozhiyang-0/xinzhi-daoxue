@@ -1,0 +1,17 @@
+# Local-only generated artifacts. The cleanup script is dry-run by default.
+evaluation_cache:
+  path: evaluation/cache
+  max_age_days: 30
+local_outputs:
+  path: .local_outputs
+  max_age_days: 30
+  keep_latest_runs: 10
+mypy_cache:
+  path: .mypy_cache
+  max_age_days: 14
+mypy_cache_apps:
+  path: apps/.mypy_cache
+  max_age_days: 14
+mypy_cache_api:
+  path: apps/api/.mypy_cache
+  max_age_days: 14

@@ -28,6 +28,5 @@
 $env:APP_ENV = "test"
 $env:DEFAULT_AGENT_PROVIDER = "mock"
 $env:ALLOW_MOCK_FALLBACK = "true"
-$env:XINGCHEN_ENABLED = "false"
 .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_document_ingestion.py -q
 ```

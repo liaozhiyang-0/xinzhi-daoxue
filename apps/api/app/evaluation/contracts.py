@@ -11,7 +11,6 @@ EvaluationMode = Literal[
     "local_deterministic",
     "local_mock",
     "real_model",
-    "real_xingchen",
 ]
 
 

@@ -6,7 +6,7 @@
 
 必须同时满足：`APP_ENV`为`development`或`test`、`ALLOW_AGENT_MOCKS=true`、Agent的`development.mock_enabled=true`、profile存在、请求显式设置`allow_mock=true`。`production`会由代码强制关闭执行动作，即使环境变量误设为true也不会生成Mock答案。
 
-Mock结果固定包含：`provider=mock`、`mock_used=true`、`mock_profile`、`cloud_status=not_called`和“当前结果来自开发态Mock，不代表正式云端能力”警告。被禁止时返回planned状态、`provider=none`，不会伪装成星辰成功。
+Mock结果固定包含：`provider=mock`、`mock_used=true`、`mock_profile`、`cloud_status=not_called`和“当前结果来自开发态 Mock，仅用于协议联调”警告。被禁止时返回 planned 状态、`provider=none`，不会伪装成本地 Runtime 成功。
 
 运行方式：
 

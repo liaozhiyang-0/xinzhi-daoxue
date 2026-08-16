@@ -698,13 +698,12 @@ def audit_report_markdown(audit: AuditResult) -> str:
             "- RAG 能力：在既有检索服务内使用可替换文本/图片向量适配器、"
             "Qdrant、混合排序、上下文图片关联，以及独立生成的 Manifest、"
             "图片证据索引和增量缓存；实际就绪状态以运行时 health 为准。",
-            "- LEARN：本地问答链路已经实际调用知识库并返回来源；云端 LEARN 通过既有 "
-            "`RetrievalContextPacket` 转成 `retrieved_context` 文本，再进入原有 "
-            "Provider 请求，"
-            "未增加未经确认的云端节点或 HTTP 字段。",
+            "- LEARN：本地问答链路已经实际调用知识库并返回来源；"
+            "`RetrievalContextPacket` 统一转成 `retrieved_context` 文本，"
+            "由本地 Runtime 继续处理，未增加额外 HTTP 字段。",
             "- SOLVER：仅复用既有任务路由和只读检索入口，限制为方法、公式、"
             "概念和常见错误；"
-            "云端工作流与 Provider 参数保持冻结。",
+            "本地 Runtime 与 Provider 参数保持冻结。",
             "- 配置与存储：路径和权重由 `.env`/Settings 管理，课程元数据继续使用 YAML；"
             "业务状态仍使用 SQLAlchemy（SQLite/PostgreSQL），既有 Redis/MinIO "
             "配置未改变。"

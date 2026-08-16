@@ -34,16 +34,15 @@ agents:
     schema_version: "1"
     scene: dispatch
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_FALLBACK_ROUTER_FLOW_ID
+      type: local
       timeout_seconds: 45
       max_retries: 0
       parser_type: json
       output_schema: router_01_v1
     enabled: true
-    publication_status: published
+    publication_status: local
     mode: routing_only
-    execution_mode: hybrid
+    execution_mode: local
     local_handler: app.orchestrator.supervisor.XZDSupervisor
     priority: 100
     input_mapping:
@@ -145,8 +144,7 @@ agents:
     schema_version: "1"
     scene: learning
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_SOLVER_CT_FLOW_ID
+      type: local
       timeout_seconds: 300
       max_retries: 0
       parser_type: json
@@ -154,8 +152,8 @@ agents:
     enabled: true
     publication_status: published
     route_when_unconfigured: true
-    mode: provider
-    execution_mode: hybrid
+    mode: local_graph
+    execution_mode: local
     local_handler: app.agents.solver_ct.local_graph.LocalCircuitSolverGraph
     priority: 90
     task_families: [ACADEMIC_SOLVING]
@@ -197,8 +195,7 @@ agents:
     schema_version: "1"
     scene: learning
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_KNOWLEDGE_QA_FLOW_ID
+      type: local
       timeout_seconds: 300
       max_retries: 0
       parser_type: json_or_fixed_line
@@ -216,9 +213,9 @@ agents:
           - request_id
       output_schema: learn_01_v1
     enabled: true
-    publication_status: published
-    mode: provider
-    execution_mode: hybrid
+    publication_status: local
+    mode: local_model
+    execution_mode: local
     local_handler: app.services.knowledge_qa_service.KnowledgeQAService
     priority: 95
     task_families: [KNOWLEDGE_QA]
@@ -279,7 +276,7 @@ agents:
       type: agent
       handler: local_retrieval_answer
       target_agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
-      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, cloud_failed_status, open_circuit, not_configured]
+      trigger_on: [provider_timeout, provider_error, provider_parse_error, open_circuit, not_configured]
     validator_type: learn_qa
     renderer_type: learn_qa
 
@@ -455,17 +452,16 @@ agents:
     schema_version: "1"
     scene: teaching
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_LESSON_PREP_FLOW_ID
+      type: local
       timeout_seconds: 45
       max_retries: 0
       parser_type: json
       output_schema: teach_01_v1
     enabled: true
-    publication_status: published
-    mode: provider
-    execution_mode: hybrid
-    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    publication_status: local
+    mode: local_runtime
+    execution_mode: local
+    local_handler: app.services.lesson_prep_runtime.LessonPrepRuntimeService
     priority: 80
     capabilities:
       user_roles: [teacher]
@@ -525,7 +521,7 @@ agents:
     fallback:
       type: template
       handler: static_template
-      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, open_circuit, not_configured]
+      trigger_on: [provider_timeout, provider_error, provider_parse_error, open_circuit, not_configured]
     validator_type: lesson_prep
     renderer_type: lesson_prep
     development:
@@ -538,17 +534,16 @@ agents:
     schema_version: "1"
     scene: teaching
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_ASSIGNMENT_REVIEW_FLOW_ID
+      type: local
       timeout_seconds: 45
       max_retries: 0
       parser_type: json_or_fixed_line
       output_schema: teach_02_v1
     enabled: true
-    publication_status: published
-    mode: provider
-    execution_mode: hybrid
-    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    publication_status: local
+    mode: local_runtime
+    execution_mode: local
+    local_handler: app.services.assignment_review_runtime.AssignmentReviewRuntimeService
     priority: 80
     input_mapping:
       AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
@@ -588,7 +583,7 @@ agents:
     fallback:
       type: review
       handler: manual_review
-      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+      trigger_on: [provider_timeout, provider_error, provider_parse_error, not_configured]
     validator_type: assignment_review
     renderer_type: assignment_review
     development:
@@ -610,6 +605,7 @@ agents:
     publication_status: local
     mode: local_model
     execution_mode: local
+    local_handler: app.services.research_frontier_service.ResearchFrontierService
     priority: 95
     capabilities:
       user_roles: [student, teacher, researcher, admin]
@@ -660,17 +656,16 @@ agents:
     schema_version: "1"
     scene: research
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_ACADEMIC_WRITING_FLOW_ID
+      type: local
       timeout_seconds: 45
       max_retries: 0
       parser_type: json_or_fixed_line
       output_schema: research_02_v1
     enabled: true
-    publication_status: published
-    mode: provider
-    execution_mode: hybrid
-    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    publication_status: local
+    mode: local_runtime
+    execution_mode: local
+    local_handler: app.services.academic_writing_runtime.AcademicWritingRuntimeService
     priority: 70
     input_mapping:
       AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
@@ -720,7 +715,7 @@ agents:
     fallback:
       type: review
       handler: manual_review
-      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+      trigger_on: [provider_timeout, provider_error, provider_parse_error, not_configured]
     validator_type: academic_writing
     renderer_type: academic_writing
     development:
@@ -733,17 +728,16 @@ agents:
     schema_version: "1"
     scene: research
     provider:
-      type: xingchen
-      flow_env_key: XINGCHEN_DATA_ANALYSIS_FLOW_ID
+      type: local
       timeout_seconds: 45
       max_retries: 0
       parser_type: json_or_fixed_line
       output_schema: research_03_v1
     enabled: true
-    publication_status: published
-    mode: provider
-    execution_mode: hybrid
-    local_handler: app.services.internal_agent_execution.InternalAgentExecutionService
+    publication_status: local
+    mode: local_runtime
+    execution_mode: local
+    local_handler: app.services.research_analysis_runtime.ResearchAnalysisRuntimeService
     priority: 75
     input_mapping:
       AGENT_USER_INPUT: {source: workflow_prompt, transform: string, max_length: 24000}
@@ -784,7 +778,7 @@ agents:
     fallback:
       type: plan
       handler: planned_response
-      trigger_on: [cloud_timeout, cloud_http_error, cloud_parse_error, not_configured]
+      trigger_on: [provider_timeout, provider_error, provider_parse_error, not_configured]
     validator_type: data_analysis
     renderer_type: data_analysis
     development:
@@ -807,7 +801,7 @@ routing:
     provider_required: false
   - course_ids: [CT, AE, DE, SS, DSP, COMM]
     intents: [general_qa, explain_concept, summarize_knowledge, learning_advice]
-    agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
+    agent_id: LEARN_01_KNOWLEDGE_QA_V1
     scene: learning
     retrieval_required: true
     provider_required: false

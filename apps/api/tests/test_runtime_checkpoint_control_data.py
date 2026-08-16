@@ -20,8 +20,8 @@ from app.runtime import (
     RuntimeStateMachine,
 )
 from app.services.runtime_child_run import RuntimeChildRunService
+from app.services.runtime_persistence_hooks import RuntimePersistenceHooks
 from app.services.task_control_service import TaskControlService
-from app.services.task_runner import TaskRunner
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -131,9 +131,8 @@ async def test_pause_checkpoint_preserves_runtime_state_and_consumes_stale_appro
             }
             await session.commit()
 
-        runner = object.__new__(TaskRunner)
-        runner.session_factory = session_factory
-        await runner._checkpoint_runtime_run(run)
+        hooks = RuntimePersistenceHooks(session_factory)
+        await hooks.checkpoint(run)
 
         async with session_factory() as session:
             restored = await AgentRunRepository(session).restore(run.run_id)
@@ -192,7 +191,7 @@ async def test_pause_checkpoint_preserves_runtime_state_and_consumes_stale_appro
             }
             await session.commit()
 
-        await runner._checkpoint_runtime_run(running)
+        await RuntimePersistenceHooks(session_factory).checkpoint(running)
 
         async with session_factory() as session:
             restored = await AgentRunRepository(session).restore(running.run_id)
@@ -236,11 +235,10 @@ async def test_runtime_events_flush_with_the_following_checkpoint_transaction(
             await session.commit()
 
         commit_count = 0
-        runner = object.__new__(TaskRunner)
-        runner.session_factory = session_factory
-        await runner._append_runtime_event("node_started", run, "runtime.node")
-        await runner._append_runtime_event("node_completed", run, "runtime.node")
-        await runner._append_runtime_decision_event(
+        hooks = RuntimePersistenceHooks(session_factory)
+        await hooks.append_node_event("node_started", run, "runtime.node")
+        await hooks.append_node_event("node_completed", run, "runtime.node")
+        await hooks.append_decision_event(
             run,
             RuntimeDecision(
                 action=DecisionAction.REQUEST_APPROVAL,
@@ -248,7 +246,7 @@ async def test_runtime_events_flush_with_the_following_checkpoint_transaction(
                 reason_codes=["test_approval"],
             ),
         )
-        await runner._checkpoint_runtime_run(run)
+        await hooks.checkpoint(run)
 
         async with session_factory() as session:
             events = await TaskRepository(session).list_events(
@@ -266,7 +264,7 @@ async def test_runtime_events_flush_with_the_following_checkpoint_transaction(
         assert [item.sequence for item in events] == [1, 2, 3]
         assert checkpoints[-1].event_sequence == 3
         assert commit_count == 1
-        assert run.run_id not in runner._runtime_event_buffers
+        assert run.run_id not in hooks._event_buffers
     finally:
         event.remove(engine.sync_engine, "commit", count_commit)
         await engine.dispose()
@@ -384,9 +382,8 @@ async def test_child_pause_keeps_parent_runtime_checkpoint_data(tmp_path: Any) -
             await session.commit()
 
         RuntimeChildRunService._mark_parent_suspension(parent, child)
-        runner = object.__new__(TaskRunner)
-        runner.session_factory = session_factory
-        await runner._checkpoint_runtime_run(parent)
+        hooks = RuntimePersistenceHooks(session_factory)
+        await hooks.checkpoint(parent)
 
         async with session_factory() as session:
             restored = await AgentRunRepository(session).restore(parent.run_id)

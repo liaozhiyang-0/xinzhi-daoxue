@@ -9,8 +9,8 @@ import pytest
     ("route", "title"),
     [
         ("/", "欢迎使用芯智导学"),
-        ("/student", "今天想学习什么"),
-        ("/workspace", "今天想学习什么"),
+        ("/student", "把目标交给学科智能体"),
+        ("/workspace", "把目标交给学科智能体"),
         ("/debug/rag", "统一执行调试"),
         ("/debug/execution", "统一执行调试"),
         ("/debug/agents", "Agent 管理"),
@@ -49,7 +49,12 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
 
 def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     script = client.get("/debug-assets/ui-core.js").text
-    student = client.get("/debug-assets/workspace.js").text
+    student = "\n".join(
+        (
+            client.get("/debug-assets/workspace.js").text,
+            client.get("/debug-assets/workspace-task-transport.js").text,
+        )
+    )
 
     assert "renderMarkdown" in script
     assert "cleanEvidenceExcerpt" in student
@@ -80,7 +85,6 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     assert ".innerHTML" not in student
     assert "new DOMParser().parseFromString" in student
     assert "terminalPollTimer" in student
-    assert "Keep task completion independent" in student
     assert 'renderMarkdown($("#answer-text")' in student
 
 
@@ -108,11 +112,20 @@ def test_demo_scenarios_and_presentation_mode_are_explicit(client) -> None:
     assert "expected_output" in script
 
 
-def test_workspace_shows_the_six_unified_input_examples(client) -> None:
+def test_workspace_shows_six_showcase_examples(client) -> None:
     page = client.get("/workspace")
 
     assert page.status_code == 200
     assert page.text.count('data-capability=') == 6
+    assert 'aria-label="项目展示案例"' in page.text
+    assert 'class="composer-agent-track"' not in page.text
+    assert 'id="detected-course"' in page.text
+    assert 'id="detected-learning-mode"' in page.text
+    assert 'placeholder="描述你的学习、教学或研究目标；Shift+Enter 换行"' in page.text
+    assert 'id="context-task-question"' not in page.text
+    assert 'id="answer-query"' not in page.text
+    assert '<select id="course-select"' not in page.text
+    assert '<select id="teaching-mode"' not in page.text
     assert 'data-scenario-id=' not in page.text
     assert 'data-capability="data_analysis"' not in page.text
     assert "为什么电容电压不能突变？" not in page.text
@@ -122,7 +135,7 @@ def test_workspace_shows_the_six_unified_input_examples(client) -> None:
         "学生个性化学习路径",
         "科研前沿检索与证据简报",
         "学院知识库治理与课程资产发布",
-        "经典模电运算放大器解题",
+        "模拟电子技术 · 电路诊断与边界分析",
     ):
         assert title in page.text
     assert 'data-image-src="/debug-assets/question-bank/analog-opamp.jpg"' in page.text
@@ -132,7 +145,19 @@ def test_workspace_shows_the_six_unified_input_examples(client) -> None:
     script = client.get("/debug-assets/workspace.js").text
     assert "activeScenarioId = \"\"" in script
     assert "scenario_id: state.activeScenarioId || null" in script
-    assert "async function attachExampleImage(button)" in script
+    assert (
+        "const attachExampleImage = (button) => materialManager.attachExample(button);"
+        in script
+    )
+    assert (
+        'function inferLearningMode(question = "", studentAttempt = "")' in script
+    )
+    assert "function updateAutoDetection(" in script
+    assert "function setTaskQuestionDisplay(taskOrQuestion, task = null)" not in script
+    assert 'const requestedCourse = learningFollowUp?.course_id || "AUTO";' in script
+    assert 'const requestedIntent = learningFollowUp?.intent || "unknown";' in script
+    assert 'function taskQuestion(task)' in script
+    assert '["实际提问", taskQuestion(task).slice(0, 800)]' in script
 
 
 def test_local_analog_question_image_is_served_from_the_question_bank(client) -> None:
@@ -166,7 +191,7 @@ def test_demo_assets_and_preflight_script_exist() -> None:
     assert (root / "apps/api/app/static/debug/assets/demo-circuit.svg").is_file()
     preflight = (root / "scripts/demo_cli.py").read_text(encoding="utf-8")
     startup = (root / "scripts/start_demo.ps1").read_text(encoding="utf-8")
-    assert "--with-cloud" in preflight
+    assert "--with-cloud" not in preflight
     assert "api_secret" not in preflight.casefold()
     assert '"start"' in startup
     assert "xzd.ps1" in startup

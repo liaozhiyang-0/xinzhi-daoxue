@@ -12,4 +12,4 @@ async def test_mock_provider_is_explicit() -> None:
     assert result.provider == "mock"
     assert result.structured_result["mock"] is True
     assert "mock_result" in result.warnings
-    assert "不是讯飞星辰真实输出" in result.answer
+    assert "不是远程模型真实输出" in result.answer

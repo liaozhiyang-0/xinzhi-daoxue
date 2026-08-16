@@ -121,7 +121,6 @@ const serverEnvironment = {
   AUTH_ALLOW_REGISTRATION: identityProfile === "student" ? "true" : "false",
   DEFAULT_AGENT_PROVIDER: "mock",
   ALLOW_AGENT_MOCKS: useRealLocalProviders ? "false" : "true",
-  XINGCHEN_ENABLED: "false",
   IFLYTEK_SPARK_ENABLED: useRealLocalProviders ? "true" : "false",
   DASHSCOPE_ENABLED: useRealLocalProviders ? "true" : "false",
   SPARK_ENABLED: "false",

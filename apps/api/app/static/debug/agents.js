@@ -322,15 +322,8 @@ async function action(name) {
   try { const result = await api(paths[name], { method: "POST", headers: { "Content-Type": "application/json" }, body }); renderJson($("#action-json"), result); const resultBadge = badge(result.mock_used ? "mock" : result.status || (result.valid ? "success" : "completed")); resultBadge.id = "result-badge"; $("#result-badge").replaceWith(resultBadge); toast(name === "mock" ? "Mock 运行完成，结果已明确标记" : "调试动作已完成"); if (["validate", "contracts"].includes(name)) await loadAgents(); }
   catch (error) { $("#agent-error").textContent = `${error.message}。请检查配置与输入后重试。`; renderJson($("#action-json"), { error: error.message }); }
 }
-async function compare() {
-  const id = $("#agent-select").value; let sample = null; $("#agent-error").textContent = "";
-  try { sample = $("#cloud-sample").value.trim() ? JSON.parse($("#cloud-sample").value) : null; } catch { $("#agent-error").textContent = "Cloud 样例不是合法 JSON"; return; }
-  if ($("#allow-cloud").checked && !window.confirm("真实云端调用可能消耗额度，预计等待约 20 秒。确认继续？")) return;
-  try { const result = await api(`/api/v1/debug/agents/${id}/compare`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...requestPayload(true), cloud_sample: sample, allow_cloud: $("#allow-cloud").checked }) }); renderJson($("#action-json"), result); toast("结构比较完成"); }
-  catch (error) { $("#agent-error").textContent = error.message; }
-}
 window.addEventListener("DOMContentLoaded", () => {
   initShell({ page: "agents", title: "Agent 管理", description: "工作流注册与契约控制台" }); initTabs();
   $("#agent-filter").addEventListener("change", renderRows); $("#agent-select").addEventListener("change", () => selectAgent($("#agent-select").value));
-  all("[data-action]").forEach((button) => button.addEventListener("click", () => action(button.dataset.action))); $("#compare-button").addEventListener("click", compare); loadAgents();
+  all("[data-action]").forEach((button) => button.addEventListener("click", () => action(button.dataset.action))); loadAgents();
 });

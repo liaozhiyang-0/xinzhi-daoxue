@@ -28,7 +28,6 @@ const serverEnv = {
   AUTH_GUEST_SIGNING_KEY: "multimodal-browser-acceptance-signing-key",
   DEFAULT_AGENT_PROVIDER: "mock",
   ALLOW_MOCK_FALLBACK: "true",
-  XINGCHEN_ENABLED: "false",
   IFLYTEK_SPARK_ENABLED: "false",
   DASHSCOPE_ENABLED: "false",
   SPARK_ENABLED: "false",

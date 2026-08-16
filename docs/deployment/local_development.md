@@ -1,7 +1,7 @@
 # 本地开发指南
 
-> 当前 `SOLVER_CT` 尚未发布外部 API。本地默认并仅验证 Mock Provider，
-> 不要求填写任何星辰 API 字段。
+> 业务任务统一通过本地 Runtime 执行。本地开发默认使用 Mock Provider，
+> 不要求填写任何外部工作流或 Flow 配置。
 
 ## 1. 安装 Python
 
@@ -45,7 +45,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 Copy-Item .env.example .env
 ```
 
-`.env` 不会提交到 Git。至少修改 PostgreSQL 和 MinIO 的开发密码；真实星辰 API Key 只能放在本地 `.env` 或安全秘密管理系统中。
+`.env` 不会提交到 Git。至少修改 PostgreSQL 和 MinIO 的开发密码；模型 API Key 只能放在本地 `.env` 或安全秘密管理系统中。
 
 Compose 容器使用 `DATABASE_URL`、`REDIS_URL`、`MINIO_ENDPOINT` 中的服务名；宿主机脚本使用对应的 `HOST_DATABASE_URL`、`HOST_REDIS_URL`、`HOST_MINIO_ENDPOINT`。不要把两组地址混用。
 
@@ -153,7 +153,7 @@ docker compose up -d postgres redis minio
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-测试使用 SQLite 和 Mock Provider，不需要 PostgreSQL、Redis、MinIO 或星辰密钥。
+测试使用 SQLite 和 Mock Provider，不需要 PostgreSQL、Redis、MinIO 或外部工作流密钥。
 
 ## 10. 常见端口冲突
 
@@ -198,15 +198,15 @@ docker compose logs minio
 
 ### 为什么始终显示 Mock
 
-这是当前阶段的安全设计。`SOLVER_CT` 尚未发布外部 API，健康检查应显示：
+这是本地开发配置的安全设计，健康检查应显示：
 
 ```text
 active_provider=mock
 provider_mode=only_mock
-xingchen_publication_status=not_published
+runtime_mode=local_only
 ```
 
-不要填写星辰 API Key。工作流发布和真实接入属于后续独立阶段。
+不要填写外部工作流凭据；需要真实模型时仅配置对应的模型 Provider。
 
 ## 12. 调试页与完整检查
 
