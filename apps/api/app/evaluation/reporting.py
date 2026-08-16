@@ -292,6 +292,10 @@ def build_report_summary(report: SuiteReport) -> EvaluationReportSummary:
     result_status_counts = {
         str(status): count for status, count in status_counts.items()
     }
+    # The summary endpoint must not expose the size of the case catalog as if
+    # it were part of the summary payload.  Full reproducibility metadata
+    # remains available in the offline report itself.
+    summary_metadata = report.run_metadata.model_copy(update={"case_count": 0})
     return EvaluationReportSummary(
         schema_version=report.schema_version,
         mode=report.mode,
@@ -300,7 +304,7 @@ def build_report_summary(report: SuiteReport) -> EvaluationReportSummary:
         filters=report.filters,
         summary=report.summary,
         statistics=report.statistics,
-        run_metadata=report.run_metadata,
+        run_metadata=summary_metadata,
         result_status_counts=result_status_counts,
     )
 

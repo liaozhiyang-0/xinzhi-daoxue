@@ -202,7 +202,7 @@ scenarios:
       value_capture: 按学院空间、课程资产量和治理服务订阅
       expansion_path: 从资料治理扩展到校级知识服务和权限审计
     courses: [CT, AE, DE, SS, DSP, COMM]
-    agent_id: LEARN_01_LOCAL_RETRIEVAL_V1
+    agent_id: LEARN_01_KNOWLEDGE_QA_V1
     intents: [summarize_knowledge, general_qa]
     input_modes: [text]
     retrieval_profile: governed_knowledge
@@ -215,10 +215,10 @@ scenarios:
         course: CT
         prompt: >-
           请检查 CT 课程知识库中准备发布的一组课程资产：讲义《节点电压法》v3、练习题包《直流网络》v2、教师修订说明 v1。请按资产清单逐项核对版本号、来源、最近审批状态和可追溯链接；找出讲义 v3 与练习题包 v2 之间可能的版本冲突，列出会阻塞发布的问题、需要补齐的审批或权限信息，并给出发布前、发布后和回滚后的检查清单。只能依据输入中提供的资产记录，缺失字段必须标记为未知，不能把建议当作已完成审批。
-        expected_agent: LEARN_01_LOCAL_RETRIEVAL_V1
+        expected_agent: LEARN_01_KNOWLEDGE_QA_V1
         expected_output: [asset_inventory, version_conflicts, source_audit, approval_status, publication_blockers, traceability_links, publication_checklist_before, publication_checklist_after, rollback_checklist, review_boundary]
         business_context: 学院管理员需要在课程资产发布前完成版本、来源、审批、权限和回滚治理。
         evidence_requirements: [资产清单与版本记录, 来源和审批记录, 可访问的追溯链接]
         review_boundary: 只有授权教师或管理员可以批准发布和回滚；系统只输出治理检查结果，不代替审批，也不把未知状态标为通过。
-        acceptance_conditions: [路由到 LEARN_01_LOCAL_RETRIEVAL_V1, 版本来源审批阻塞项分别列出, 链接字段不张冠李戴, 缺失资料明确提示, 连续两次结构契约一致]
+        acceptance_conditions: [路由到 LEARN_01_KNOWLEDGE_QA_V1, 未配置时降级到 LEARN_01_LOCAL_RETRIEVAL_V1, 版本来源审批阻塞项分别列出, 链接字段不张冠李戴, 缺失资料明确提示, 连续两次结构契约一致]
     enabled: true

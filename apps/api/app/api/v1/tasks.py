@@ -545,6 +545,15 @@ async def approve_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
+    # Check the caller's role before looking up the task.  Otherwise an
+    # authenticated student can observe a 404 for a missing task instead of
+    # receiving the stable 403 approval boundary.
+    if principal.authenticated and principal.role not in {
+        "teacher",
+        "admin",
+        "researcher",
+    }:
+        _require_runtime_approval(request, principal)
     approval_task = await _get_runtime_approval_task(db, task_id, principal)
     approval_actor = _require_runtime_approval(request, principal, approval_task)
     task = await TaskControlService(

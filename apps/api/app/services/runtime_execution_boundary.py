@@ -7,7 +7,9 @@ Runtime implementations remain independent from task transport concerns.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,9 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.contracts import (
     AgentRequest,
     AgentResult,
+    AgentResultStatus,
     IntentExecutionPlan,
     RouteDecision,
 )
+from app.core.errors import NotConfiguredError
+from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository
 from app.runtime import (
     AgentRun,
@@ -26,7 +31,10 @@ from app.runtime import (
     RuntimeCompatibilitySnapshot,
     RuntimeDecision,
     RuntimeLaunchSnapshot,
+    RuntimeNodeStatus,
+    RuntimeObservation,
     RuntimeRunStatus,
+    RuntimeStateMachine,
 )
 from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.runtime_business_registry import (
@@ -34,6 +42,7 @@ from app.services.runtime_business_registry import (
     RuntimeBusinessService,
 )
 from app.services.runtime_launch_policy import (
+    RuntimeLaunchDecision,
     RuntimeLaunchMode,
 )
 from app.services.runtime_request_preparation import (
@@ -45,6 +54,17 @@ from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 
 class RuntimeResumeInvariantError(RuntimeError):
     """Raised when durable compatibility state no longer matches a resume."""
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeTaskHandoff:
+    """Decide whether a Runtime result owns the remainder of the Task."""
+
+    result: AgentResult | None
+    bypass_legacy_execution: bool
+    legacy_fallback: bool = False
+    runtime_status: str = ""
+    fallback_reason: str = ""
 
 
 class RuntimeExecutionBoundary:
@@ -67,10 +87,12 @@ class RuntimeExecutionBoundary:
         research_analysis: ResearchAnalysisRuntimeService | None,
         business_services: Iterable[RuntimeBusinessService] | None = None,
         request_preparation: RuntimeRequestPreparationService | None = None,
+        legacy_provider: AgentProvider | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.research_analysis = research_analysis
         self.request_preparation = request_preparation
+        self.legacy_provider = legacy_provider
         services = list(business_services or [])
         if research_analysis is not None and research_analysis not in services:
             services.insert(0, research_analysis)
@@ -128,6 +150,69 @@ class RuntimeExecutionBoundary:
 
     def runtime_plan_version(self, agent_id: str) -> str | None:
         return self.business_registry.runtime_plan_version(agent_id)
+
+    @staticmethod
+    def handoff_result(
+        runtime_result: AgentResult | None,
+        *,
+        decision: RuntimeLaunchDecision,
+        run: AgentRun | None = None,
+    ) -> RuntimeTaskHandoff:
+        """Make Runtime/legacy ownership explicit after Runtime execution."""
+
+        if runtime_result is not None:
+            runtime_status = (
+                run.status.value
+                if run is not None
+                else runtime_result.status.value
+            )
+            runtime_completed = (
+                (run is None or run.status == RuntimeRunStatus.COMPLETED)
+                and runtime_result.status == AgentResultStatus.COMPLETED
+            )
+            if not runtime_completed:
+                reason = f"runtime_execution_{runtime_status}"
+                failed_result = runtime_result.model_copy(
+                    update={
+                        "status": AgentResultStatus.FAILED,
+                        "fallback_used": True,
+                        "fallback_reason": reason,
+                    }
+                )
+                if decision.requires_runtime:
+                    raise NotConfiguredError(
+                        "default Runtime execution did not complete "
+                        f"(status={runtime_status})"
+                    )
+                return RuntimeTaskHandoff(
+                    result=failed_result,
+                    bypass_legacy_execution=False,
+                    legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
+                    runtime_status=runtime_status,
+                    fallback_reason=reason,
+                )
+            return RuntimeTaskHandoff(
+                result=runtime_result,
+                bypass_legacy_execution=True,
+                runtime_status=RuntimeRunStatus.COMPLETED.value,
+            )
+        if decision.requires_runtime:
+            raise NotConfiguredError(
+                "default Runtime launch did not resolve a business service"
+            )
+        return RuntimeTaskHandoff(
+            result=None,
+            bypass_legacy_execution=False,
+            legacy_fallback=decision.mode == RuntimeLaunchMode.CANARY,
+            runtime_status=(
+                "missing" if decision.mode == RuntimeLaunchMode.CANARY else ""
+            ),
+            fallback_reason=(
+                "runtime_result_missing"
+                if decision.mode == RuntimeLaunchMode.CANARY
+                else ""
+            ),
+        )
 
     @staticmethod
     def validate_resume_invariants(
@@ -279,6 +364,40 @@ class RuntimeExecutionBoundary:
 
         service = self.business_registry.resolve(agent_id, request)
         if service is None:
+            if (
+                self.legacy_provider is not None
+                and run.plan.plan_id.startswith("legacy-runtime:")
+            ):
+                result = await self.legacy_provider.run(
+                    agent_id,
+                    request,
+                    stream=False,
+                )
+                node_id = run.plan.nodes[0].node_id
+                RuntimeStateMachine.complete_node(
+                    run,
+                    node_id,
+                    status=RuntimeNodeStatus.SUCCEEDED,
+                    observation=RuntimeObservation(
+                        node_id=node_id,
+                        terminal_status=RuntimeNodeStatus.SUCCEEDED,
+                        artifact_ids=[
+                            item.artifact_id for item in result.artifacts
+                        ],
+                        facts={
+                            "agent_id": result.agent_id,
+                            "provider": result.provider,
+                            "result_status": result.status.value,
+                            "structured_result": result.structured_result,
+                        },
+                        warnings=list(result.warnings[:8]),
+                    ),
+                )
+                if checkpoint_hook is not None:
+                    checkpoint = checkpoint_hook(run)
+                    if inspect.isawaitable(checkpoint):
+                        await checkpoint
+                return result
             return None
         result = await service.run(
             request,

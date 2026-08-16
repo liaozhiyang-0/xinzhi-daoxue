@@ -11,7 +11,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from app.contracts import AgentRequest
+from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.general_question_runtime import GeneralQuestionRuntimeService
+from app.services.solver_boundary_policy import SolverBoundaryPolicy
 
 
 class AcademicSolverRuntimeService(GeneralQuestionRuntimeService):
@@ -57,11 +59,20 @@ class AcademicSolverRuntimeService(GeneralQuestionRuntimeService):
     def _retrieval_requested(cls, request: AgentRequest) -> bool:
         runtime_options = request.options.get(cls.runtime_option_key)
         if isinstance(runtime_options, Mapping) and "retrieve" in runtime_options:
-            return runtime_options.get("retrieve") is True
-        execution_plan = request.options.get("_execution_plan")
-        return isinstance(execution_plan, Mapping) and bool(
-            execution_plan.get("use_rag", False)
-        )
+            requested = runtime_options.get("retrieve") is True
+        else:
+            execution_plan = request.options.get("_execution_plan")
+            requested = isinstance(execution_plan, Mapping) and bool(
+                execution_plan.get("use_rag", False)
+            )
+        if not requested:
+            return False
+
+        # The solver has a deterministic boundary policy.  Do not spend a
+        # retrieval call on a problem that policy will intercept before any
+        # answer generation.
+        problem = AcademicProblemSolverService._problem_from_request(request)
+        return not SolverBoundaryPolicy().evaluate(problem).intercepted
 
     def _provider_context(
         self, context: Any, retrieved_context: Any = None

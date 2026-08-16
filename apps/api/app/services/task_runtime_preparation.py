@@ -275,7 +275,20 @@ class TaskRuntimePreparationService:
                 else self.runtime_boundary.build_plan(task.agent_id, request)
             )
             if runtime_plan is None:
-                raise NotConfiguredError("registered Agent has no Runtime plan")
+                # Keep published legacy agents executable while their
+                # business Runtime adapter is migrated.  The compatibility
+                # plan uses the registered provider handler and remains
+                # observable through the same durable Runtime envelope.
+                runtime_plan = RuntimeRunLifecycleService._build_legacy_plan(
+                    task.agent_id,
+                    runtime_goal,
+                )
+                launch_decision = RuntimeLaunchDecision(
+                    agent_id=task.agent_id,
+                    mode=RuntimeLaunchMode.DEFAULT,
+                    source="legacy_compatibility",
+                    reason="registered_agent_runtime_plan_pending",
+                )
             runtime_run = await self.runtime_boundary.start_or_restore(
                 db,
                 task_id=task.id,

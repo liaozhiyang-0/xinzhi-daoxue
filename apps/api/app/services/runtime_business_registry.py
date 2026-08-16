@@ -45,6 +45,23 @@ class RuntimeBusinessRegistry:
     def resolve(
         self, agent_id: str, request: AgentRequest
     ) -> RuntimeBusinessService | None:
+        # An explicitly declared Goal Runtime is a request-level override. It
+        # must win over the routed business adapter for the same Agent; the
+        # wildcard service is the only implementation allowed to interpret
+        # that option.
+        goal_options = request.options.get("runtime_goal_runtime")
+        if isinstance(goal_options, dict) and goal_options.get("execute") is True:
+            generic = next(
+                (
+                    service
+                    for service in self._services
+                    if getattr(service, "agent_id", "") == "*"
+                    and service.supports(agent_id, request)
+                ),
+                None,
+            )
+            if generic is not None:
+                return generic
         return next(
             (
                 service
@@ -144,7 +161,10 @@ class RuntimeBusinessRegistry:
             (
                 service
                 for service in self._services
-                if getattr(service, "agent_id", "") == agent_id
+                if (
+                    getattr(service, "agent_id", "") == agent_id
+                    or agent_id in getattr(service, "supported_agent_ids", ())
+                )
             ),
             None,
         )
@@ -158,13 +178,17 @@ class RuntimeBusinessRegistry:
         service's own ``enabled`` or input validation checks.
         """
 
-        option_key = self.runtime_option_key(agent_id) or ""
+        service = self._service_for_agent(agent_id)
+        option_key = getattr(service, "runtime_option_key", None) or ""
         if not option_key:
             return request
         options = dict(request.options)
         current = options.get(option_key)
         if current is None:
-            options[option_key] = {"execute": True}
+            value: dict[str, Any] = {"execute": True}
+            if getattr(service, "allow_default_incomplete_evidence", False):
+                value["allow_incomplete_evidence"] = True
+            options[option_key] = value
         elif isinstance(current, dict):
             options[option_key] = {**current, "execute": True}
         return request.model_copy(update={"options": options})

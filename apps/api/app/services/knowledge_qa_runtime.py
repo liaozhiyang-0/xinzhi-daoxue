@@ -30,8 +30,16 @@ class KnowledgeQARuntimeService:
     """Execute bounded retrieval and configured model synthesis through Runtime."""
 
     agent_id = "LEARN_01_LOCAL_RETRIEVAL_V1"
+    supported_agent_ids = frozenset(
+        {"LEARN_01_LOCAL_RETRIEVAL_V1", "LEARN_01_KNOWLEDGE_QA_V1"}
+    )
     runtime_option_key = "knowledge_qa_runtime"
     runtime_plan_version = "knowledge-qa-v1"
+    # The public task route may use retrieval-only mode without an explicit
+    # Runtime option.  In that default path an empty local index is a useful,
+    # reviewable answer rather than a transport failure; explicit Runtime
+    # callers keep the stricter evidence contract below.
+    allow_default_incomplete_evidence = True
     execute_node_id = "knowledge.execute"
     verify_node_id = "knowledge.verify"
     max_user_input_chars = 2_000
@@ -50,7 +58,7 @@ class KnowledgeQARuntimeService:
         options = request.options.get(self.runtime_option_key)
         return (
             self.enabled
-            and agent_id == self.agent_id
+            and agent_id in self.supported_agent_ids
             and isinstance(options, dict)
             and options.get("execute", True) is True
         )
@@ -207,21 +215,33 @@ class KnowledgeQARuntimeService:
                 self.agent_id, request_for_attempt
             )
             result_holder["result"] = execution.result
+            routed_agent_id = (
+                _run.launch_decision.agent_id
+                if _run.launch_decision is not None
+                else self.agent_id
+            )
+            if execution.result.agent_id != routed_agent_id:
+                result_holder["result"] = execution.result.model_copy(
+                    update={"agent_id": routed_agent_id}
+                )
             return RuntimeObservation(
                 node_id=_node.node_id,
                 artifact_ids=[
-                    item.artifact_id for item in execution.result.artifacts
+                    item.artifact_id
+                    for item in result_holder["result"].artifacts
                 ],
                 facts={
-                    "result_status": execution.result.status.value,
+                    "result_status": result_holder["result"].status.value,
                     "mode": str(
-                        execution.result.structured_result.get("mode", "")
+                        result_holder["result"].structured_result.get("mode", "")
                     ),
                     "evidence_status": execution.context.evidence_status,
                     "evidence_count": len(execution.context.evidence),
-                    "result_payload": execution.result.model_dump(mode="json"),
+                    "result_payload": result_holder["result"].model_dump(
+                        mode="json"
+                    ),
                 },
-                warnings=list(execution.result.warnings[:8]),
+                warnings=list(result_holder["result"].warnings[:8]),
             )
 
         def verify_handler(
@@ -285,6 +305,26 @@ class KnowledgeQARuntimeService:
             if evidence_status in {"insufficient", "none"} and not (
                 passed and incomplete_synthesis
             ):
+                if (
+                    passed
+                    and mode == "retrieval_only"
+                    and self._runtime_options(request_for_attempt).get(
+                        "allow_incomplete_evidence"
+                    ) is True
+                ):
+                    return RuntimeObservation(
+                        node_id=_node.node_id,
+                        terminal_status=RuntimeNodeStatus.SUCCEEDED,
+                        artifact_ids=[item.artifact_id for item in result.artifacts],
+                        facts={
+                            **facts,
+                            "passed": True,
+                            "evidence_incomplete": True,
+                            "needs_review": True,
+                            "reason_code": "knowledge_evidence_incomplete_review",
+                        },
+                        warnings=list(result.warnings[:8]),
+                    )
                 return RuntimeObservation(
                     node_id=_node.node_id,
                     terminal_status=RuntimeNodeStatus.PARTIAL,

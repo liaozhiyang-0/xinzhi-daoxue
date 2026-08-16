@@ -31,7 +31,7 @@ def test_knowledge_question_uses_course_routing_and_local_evidence(
     structured = result["structured_result"]
 
     assert task["status"] == "completed"
-    assert task["agent_id"] == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert task["agent_id"] == "LEARN_01_KNOWLEDGE_QA_V1"
     assert task["course_id"] == "AE"
     assert task["intent"] == "explain_concept"
     assert result["citations"]

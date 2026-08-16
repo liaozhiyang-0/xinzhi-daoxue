@@ -82,6 +82,20 @@ class TaskResultCommitService:
             result_payload["context_usage"] = context_usage
         task.result_content = result_payload
 
+        knowledge = result.structured_result.get("knowledge", {})
+        hits = knowledge.get("hits", []) if isinstance(knowledge, dict) else []
+        if result.metrics.retrieval_calls and isinstance(hits, list):
+            await append_task_event(
+                db,
+                task.id,
+                AgentEventType.KNOWLEDGE_RETRIEVED,
+                agent_id=task.agent_id,
+                data={
+                    "hit_count": len(hits),
+                    "retrieval_calls": result.metrics.retrieval_calls,
+                },
+            )
+
         for artifact in result.artifacts:
             db.add(
                 ArtifactModel(

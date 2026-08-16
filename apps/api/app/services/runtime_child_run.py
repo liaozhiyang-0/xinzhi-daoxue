@@ -195,19 +195,6 @@ class RuntimeChildRunService:
             self._clear_parent_suspension(parent_run, child_run.run_id)
         result = self._result_from_run(child_run)
         if result is None:
-            failure_code = next(
-                (
-                    state.error_code
-                    for state in child_run.nodes.values()
-                    if state.status == RuntimeNodeStatus.FAILED and state.error_code
-                ),
-                "",
-            )
-            if failure_code:
-                raise RuntimeNodeError(
-                    failure_code,
-                    f"subagent execution failed: {failure_code}",
-                )
             raise RuntimeNodeError("subagent_child_result_missing")
         return result, child_run.run_id
 

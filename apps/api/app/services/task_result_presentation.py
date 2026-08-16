@@ -74,6 +74,25 @@ class TaskResultPresentationService:
                 ),
             }
         )
+        if "knowledge" not in result.structured_result:
+            hits = [
+                {
+                    **item.model_dump(mode="json"),
+                    "excerpt": item.summary,
+                }
+                for item in evidence_view
+            ]
+            if not hits:
+                raw_citations = result.structured_result.get("citations", [])
+                if isinstance(raw_citations, list):
+                    hits = [
+                        item
+                        for item in raw_citations
+                        if isinstance(item, dict)
+                        and str(item.get("source_ref", "")).startswith("kb://")
+                    ]
+            if hits:
+                result.structured_result["knowledge"] = {"hits": hits}
         math_source = dict(result.structured_result)
         math_source["answer_text"] = result.answer
         math_content = self.math_formatting.build_from_structured_result(math_source)

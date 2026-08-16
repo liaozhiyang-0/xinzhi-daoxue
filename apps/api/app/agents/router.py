@@ -304,6 +304,7 @@ class TaskRouter:
             # daily-science question should remain on the general-answer
             # path. AUTO is the UI's opt-in for automatic academic routing.
             and request.course_id.upper().strip() in {"", "AUTO"}
+            and "course_unspecified_default_context" not in course_reasons
         ):
             recognized_direct_intents.add(Intent.EXPLAIN_CONCEPT.value)
         if (
@@ -551,6 +552,7 @@ class TaskRouter:
             route_source="local_general_fallback",
             extra_reason_codes=[
                 "local_router_low_confidence",
+                "cloud_router_not_authorized",
                 "general_question_fallback",
             ],
         )

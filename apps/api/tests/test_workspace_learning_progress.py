@@ -3,21 +3,23 @@ from __future__ import annotations
 from apps.api.tests.phase3_helpers import submit_power
 
 
-def test_workspace_exposes_attempt_progress_and_due_retest_controls(api) -> None:
+def test_workspace_exposes_current_task_and_evidence_controls(api) -> None:
     response = api.client.get("/workspace")
     assert response.status_code == 200
     html = response.text
     script = api.client.get("/debug-assets/workspace.js").text
     for text in (
-        "尝试历史",
-        "提交修改后的步骤",
-        "学习进度估计",
-        "待复习",
-        "不等同于考试成绩或正式能力评价",
+        "任务详情",
+        "资料依据",
+        "执行过程",
+        "自动识别",
+        "任务目标或学习问题",
     ):
         assert text in html
-    assert "开始复习" in script
-    assert "稍后处理" in script
+    assert "重试本次任务" in html
+    assert "refreshRuntimeTaskControls" in script
+    assert "尝试历史" not in html
+    assert "待复习" not in html
     assert "内部置信度" not in html
     assert "真实掌握概率" not in html
 

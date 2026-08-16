@@ -53,6 +53,8 @@ class KnowledgeQAService:
         self, agent_id: str, request: AgentRequest
     ) -> KnowledgeQAExecution:
         execution = await asyncio.to_thread(self.run, agent_id, request)
+        if request.options.get("allow_cloud") is False:
+            return execution
         model_service = self.model_service
         governance = self._is_governance_request(request)
         learning_path = self._is_learning_path_request(request)
@@ -388,6 +390,9 @@ class KnowledgeQAService:
             "related_chapters": chapters,
             "summary": summary,
             "core_retrieval_summary": excerpts,
+            # Keep the compact legacy envelope for clients that still render
+            # local retrieval hits from ``structured_result.knowledge``.
+            "knowledge": {"hits": excerpts},
             "suggested_reading": [hit.document_path for hit in context.evidence],
             "evidence_status": context.evidence_status,
             "retrieval_mode": context.retrieval_mode,

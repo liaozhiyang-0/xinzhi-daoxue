@@ -507,6 +507,9 @@ class Settings(BaseSettings):
     task_recovery_enabled: bool = True
     task_max_concurrency: int = Field(default=4, ge=1, le=64)
     agent_runtime_plan_proposals_enabled: bool = False
+    # Kept as a compatibility switch for local Runtime integration callers;
+    # explicit task options still decide which goal/runtime is executable.
+    agent_runtime_shadow_enabled: bool = False
     agent_runtime_goal_capabilities: str = ""
     agent_runtime_canary_artifacts: str = ""
     agent_runtime_semantic_evidence: str = ""

@@ -212,6 +212,19 @@ class RuntimeResultPipeline:
             ),
             "requires_manual_review": True,
         }
+        structured["teaching_loop"] = {
+            "version": "v1",
+            "status": "degraded",
+            "error_type": "teaching_enrichment_unexpected_error",
+            "execution_plan": {},
+            "verification": None,
+            "hint": None,
+            "next_check": None,
+            "disclosure_policy": policy.model_dump(mode="json"),
+            "hint_request_count": 0,
+            "awaiting_student_response": False,
+            "solution_packet_reused": False,
+        }
         degraded = result.model_copy(
             update={
                 "structured_result": structured,

@@ -166,7 +166,7 @@ async def test_overall_router_uses_compact_structured_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_course_classifier_uses_model_service_and_schema() -> None:
+async def test_course_classifier_uses_configured_qwen_route_and_schema() -> None:
     agent_hub, service = hub()
 
     result = await agent_hub.run_text(
@@ -176,19 +176,16 @@ async def test_course_classifier_uses_model_service_and_schema() -> None:
     )
 
     assert result.structured_result["course"] == "CT"
-    assert result.total_tokens == 48
-    assert [call["task_type"] for call in service.calls] == [
-        "course_classification",
-        "structured_output_normalization",
-    ]
+    assert result.total_tokens == 18
+    assert [call["task_type"] for call in service.calls] == ["course_classification"]
     assert service.calls[0]["extra_options"] == {"max_tokens": 96}
-    system_prompt = service.calls[1]["messages"][0]["content"]
+    system_prompt = service.calls[0]["messages"][0]["content"]
     assert "JSON Schema" in system_prompt
     assert '"course"' in system_prompt
 
 
 @pytest.mark.asyncio
-async def test_circuit_agent_uses_reason_then_structure_pipeline() -> None:
+async def test_circuit_agent_uses_configured_qwen_route() -> None:
     agent_hub, service = hub()
 
     result = await agent_hub.run_text(
@@ -198,17 +195,16 @@ async def test_circuit_agent_uses_reason_then_structure_pipeline() -> None:
     )
 
     assert result.structured_result["needs_tool_verification"] is True
-    assert result.provider == "iflytek_spark+dashscope"
-    assert result.model == "spark-x->qwen3.5-flash"
-    assert result.total_tokens == 48
+    assert result.provider == "dashscope"
+    assert result.model == "qwen3.5-flash"
+    assert result.total_tokens == 18
     assert [call["task_type"] for call in service.calls] == [
-        "complex_circuit_reasoning",
-        "structured_output_normalization",
+        "complex_circuit_reasoning"
     ]
 
 
 @pytest.mark.asyncio
-async def test_runtime_structured_fallback_option_reaches_spark_pipeline() -> None:
+async def test_runtime_structured_fallback_option_reaches_configured_route() -> None:
     agent_hub, service = hub()
 
     await agent_hub.run_text(
@@ -222,10 +218,7 @@ async def test_runtime_structured_fallback_option_reaches_spark_pipeline() -> No
         "_allow_structured_fallback": True,
         "max_tokens": 128,
     }
-    assert service.calls[1]["extra_options"] == {
-        "_allow_structured_fallback": True,
-        "max_tokens": 128,
-    }
+    assert len(service.calls) == 1
 
 
 @pytest.mark.asyncio

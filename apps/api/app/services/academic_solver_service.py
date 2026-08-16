@@ -320,6 +320,12 @@ class AcademicProblemSolverService:
             "uncertain_points": boundary.uncertain_points,
             "reason": boundary.reason,
         }
+        if boundary.intercepted:
+            structured["retrieval_preflight"] = {
+                "status": "skipped",
+                "reason": boundary.reason,
+                "saved_stage": "knowledge_retrieval",
+            }
         if review_result is not None:
             structured["review_result"] = review_result.model_dump(mode="json")
         structured["fallback_decision"] = fallback_decision

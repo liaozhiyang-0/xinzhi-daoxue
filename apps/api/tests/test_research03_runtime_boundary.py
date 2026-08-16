@@ -199,7 +199,7 @@ def test_research03_candidate_is_explicit_and_default_stays_legacy() -> None:
         ProviderFreeInternalAgent(), enabled=False  # type: ignore[arg-type]
     ).supports(AGENT_ID, _runtime_request()) is False
 
-    policy = RuntimeLaunchPolicy()
+    policy = RuntimeLaunchPolicy(local_agents=(AGENT_ID,))
     default_decision = policy.resolve(
         AGENT_ID,
         _request(),

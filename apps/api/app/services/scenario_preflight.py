@@ -59,7 +59,10 @@ class ScenarioPreflightService:
             "configured_unavailable",
             "unavailable",
         ]
-        if runtime_available:
+        primary_runtime_ready = (
+            runtime_available and definition.publication_status == "published"
+        )
+        if primary_runtime_ready:
             agent_status = "runtime_available"
         elif fallback_available:
             agent_status = "fallback_only"
@@ -81,7 +84,10 @@ class ScenarioPreflightService:
             mock_available=mock_available,
             demo_ready=not blockers
             and (runtime_available or mock_available or fallback_available),
-            production_ready=not blockers and runtime_available,
+            production_ready=(
+                not blockers
+                and primary_runtime_ready
+            ),
             commercialization_complete=commercialization_complete,
             evidence_review_required=scenario.evidence_policy.manual_review_required,
             input_modes=list(scenario.input_modes),

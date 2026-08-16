@@ -99,7 +99,7 @@ def test_task_router_keeps_analog_concept_question_on_knowledge_route() -> None:
 
     assert decision.course_id == CourseCode.AE.value
     assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
-    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
 
 
 def test_supervisor_preserves_teaching_route_when_local_rag_is_enabled() -> None:
@@ -146,7 +146,7 @@ def test_task_router_recognizes_knowledge_language_without_supervisor() -> None:
         )
     )
 
-    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
     assert decision.course_id == CourseCode.AE.value
     assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
 
@@ -178,7 +178,7 @@ def test_task_router_keeps_concept_question_on_knowledge_route_after_course_swit
         )
     )
 
-    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
     assert decision.intent == OrchestrationIntent.EXPLAIN_CONCEPT.value
 
 

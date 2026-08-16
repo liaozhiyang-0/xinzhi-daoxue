@@ -352,6 +352,15 @@ class RuntimeAgentReadinessService:
             and blockers
         ):
             status = "blocked"
+        elif (
+            configured is None
+            and decision.source == "runtime_registry_candidate"
+            and runtime_plan_available
+        ):
+            # An implementation is available, but no launch mode has been
+            # authorized for it yet. ``canary_ready`` is reserved for an
+            # explicitly configured or released canary path.
+            status = "runtime_implemented"
         elif decision.mode == RuntimeLaunchMode.DEFAULT and runtime_plan_available:
             status = "default_ready"
         elif decision.mode == RuntimeLaunchMode.CANARY and runtime_plan_available:

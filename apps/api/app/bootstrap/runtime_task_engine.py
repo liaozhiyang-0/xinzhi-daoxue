@@ -262,10 +262,6 @@ def build_runtime_task_engine(
         max_retries=settings.workflow_max_retries,
     )
     knowledge_runtime = KnowledgeQARuntimeService(knowledge_qa, enabled=True)
-    # Keep the public v1 knowledge Agent stable while routing both historical
-    # and current IDs into the same local Runtime implementation.
-    knowledge_runtime_alias = KnowledgeQARuntimeService(knowledge_qa, enabled=True)
-    knowledge_runtime_alias.agent_id = "LEARN_01_KNOWLEDGE_QA_V1"
     business_services = [
         service
         for service in (
@@ -276,7 +272,6 @@ def build_runtime_task_engine(
             assignment_review,
             academic_writing,
             knowledge_runtime,
-            knowledge_runtime_alias,
             external_research,
             generic_goal,
         )
@@ -287,6 +282,7 @@ def build_runtime_task_engine(
         research_analysis,
         request_preparation=request_preparation,
         business_services=business_services,
+        legacy_provider=provider,
     )
     launch_policy = RuntimeLaunchPolicy(
         release_gate_required=settings.agent_runtime_release_gate_required,

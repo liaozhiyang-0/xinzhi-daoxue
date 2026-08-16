@@ -14,7 +14,7 @@ artifacts:
     status: "drafted"
   - id: "demo_user_guide"
     path: "03_demo_user_guide.md"
-    status: "drafted_with_five_case_playbooks_pending_owner_review"
+    status: "pending_owner_designed_demos"
   - id: "product_solution"
     path: "04_product_solution.md"
     status: "drafted"

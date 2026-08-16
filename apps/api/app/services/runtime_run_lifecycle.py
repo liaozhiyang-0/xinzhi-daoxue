@@ -13,6 +13,7 @@ from app.runtime import (
     AgentRunPlan,
     RuntimeCompatibilitySnapshot,
     RuntimeLaunchSnapshot,
+    RuntimeNode,
     RuntimeNodeStatus,
     RuntimeRunStatus,
     RuntimeStateMachine,
@@ -70,20 +71,50 @@ class RuntimeRunLifecycleService:
                     await repository.save_checkpoint(restored)
             return restored
 
-        if runtime_plan is None:
-            raise ValueError("Runtime lifecycle requires a registered business plan")
-        run_plan = runtime_plan
+        run_plan = runtime_plan or self._build_legacy_plan(agent_id, goal)
         run = AgentRun(
             run_id=uuid4().hex,
             task_id=task_id,
             goal=goal.strip()[:8_000] or f"task:{task_id}",
             plan=run_plan,
             request_snapshot=dict(request_snapshot or {}),
+            control_data=(
+                {"request": dict(request_snapshot or {})}
+                if run_plan.plan_id.startswith("legacy-runtime:")
+                and request_snapshot
+                else {}
+            ),
             launch_decision=launch_decision,
             compatibility_snapshot=compatibility_snapshot,
         )
+        if runtime_plan is None or run_plan.plan_id.startswith("legacy-runtime:"):
+            RuntimeStateMachine.mark_ready(run)
+            RuntimeStateMachine.start_node(run, run_plan.nodes[0].node_id)
         await repository.create(run, agent_id=agent_id, provider=provider)
         return run
+
+    @staticmethod
+    def _build_legacy_plan(agent_id: str, goal: str) -> AgentRunPlan:
+        """Keep the durable control envelope usable around legacy tasks."""
+
+        return AgentRunPlan(
+            plan_id=f"legacy-runtime:{agent_id}",
+            version="compat-1",
+            goal=goal.strip()[:8_000] or f"task:{agent_id}",
+            nodes=[
+                RuntimeNode(
+                    node_id="legacy.execution",
+                    node_type="workflow",
+                    # The provider adapter is the smallest compatibility
+                    # boundary for agents that have not migrated to a
+                    # business Runtime plan yet.
+                    handler_id="provider.default",
+                    target_id=agent_id,
+                    timeout_ms=900_000,
+                )
+            ],
+            success_criteria=["legacy_task_terminal_status"],
+        )
 
     async def finalize(
         self,
