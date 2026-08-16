@@ -142,9 +142,15 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
     assert "模电测试集_图2.1.1_运算放大器电路.jpg" in page.text
     assert 'class="prompt-example-image"' not in page.text
 
-    script = client.get("/debug-assets/workspace.js").text
+    script = "\n".join(
+        (
+            client.get("/debug-assets/workspace.js").text,
+            client.get("/debug-assets/ts/workspace-contracts.js").text,
+        )
+    )
     assert "activeScenarioId = \"\"" in script
-    assert "scenario_id: state.activeScenarioId || null" in script
+    assert "scenarioId: state.activeScenarioId || null" in script
+    assert "scenario_id: scenarioId" in script
     assert (
         "const attachExampleImage = (button) => materialManager.attachExample(button);"
         in script
@@ -169,10 +175,16 @@ def test_local_analog_question_image_is_served_from_the_question_bank(client) ->
 
 
 def test_workspace_uses_unified_member_identity_and_admin_boundary(client) -> None:
-    script = client.get("/debug-assets/workspace.js").text
+    script = "\n".join(
+        (
+            client.get("/debug-assets/workspace.js").text,
+            client.get("/debug-assets/ts/workspace-contracts.js").text,
+        )
+    )
 
     assert "effectiveWorkspaceRole(identity)" in script
-    assert "user_role: state.userRole" in script
+    assert "userRole: state.userRole" in script
+    assert "user_role: userRole" in script
     assert "loadScenarioRolePolicy" not in script
     assert 'return role === "admin" ? "admin" : "student";' in script
 
