@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.observability.metrics import model_snapshot, prometheus_text, trace_snapshot
 from app.observability.model_tracer import ModelCallRecord, ModelTracer
 from app.observability.tracer import TraceStore
@@ -58,7 +60,7 @@ def test_trace_snapshot_counts_route_status() -> None:
         "selected_agent": "ACADEMIC_PROBLEM_SOLVER",
         "course": "CT",
         "nodes": [{"node": "a"}, {"node": "b"}],
-        "updated_at": "2026-01-01T00:00:00+00:00",
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
     snapshot = trace_snapshot(store)

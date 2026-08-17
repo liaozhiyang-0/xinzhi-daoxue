@@ -18,7 +18,7 @@ class TaskQueue:
     async def publish(self, task_id: str) -> None:
         raise NotImplementedError
 
-    async def receive(self, *, timeout_seconds: int) -> str | None:
+    async def receive(self, *, timeout_seconds: float) -> str | None:
         raise NotImplementedError
 
     async def ping(self) -> None:
@@ -106,7 +106,7 @@ class RedisTaskQueue(TaskQueue):
     async def publish(self, task_id: str) -> None:
         await self._client.rpush(self.queue_name, task_id)
 
-    async def receive(self, *, timeout_seconds: int) -> str | None:
+    async def receive(self, *, timeout_seconds: float) -> str | None:
         item = await self._client.blpop([self.queue_name], timeout=timeout_seconds)
         if item is None:
             return None
@@ -240,11 +240,18 @@ class InMemoryTaskQueue(TaskQueue):
         self.published.append(task_id)
         await self._items.put(task_id)
 
-    async def receive(self, *, timeout_seconds: int) -> str | None:
-        try:
-            task_id = await asyncio.wait_for(self._items.get(), timeout_seconds)
-        except TimeoutError:
-            return None
+    async def receive(self, *, timeout_seconds: float) -> str | None:
+        if timeout_seconds <= 0:
+            await asyncio.sleep(0)
+            try:
+                task_id = self._items.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+        else:
+            try:
+                task_id = await asyncio.wait_for(self._items.get(), timeout_seconds)
+            except TimeoutError:
+                return None
         self.attempts[task_id] = self.attempts.get(task_id, 0) + 1
         return task_id
 

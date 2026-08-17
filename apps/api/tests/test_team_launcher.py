@@ -476,7 +476,15 @@ def test_double_click_launcher_uses_unified_local_startup() -> None:
     root = Path(__file__).resolve().parents[3]
     launcher = (root / "打开芯智导学.cmd").read_text(encoding="utf-8")
 
-    assert "scripts\\team_launcher.py" in launcher
-    assert "start --open-browser" in launcher
+    assert "scripts\\xzd_supervisor.ps1" in launcher
+    assert "-OpenBrowser" in launcher
     assert "--with-cloud" not in launcher
     assert "uvicorn" not in launcher.lower()
+
+
+def test_desktop_launcher_has_manual_stop_entry() -> None:
+    root = Path(__file__).resolve().parents[3]
+    stop_launcher = (root / "关闭芯智导学.cmd").read_text(encoding="utf-8")
+
+    assert "scripts\\xzd_supervisor.ps1" in stop_launcher
+    assert "-Stop" in stop_launcher

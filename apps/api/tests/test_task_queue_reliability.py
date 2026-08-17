@@ -10,13 +10,15 @@ async def test_in_memory_queue_rejects_until_dead_letter() -> None:
     queue = InMemoryTaskQueue(dead_letter_max_attempts=2)
 
     await queue.publish("task-1")
-    assert await queue.receive(timeout_seconds=0) == "task-1"
+    assert await queue.receive(timeout_seconds=0.01) == "task-1"
     assert await queue.metrics() == {"pending": 0, "dead_letter": 0, "attempts": 1}
 
     # First rejection is requeued because the attempt limit is 2.
+    # ``attempts`` counts distinct in-flight tasks (Redis hlen parity), so the
+    # same task on its second delivery still reports 1.
     await queue.reject("task-1", "dispatch_rejected")
     assert await queue.receive(timeout_seconds=0) == "task-1"
-    assert await queue.metrics() == {"pending": 0, "dead_letter": 0, "attempts": 2}
+    assert await queue.metrics() == {"pending": 0, "dead_letter": 0, "attempts": 1}
 
     # Second rejection moves the task to the dead-letter list.
     await queue.reject("task-1", "dispatch_rejected")
@@ -27,8 +29,8 @@ async def test_in_memory_queue_ack_clears_attempts() -> None:
     queue = InMemoryTaskQueue(dead_letter_max_attempts=2)
 
     await queue.publish("task-1")
-    assert await queue.receive(timeout_seconds=0) == "task-1"
-    assert await queue.metrics()["attempts"] == 1
+    assert await queue.receive(timeout_seconds=0.01) == "task-1"
+    assert (await queue.metrics())["attempts"] == 1
 
     await queue.ack("task-1")
     assert await queue.metrics() == {"pending": 0, "dead_letter": 0, "attempts": 0}
@@ -55,7 +57,7 @@ async def test_task_worker_acks_rejected_dispatch() -> None:
     worker = TaskWorker(
         RejectingDispatcher(),
         queue,
-        block_timeout_seconds=0,
+        block_timeout_seconds=0.01,
         recovery_interval_seconds=60,
     )
     stop_event = asyncio.Event()
@@ -79,7 +81,7 @@ async def test_task_worker_dead_letters_dispatch_exception() -> None:
     worker = TaskWorker(
         RaisingDispatcher(),
         queue,
-        block_timeout_seconds=0,
+        block_timeout_seconds=0.01,
         recovery_interval_seconds=60,
     )
     stop_event = asyncio.Event()

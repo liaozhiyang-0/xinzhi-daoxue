@@ -23,7 +23,7 @@ class TaskWorker:
         dispatcher: TaskDispatcher,
         queue: TaskQueue,
         *,
-        block_timeout_seconds: int,
+        block_timeout_seconds: float,
         recovery_interval_seconds: int,
     ) -> None:
         self.dispatcher = dispatcher
