@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import health as health_endpoint
+from app.api.v1.observability import observability_metrics
 from app.api.v1.router import api_router
 from app.core.config import PROJECT_ROOT
 from app.core.errors import AppError
@@ -33,6 +34,13 @@ def configure_http_app(app: FastAPI) -> None:
 
     app.include_router(api_router, prefix="/api/v1")
     app.add_api_route("/health", health_endpoint, methods=["GET"], tags=["health"])
+    app.add_api_route(
+        "/metrics",
+        observability_metrics,
+        methods=["GET"],
+        tags=["observability"],
+        include_in_schema=False,
+    )
 
     @app.get(
         "/debug-assets/question-bank/analog-opamp.jpg",

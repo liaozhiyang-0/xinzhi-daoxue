@@ -231,6 +231,9 @@ GET  /api/v1/capabilities
 GET  /api/v1/workflows
 GET  /api/v1/internal-agents
 GET  /api/v1/debug/traces/{trace_id}
+GET  /api/v1/observability/summary
+GET  /api/v1/observability/metrics
+GET  /metrics
 GET  /debug
 GET  /debug/rag
 GET  /debug/agents

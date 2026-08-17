@@ -60,6 +60,11 @@ class TraceStore:
             record = self._records.get(trace_id)
             return dict(record) if record is not None else None
 
+    def list(self) -> list[dict[str, Any]]:
+        with self._lock:
+            self._prune(datetime.now(UTC))
+            return [dict(record) for record in self._records.values()]
+
     def _prune(self, now: datetime) -> None:
         expired: list[str] = []
         for trace_id, record in self._records.items():

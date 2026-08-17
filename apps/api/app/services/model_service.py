@@ -481,7 +481,7 @@ class ModelService:
         usage = response.usage if response else None
         self.tracer.record(
             ModelCallRecord(
-                trace_id=f"model_{uuid4().hex}",
+                trace_id=request_id or f"model_{uuid4().hex}",
                 request_id=request_id,
                 provider=definition.provider,
                 model=definition.model,

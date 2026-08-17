@@ -18,6 +18,7 @@ from app.api.v1 import (
     learning,
     memories,
     models,
+    observability,
     orchestration,
     research,
     scenarios,
@@ -40,6 +41,7 @@ api_router.include_router(knowledge.router)
 api_router.include_router(learning.router)
 api_router.include_router(memories.router)
 api_router.include_router(models.router)
+api_router.include_router(observability.router)
 api_router.include_router(orchestration.router)
 api_router.include_router(research.router)
 api_router.include_router(debug_rag.router)
