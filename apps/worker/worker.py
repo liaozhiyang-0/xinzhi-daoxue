@@ -25,6 +25,8 @@ async def run_worker() -> None:
         settings.redis_url,
         queue_name=settings.task_queue_name,
         worker_lock_ttl_seconds=settings.task_worker_lock_ttl_seconds,
+        dead_letter_max_attempts=settings.task_queue_dead_letter_max_attempts,
+        dead_letter_enabled=settings.task_queue_dead_letter_enabled,
     )
     async with app.router.lifespan_context(app):
         try:

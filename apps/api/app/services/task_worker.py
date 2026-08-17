@@ -53,7 +53,25 @@ class TaskWorker:
                         raise RuntimeError("task worker Redis lease was lost")
                     if task_id is None:
                         continue
-                    accepted = await self.dispatcher.submit(task_id)
+                    accepted = False
+                    try:
+                        accepted = await self.dispatcher.submit(task_id)
+                    except Exception as exc:
+                        logger.exception(
+                            "task_worker_dispatch_failed task_id=%s error_type=%s",
+                            task_id,
+                            type(exc).__name__,
+                        )
+                        await self.queue.reject(
+                            task_id,
+                            f"dispatch_error:{type(exc).__name__}",
+                        )
+                        continue
+                    # ``False`` means the coordinator already owns this task
+                    # (duplicate Redis message) or is shutting down. In both
+                    # cases the database lease is authoritative, so consume the
+                    # message instead of dead-lettering a live task.
+                    await self.queue.ack(task_id)
                     logger.info(
                         "task_worker_dispatched task_id=%s accepted=%s",
                         task_id,

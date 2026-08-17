@@ -214,3 +214,4 @@ class HealthRead(BaseModel):
     provider_mode: str
     version: str
     external_retrieval: dict[str, Any] = Field(default_factory=dict)
+    task_queue: dict[str, Any] = Field(default_factory=dict)

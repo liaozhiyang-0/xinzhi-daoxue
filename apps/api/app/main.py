@@ -367,6 +367,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app_settings.redis_url,
             queue_name=app_settings.task_queue_name,
             worker_lock_ttl_seconds=app_settings.task_worker_lock_ttl_seconds,
+            dead_letter_max_attempts=app_settings.task_queue_dead_letter_max_attempts,
+            dead_letter_enabled=app_settings.task_queue_dead_letter_enabled,
         )
         task_executor = QueueTaskExecutor(task_queue)
     else:

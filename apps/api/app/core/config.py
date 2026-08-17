@@ -503,6 +503,8 @@ class Settings(BaseSettings):
     task_queue_block_timeout_seconds: int = Field(default=5, ge=1, le=60)
     task_worker_recovery_interval_seconds: int = Field(default=15, ge=5, le=300)
     task_worker_lock_ttl_seconds: int = Field(default=120, ge=30, le=3600)
+    task_queue_dead_letter_enabled: bool = True
+    task_queue_dead_letter_max_attempts: int = Field(default=3, ge=1, le=20)
     task_lease_seconds: int = Field(default=120, ge=30, le=3600)
     task_recovery_enabled: bool = True
     task_max_concurrency: int = Field(default=4, ge=1, le=64)

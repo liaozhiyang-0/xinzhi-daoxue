@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -52,6 +53,7 @@ async def build_health(
     session_factory: async_sessionmaker[AsyncSession],
     provider: AgentProvider,
     external_search: AcademicSearchService | None = None,
+    task_queue: Any | None = None,
 ) -> HealthRead:
     database, redis, minio = await asyncio.gather(
         _database_status(session_factory),
@@ -59,6 +61,16 @@ async def build_health(
         _minio_status(settings.minio_endpoint),
     )
     provider_mode = "local_runtime" if provider.provider_name == "local" else "mock"
+    task_queue_metrics: dict[str, Any] = {}
+    if task_queue is not None:
+        try:
+            task_queue_metrics = await task_queue.metrics()
+            task_queue_metrics["mode"] = settings.task_executor_mode
+        except Exception:
+            task_queue_metrics = {
+                "mode": settings.task_executor_mode,
+                "error": "unavailable",
+            }
     return HealthRead(
         status=(
             "ok" if database == "ok" and redis == "ok" and minio == "ok" else "degraded"
@@ -74,4 +86,5 @@ async def build_health(
         external_retrieval=(
             external_search.health() if external_search is not None else {}
         ),
+        task_queue=task_queue_metrics,
     )

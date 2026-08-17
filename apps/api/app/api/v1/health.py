@@ -22,4 +22,5 @@ async def health(
         session_factory,
         request.app.state.provider,
         request.app.state.external_search,
+        task_queue=getattr(request.app.state, "task_queue", None),
     )

@@ -24,6 +24,36 @@ class TaskQueue:
     async def ping(self) -> None:
         raise NotImplementedError
 
+    async def reject(self, task_id: str, reason: str) -> None:
+        """Reject a received task after a dispatch failure.
+
+        Implementations may retry the task up to a configured attempt limit and
+        then move it to a dead-letter queue. The database lease remains the
+        durable source of truth, so a crash before this call is still recovered
+        by the periodic DB recovery scan.
+        """
+
+        raise NotImplementedError
+
+    async def ack(self, task_id: str) -> None:
+        """Acknowledge a successful dispatch.
+
+        This is not a business-result ack; the database task status is the only
+        authoritative completion record. It clears transport-level attempt
+        tracking so successful dispatches do not accumulate in monitoring.
+        """
+
+        raise NotImplementedError
+
+    async def metrics(self) -> dict[str, int]:
+        """Return transport-level metrics for monitoring.
+
+        Keys are intentionally generic so callers do not depend on Redis list
+        details: ``pending``, ``dead_letter``, and ``attempts``.
+        """
+
+        raise NotImplementedError
+
     @asynccontextmanager
     async def worker_lease(self) -> AsyncIterator[bool]:
         raise NotImplementedError
@@ -60,10 +90,16 @@ class RedisTaskQueue(TaskQueue):
         *,
         queue_name: str,
         worker_lock_ttl_seconds: int,
+        dead_letter_max_attempts: int = 3,
+        dead_letter_enabled: bool = True,
     ) -> None:
         self.queue_name = queue_name
         self.worker_lock_name = f"{queue_name}:worker-lock"
         self.worker_lock_ttl_seconds = worker_lock_ttl_seconds
+        self.dead_letter_name = f"{queue_name}:dead-letter"
+        self.attempts_name = f"{queue_name}:attempts"
+        self.dead_letter_max_attempts = max(1, dead_letter_max_attempts)
+        self.dead_letter_enabled = dead_letter_enabled
         self._client: Any = Redis.from_url(redis_url, decode_responses=True)
         self._worker_lease_valid = False
 
@@ -75,7 +111,49 @@ class RedisTaskQueue(TaskQueue):
         if item is None:
             return None
         _, task_id = item
+        await self._client.hincrby(self.attempts_name, task_id, 1)
         return task_id
+
+    async def reject(self, task_id: str, reason: str) -> None:
+        """Requeue a task until the attempt limit, then dead-letter it.
+
+        The database lease is still authoritative for crash recovery; this
+        method only protects against poison dispatch messages that would
+        otherwise bounce in a tight loop between the API and worker.
+        """
+
+        attempt = int(await self._client.hget(self.attempts_name, task_id) or 0)
+        if not self.dead_letter_enabled or attempt < self.dead_letter_max_attempts:
+            await self._client.lpush(self.queue_name, task_id)
+            return
+        await self._client.rpush(self.dead_letter_name, task_id)
+        await self._client.hset(
+            f"{self.attempts_name}:reasons",
+            task_id,
+            reason,
+        )
+        await self._client.hdel(self.attempts_name, task_id)
+        logger.warning(
+            "task_queue_dead_letter task_id=%s reason=%s attempts=%s",
+            task_id,
+            reason,
+            attempt,
+        )
+
+    async def ack(self, task_id: str) -> None:
+        await self._client.hdel(self.attempts_name, task_id)
+
+    async def metrics(self) -> dict[str, int]:
+        pending, dead_letter, attempts = await asyncio.gather(
+            self._client.llen(self.queue_name),
+            self._client.llen(self.dead_letter_name),
+            self._client.hlen(self.attempts_name),
+        )
+        return {
+            "pending": int(pending or 0),
+            "dead_letter": int(dead_letter or 0),
+            "attempts": int(attempts or 0),
+        }
 
     async def ping(self) -> None:
         await self._client.ping()
@@ -148,9 +226,12 @@ class RedisTaskQueue(TaskQueue):
 class InMemoryTaskQueue(TaskQueue):
     """Deterministic queue for unit tests; never used by production settings."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, dead_letter_max_attempts: int = 3) -> None:
         self._items: asyncio.Queue[str] = asyncio.Queue()
         self.published: list[str] = []
+        self.dead_letter: list[str] = []
+        self.attempts: dict[str, int] = {}
+        self.dead_letter_max_attempts = max(1, dead_letter_max_attempts)
         self.closed = False
 
     async def publish(self, task_id: str) -> None:
@@ -161,13 +242,35 @@ class InMemoryTaskQueue(TaskQueue):
 
     async def receive(self, *, timeout_seconds: int) -> str | None:
         try:
-            return await asyncio.wait_for(self._items.get(), timeout_seconds)
+            task_id = await asyncio.wait_for(self._items.get(), timeout_seconds)
         except TimeoutError:
             return None
+        self.attempts[task_id] = self.attempts.get(task_id, 0) + 1
+        return task_id
 
     async def ping(self) -> None:
         if self.closed:
             raise RuntimeError("task queue is closed")
+
+    async def reject(self, task_id: str, reason: str) -> None:
+        if self.closed:
+            raise RuntimeError("task queue is closed")
+        attempt = self.attempts.get(task_id, 0)
+        if attempt < self.dead_letter_max_attempts:
+            await self._items.put(task_id)
+            return
+        self.dead_letter.append(task_id)
+        self.attempts.pop(task_id, None)
+
+    async def ack(self, task_id: str) -> None:
+        self.attempts.pop(task_id, None)
+
+    async def metrics(self) -> dict[str, int]:
+        return {
+            "pending": self._items.qsize(),
+            "dead_letter": len(self.dead_letter),
+            "attempts": len(self.attempts),
+        }
 
     @asynccontextmanager
     async def worker_lease(self) -> AsyncIterator[bool]:
