@@ -1,0 +1,104 @@
+# Expected repository layout for the directory-drift check
+# (scripts/check_repo_drift.py).
+#
+# The check verifies that:
+#   1. every `required_tracked` path exists in the git index (`git ls-files`);
+#   2. every `required_disk` path exists in the working tree;
+#   3. no `forbidden_tracked` path or suffix is tracked.
+#
+# Extend this file when the layout intentionally changes; never add entries
+# to silence a real drift.
+
+version: 1
+
+required_tracked:
+  top_level_files:
+    - AGENTS.md
+    - README.md
+    - pytest.ini
+    - ruff.toml
+    - docker-compose.yml
+    - docker-compose.server.yml
+    - docker-compose.tailscale.yml
+    - xzd.cmd
+    - xzd.ps1
+    - xzd.sh
+    - .env.example
+    - .env.server.example
+    - .gitignore
+    - .dockerignore
+    - .gitattributes
+    - 打开芯智导学.cmd
+    - 关闭芯智导学.cmd
+  top_level_directories:
+    - apps
+    - config
+    - constraints
+    - docs
+    - evaluation
+    - infra
+    - knowledge_config
+    - local_knowledge
+    - scripts
+    - submission
+    - tests
+    - agent_configs
+    - archive_legacy
+    - .github
+    - 真实测试题
+  paths:
+    - apps/api/app
+    - apps/api/tests
+    - apps/api/alembic
+    - apps/api/Dockerfile
+    - apps/api/pyproject.toml
+    - .github/workflows/backend-ci.yml
+    - local_knowledge/CT
+    - local_knowledge/AE
+    - local_knowledge/DE
+    - local_knowledge/SS
+    - local_knowledge/DSP
+    - local_knowledge/COMM
+    - evaluation/cases
+    - evaluation/model_agents
+    - evaluation/schemas
+    - config/models.yaml
+    - config/scenarios.yaml
+
+required_disk:
+  top_level:
+    - apps
+    - config
+    - docs
+    - evaluation
+    - scripts
+    - tests
+    - docker-compose.yml
+    - xzd.ps1
+    - 打开芯智导学.cmd
+    - 关闭芯智导学.cmd
+
+forbidden_tracked:
+  paths:
+    - .env
+    - .env.local
+    - .env.server
+    - .venv
+    - venv
+    - .coverage
+    - .pytest_cache
+    - .mypy_cache
+    - .ruff_cache
+    - local_storage
+    - tmp
+    - .local_inputs
+    - .local_outputs
+    - .codex
+    - .codex-tmp
+    - .agents
+    - knowledge_indexes
+  suffixes:
+    - .db
+    - .secret
+    - .key
+    - .pem

@@ -1,0 +1,107 @@
+name: model-evaluation
+
+# Isolated real-model evaluation.
+#
+# - Runs nightly and on manual dispatch (never on push/PR) so paid model calls
+#   and slow suites can never block daily development.
+# - The `offline` job is fully local (mock provider, no API keys) and always
+#   runs. Results are reports with `mode: offline`, never presented as real.
+# - The `live` job only runs when a paid API key secret is configured and is
+#   hard-capped (max 3 cases, bounded tokens) to control cost. Results land in
+#   a separate `evaluation/reports/live/<timestamp>` tree and are uploaded as
+#   artifacts, never merged into daily CI reports.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * *"
+
+concurrency:
+  group: model-evaluation
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      DEFAULT_AGENT_PROVIDER: mock
+      ALLOW_MOCK_FALLBACK: "true"
+      XINGCHEN_ENABLED: "false"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -c constraints/backend-ci.txt -e "apps/api[dev]"
+      - name: Validate evaluation cases (no model calls)
+        run: python scripts/run_evaluation.py --validate-only
+      - name: Offline evaluation (mock provider, local runtime)
+        run: python scripts/run_evaluation.py --offline --max-cases 10
+      - name: Upload offline evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-reports-offline
+          path: |
+            evaluation/reports/
+            local_storage/evaluations/
+          if-no-files-found: ignore
+
+  live:
+    runs-on: ubuntu-latest
+    # Never on push/PR; only when a paid key is configured for a manual run.
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      (secrets.DASHSCOPE_API_KEY != '' || secrets.IFLYTEK_SPARK_API_KEY != '' || secrets.XINGCHEN_API_KEY != '')
+    env:
+      APP_ENV: test
+      PYTHONIOENCODING: utf-8
+      RUN_REAL_MODEL_TESTS: "1"
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      IFLYTEK_SPARK_API_KEY: ${{ secrets.IFLYTEK_SPARK_API_KEY }}
+      IFLYTEK_SPARK_APP_ID: ${{ secrets.IFLYTEK_SPARK_APP_ID }}
+      IFLYTEK_SPARK_APP_SECRET: ${{ secrets.IFLYTEK_SPARK_APP_SECRET }}
+      XINGCHEN_API_KEY: ${{ secrets.XINGCHEN_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -c constraints/backend-ci.txt -e "apps/api[dev]"
+      - name: Real model evaluation (cost capped at 3 cases)
+        run: |
+          python scripts/run_evaluation.py --live --confirm-paid --max-cases 3
+        env:
+          MAX_TOTAL_TOKENS: "5000"
+      - name: Real provider connectivity tests (requires_api_key marker)
+        run: |
+          mkdir -p live-artifacts
+          pytest apps/api/tests/test_model_api_integration.py -m requires_api_key \
+            --junitxml=live-artifacts/live-model-pytest.xml
+      - name: Stage live reports separately
+        if: always()
+        run: |
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "evaluation/reports/live/$stamp"
+          if [ -f "evaluation/reports/latest.json" ]; then
+            cp "evaluation/reports/latest.json" "evaluation/reports/live/$stamp/report.json"
+          fi
+          if [ -f "evaluation/reports/latest.md" ]; then
+            cp "evaluation/reports/latest.md" "evaluation/reports/live/$stamp/report.md"
+          fi
+          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
+      - name: Upload live evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-reports-live
+          path: |
+            evaluation/reports/live/
+            live-artifacts/
+          if-no-files-found: ignore

@@ -14,6 +14,7 @@ jobs:
       TEST_DATABASE_URL: sqlite+aiosqlite:///./test.db
       XINGCHEN_ENABLED: "false"
       XINGCHEN_PUBLICATION_STATUS: not_published
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,7 +28,11 @@ jobs:
       - name: Mypy
         run: mypy apps/api/app
       - name: Pytest
-        run: pytest
+        run: |
+          mkdir -p ci-artifacts
+          pytest --junitxml=ci-artifacts/pytest.xml
+      - name: Repo drift check
+        run: python scripts/check_repo_drift.py --report-json ci-artifacts/drift.json --report-md ci-artifacts/drift.md
       - name: Solver parity canary gate (synthetic)
         run: |
           python scripts/create_synthetic_solver_parity_fixture.py "$RUNNER_TEMP/solver-parity.json"
@@ -50,3 +55,22 @@ jobs:
         run: bash -n scripts/*.sh
       - name: Validate Docker Compose
         run: docker compose config --quiet
+      - name: Summarize CI results (readable report)
+        if: always()
+        run: |
+          mkdir -p ci-artifacts
+          {
+            echo "# Backend CI report"
+            echo ""
+            echo "- status: ${{ job.status }}"
+            echo "- workflow: ${{ github.workflow }}"
+            echo "- sha: ${{ github.sha }}"
+          } > ci-artifacts/ci-report.md
+          if [ -f ci-artifacts/drift.md ]; then cat ci-artifacts/drift.md >> ci-artifacts/ci-report.md; fi
+      - name: Upload CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          path: ci-artifacts/
+          if-no-files-found: ignore
