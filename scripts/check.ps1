@@ -21,6 +21,10 @@ Write-Host "[xzd] Scanning tracked files for secrets..."
 & $Python scripts/check_sensitive_files.py
 if ($LASTEXITCODE -ne 0) { throw "Sensitive file scan failed." }
 
+Write-Host "[xzd] Checking repository layout drift..."
+& $Python scripts/check_repo_drift.py
+if ($LASTEXITCODE -ne 0) { throw "Repository drift check failed." }
+
 Write-Host "[xzd] Running Ruff..."
 & $Python -m ruff check .
 if ($LASTEXITCODE -ne 0) { throw "Ruff failed." }
