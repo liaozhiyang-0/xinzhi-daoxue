@@ -92,18 +92,28 @@ class ApiHelper:
         task_id: str,
         *,
         statuses: set[str] | None = None,
-        timeout: float = 5,
+        timeout: float = 30,
     ) -> dict[str, Any]:
+        """Poll until the task reaches a terminal status.
+
+        The default timeout is deliberately generous: task execution is async
+        and can legitimately take several seconds under coverage or on a loaded
+        runner (e.g. first-time model/module imports in the process), while a
+        too-tight deadline turns real-but-slow tests into intermittent flakes.
+        """
         terminal = statuses or {"completed", "failed", "cancelled"}
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             response = self.client.get(f"/api/v1/tasks/{task_id}")
             assert response.status_code == 200
             task = response.json()
-            if task["status"] in terminal:
+            last_status = task["status"]
+            if last_status in terminal:
                 return task
             time.sleep(0.02)
-        raise AssertionError(f"task did not reach {terminal}: {task_id}")
+        raise AssertionError(
+            f"task did not reach {terminal}: {task_id} (last status: {last_status})"
+        )
 
 
 @pytest.fixture
