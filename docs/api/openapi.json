@@ -5493,6 +5493,44 @@
         }
       }
     },
+    "/api/v1/observability/summary": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Observability Summary",
+        "operationId": "observability_summary_api_v1_observability_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/observability/metrics": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Observability Metrics",
+        "operationId": "observability_metrics_api_v1_observability_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chat": {
       "post": {
         "tags": [
@@ -11220,6 +11258,11 @@
             "additionalProperties": true,
             "type": "object",
             "title": "External Retrieval"
+          },
+          "task_queue": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Task Queue"
           }
         },
         "type": "object",

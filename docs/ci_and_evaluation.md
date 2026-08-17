@@ -7,9 +7,22 @@
 
 | 工作流 | 触发时机 | 内容 | 报告 |
 | --- | --- | --- | --- |
-| `backend-ci` | push / PR | 本地评测集全量运行 | `ci-artifacts/`（pytest junit、drift JSON/MD、CI 摘要） |
+| `backend-ci`（test job） | push / PR | 本地评测集全量运行 | `ci-artifacts/`（pytest junit、drift JSON/MD、CI 摘要） |
+| `backend-ci`（frontend job） | push / PR | 前端 typecheck / build / smoke + OpenAPI 合同漂移检查 | `frontend-build` artifact |
 | `model-evaluation`（offline 任务） | 每日 03:30 UTC + 手动 | 纯本地评测（mock provider，零成本） | `evaluation/reports/latest.json/md` 上传为 artifact |
 | `model-evaluation`（live 任务） | 仅手动，且已配置付费 Key | 真实模型评测，硬性成本上限 | `evaluation/reports/live/<时间戳>/` 单独保存 |
+
+## 前端工程化与类型合同
+
+- TypeScript 边界模块在 `apps/web/src/`，构建产物输出到
+  `apps/api/app/static/debug/ts/`（`npm --prefix apps/web run build`）。
+- `scripts/generate_openapi_types.py` 从导出的 OpenAPI
+  （`docs/api/openapi.json`）生成 `apps/web/src/api-types.ts`；
+  `apps/web/src/api-contract-check.ts` 在编译期校验手写前端合同
+  （如 `StudentTaskPayload`）仍可赋给后端生成类型。
+- CI 的 frontend job 执行 `npm ci` → typecheck → build → smoke，
+  并用 `git diff --exit-code` 校验 `api-types.ts` / `openapi.json` 无漂移。
+- 本地重新生成类型：`npm --prefix apps/web run gen:api-types`。
 
 ## 本地评测集（纯本地、无外部模型）
 

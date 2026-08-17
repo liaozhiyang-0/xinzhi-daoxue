@@ -1,14 +1,18 @@
 /** Typed request contracts for the student workspace submit boundary. */
 
+import type { Intent, UserRole } from "./api-types.js";
 import type { UploadedFile, UploadedMaterial } from "./materials.js";
 
 export interface AttachmentRef {
   file_id: string;
   filename: string;
-  content_type?: string;
-  size_bytes?: number;
-  storage_key?: string;
-  checksum_sha256?: string;
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
+  provider_file_id?: string | null;
+  checksum_sha256?: string | null;
+  ingestion_status?: string;
+  page_count?: number;
 }
 
 export interface CanonicalInput {
@@ -35,15 +39,16 @@ export interface StudentTaskOptions {
   source_task_id: string;
   learning_action: string;
   research_analysis_v2?: unknown;
+  [key: string]: unknown;
 }
 
 export interface StudentTaskPayload {
   session_id: string;
   user_id: string;
-  user_role: string;
+  user_role: UserRole;
   scene: "dispatch";
   course_id: string;
-  intent: string;
+  intent: Intent;
   scenario_id: string | null;
   canonical_input: CanonicalInput;
   attachments: AttachmentRef[];
@@ -54,9 +59,9 @@ export interface StudentTaskPayload {
 export interface BuildStudentTaskPayloadInput {
   sessionId: string;
   userId: string;
-  userRole: string;
+  userRole: UserRole;
   courseId: string;
-  intent: string;
+  intent: Intent;
   scenarioId: string | null;
   canonicalInput: CanonicalInput;
   materials: readonly UploadedMaterial[];

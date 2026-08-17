@@ -9,9 +9,10 @@ export type Api = <T = unknown>(
 export interface UploadedFile {
   id: string;
   filename: string;
-  content_type?: string;
-  size_bytes?: number;
-  storage_key?: string;
+  /** Required by the POST /api/v1/files response contract (AttachmentRef). */
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
   checksum_sha256?: string;
   extracted_text?: string;
   ingestion_status?: string;
