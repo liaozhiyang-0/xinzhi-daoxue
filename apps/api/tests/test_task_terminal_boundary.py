@@ -21,13 +21,13 @@ from app.runtime import (
     RuntimeRunStatus,
 )
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
+from app.services.task_completion import TaskCompletionService
 from app.services.task_result_commit import (
     TaskResultCommitService,
     TaskTerminalCommitError,
 )
 from app.services.task_result_presentation import TaskResultPresentationService
 from app.services.task_session_commit import TaskSessionCommitService
-from app.services.task_terminal_boundary import TaskTerminalBoundary
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -84,19 +84,24 @@ def make_agent_definition() -> AgentDefinition:
     )
 
 
-def make_boundary() -> tuple[TaskTerminalBoundary, Mock, AsyncMock, AsyncMock]:
+def make_completion_service() -> (
+    tuple[TaskCompletionService, Mock, AsyncMock, AsyncMock]
+):
     presentation = Mock(spec=TaskResultPresentationService)
     session_commit = Mock(spec=TaskSessionCommitService)
     result_commit = Mock(spec=TaskResultCommitService)
     presentation.apply.side_effect = lambda **kwargs: kwargs["result"]
     session_commit.commit = AsyncMock(return_value={})
     result_commit.commit = AsyncMock()
-    return (
-        TaskTerminalBoundary(presentation, session_commit, result_commit),
+    service = TaskCompletionService(
+        cast(Any, Mock()),
         presentation,
-        session_commit.commit,
-        result_commit.commit,
+        session_commit,
+        result_commit,
+        cast(Any, Mock()),
+        cast(Any, Mock()),
     )
+    return service, presentation, session_commit.commit, result_commit.commit
 
 
 def boundary_kwargs(
@@ -124,13 +129,13 @@ def boundary_kwargs(
 
 @pytest.mark.asyncio
 async def test_successful_runtime_preserves_terminal_success_contract() -> None:
-    boundary, presentation, session_commit, result_commit = make_boundary()
+    service, presentation, session_commit, result_commit = make_completion_service()
     kwargs = boundary_kwargs(
         result=make_result(), runtime_run=make_run(RuntimeRunStatus.COMPLETED)
     )
     task = kwargs["task"]
 
-    result = await boundary.commit(**kwargs)
+    result = await service._commit_terminal(**kwargs)
 
     assert result.status == AgentResultStatus.COMPLETED
     assert task.status == TaskStatus.COMPLETED
@@ -146,12 +151,12 @@ async def test_successful_runtime_preserves_terminal_success_contract() -> None:
 async def test_failed_runtime_is_rejected_before_task_mutation(
     runtime_status: RuntimeRunStatus,
 ) -> None:
-    boundary, presentation, session_commit, result_commit = make_boundary()
+    service, presentation, session_commit, result_commit = make_completion_service()
     kwargs = boundary_kwargs(result=make_result(), runtime_run=make_run(runtime_status))
     task = kwargs["task"]
 
     with pytest.raises(TaskTerminalCommitError) as exc_info:
-        await boundary.commit(**kwargs)
+        await service._commit_terminal(**kwargs)
 
     assert exc_info.value.details == {"runtime_status": runtime_status.value}
     assert task.status == TaskStatus.RUNNING
@@ -162,7 +167,7 @@ async def test_failed_runtime_is_rejected_before_task_mutation(
 
 @pytest.mark.asyncio
 async def test_failed_agent_result_is_rejected_before_terminal_writes() -> None:
-    boundary, presentation, session_commit, result_commit = make_boundary()
+    service, presentation, session_commit, result_commit = make_completion_service()
     kwargs = boundary_kwargs(
         result=make_result(AgentResultStatus.FAILED),
         runtime_run=make_run(RuntimeRunStatus.COMPLETED),
@@ -170,7 +175,7 @@ async def test_failed_agent_result_is_rejected_before_terminal_writes() -> None:
     task = kwargs["task"]
 
     with pytest.raises(TaskTerminalCommitError) as exc_info:
-        await boundary.commit(**kwargs)
+        await service._commit_terminal(**kwargs)
 
     assert exc_info.value.details == {"result_status": "failed"}
     assert task.status == TaskStatus.RUNNING
@@ -181,7 +186,7 @@ async def test_failed_agent_result_is_rejected_before_terminal_writes() -> None:
 
 @pytest.mark.asyncio
 async def test_empty_completed_result_is_rejected_before_terminal_writes() -> None:
-    boundary, presentation, session_commit, result_commit = make_boundary()
+    service, presentation, session_commit, result_commit = make_completion_service()
     kwargs = boundary_kwargs(
         result=AgentResult(
             status=AgentResultStatus.COMPLETED,
@@ -194,7 +199,7 @@ async def test_empty_completed_result_is_rejected_before_terminal_writes() -> No
     task = kwargs["task"]
 
     with pytest.raises(TaskTerminalCommitError) as exc_info:
-        await boundary.commit(**kwargs)
+        await service._commit_terminal(**kwargs)
 
     assert exc_info.value.details == {
         "result_status": "completed",

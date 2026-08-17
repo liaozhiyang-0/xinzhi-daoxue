@@ -47,18 +47,29 @@
 
 ## 收敛候选（约束：不改 POST /api/v1/tasks 契约、SSE 事件顺序、DB schema）
 
-1. 合并 `runtime_task_components.py` → `runtime_task_engine.py`（零行为变化）。
-2. `TaskTerminalBoundary.commit` 内联进 `TaskCompletionService.commit`，
-   保持 `ensure_terminal_success → presentation → session_commit → result_commit`
-   顺序（即 SSE/DB 顺序）。
-3. 合并 `task_presentation.py` → `task_result_presentation.py`（保留
-   `build_task_views` 函数名）。
-4. `task_control_service.cancel` 委托给 `TaskFailureService.mark_cancelled`
-   （保留 control 专属的 provider.cancel 与附件清理）。
-5. 抽取共享 release-gate 求值器（`runtime_launch_policy` 与
-   `runtime_agent_readiness` 共用，须保持相同 reason 字符串）。
-6. （可选）`services/task_executor.py` 的 LocalTaskExecutor 下沉到
-   `application/tasks/`（churn 大、风险中）。
+### 已实施（阶段 2）
+
+- **合并 `runtime_task_components.py` → `runtime_task_engine.py`**：`RuntimeTaskComponents`
+  作为同模块 dataclass 保留（仅 bootstrap 与 engine 引用），独立文件删除，零行为变化。
+- **折叠 `TaskTerminalBoundary.commit` 进 `TaskCompletionService`**：转发协调层删除，
+  提交协议（`ensure_terminal_success → presentation → 状态翻转 → session_commit →
+  result_commit`）由 `TaskCompletionService._commit_terminal` 直接持有，顺序不变；
+  bootstrap 直连三个叶子服务。单元测试改为调用该私有方法，集成测试
+  （`test_event_sequence`、`test_sse_event_order`）验证 SSE 顺序不变。
+- **结构约束测试 `test_service_layer_constraints.py`**：
+  - 服务导入图无环（DAG）；
+  - 仅 bootstrap 可导入任务引擎（防平行执行入口）；
+  - `TaskRuntimeLifecycle` 仅由 bootstrap 构造；
+  - `engine.execute` 仅 coordinator 可达（防绕过引擎的新执行链）；
+  - coordinator 不导入任何业务服务（执行只经引擎协议进入）。
+
+### 待实施
+
+1. （可选）`task_control_service.cancel` 委托 `TaskFailureService.mark_cancelled`
+   —— 需为 TaskControlService 引入 runtime_boundary 依赖，风险较高，暂缓。
+2. （可选）合并 `task_presentation.py` → `task_result_presentation.py`（纯视图函数，
+   收益有限）。
+3. （可选）`services/task_executor.py` 下沉 `application/tasks/`（churn 大、风险中）。
 
 **不要合并**：`task_creation_service`（路由面、非阻塞）与准备/执行服务；
 `task_session_commit`/`task_result_commit`（幂等边界不同）；`runtime_control_policy`

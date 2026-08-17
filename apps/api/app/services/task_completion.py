@@ -4,27 +4,51 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agents import AgentDefinition
+from app.contracts import (
+    AgentRequest,
+    AgentResult,
+    AgentValidationResult,
+    WorkflowContextBundle,
+)
+from app.contracts.conversation import ConversationContextBundle
+from app.models import TaskModel, TaskStatus
 from app.repositories import TaskRepository
+from app.runtime import AgentRun
 from app.services.task_failure_service import TaskFailureService
 from app.services.task_observability import elapsed_ms
 from app.services.task_post_processing import TaskPostProcessingService
+from app.services.task_result_commit import (
+    TaskResultCommitService,
+    ensure_terminal_success,
+)
+from app.services.task_result_presentation import TaskResultPresentationService
 from app.services.task_runtime_execution import RuntimeExecutionOutcome
 from app.services.task_runtime_preparation import PreparedRuntimeTask
-from app.services.task_terminal_boundary import TaskTerminalBoundary
+from app.services.task_session_commit import TaskSessionCommitService
 
 
 class TaskCompletionService:
-    """Commit the single successful terminal transition for a Runtime task."""
+    """Own the single successful terminal transition for a Runtime task.
+
+    The commit protocol (guard -> presentation -> task status -> session
+    commit -> result commit) is owned here directly; the former
+    ``TaskTerminalBoundary`` forwarding layer has been folded in.
+    """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        terminal_boundary: TaskTerminalBoundary,
+        presentation: TaskResultPresentationService,
+        session_commit: TaskSessionCommitService,
+        result_commit: TaskResultCommitService,
         task_failures: TaskFailureService,
         post_processing: TaskPostProcessingService,
     ) -> None:
         self.session_factory = session_factory
-        self.terminal_boundary = terminal_boundary
+        self.presentation = presentation
+        self.session_commit = session_commit
+        self.result_commit = result_commit
         self.task_failures = task_failures
         self.post_processing = post_processing
 
@@ -99,7 +123,7 @@ class TaskCompletionService:
                 "total_ms": total_latency_ms,
             }
             result.timings = timings
-            await self.terminal_boundary.commit(
+            await self._commit_terminal(
                 db,
                 task=task,
                 agent_id=prepared.agent_id,
@@ -119,6 +143,68 @@ class TaskCompletionService:
             await self.task_failures.cleanup_evaluation_attachments(db, task.id)
             await db.commit()
             self.post_processing.schedule_memory_summary(task.id, task.session_id)
+
+    async def _commit_terminal(
+        self,
+        db: AsyncSession,
+        *,
+        task: TaskModel,
+        agent_id: str,
+        agent_definition: AgentDefinition,
+        request: AgentRequest,
+        routing: dict[str, object],
+        result: AgentResult,
+        runtime_run: AgentRun | None,
+        conversation_bundle: ConversationContextBundle | None,
+        workflow_bundle: WorkflowContextBundle | None,
+        timings: dict[str, int],
+        validation: AgentValidationResult,
+        started_at: datetime,
+        completed_at: datetime,
+        total_latency_ms: int,
+    ) -> AgentResult:
+        # Guard before presentation, Task status, session messages, or any
+        # other terminal side effect. The commit service repeats this check
+        # at its own write boundary for direct callers and defense in depth.
+        ensure_terminal_success(result=result, runtime_run=runtime_run)
+        result = self.presentation.apply(
+            definition=agent_definition,
+            result=result,
+            request=request,
+            bundle=workflow_bundle,
+            routing=dict(routing),
+            timings=dict(timings),
+            validation=validation,
+        )
+        task.agent_id = agent_id
+        task.provider = result.provider
+        task.status = TaskStatus.COMPLETED
+        task.completed_at = completed_at
+        task.updated_at = completed_at
+        task.heartbeat_at = completed_at
+        task.lease_expires_at = None
+        context_usage = await self.session_commit.commit(
+            db,
+            task=task,
+            request=request,
+            result=result,
+            conversation_bundle=conversation_bundle,
+        )
+        await self.result_commit.commit(
+            db,
+            task=task,
+            agent_id=agent_id,
+            agent_definition=agent_definition,
+            request=request,
+            routing=dict(routing),
+            result=result,
+            runtime_run=runtime_run,
+            started_at=started_at,
+            completed_at=completed_at,
+            total_latency_ms=total_latency_ms,
+            context_usage=context_usage,
+        )
+        return result
 
     @staticmethod
     def _sum_optional_metrics(

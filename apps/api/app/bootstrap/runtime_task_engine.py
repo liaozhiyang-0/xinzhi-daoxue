@@ -59,8 +59,7 @@ from app.services.runtime_request_preparation import (
 )
 from app.services.runtime_result_pipeline import RuntimeResultPipeline
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
-from app.services.runtime_task_components import RuntimeTaskComponents
-from app.services.runtime_task_engine import TaskRuntimeLifecycle
+from app.services.runtime_task_engine import RuntimeTaskComponents, TaskRuntimeLifecycle
 from app.services.scenario_output_contract import ScenarioOutputContractService
 from app.services.session_compaction import SessionCompactionService
 from app.services.solver_quality_gate import SolverQualityGateService
@@ -74,7 +73,6 @@ from app.services.task_result_presentation import TaskResultPresentationService
 from app.services.task_runtime_execution import TaskRuntimeExecutionService
 from app.services.task_runtime_preparation import TaskRuntimePreparationService
 from app.services.task_session_commit import TaskSessionCommitService
-from app.services.task_terminal_boundary import TaskTerminalBoundary
 from app.services.teaching_foundation import TeachingFoundationService
 from app.tools.registry import ToolRegistry
 
@@ -306,15 +304,11 @@ def build_runtime_task_engine(
         BusinessResultRendererRegistry(),
         MathFormattingService(),
     )
-    terminal_boundary = TaskTerminalBoundary(
-        presentation,
-        TaskSessionCommitService(
-            settings,
-            learning_outcome=learning_outcome,
-            student_attempts=StudentAttemptService(),
-            compaction_enabled=session_compaction is not None,
-        ),
-        TaskResultCommitService(runtime_boundary),
+    session_commit = TaskSessionCommitService(
+        settings,
+        learning_outcome=learning_outcome,
+        student_attempts=StudentAttemptService(),
+        compaction_enabled=session_compaction is not None,
     )
     leases = task_leases or TaskLeaseManager(session_factory, settings)
     task_failures = TaskFailureService(
@@ -341,7 +335,9 @@ def build_runtime_task_engine(
             task_failures=task_failures,
             completion=TaskCompletionService(
                 session_factory,
-                terminal_boundary,
+                presentation,
+                session_commit,
+                TaskResultCommitService(runtime_boundary),
                 task_failures,
                 post_processing,
             ),
