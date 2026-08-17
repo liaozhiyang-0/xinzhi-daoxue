@@ -14,6 +14,12 @@ os.environ["APP_ENV"] = "test"
 os.environ["DEFAULT_AGENT_PROVIDER"] = "mock"
 os.environ["ALLOW_MOCK_FALLBACK"] = "true"
 os.environ["RAG_ENABLED"] = "false"
+# Tests must never reach the network for model weights: without this,
+# a missing/partial HuggingFace cache triggers 10s connect-timeouts that
+# block the app event loop and make unrelated tests flaky. Offline mode
+# fails fast and deterministically.
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
