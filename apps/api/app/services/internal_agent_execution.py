@@ -49,6 +49,30 @@ GENERAL_WORKFLOW_AGENT_IDS = frozenset(
 )
 
 
+def _duration_minutes(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if value > 0 else None
+    text = str(value or "").strip()
+    if not text:
+        return None
+    hours = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*小时", text)
+    minutes = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*分钟", text)
+    if hours:
+        total = float(hours.group(1)) * 60
+        if minutes:
+            total += float(minutes.group(1))
+        return int(total) if total > 0 else None
+    if minutes:
+        total = float(minutes.group(1))
+        return int(total) if total > 0 else None
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        total = float(text)
+        return int(total) if total > 0 else None
+    return None
+
+
 class InternalAgentExecutionService:
     """Adapt subordinate agents to the shared Runtime result contract."""
 
@@ -167,8 +191,40 @@ class InternalAgentExecutionService:
             max_tokens=self._max_tokens(request),
             extra_options=model_options,
         )
+        formatter_input = dict(internal.structured_result)
+        if workflow_agent_id == "TEACH_01_LESSON_PREP_V1":
+            extracted = request.options.get("_material_extraction", {})
+            materials = (
+                extracted.get("materials", {})
+                if isinstance(extracted, dict)
+                else {}
+            )
+            if isinstance(materials, dict):
+                formatter_input["_requested_class_duration"] = materials.get(
+                    "class_duration", request.canonical_input.get("class_duration")
+                )
+                formatter_input["_requested_lesson_count"] = materials.get(
+                    "lesson_count", request.canonical_input.get("lesson_count")
+                )
+        elif workflow_agent_id == "TEACH_02_ASSIGNMENT_REVIEW_V1":
+            extracted = request.options.get("_material_extraction", {})
+            materials = (
+                extracted.get("materials", {})
+                if isinstance(extracted, dict)
+                else {}
+            )
+            if isinstance(materials, dict):
+                student_answer = materials.get(
+                    "student_answer", request.canonical_input.get("student_answer")
+                )
+                formatter_input["_student_answer_present"] = bool(
+                    str(student_answer or "").strip()
+                )
+                formatter_input["_rubric_present"] = bool(
+                    materials.get("rubric", request.canonical_input.get("rubric"))
+                )
         answer, business_data, warnings, risks = self._formatters[workflow_agent_id](
-            internal.structured_result
+            formatter_input
         )
         depth_policy = policy_for(request.options, "lesson_prep")
         model_calls = 2 if "->" in internal.model else 1
@@ -1075,11 +1131,25 @@ class InternalAgentExecutionService:
     def _input_text(
         request: AgentRequest, context: RetrievalContextPacket | None
     ) -> str:
+        extracted = request.options.get("_material_extraction", {})
+        extracted_materials = (
+            extracted.get("materials", {}) if isinstance(extracted, dict) else {}
+        )
+        if not isinstance(extracted_materials, dict):
+            extracted_materials = {}
         fields: list[str] = []
         for key in (
             "text",
             "question",
             "topic",
+            "student_level",
+            "class_duration",
+            "lesson_count",
+            "teaching_goals",
+            "prerequisites",
+            "available_resources",
+            "special_constraints",
+            "teacher_requirements",
             "assignment_text",
             "student_answer",
             "reference_answer",
@@ -1091,6 +1161,8 @@ class InternalAgentExecutionService:
             "analysis_goal",
         ):
             value = request.canonical_input.get(key)
+            if value in (None, "", [], {}):
+                value = extracted_materials.get(key)
             if value in (None, "", [], {}):
                 continue
             rendered = str(value).strip()
@@ -1220,6 +1292,36 @@ class InternalAgentExecutionService:
         teacher_review = list(value.get("teacher_review", []))
         missing_information = list(value.get("missing_information", []))
         evidence_status = str(value.get("evidence_status", "unknown"))
+        requested_duration = _duration_minutes(value.get("_requested_class_duration"))
+        planned_durations = [
+            minutes for item in flow if (minutes := _duration_minutes(item)) is not None
+        ]
+        planned_duration = sum(planned_durations) if planned_durations else None
+        if requested_duration is None:
+            duration_check = {"status": "not_requested"}
+        elif planned_duration is None:
+            duration_check = {
+                "status": "missing",
+                "requested_minutes": requested_duration,
+                "planned_minutes": None,
+            }
+            warnings.append("课堂流程未提供可核验的分钟分配")
+        elif planned_duration != requested_duration:
+            duration_check = {
+                "status": "mismatch",
+                "requested_minutes": requested_duration,
+                "planned_minutes": planned_duration,
+            }
+            warnings.append(
+                f"课堂流程总时长为 {planned_duration} 分钟，未匹配请求的"
+                f" {requested_duration} 分钟"
+            )
+        else:
+            duration_check = {
+                "status": "pass",
+                "requested_minutes": requested_duration,
+                "planned_minutes": planned_duration,
+            }
         data = {
             "title": str(value.get("title", "课程教案草稿")),
             "learning_objectives": objectives,
@@ -1237,6 +1339,7 @@ class InternalAgentExecutionService:
             "teacher_review": teacher_review,
             "missing_information": missing_information,
             "evidence_status": evidence_status,
+            "duration_check": duration_check,
             # Publishing is an explicit human action; model output can never
             # authorize it even if a provider returns publishable=true.
             "publishable": False,
@@ -1281,6 +1384,14 @@ class InternalAgentExecutionService:
         teacher_review = list(value.get("teacher_review", []))
         missing_information = list(value.get("missing_information", []))
         evidence_status = str(value.get("evidence_status", "unknown"))
+        if value.get("_student_answer_present") is False:
+            missing_information.append("学生作答内容")
+            review_required = True
+        if errors and not first_error:
+            missing_information.append("首个错误定位")
+            review_required = True
+        if missing_information and evidence_status == "unknown":
+            evidence_status = "partial"
         data = {
             "correctness": value.get("correctness", "uncertain"),
             "correct_parts": correct,

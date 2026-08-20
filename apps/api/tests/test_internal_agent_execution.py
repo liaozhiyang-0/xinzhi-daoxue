@@ -170,6 +170,33 @@ async def test_lesson_internal_agent_reuses_local_rag_context() -> None:
 
 
 @pytest.mark.asyncio
+async def test_lesson_runtime_preserves_material_duration_constraint() -> None:
+    executor, hub = service()
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "options": {
+                "request_id": "request-duration",
+                "_material_extraction": {
+                    "materials": {"class_duration": "50分钟"}
+                },
+            }
+        }
+    )
+
+    result = await executor.run(
+        "TEACH_01_LESSON_PREP_V1", runtime_request, context()
+    )
+
+    assert "class_duration：50分钟" in hub.input_text
+    assert result.business_data["duration_check"] == {
+        "status": "missing",
+        "requested_minutes": 50,
+        "planned_minutes": None,
+    }
+    assert "课堂流程未提供可核验的分钟分配" in result.warnings
+
+
+@pytest.mark.asyncio
 async def test_runtime_internal_agent_enables_structured_fallback() -> None:
     executor, hub = service()
     runtime_request = request(Intent.LESSON_PREP).model_copy(
@@ -246,6 +273,23 @@ def test_lesson_formatter_fills_empty_title_for_reviewable_draft() -> None:
     )
 
     assert data["title"] == "Lesson plan draft"
+
+
+def test_assignment_formatter_requires_student_answer_and_first_error() -> None:
+    answer, data, warnings, _ = InternalAgentExecutionService._assignment(
+        {
+            "correctness": "uncertain",
+            "correct_parts": [],
+            "errors": ["第二步可能不成立"],
+            "feedback": "需要补充原始作答。",
+            "_student_answer_present": False,
+        }
+    )
+
+    assert data["review_required"] is True
+    assert data["evidence_status"] == "partial"
+    assert data["missing_information"] == ["学生作答内容", "首个错误定位"]
+    assert warnings == []
     assert answer.startswith("## ")
 
 

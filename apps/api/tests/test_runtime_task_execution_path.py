@@ -689,8 +689,17 @@ def test_general_runtime_proposal_gate_resumes_same_task_after_approval(
     ]
 
 
+@pytest.mark.parametrize(
+    ("course_id", "text"),
+    [
+        ("CT", "Find the equivalent resistance."),
+        ("AE", "已知负反馈放大电路，输入10mV，求闭环电压增益。"),
+        ("DSP", "求离散系统的卷积响应 x[n] 和 h[n]。"),
+        ("EM", "求电磁场中某点的电场强度。"),
+    ],
+)
 def test_academic_solver_runtime_path_keeps_solver_graph_behind_runtime(
-    api, app
+    api, app, course_id: str, text: str
 ) -> None:
     app.state.task_engine.runtime_lifecycle.enabled = True
     session = api.create_session()
@@ -702,8 +711,8 @@ def test_academic_solver_runtime_path_keeps_solver_graph_behind_runtime(
     payload.update(
         {
             "scene": "solving",
-            "course_id": "CT",
-            "canonical_input": {"text": "Find the equivalent resistance."},
+            "course_id": course_id,
+            "canonical_input": {"text": text},
         }
     )
     response = api.client.post("/api/v1/tasks", json=payload)
@@ -711,6 +720,7 @@ def test_academic_solver_runtime_path_keeps_solver_graph_behind_runtime(
     completed = api.wait_for_task(response.json()["id"], timeout=15)
 
     assert completed["status"] == "completed"
+    assert completed["result_content"]["answer"].strip()
     debug = api.client.get(f"/api/v1/debug/execution/{completed['id']}")
     assert debug.status_code == 200
     runtime = debug.json()["runtime"]

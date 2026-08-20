@@ -253,6 +253,12 @@ class LessonPrepRuntimeService(GeneralQuestionRuntimeService):
         ):
             return True
         data = result.business_data
+        duration_check = data.get("duration_check")
+        if isinstance(duration_check, Mapping) and duration_check.get("status") in {
+            "missing",
+            "mismatch",
+        }:
+            return True
         if data.get("review_required") is True:
             return True
         for key in ("quality_status", "review_status", "verification_status"):

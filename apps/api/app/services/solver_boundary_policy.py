@@ -34,7 +34,9 @@ class BoundaryDecision:
 class SolverBoundaryPolicy:
     """Deterministic boundary handling before any generative solver call."""
 
-    def evaluate(self, problem: AcademicProblem) -> BoundaryDecision:
+    def evaluate(
+        self, problem: AcademicProblem, *, check_visual_topology: bool = True
+    ) -> BoundaryDecision:
         text = problem.problem_text
         compact = re.sub(r"\s+", "", text)
         explicit_missing = [
@@ -84,6 +86,28 @@ class SolverBoundaryPolicy:
             if "初始" in text:
                 missing.append("初始状态")
             return self._missing_answer("电路", missing, "missing_figure")
+
+        if (
+            problem.figures_given
+            and problem.course in {"CT", "AE", "DE"}
+            and check_visual_topology
+            and not self._has_structured_visual_problem(problem)
+        ):
+            return BoundaryDecision(
+                answer_status="conditional",
+                can_continue=False,
+                answer=(
+                    "已收到题目图片，但尚未形成可核验的结构化拓扑。"
+                    "当前不能仅凭视觉摘要计算或判断结论；请补充器件端点与节点连接、"
+                    "元件参数/极性、参考方向以及待求量，或确认识别结果后再继续。"
+                ),
+                missing_information=[
+                    "器件端点与节点连接",
+                    "元件参数和极性",
+                    "参考方向和待求量",
+                ],
+                reason="visual_topology_not_structured",
+            )
 
         if "式(" in text and any(
             marker in text for marker in ("未给出", "没有给出", "缺少")
@@ -266,3 +290,17 @@ class SolverBoundaryPolicy:
             "触发沿",
         )
         return [item for item in candidates if item in text]
+
+    @staticmethod
+    def _has_structured_visual_problem(problem: AcademicProblem) -> bool:
+        status = problem.structure_status.strip().casefold()
+        if status in {"complete", "verified", "structured"}:
+            return True
+        if not problem.entities or not (problem.relations or problem.equations_given):
+            return False
+        return all(
+            str(item.get("certainty", "certain")).casefold()
+            not in {"uncertain", "unknown", "low"}
+            for item in [*problem.entities, *problem.relations]
+            if isinstance(item, dict)
+        )

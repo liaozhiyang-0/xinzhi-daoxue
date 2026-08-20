@@ -321,18 +321,44 @@ _RELATIVE_TIME_TERMS = (
     "last three years",
     "recent years",
 )
+_RELATIVE_MONTH_WINDOW_PATTERN = re.compile(
+    r"(?:近|过去|最近)\s*(\d+|[一二三四五六七八九十百几]+)\s*(?:个)?月|"
+    r"(?:last|past|recent)\s+(\d+)\s+months?",
+    flags=re.IGNORECASE,
+)
 _YEAR_RANGE_PATTERN = re.compile(r"20\d{2}\s*(?:\.\.|-|~|至)\s*20\d{2}")
 
 
 def _has_relative_time_request(query: str) -> bool:
     normalized = query.casefold()
-    return any(term in normalized for term in _RELATIVE_TIME_TERMS) and not re.search(
-        r"20\d{2}", normalized
-    )
+    return (
+        any(term in normalized for term in _RELATIVE_TIME_TERMS)
+        or _RELATIVE_MONTH_WINDOW_PATTERN.search(normalized) is not None
+    ) and not re.search(r"20\d{2}", normalized)
 
 
 def relative_freshness_days(query: str) -> int:
-    """Translate a relative year request into a bounded retrieval window."""
+    """Translate a relative time request into a bounded retrieval window."""
+
+    month_match = _RELATIVE_MONTH_WINDOW_PATTERN.search(query.casefold())
+    if month_match:
+        value = month_match.group(1) or month_match.group(2)
+        if value.isdigit():
+            months = int(value)
+        else:
+            months = {
+                "一": 1,
+                "二": 2,
+                "三": 3,
+                "四": 4,
+                "五": 5,
+                "六": 6,
+                "七": 7,
+                "八": 8,
+                "九": 9,
+                "十": 10,
+            }.get(value, 12)
+        return max(30, min(months, 120) * 30)
 
     match = re.search(
         r"近\s*(\d+|[一二三四五六七八九十几]+)\s*年", query.casefold()

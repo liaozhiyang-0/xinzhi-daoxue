@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+
+from app.agents.internal.contracts import VisionExtraction
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -92,7 +96,7 @@ class AcademicProblemSolverService:
         fallback_tracker = FallbackTracker()
         fallback_tracker.start(self.agent_id)
         boundary_started = perf_counter()
-        boundary = self.boundary_policy.evaluate(problem)
+        boundary = self.boundary_policy.evaluate(problem, check_visual_topology=False)
         node_timings.append(
             self._node_timing(
                 "boundary_policy",
@@ -127,6 +131,19 @@ class AcademicProblemSolverService:
                 )
             )
             self._record_execution_fallback(vision_execution, fallback_tracker)
+            if not boundary.intercepted:
+                visual_boundary_started = perf_counter()
+                visual_boundary = self.boundary_policy.evaluate(problem)
+                if visual_boundary.intercepted:
+                    boundary = visual_boundary
+                    node_timings.append(
+                        self._node_timing(
+                            "visual_boundary_policy",
+                            visual_boundary_started,
+                            "intercepted",
+                            error_type=visual_boundary.reason,
+                        )
+                    )
         citations = self._citations(context)
         state = new_graph_state(
             request_id=str(request.options.get("request_id", request.task_id)),
@@ -520,18 +537,12 @@ class AcademicProblemSolverService:
                 {"status": "failed", "error_type": exc.code},
             )
         visual_summary = response.content[:20_000]
+        problem, visual_structure = self._merge_visual_extraction(
+            problem,
+            visual_summary,
+        )
         return (
-            problem.model_copy(
-                update={
-                    "problem_text": (
-                        f"{problem.problem_text}\n\n[图片结构化提取]\n{visual_summary}"
-                    )[:50_000],
-                    "uncertain_info": [
-                        *problem.uncertain_info,
-                        {"description": "图片内容由视觉模型提取，需以原图为准"},
-                    ],
-                }
-            ),
+            problem,
             {
                 "status": "completed",
                 "strategy": prepared.strategy,
@@ -547,6 +558,7 @@ class AcademicProblemSolverService:
                 ),
                 "composite_width": prepared.composite_width,
                 "composite_height": prepared.composite_height,
+                **visual_structure,
                 **self._fallback_metadata(response),
             },
         )
@@ -675,6 +687,11 @@ class AcademicProblemSolverService:
             ),
         )
         visual_summary = summary[:50_000]
+        problem, visual_structure = self._merge_visual_extraction(
+            problem,
+            visual_summary,
+            section_title="多图内容汇总",
+        )
         uncertain = [
             *problem.uncertain_info,
             {"description": "多图内容由逐图视觉识别后合并，需以原图为准"},
@@ -709,14 +726,7 @@ class AcademicProblemSolverService:
             else []
         )
         return (
-            problem.model_copy(
-                update={
-                    "problem_text": (
-                        f"{problem.problem_text}\n\n[多图内容汇总]\n{visual_summary}"
-                    )[:50_000],
-                    "uncertain_info": uncertain,
-                }
-            ),
+            problem.model_copy(update={"uncertain_info": uncertain}),
             {
                 "status": "partial" if failed else "completed",
                 "strategy": "per_image",
@@ -751,6 +761,7 @@ class AcademicProblemSolverService:
                     for item in executions
                 ],
                 "summary_execution": summary_execution,
+                **visual_structure,
             },
         )
 
@@ -1816,7 +1827,132 @@ class AcademicProblemSolverService:
             " 只输出可观察内容，不补造参数。电路或逻辑图必须逐个子图列出器件、"
             "器件端点与节点连接、控制端、极性、参考方向和标号；波形图必须列出"
             "分段区间、关键坐标、跳变以及端点是否包含。先覆盖全部子图，再描述"
-            "不确定项，不得用通用电路类型替代实际拓扑。"
+            "不确定项，不得用通用电路类型替代实际拓扑。优先输出 JSON 对象，字段为"
+            " recognized_text（字符串数组）、diagram_description（字符串）、components"
+            "（数组；每项包含 component_type、label、value、connections、certainty）、"
+            "uncertain_info（字符串数组）和 confidence（0 到 1）；若无法可靠结构化，"
+            "仍需保留不确定项，不得臆造连接。"
+        )
+
+    @staticmethod
+    def _parse_visual_extraction(content: str) -> VisionExtraction | None:
+        """Parse a typed envelope without requiring every provider to emit JSON."""
+        decoder = json.JSONDecoder()
+        for index, character in enumerate(content):
+            if character != "{":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(content[index:])
+            except json.JSONDecodeError:
+                continue
+            try:
+                return VisionExtraction.model_validate(payload)
+            except ValidationError:
+                continue
+        return None
+
+    @staticmethod
+    def _merge_visual_extraction(
+        problem: AcademicProblem,
+        content: str,
+        *,
+        section_title: str = "图片结构化提取",
+    ) -> tuple[AcademicProblem, dict[str, Any]]:
+        parsed = AcademicProblemSolverService._parse_visual_extraction(content)
+        if parsed is None:
+            return (
+                problem.model_copy(
+                    update={
+                        "problem_text": (
+                            f"{problem.problem_text}\n\n[{section_title}]\n{content}"
+                        )[:50_000],
+                        "uncertain_info": [
+                            *problem.uncertain_info,
+                            {"description": "图片内容由视觉模型提取，需以原图为准"},
+                        ],
+                    }
+                ),
+                {
+                    "structured_extraction": False,
+                    "visual_structure_status": "unstructured",
+                    "visual_component_count": 0,
+                    "visual_relation_count": 0,
+                },
+            )
+
+        entities = [
+            {
+                "component_type": item.component_type,
+                "label": item.label,
+                "value": item.value,
+                "connections": list(item.connections),
+                "certainty": item.certainty,
+                "source": "visual_extraction",
+            }
+            for item in parsed.components
+        ]
+        relations = [
+            {
+                "component": item.label or item.component_type,
+                "node": connection,
+                "relation_type": "connected_to",
+                "certainty": item.certainty,
+                "source": "visual_extraction",
+            }
+            for item in parsed.components
+            for connection in item.connections
+        ]
+        topology_complete = bool(
+            parsed.components
+            and parsed.confidence >= 0.75
+            and all(
+                item.certainty == "certain"
+                and len(set(item.connections)) >= 2
+                for item in parsed.components
+            )
+        )
+        recognized_text = "\n".join(parsed.recognized_text).strip()
+        summary_parts = [parsed.diagram_description.strip()]
+        if recognized_text:
+            summary_parts.append(f"识别文字：{recognized_text}")
+        if parsed.uncertain_info:
+            summary_parts.append(
+                "不确定项：" + "；".join(parsed.uncertain_info)
+            )
+        merged = problem.model_copy(
+            update={
+                "problem_text": (
+                    f"{problem.problem_text}\n\n[{section_title}]\n"
+                    + "\n".join(summary_parts)
+                )[:50_000],
+                "entities": [*problem.entities, *entities],
+                "relations": [*problem.relations, *relations],
+                "uncertain_info": [
+                    *problem.uncertain_info,
+                    *({"description": item} for item in parsed.uncertain_info),
+                    {"description": "图片内容由视觉模型提取，需以原图为准"},
+                ],
+                "structure_status": (
+                    "complete" if topology_complete else problem.structure_status
+                ),
+                "can_continue": problem.can_continue and topology_complete,
+                "extraction_confidence": min(
+                    problem.extraction_confidence,
+                    parsed.confidence,
+                ),
+            }
+        )
+        return (
+            merged,
+            {
+                "structured_extraction": True,
+                "visual_structure_status": (
+                    "complete" if topology_complete else "partial"
+                ),
+                "visual_component_count": len(entities),
+                "visual_relation_count": len(relations),
+                "visual_extraction_confidence": parsed.confidence,
+            },
         )
 
     @staticmethod

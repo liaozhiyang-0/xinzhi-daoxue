@@ -83,7 +83,9 @@ jobs:
       - name: Validate shell scripts
         run: bash -n scripts/*.sh
       - name: Validate Docker Compose
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.server.yml config --quiet
       - name: Summarize CI results (readable report)
         if: always()
         run: |

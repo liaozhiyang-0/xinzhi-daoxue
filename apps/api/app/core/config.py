@@ -573,6 +573,17 @@ class Settings(BaseSettings):
                 "AUTH_GUEST_SIGNING_KEY must be set when guest mode is enabled "
                 "in production"
             )
+        # Debug surfaces and mock fallbacks must be disabled explicitly in
+        # production; runtime guards alone are not enough because they can be
+        # bypassed by a misconfigured deploy.
+        if self.app_env == "production" and self.allow_mock_fallback:
+            raise ValueError("ALLOW_MOCK_FALLBACK must be false in production")
+        if self.app_env == "production" and self.allow_agent_mocks:
+            raise ValueError("ALLOW_AGENT_MOCKS must be false in production")
+        if self.app_env == "production" and self.enable_debug_api:
+            raise ValueError("ENABLE_DEBUG_API must be false in production")
+        if self.app_env == "production" and self.rag_debug_enabled:
+            raise ValueError("RAG_DEBUG_ENABLED must be false in production")
         if self.auth_cookie_same_site == "none" and not self.auth_cookie_secure:
             raise ValueError("AUTH_COOKIE_SECURE must be true when SameSite=None")
         return self

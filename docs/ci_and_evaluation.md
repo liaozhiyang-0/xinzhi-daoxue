@@ -52,6 +52,26 @@
 - live 报告写入 `evaluation/reports/live/<时间戳>/`，与日常结果分开，
   不会混入 CI 日常产物；离线报告固定 `mode: offline`，禁止冒充真实结果。
 
+## 生产安全（目标 6）
+
+`Settings` 在 `APP_ENV=production` 时启动强制校验（fail-closed）：
+
+- `AUTH_REQUIRED` 必须为 true；`QDRANT_MODE` 必须为 `server`；
+  `LANGGRAPH_CHECKPOINT_BACKEND` 不得为 `memory`；
+  `ALLOW_MOCK_FALLBACK` / `ALLOW_AGENT_MOCKS` / `ENABLE_DEBUG_API` /
+  `RAG_DEBUG_ENABLED` 必须为 false；
+- guest 模式启用时必须配置 `AUTH_GUEST_SIGNING_KEY`；
+  `SameSite=None` 时 `AUTH_COOKIE_SECURE` 必须为 true。
+
+`docker-compose.server.yml` 为生产 overlay（与 `docker-compose.yml` 合并使用），
+CI 与 `check.ps1` 均校验合并后的生产配置：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.server.yml config --quiet
+```
+
+`.env` 不入库由 `.gitignore` 与 `scripts/check_sensitive_files.py` 双重保障。
+
 ## 评测报告与基线对比
 
 `scripts/run_evaluation.py` 输出统一 JSON + Markdown 报告：

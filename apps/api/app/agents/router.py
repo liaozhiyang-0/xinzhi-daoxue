@@ -202,7 +202,42 @@ class TaskRouter:
                     "visited_agents": [debug_target],
                 }
             )
+        if IntentRecognitionService.is_rubric_generation_request(
+            material.raw_text
+        ):
+            decision = self._decision_for_target(
+                GENERAL_QUESTION_AGENT_ID,
+                request,
+                course_id=course_id,
+                intent=Intent.GENERAL_QA.value,
+                input_type=input_type,
+                confidence=0.96,
+            )
+            return decision.model_copy(
+                update={
+                    "task_subtype": "rubric_generation",
+                    "reason": "识别为评分标准生成，不进入学生作业批改流程",
+                    "reason_codes": course_reasons + ["rubric_generation_request"],
+                    "local_confidence": 0.96,
+                    "route_confidence": 0.96,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": [GENERAL_QUESTION_AGENT_ID],
+                }
+            )
         scored = self._score(request, material.materials, material.raw_text)
+        solver_reason_codes = scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
+        solver_contract_signal = any(
+            code.startswith("domain_contract:")
+            or code == "multimodal_solver_contract"
+            for code in solver_reason_codes
+        )
+        solver_signal = solver_contract_signal and (
+            recognition.intent == Intent.SOLVE_PROBLEM.value
+            or not any(
+                code.startswith("negative_rule:") for code in solver_reason_codes
+            )
+        )
         previous_agent = str(request.options.get("previous_agent", ""))
         previous_answer_summary = str(
             request.options.get("previous_answer_summary", "")
@@ -213,19 +248,11 @@ class TaskRouter:
             previous_answer_summary=previous_answer_summary,
             previous_query=str(request.options.get("previous_external_query", "")),
         )
-        research_alias_allowed = recognition.intent not in {
-            Intent.ACADEMIC_WRITING.value,
-            Intent.DATA_ANALYSIS.value,
-        }
+        explicit_search_request = is_academic_search_request(material.raw_text)
         if (
             recognition.intent == Intent.ACADEMIC_SEARCH.value
-            or (
-                research_alias_allowed
-                and (
-                    is_academic_search_request(material.raw_text)
-                    or is_search_follow_up
-                )
-            )
+            or explicit_search_request
+            or is_search_follow_up
         ):
             decision = self._decision_for_target(
                 "RESEARCH_01_ACADEMIC_SEARCH_V1",
@@ -238,8 +265,18 @@ class TaskRouter:
             return decision.model_copy(
                 update={
                     "task_subtype": "academic_search",
-                    "reason": "识别为论文检索请求，进入外部学术检索能力",
-                    "reason_codes": course_reasons + ["academic_search_request"],
+                    "reason": (
+                        decision.reason
+                        if decision.route_status == RouteStatus.UNRESOLVED
+                        else "识别为论文检索请求，进入外部学术检索能力"
+                    ),
+                    "reason_codes": list(
+                        dict.fromkeys(
+                            course_reasons
+                            + decision.reason_codes
+                            + ["academic_search_request"]
+                        )
+                    ),
                     "local_confidence": 1.0,
                     "route_confidence": 1.0,
                     "material_extraction": material.model_dump(mode="json"),
@@ -286,16 +323,57 @@ class TaskRouter:
                     "visited_agents": [target_agent_id],
                 }
             )
+        solver_workflow_allowed = recognition.intent in {
+            Intent.GENERAL_QA.value,
+            Intent.SOLVE_PROBLEM.value,
+        }
+        if (
+            solver_signal
+            and solver_workflow_allowed
+            and request.intent in {Intent.UNKNOWN, Intent.GENERAL_QA}
+        ):
+            solver_confidence = max(
+                scored.scores.get("ACADEMIC_PROBLEM_SOLVER", 0.0),
+                recognition.confidence,
+            )
+            decision = self._decision_for_target(
+                "ACADEMIC_PROBLEM_SOLVER",
+                request,
+                course_id=course_id,
+                intent=Intent.SOLVE_PROBLEM.value,
+                input_type=input_type,
+                confidence=solver_confidence,
+            )
+            return decision.model_copy(
+                update={
+                    "task_subtype": scored.task_subtype,
+                    "secondary_intents": scored.secondary_intents,
+                    "requires_pipeline": scored.requires_pipeline,
+                    "candidate_agents": self._candidate_models(
+                        scored, course_id=course_id, input_type=input_type
+                    ),
+                    "reason": "识别为专业求解任务，优先进入多学科求解 Agent",
+                    "route_source": "local_solver_contract",
+                    "reason_codes": list(
+                        dict.fromkeys(
+                            course_reasons
+                            + scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
+                            + ["professional_solver_contract"]
+                        )
+                    ),
+                    "local_confidence": solver_confidence,
+                    "route_confidence": solver_confidence,
+                    "material_extraction": material.model_dump(mode="json"),
+                    "inferred_user_role": request.user_role.value,
+                    "visited_agents": [decision.agent_id],
+                }
+            )
         recognized_direct_intents = {
             Intent.LESSON_PREP.value,
             Intent.ASSIGNMENT_REVIEW.value,
             Intent.SUMMARIZE_KNOWLEDGE.value,
             Intent.LEARNING_ADVICE.value,
         }
-        solver_signal = any(
-            code.startswith("domain_contract:")
-            for code in scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
-        )
         if recognition.intent == Intent.SOLVE_PROBLEM and solver_signal:
             recognized_direct_intents.add(Intent.SOLVE_PROBLEM.value)
         if (
@@ -305,6 +383,7 @@ class TaskRouter:
             # path. AUTO is the UI's opt-in for automatic academic routing.
             and request.course_id.upper().strip() in {"", "AUTO"}
             and "course_unspecified_default_context" not in course_reasons
+            and not solver_signal
         ):
             recognized_direct_intents.add(Intent.EXPLAIN_CONCEPT.value)
         if (
@@ -390,6 +469,7 @@ class TaskRouter:
             and explicit_course not in {"AUTO", "UNKNOWN"}
             and course_id == explicit_course
             and recognition.intent in course_learning_intents
+            and not solver_signal
         ):
             circuit_concept_signal = (
                 course_id == "CT"
@@ -625,12 +705,19 @@ class TaskRouter:
             recognition, normalized_intent
         )
         payload = recognition.model_dump(mode="json")
+        unresolved_input_reason = (
+            ["target_input_unsupported"]
+            if decision.route_status == RouteStatus.UNRESOLVED
+            and "does not support input type" in decision.reason
+            else []
+        )
         reason_codes = list(
             dict.fromkeys(
                 [
                     *recognition.reason_codes,
                     "structured_intent",
                     *decision.reason_codes,
+                    *unresolved_input_reason,
                 ]
             )
         )
@@ -968,6 +1055,18 @@ class TaskRouter:
             and float(current.intent_recognition.get("confidence", 0.0)) >= 0.80
         ):
             return False
+        if (
+            current.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+            and (
+                current.route_source == "local_solver_contract"
+                or "professional_solver_contract" in current.reason_codes
+                or any(
+                    code.startswith("domain_contract:")
+                    for code in current.reason_codes
+                )
+            )
+        ):
+            return False
         threshold = self.settings.overall_routing_skip_confidence_threshold
         return not (
             current.local_confidence >= threshold
@@ -1012,7 +1111,7 @@ class TaskRouter:
             Intent.ACADEMIC_SEARCH,
             Intent.ACADEMIC_WRITING,
             Intent.DATA_ANALYSIS,
-        }:
+        } or is_academic_search_request(text):
             return "UNKNOWN", ["research_workflow_neutral_course"]
         if explicit in {
             "CT",
@@ -1159,19 +1258,57 @@ class TaskRouter:
             "DE": (
                 "数字电路",
                 "逻辑",
+                "逻辑式",
+                "逻辑函数",
+                "真值表",
+                "布尔",
+                "Verilog",
                 "锁存器",
                 "计数器",
                 "寄存器",
                 "时序逻辑",
                 "组合逻辑",
             ),
-            "SS": ("信号与系统", "卷积", "拉普拉斯变换"),
-            "DSP": ("数字信号处理", "离散傅里叶", "z变换", "滤波器"),
-            "COMM": ("通信原理", "调制", "解调", "信道编码"),
-            "RF": ("高频电子", "谐振放大", "混频"),
-            "EM": ("电磁场", "电磁波", "麦克斯韦"),
-            "INFO": ("信息论", "信源编码", "信道容量"),
-            "EMBEDDED": ("嵌入式", "单片机", "微控制器"),
+            "SS": (
+                "信号与系统",
+                "卷积",
+                "拉普拉斯变换",
+                "系统函数",
+                "连续时间",
+            ),
+            "DSP": (
+                "数字信号处理",
+                "离散傅里叶",
+                "z变换",
+                "滤波器",
+                "采样定理",
+                "频谱",
+            ),
+            "COMM": (
+                "通信原理",
+                "通信系统",
+                "调制",
+                "解调",
+                "信道编码",
+                "误码率",
+                "信噪比",
+            ),
+            "RF": ("高频电子", "高频电子线路", "谐振放大", "混频"),
+            "EM": (
+                "电磁场",
+                "电磁波",
+                "麦克斯韦",
+                "电场强度",
+                "磁场强度",
+            ),
+            "INFO": ("信息论", "信源编码", "信道容量", "熵"),
+            "EMBEDDED": (
+                "嵌入式",
+                "单片机",
+                "微控制器",
+                "中断服务",
+                "定时器",
+            ),
             "IC": ("集成电路", "芯片设计", "版图"),
         }.items():
             scores[course] += 2 * sum(
@@ -1404,11 +1541,17 @@ class TaskRouter:
 
         problem_actions = (
             "求",
+            "求出",
+            "求得",
             "计算",
             "求解",
             "解出",
             "列式",
             "列方程",
+            "给出",
+            "推导",
+            "证明",
+            "画出",
             "判断",
             "确定",
             "分析",
@@ -1427,6 +1570,8 @@ class TaskRouter:
             "能量",
             "相量",
             "频率",
+            "采样频率",
+            "采样定理",
             "增益",
             "响应",
             "传递函数",
@@ -1444,10 +1589,22 @@ class TaskRouter:
             "卷积",
             "频谱",
             "系统函数",
+            "连续时间",
+            "离散时间",
+            "通信系统",
             "误码率",
             "信噪比",
+            "带宽",
+            "截止频率",
             "调制",
             "解调",
+            "高频电子线路",
+            "电场强度",
+            "磁场强度",
+            "熵",
+            "定时器",
+            "中断周期",
+            "时序",
             "电路",
             "二极管",
             "晶体管",
@@ -1754,22 +1911,33 @@ class TaskRouter:
             primary.agent_id, self.settings
         )
         primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
-        if not primary_eligible or not runtime_available:
+        input_supported = input_type in primary.supports
+        if not primary_eligible or not runtime_available or not input_supported:
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback is not None and self.registry.is_execution_eligible(
                 fallback.agent_id
             ) and (
-                self.registry.is_runtime_available(fallback.agent_id, self.settings)
-                or self.registry.allows_unconfigured_route(fallback.agent_id)
+                input_type in fallback.supports
+                and (
+                    self.registry.is_runtime_available(
+                        fallback.agent_id, self.settings
+                    )
+                    or self.registry.allows_unconfigured_route(fallback.agent_id)
+                )
             ):
                 selected = fallback
                 fallback_used = True
                 source = "local_degraded"
-            elif primary_eligible and self.registry.allows_unconfigured_route(
-                primary.agent_id
+            elif (
+                primary_eligible
+                and input_supported
+                and self.registry.allows_unconfigured_route(
+                    primary.agent_id
+                )
             ):
                 source = "local_degraded"
             else:
+                input_error = not input_supported
                 generic_fallback = self._generic_model_fallback_decision(
                     request=request,
                     course_id=course_id,
@@ -1777,10 +1945,18 @@ class TaskRouter:
                     original_agent_id=primary.agent_id,
                     confidence=0.0,
                     reason=(
-                        "目标 Agent 不可用，已进入一次性通用模型兜底: "
-                        f"{primary.agent_id}"
+                        (
+                            "目标 Agent 不支持当前输入类型，已进入一次性通用模型兜底: "
+                            if input_error
+                            else "目标 Agent 不可用，已进入一次性通用模型兜底: "
+                        )
+                        + primary.agent_id
                     ),
-                    reason_codes=["target_agent_unavailable"],
+                    reason_codes=[
+                        "target_input_unsupported"
+                        if input_error
+                        else "target_agent_unavailable"
+                    ],
                 )
                 if generic_fallback is not None:
                     return generic_fallback
@@ -1790,12 +1966,22 @@ class TaskRouter:
                     course_id=course_id,
                     intent=intent,
                     route_status=RouteStatus.UNRESOLVED,
-                    reason=f"configured agent unavailable: {primary.agent_id}",
+                    reason=(
+                        f"configured agent does not support input type {input_type}: "
+                        f"{primary.agent_id}"
+                        if input_error
+                        else f"configured agent unavailable: {primary.agent_id}"
+                    ),
                     retrieval_required=False,
                     provider_required=False,
                     route_source="local_degraded",
                     route_confidence=0.0,
                     original_agent_id=primary.agent_id,
+                    reason_codes=[
+                        "target_input_unsupported"
+                        if input_error
+                        else "target_agent_unavailable"
+                    ],
                 )
         self._ensure_supported(selected.agent_id, input_type)
         return RouteDecision(
@@ -1878,6 +2064,26 @@ class TaskRouter:
                 )
             else:
                 source = "local_degraded"
+
+        input_type = self._input_type(request)
+        if input_type not in selected.supports:
+            return RouteDecision(
+                agent_id="UNRESOLVED",
+                scene=rule.scene,
+                course_id=request.course_id.upper(),
+                intent=request.intent.value,
+                route_status=RouteStatus.UNRESOLVED,
+                reason=(
+                    f"configured agent does not support input type {input_type}: "
+                    f"{selected.agent_id}"
+                ),
+                retrieval_required=False,
+                provider_required=False,
+                route_source="local_degraded",
+                route_confidence=0.0,
+                original_agent_id=primary.agent_id,
+                reason_codes=["target_input_unsupported"],
+            )
 
         return RouteDecision(
             agent_id=selected.agent_id,

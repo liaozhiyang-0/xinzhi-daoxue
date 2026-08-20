@@ -22,6 +22,7 @@ from app.providers.retrieval.web import NewsRssSearchProvider
 from app.services.academic_search_planner import (
     AcademicSearchPlannerService,
     _repair_relative_time_ranges,
+    relative_freshness_days,
 )
 from app.services.external_research_answer import (
     is_academic_search_follow_up,
@@ -189,6 +190,19 @@ def test_relative_planner_range_does_not_keep_stale_model_years() -> None:
     )
 
     assert "2021..2024" not in repaired[0]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_days"),
+    [
+        ("过去12个月人工智能智能体研究", 360),
+        ("last 18 months of multimodal agents", 540),
+    ],
+)
+def test_relative_month_windows_are_translated_to_retrieval_days(
+    query: str, expected_days: int
+) -> None:
+    assert relative_freshness_days(query) == expected_days
 
 
 def test_frontier_brief_drops_unsupported_key_findings() -> None:
@@ -432,6 +446,10 @@ async def test_research_frontier_service_renders_cited_brief() -> None:
     assert "证据边界" not in result.answer
     assert result.structured_result["research_intent"]["requires_web"] is True
     assert result.artifacts[0].artifact_type.value == "report"
+    assert result.structured_result["evidence_summary"] == {
+        "status": "partial",
+        "item_count": 1,
+    }
 
 
 @pytest.mark.asyncio
@@ -510,6 +528,10 @@ async def test_research_frontier_answers_when_external_evidence_is_empty() -> No
 
     assert result.structured_result["status"] == "completed"
     assert result.structured_result["answer_mode"] == "no_verified_evidence"
+    assert result.structured_result["evidence_summary"] == {
+        "status": "insufficient",
+        "item_count": 0,
+    }
     return
     assert result.structured_result["answer_mode"] == "local_knowledge_fallback"
     assert result.answer

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -402,6 +401,21 @@ class ScenarioOutputContractService:
             for value in (item.get("doi"), item.get("arxiv_id"))
             if value
         ]
+        displayed_items = table or evidence.get("items", [])
+        item_count = len(displayed_items) if isinstance(displayed_items, list) else 0
+        evidence_status = str(evidence.get("status", "insufficient"))
+        if item_count == 0:
+            evidence_status = "insufficient"
+        raw_summary = data.get("evidence_summary")
+        evidence_summary = (
+            dict(raw_summary) if isinstance(raw_summary, Mapping) else {}
+        )
+        # The result-level evidence status is authoritative. Do not let a
+        # model-provided summary claim sufficient evidence after filtering has
+        # removed every candidate.
+        evidence_summary.update(
+            {"status": evidence_status, "item_count": item_count}
+        )
         return {
             "research_scope": data.get(
                 "research_scope",
@@ -410,15 +424,9 @@ class ScenarioOutputContractService:
                     "time_range": "按示例问题指定时间窗筛选；未扩大时间范围。",
                 },
             ),
-            "evidence_table": table or evidence.get("items", []),
+            "evidence_table": displayed_items,
             "doi_or_arxiv": identifiers,
-            "evidence_summary": data.get(
-                "evidence_summary",
-                {
-                    "status": evidence.get("status", "insufficient"),
-                    "item_count": len(table),
-                },
-            ),
+            "evidence_summary": evidence_summary,
             "open_questions": data.get(
                 "open_questions", ["未通过相关性和原文核验的候选结果不能作为最终证据。"]
             ),
@@ -563,18 +571,13 @@ class ScenarioOutputContractService:
     ) -> str:
         if "场景结构化输出" in answer:
             return answer
-        lines = [answer.rstrip(), "", f"## {label} · 场景结构化输出"]
-        for key, value in fields.items():
-            if key == "review_boundary":
-                continue
-            rendered = (
-                value
-                if isinstance(value, str)
-                else "```json\n"
-                + json.dumps(value, ensure_ascii=False, indent=2)
-                + "\n```"
-            )
-            lines.extend([f"### {key}", str(rendered)])
+        del fields
+        lines = [
+            answer.rstrip(),
+            "",
+            f"## {label} · 场景结构化输出",
+            "详细字段已同步到结构化结果和结果面板，避免在正文中重复序列化。",
+        ]
         if review_boundary:
             lines.extend(["### review_boundary", review_boundary])
         return "\n".join(lines).strip()

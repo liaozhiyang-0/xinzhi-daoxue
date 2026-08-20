@@ -108,6 +108,10 @@ def test_production_requires_server_qdrant() -> None:
         qdrant_mode="server",
         langgraph_checkpoint_enabled=False,
         langgraph_checkpoint_backend="disabled",
+        allow_mock_fallback=False,
+        allow_agent_mocks=False,
+        enable_debug_api=False,
+        rag_debug_enabled=False,
         _env_file=None,
     )
     assert settings.qdrant_mode == "server"
@@ -122,6 +126,54 @@ def test_production_rejects_process_local_langgraph_checkpoints() -> None:
             qdrant_mode="server",
             _env_file=None,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("allow_mock_fallback", True, "ALLOW_MOCK_FALLBACK must be false"),
+        ("allow_agent_mocks", True, "ALLOW_AGENT_MOCKS must be false"),
+        ("enable_debug_api", True, "ENABLE_DEBUG_API must be false"),
+        ("rag_debug_enabled", True, "RAG_DEBUG_ENABLED must be false"),
+    ],
+)
+def test_production_forbids_mock_and_debug_surfaces(
+    field: str, value: bool, message: str
+) -> None:
+    base: dict[str, object] = dict(
+        app_env="production",
+        auth_required=True,
+        auth_allow_guest=False,
+        qdrant_mode="server",
+        langgraph_checkpoint_enabled=False,
+        langgraph_checkpoint_backend="disabled",
+        allow_mock_fallback=False,
+        allow_agent_mocks=False,
+        enable_debug_api=False,
+        rag_debug_enabled=False,
+        _env_file=None,
+    )
+    base[field] = value
+    with pytest.raises(ValidationError, match=message):
+        Settings(**base)
+
+
+def test_production_fail_closed_without_mock_or_debug() -> None:
+    settings = Settings(
+        app_env="production",
+        auth_required=True,
+        auth_allow_guest=False,
+        qdrant_mode="server",
+        langgraph_checkpoint_enabled=False,
+        langgraph_checkpoint_backend="disabled",
+        allow_mock_fallback=False,
+        allow_agent_mocks=False,
+        enable_debug_api=False,
+        rag_debug_enabled=False,
+        _env_file=None,
+    )
+    assert settings.allow_mock_fallback is False
+    assert settings.enable_debug_api is False
 
 
 def test_academic_solver_complex_deadlines_are_extended_but_bounded() -> None:

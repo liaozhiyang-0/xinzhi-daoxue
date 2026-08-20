@@ -56,6 +56,8 @@ if ($DockerCommand) {
     Write-Host "[xzd] Validating Docker Compose..."
     & $DockerCommand compose config --quiet
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose validation failed." }
+    & $DockerCommand compose -f docker-compose.yml -f docker-compose.server.yml config --quiet
+    if ($LASTEXITCODE -ne 0) { throw "Production Docker Compose validation failed." }
 } else {
     Write-Warning "Docker not found; Docker Compose validation was skipped."
 }

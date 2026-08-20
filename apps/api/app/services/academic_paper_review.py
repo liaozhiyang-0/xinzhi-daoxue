@@ -112,7 +112,8 @@ _AGENT_SCOPE_TERMS = (
 
 _RELATIVE_DATE_WINDOW_PATTERN = re.compile(
     r"近(?:\d+|[一二三四五六七八九十百几]+)\s*年|近年|最近|近期|"
-    r"recent|latest|last\s+(?:few|several|\d+)\s+years",
+    r"(?:近|过去|最近)\s*(?:\d+|[一二三四五六七八九十百几]+)\s*(?:个)?月|"
+    r"recent|latest|(?:last|past)\s+(?:few|several|\d+)\s+(?:years?|months?)",
     flags=re.IGNORECASE,
 )
 

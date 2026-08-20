@@ -78,6 +78,45 @@ def test_writing_request_with_source_restriction_is_not_research_search() -> Non
     assert decision.agent_id == "RESEARCH_02_ACADEMIC_WRITING_V1"
 
 
+def test_paper_search_beats_writing_word_inside_citation_constraint() -> None:
+    text = (
+        "检索2023—2026年公开发表的低电压低功耗 CMOS 运算放大器或 OTA 论文，"
+        "至少给出3篇可核验的一手论文；若某项未报告，明确写‘未报告’，不要补造。"
+    )
+    task_request = request(text).model_copy(update={"course_id": "AE"})
+
+    result = IntentRecognitionService().recognize(task_request)
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert result.intent == "academic_search"
+    assert result.needs_external_retrieval is True
+    assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert decision.intent == "academic_search"
+    assert decision.course_id == "UNKNOWN"
+
+
+def test_rubric_generation_is_not_assignment_review() -> None:
+    text = (
+        "\u8bf7\u4e3aFPGA\u6570\u5b57\u65f6\u949f\u8bfe\u7a0b\u751f\u6210"
+        "\u8bc4\u5206\u6807\u51c6\uff0c\u6309\u529f\u80fd\u6b63\u786e\u6027\u3001"
+        "\u65f6\u5e8f\u7ea6\u675f\u3001\u4ee3\u7801\u89c4\u8303\u548c\u5b89\u5168\u6027"
+        "\u5206\u4e3a\u56db\u4e2a\u7ef4\u5ea6\u3002"
+    )
+    result = IntentRecognitionService().recognize(request(text))
+    decision = TaskRouter(AgentRegistry()).route(request(text))
+
+    assert result.intent == "general_qa"
+    assert decision.agent_id == "GENERAL_QUESTION_V1"
+    assert decision.task_subtype == "rubric_generation"
+    assert "rubric_generation_request" in decision.reason_codes
+
+
+def test_assignment_review_context_keeps_rubric_request_on_review_path() -> None:
+    text = "\u8bf7\u6309\u8bc4\u5206\u6807\u51c6\u6279\u6539\u5b66\u751f\u7b54\u6848"
+
+    assert not IntentRecognitionService.is_rubric_generation_request(text)
+
+
 def test_conflicting_workflow_request_uses_general_clarification_path() -> None:
     request_text = "既要教案又要论文润色。"
     result = IntentRecognitionService().recognize(request(request_text))

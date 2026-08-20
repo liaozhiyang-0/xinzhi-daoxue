@@ -271,6 +271,59 @@ def test_latest_paper_request_routes_to_dedicated_academic_search() -> None:
     assert decision.provider_required is False
 
 
+def test_unsupported_image_input_returns_unresolved_route_instead_of_raising() -> None:
+    task_request = AgentRequest(
+        session_id="session-paper-image",
+        user_id="user-paper-image",
+        scene="research",
+        course_id="AUTO",
+        intent=Intent.ACADEMIC_SEARCH,
+        canonical_input={
+            "text": "\u68c0\u7d22\u8fd9\u5f20\u56fe\u7247\u76f8\u5173\u7684\u8bba\u6587"
+        },
+        attachments=[
+            AttachmentRef(
+                file_id="image-1",
+                filename="figure.png",
+                content_type="image/png",
+                size_bytes=1,
+                storage_key="local/image-1",
+            )
+        ],
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "UNRESOLVED"
+    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert "target_input_unsupported" in decision.reason_codes
+
+
+def test_explicit_assignment_review_preflights_image_capability() -> None:
+    task_request = request("CT", "assignment_review").model_copy(
+        update={
+            "canonical_input": {
+                "text": "\u8bf7\u6279\u6539\u5b66\u751f\u7b54\u6848"
+            },
+            "attachments": [
+                AttachmentRef(
+                    file_id="image-assignment",
+                    filename="answer.png",
+                    content_type="image/png",
+                    size_bytes=1,
+                    storage_key="local/answer.png",
+                )
+            ],
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.route_status == RouteStatus.UNRESOLVED
+    assert decision.agent_id == "UNRESOLVED"
+    assert "target_input_unsupported" in decision.reason_codes
+
+
 def test_writing_request_stays_on_academic_writing_agent() -> None:
     task_request = AgentRequest.model_validate(
         {
@@ -514,7 +567,83 @@ def test_natural_academic_problem_language_routes_to_solver(text: str) -> None:
     assert "domain_contract:academic_problem_language" in decision.reason_codes
 
 
-def test_general_qa_problem_submission_completes_with_solver_answer(
+@pytest.mark.parametrize(
+    ("course_id", "text"),
+    [
+        ("DSP", "求离散系统的卷积响应 x[n] 和 h[n]。"),
+        ("COMM", "求通信系统的误码率。"),
+        ("EM", "求电磁场中某点的电场强度。"),
+        ("EMBEDDED", "设计单片机定时器并求中断周期。"),
+    ],
+)
+def test_explicit_course_problem_bypasses_knowledge_route(
+    course_id: str, text: str
+) -> None:
+    task_request = AgentRequest(
+        session_id="session-cross-course-problem",
+        user_id="user-cross-course-problem",
+        scene="dispatch",
+        course_id=course_id,
+        intent="unknown",
+        canonical_input={"text": text},
+        options={},
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert decision.course_id == course_id
+    assert decision.intent == "solve_problem"
+    assert decision.route_source == "local_solver_contract"
+
+
+@pytest.mark.parametrize(
+    ("text", "course_id"),
+    [
+        ("已知采样频率，求信号频谱。", "DSP"),
+        ("化简逻辑式并给出真值表。", "DE"),
+        ("求电场强度。", "EM"),
+    ],
+)
+def test_auto_course_problem_is_inferred_before_solver_execution(
+    text: str, course_id: str
+) -> None:
+    task_request = AgentRequest(
+        session_id="session-auto-course-problem",
+        user_id="user-auto-course-problem",
+        scene="dispatch",
+        course_id="AUTO",
+        intent="unknown",
+        canonical_input={"text": text},
+        options={},
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert decision.course_id == course_id
+    assert decision.intent == "solve_problem"
+    assert "professional_solver_contract" in decision.reason_codes
+
+
+def test_solver_contract_is_not_overridden_by_second_route_pass() -> None:
+    task_request = AgentRequest(
+        session_id="session-solver-route-lock",
+        user_id="user-solver-route-lock",
+        scene="dispatch",
+        course_id="DSP",
+        intent="unknown",
+        canonical_input={"text": "求离散系统的卷积响应。"},
+        options={},
+    )
+    router = TaskRouter(AgentRegistry())
+    decision = router.route(task_request)
+
+    assert decision.route_confidence < 0.80
+    assert router.overall_refinement_allowed(decision) is False
+
+
+def test_general_question_problem_submission_completes_with_solver_answer(
     api, client
 ) -> None:
     session = api.create_session()

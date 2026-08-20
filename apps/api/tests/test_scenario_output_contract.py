@@ -71,6 +71,8 @@ def test_student_case_exposes_learning_path_contract() -> None:
     assert len(result.business_data["staged_plan"]) == 7
     assert result.business_data["evidence"]["source_refs"] == ["course://ct/ohm"]
     assert "学生个性化学习路径" in result.answer
+    assert "```json" not in result.answer
+    assert "详细字段已同步到结构化结果和结果面板" in result.answer
 
 
 def test_governance_case_does_not_turn_unknown_approval_into_success() -> None:
@@ -148,6 +150,36 @@ def test_generic_fallback_is_not_presented_as_professional_contract() -> None:
     assert contract["status"] == "not_applied"
     assert contract["missing_fields"] == expected
     assert "场景结构化输出" not in result.answer
+
+
+def test_research_evidence_summary_cannot_claim_sufficient_after_filtering() -> None:
+    agent_id = "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    result = _result(agent_id).model_copy(
+        update={
+            "evidence_status": "insufficient",
+            "structured_result": {"external_retrieval": {"items": []}},
+            "business_data": {
+                "evidence_summary": {"status": "sufficient", "item_count": 6}
+            },
+        }
+    )
+
+    enriched = ScenarioOutputContractService().enrich(
+        result,
+        _request(
+            "research_frontier_radar_v1",
+            agent_id,
+            [
+                "evidence_table",
+                "evidence_summary",
+            ],
+        ),
+    )
+
+    assert enriched.business_data["evidence_summary"] == {
+        "status": "insufficient",
+        "item_count": 0,
+    }
 
 
 @pytest.mark.parametrize(

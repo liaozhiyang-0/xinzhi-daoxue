@@ -10,8 +10,8 @@ from app.contracts import (
     AgentValidationResult,
     ExternalRetrievalResult,
 )
-from app.core.errors import NotConfiguredError
-from app.runtime import RuntimeRunStatus
+from app.core.errors import NotConfiguredError, ProviderCancelledError
+from app.runtime import RuntimeNodeError, RuntimeRunStatus
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.runtime_persistence_hooks import RuntimePersistenceHooks
@@ -78,12 +78,19 @@ class TaskRuntimeExecutionService:
                 else None
             ),
         )
+        if prepared.runtime_run.status == RuntimeRunStatus.CANCELLED:
+            # Keep Runtime cancellation on the task cancellation path instead
+            # of turning it into a generic configuration failure.
+            raise ProviderCancelledError("任务已取消")
         if (
             result is None
             or prepared.runtime_run.status != RuntimeRunStatus.COMPLETED
         ):
-            raise NotConfiguredError(
-                "registered Agent did not complete through Runtime"
+            error_code = self._runtime_failure_code(prepared.runtime_run)
+            raise RuntimeNodeError(
+                error_code,
+                "registered Agent Runtime did not complete "
+                f"(status={prepared.runtime_run.status.value})",
             )
         if prepared.agent_id == ResearchFrontierService.agent_id:
             self._schedule_research_ingest(request, result)
@@ -128,6 +135,22 @@ class TaskRuntimeExecutionService:
             routing=dict(governed.routing),
             provider_latency_ms=provider_latency_ms,
         )
+
+    @staticmethod
+    def _runtime_failure_code(runtime_run: object) -> str:
+        """Preserve the most specific durable node failure for task handling."""
+
+        nodes = getattr(runtime_run, "nodes", {})
+        if isinstance(nodes, dict):
+            for state in nodes.values():
+                if getattr(state, "status", None) != "failed":
+                    continue
+                error_code = str(getattr(state, "error_code", "")).strip()
+                if error_code:
+                    return error_code
+        if getattr(runtime_run, "status", None) == RuntimeRunStatus.FAILED:
+            return "runtime_execution_failed"
+        return "provider_runtime_result_missing"
 
     def _schedule_research_ingest(
         self,

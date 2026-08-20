@@ -34,7 +34,8 @@ from app.services.research_knowledge import ResearchKnowledgeService
 logger = logging.getLogger(__name__)
 _RELATIVE_DATE_WINDOW_PATTERN = re.compile(
     r"近(?:\d+|[一二三四五六七八九十几]+)\s*年|近年|最近|近期|"
-    r"recent|latest|last\s+(?:few|several|\d+)\s+years",
+    r"(?:近|过去|最近)\s*(?:\d+|[一二三四五六七八九十几]+)\s*(?:个)?月|"
+    r"recent|latest|(?:last|past)\s+(?:few|several|\d+)\s+(?:years?|months?)",
     flags=re.IGNORECASE,
 )
 
@@ -111,6 +112,7 @@ class ResearchFrontierService:
                 }
             )
         evidence = filtered_evidence
+        evidence_status = self._evidence_status(evidence)
         answer_mode = "external_retrieval"
         # A failed/empty external retrieval is a verified absence signal for
         # this request. Do not silently replace it with semantically similar
@@ -162,6 +164,10 @@ class ResearchFrontierService:
                         external.model_dump(mode="json") if external is not None else {}
                     ),
                     "external_search_view": [],
+                    "evidence_summary": {
+                        "status": evidence_status,
+                        "item_count": len(evidence),
+                    },
                     "model_execution": model_metadata,
                 },
                 warnings=[],
@@ -257,6 +263,10 @@ class ResearchFrontierService:
                     external.model_dump(mode="json") if external is not None else {}
                 ),
                 "external_search_view": external_search_view(external),
+                "evidence_summary": {
+                    "status": evidence_status,
+                    "item_count": len(evidence),
+                },
                 "model_execution": model_metadata,
             },
             artifacts=[artifact],
@@ -269,9 +279,15 @@ class ResearchFrontierService:
                 input_tokens=model_metadata.get("input_tokens"),
                 output_tokens=model_metadata.get("output_tokens"),
             ),
-            evidence_status="sufficient" if len(evidence) >= 3 else "partial",
+            evidence_status=evidence_status,
             cloud_status="not_required",
         )
+
+    @staticmethod
+    def _evidence_status(evidence: list[ExternalEvidenceItem]) -> str:
+        if not evidence:
+            return "insufficient"
+        return "sufficient" if len(evidence) >= 3 else "partial"
 
     @staticmethod
     def render(

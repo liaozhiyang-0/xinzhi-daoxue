@@ -14,6 +14,7 @@ from app.orchestrator.graphs import AcademicProblemSolverGraph
 from app.orchestrator.state import new_graph_state
 from app.services.academic_solver_service import AcademicProblemSolverService
 from app.services.model_registry import ModelRegistry
+from app.services.solver_boundary_policy import SolverBoundaryPolicy
 from app.tools import default_tool_registry
 from langgraph.checkpoint.memory import InMemorySaver
 from PIL import Image
@@ -41,6 +42,55 @@ def test_course_registry_loads_first_wave_and_unknown_fallback() -> None:
     assert registry.get("DE").implementation_status == "basic"
     assert registry.get("SS").implementation_status == "basic"
     assert registry.get("not-a-course").course_code == "UNKNOWN"
+
+
+def test_visual_solver_requires_structured_topology_before_calculation() -> None:
+    policy = SolverBoundaryPolicy()
+    incomplete = AcademicProblem(
+        course="CT",
+        problem_text="请分析图片中的电路",
+        figures_given=[{"file_id": "image-1"}],
+    )
+    decision = policy.evaluate(incomplete)
+
+    assert decision.intercepted
+    assert decision.reason == "visual_topology_not_structured"
+
+    complete = incomplete.model_copy(
+        update={
+            "structure_status": "complete",
+            "entities": [{"name": "R1", "value": "1kΩ"}],
+            "relations": [{"from": "R1.1", "to": "GND"}],
+        }
+    )
+    assert not policy.evaluate(complete).intercepted
+
+
+def test_visual_json_extraction_builds_a_verified_topology() -> None:
+    problem = AcademicProblem(
+        course="CT",
+        problem_text="请分析图片中的电路",
+        figures_given=[{"file_id": "image-1"}],
+    )
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        (
+            '{"recognized_text":["求 R1 电流"],'
+            '"diagram_description":"R1 连接在 V1 与 GND 之间",'
+            '"components":['
+            '{"component_type":"resistor","label":"R1",'
+            '"value":"1kΩ","connections":["V1","GND"],'
+            '"certainty":"certain"}],'
+            '"uncertain_info":[],"confidence":0.92}'
+        ),
+    )
+
+    assert metadata["structured_extraction"] is True
+    assert metadata["visual_structure_status"] == "complete"
+    assert merged.structure_status == "complete"
+    assert merged.entities[0]["label"] == "R1"
+    assert merged.relations[0]["node"] == "V1"
+    assert not SolverBoundaryPolicy().evaluate(merged).intercepted
 
 
 def test_academic_reasoning_routes_by_problem_complexity() -> None:
@@ -329,9 +379,13 @@ async def test_image_input_uses_vision_summary_without_storing_base64() -> None:
     )
 
     assert result.structured_result["vision_execution"]["model"] == "vision"
-    assert result.structured_result["model_execution"]["model"] == "reasoner"
+    assert result.structured_result["model_execution"]["status"] == "skipped"
+    assert (
+        result.structured_result["boundary_decision"]["reason"]
+        == "visual_topology_not_structured"
+    )
     assert "base64" not in str(result.structured_result).casefold()
-    assert result.metrics.model_calls == 2
+    assert result.metrics.model_calls == 1
 
 
 @pytest.mark.asyncio
@@ -419,7 +473,7 @@ async def test_multi_image_solver_sends_ordered_originals_to_vision_model() -> N
     assert execution["model_image_count"] == 2
     assert execution["original_order_preserved"] is True
     assert model_service.vision_image_counts == [2]
-    assert result.metrics.model_calls == 2
+    assert result.metrics.model_calls == 1
 
 
 @pytest.mark.asyncio
@@ -517,8 +571,8 @@ async def test_complex_multi_image_solver_uses_one_cross_image_vision_call() -> 
     assert execution["model_image_count"] == 3
     assert execution["original_order_preserved"] is True
     assert model_service.vision_image_counts == [3]
-    assert model_service.text_task_types == ["academic_problem_solving"]
-    assert result.metrics.model_calls == 2
+    assert model_service.text_task_types == []
+    assert result.metrics.model_calls == 1
 
 
 class FakeAcademicRegistry:

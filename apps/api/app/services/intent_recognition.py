@@ -7,6 +7,7 @@ from app.contracts import AgentRequest, Intent
 from app.contracts.intent import IntentRecognition
 from app.services.external_research_answer import (
     is_academic_search_follow_up,
+    is_academic_search_request,
     is_academic_writing_source_follow_up,
 )
 
@@ -89,10 +90,14 @@ class IntentRecognitionService:
         r"state[- ]of[- ]the[- ]art|recent progress|research trend",
     )
     _writing_patterns = (
-        r"\u5199\u8bba\u6587|\u8bba\u6587\u5199\u4f5c|\u6da6\u8272|\u6539\u5199|\u6295\u7a3f|\u5f15\u7528\u68c0\u67e5|\u5b66\u672f\u8868\u8fbe",
-        r"\u5199.{0,8}(?:\u8bba\u6587|\u6458\u8981|\u7efc\u8ff0|\u62a5\u544a)",
-        r"(?:\u8bba\u6587|\u6458\u8981|\u7efc\u8ff0|\u62a5\u544a).{0,8}(?:\u5199\u4f5c|\u64b0\u5199|\u6539\u5199|\u6da6\u8272)",
-        r"\u6765\u6e90\u4ec5\u9650|\u4ec5\u9650(?:\u4e0b\u9762|\u4ee5\u4e0b)(?:\u6587\u5b57|\u5185\u5bb9)",
+        r"(?:\u5199|\u64b0\u5199|\u7f16\u5199|\u751f\u6210|\u8d77\u8349)"
+        r"(?:\u4e00\u4e2a|\u4e00\u7bc7|\u4e00\u4efd|\u4e00\u6bb5|\u4e00\u7248)?"
+        r"(?:\u5b66\u672f)?(?:\u8bba\u6587|\u6458\u8981|\u7efc\u8ff0|\u62a5\u544a|\u5f15\u8a00|\u7ed3\u8bba|\u6bb5\u843d)",
+        r"(?:\u6539\u5199|\u91cd\u5199|\u6da6\u8272|\u6269\u5199|\u538b\u7f29|\u7ffb\u8bd1).{0,8}"
+        r"(?:\u8bba\u6587|\u6458\u8981|\u7efc\u8ff0|\u62a5\u544a|\u5b66\u672f\u4e2d\u6587|\u6bb5\u843d|\u5f15\u8a00|\u7ed3\u8bba)",
+        r"(?:\u8bba\u6587|\u6458\u8981|\u7efc\u8ff0|\u62a5\u544a|\u6bb5\u843d).{0,8}"
+        r"(?:\u5199\u4f5c|\u64b0\u5199|\u6539\u5199|\u6da6\u8272)",
+        r"\u8bba\u6587\u5199\u4f5c|\u6458\u8981\u5199\u4f5c|\u7efc\u8ff0\u5199\u4f5c|\u5b66\u672f\u5199\u4f5c|\u6295\u7a3f|\u5f15\u7528\u68c0\u67e5|\u5b66\u672f\u8868\u8fbe",
     )
     _data_patterns = (
         r"\u6570\u636e|csv|excel|\u56de\u5f52|\u7edf\u8ba1|\u53ef\u89c6\u5316|\u76f8\u5173\u6027|\u663e\u8457\u6027|\u6837\u672c|AUC|p\u503c|\u7f3a\u5931\u503c|\u7f6e\u4fe1\u533a\u95f4|\u53d8\u91cf",
@@ -116,12 +121,51 @@ class IntentRecognitionService:
         r"\u77e5\u8bc6\u5e93|\u8bfe\u7a0b\u8d44\u4ea7|\u7248\u672c\u51b2\u7a81|\u5ba1\u6279|\u53d1\u5e03\u963b\u585e|"
         r"\u53d1\u5e03\u524d|\u53d1\u5e03\u540e|\u56de\u6eda|\u8d44\u4ea7\u6e05\u5355|\u6743\u9650\u6cbb\u7406",
     )
+    _rubric_terms = ("评分标准", "评分细则", "评分量规", "rubric")
+    _rubric_generation_actions = (
+        "生成",
+        "制定",
+        "设计",
+        "编写",
+        "制作",
+        "建立",
+        "创建",
+        "给出",
+        "generate",
+        "create",
+        "design",
+        "define",
+    )
+    _review_context_terms = (
+        "学生答案",
+        "作业答案",
+        "批改",
+        "批阅",
+        "评阅",
+        "给分",
+        "得分",
+        "这份作业",
+    )
 
     @classmethod
     def is_knowledge_governance(cls, text: str) -> bool:
         """Expose the bounded governance vocabulary to route selection."""
 
         return cls._has(text, cls._knowledge_governance_patterns)
+
+    @classmethod
+    def is_rubric_generation_request(cls, text: str) -> bool:
+        """Distinguish creating a rubric from grading a student submission."""
+
+        normalized = text.casefold()
+        has_rubric = any(term.casefold() in normalized for term in cls._rubric_terms)
+        has_generation_action = any(
+            term.casefold() in normalized for term in cls._rubric_generation_actions
+        )
+        has_review_context = any(
+            term.casefold() in normalized for term in cls._review_context_terms
+        )
+        return has_rubric and has_generation_action and not has_review_context
     _solver_patterns = (
         r"\u6c42\u89e3|\u8ba1\u7b97|\u63a8\u5bfc|\u65b9\u7a0b|\u7535\u8def|\u7535\u963b|\u7535\u5bb9|\u7535\u611f|\u4f20\u9012\u51fd\u6570|\u62c9\u666e\u62c9\u65af|\u771f\u503c\u8868",
         r"solve|calculate|derive|circuit|equation|transfer function",
@@ -352,6 +396,13 @@ class IntentRecognitionService:
             return "summarize_knowledge"
         if self._has(text, self._learning_path_patterns):
             return "learning_advice"
+        if self.is_rubric_generation_request(text):
+            return "general_qa"
+        # Explicit paper retrieval is a higher-level workflow than writing:
+        # a request may contain words such as "写" or "报告" inside citation
+        # constraints without asking the system to draft prose.
+        if is_academic_search_request(text):
+            return "academic_search"
         if self._has(text, self._writing_patterns) and self._has(
             text, self._data_patterns
         ):

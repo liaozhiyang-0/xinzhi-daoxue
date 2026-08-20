@@ -30,14 +30,43 @@ from app.services.model_service import ModelService
 COURSE_KEYWORDS: tuple[tuple[CourseCode, tuple[str, ...]], ...] = (
     (CourseCode.CT, ("电路", "节点电压", "网孔", "戴维南", "电容电压", "相量")),
     (CourseCode.AE, ("模电", "模拟电子", "运放", "三极管", "放大电路")),
-    (CourseCode.DE, ("数电", "数字电子", "逻辑门", "触发器", "卡诺图")),
-    (CourseCode.SS, ("信号与系统", "卷积", "拉普拉斯变换")),
-    (CourseCode.DSP, ("数字信号处理", "离散傅里叶", "z变换", "滤波器")),
-    (CourseCode.COMM, ("通信原理", "调制", "解调", "信道编码")),
-    (CourseCode.RF, ("高频电子", "谐振放大", "混频")),
-    (CourseCode.EM, ("电磁场", "电磁波", "麦克斯韦")),
-    (CourseCode.INFO, ("信息论", "信源编码", "信道容量")),
-    (CourseCode.EMBEDDED, ("嵌入式", "单片机", "微控制器")),
+    (
+        CourseCode.DE,
+        (
+            "数电",
+            "数字电子",
+            "逻辑门",
+            "逻辑式",
+            "逻辑函数",
+            "真值表",
+            "布尔",
+            "触发器",
+            "卡诺图",
+            "Verilog",
+        ),
+    ),
+    (
+        CourseCode.SS,
+        ("信号与系统", "卷积", "拉普拉斯变换", "系统函数", "连续时间"),
+    ),
+    (
+        CourseCode.DSP,
+        ("数字信号处理", "离散傅里叶", "z变换", "滤波器", "采样定理", "频谱"),
+    ),
+    (
+        CourseCode.COMM,
+        ("通信原理", "通信系统", "调制", "解调", "信道编码", "误码率", "信噪比"),
+    ),
+    (CourseCode.RF, ("高频电子", "高频电子线路", "谐振放大", "混频")),
+    (
+        CourseCode.EM,
+        ("电磁场", "电磁波", "麦克斯韦", "电场强度", "磁场强度"),
+    ),
+    (CourseCode.INFO, ("信息论", "信源编码", "信道容量", "熵")),
+    (
+        CourseCode.EMBEDDED,
+        ("嵌入式", "单片机", "微控制器", "中断服务", "定时器"),
+    ),
     (CourseCode.IC, ("集成电路", "芯片设计", "版图")),
 )
 
