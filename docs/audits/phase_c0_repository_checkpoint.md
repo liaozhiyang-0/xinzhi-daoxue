@@ -1,6 +1,6 @@
 # Phase C0 Repository Checkpoint
 
-Date: 2026-08-22  
+Date: 2026-08-22
 Scope: Phase C Skill Framework
 
 ## Git checkpoint
