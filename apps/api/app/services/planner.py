@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Literal
 
-from app.contracts import AgentRequest, RouteDecision
+from app.contracts import (
+    AgentRequest,
+    RouteDecision,
+)
+from app.contracts.experience import ExperienceInfluence, ExperienceRetrievalQuery
 from app.contracts.intent import IntentExecutionPlan
 from app.contracts.planner import (
     CanonicalPlan,
@@ -18,6 +22,7 @@ from app.contracts.planner import (
 )
 from app.core.config import Settings
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
+from app.services.experience_memory import ExperiencePlannerPrior
 from app.services.intent_plan import IntentPlanCompiler
 from app.services.skill_policy import SkillPolicy
 from app.services.skill_registry import SkillRegistry
@@ -29,6 +34,14 @@ class PlannerOutput:
     snapshot: PlannerSnapshot
     route: RouteDecision
     canonical_plan: CanonicalPlan
+
+
+@dataclass(frozen=True, slots=True)
+class PlannerExperienceShadow:
+    """Baseline Planner output plus a non-executing Experience shadow."""
+
+    baseline: PlannerOutput
+    influence: ExperienceInfluence
 
 
 class GoalInterpreter:
@@ -191,6 +204,57 @@ class PlannerService:
             route=route,
             canonical_plan=canonical_plan,
         )
+
+    async def build_shadow_with_experience(
+        self,
+        request: AgentRequest,
+        route: RouteDecision,
+        *,
+        settings: Settings,
+        prior: ExperiencePlannerPrior,
+        intent_plan: IntentExecutionPlan | None = None,
+    ) -> PlannerExperienceShadow:
+        """Compare a bounded experience prior without changing execution.
+
+        The synchronous ``build`` remains the sole baseline planner path.
+        This async companion is an explicit shadow seam for evaluation and
+        keeps Task creation and Runtime execution provider-free.
+        """
+
+        baseline = self.build(
+            request,
+            route,
+            settings=settings,
+            intent_plan=intent_plan,
+            mode="shadow",
+        )
+        snapshot = baseline.snapshot
+        query = ExperienceRetrievalQuery(
+            course_id=snapshot.course,
+            capability_id=snapshot.selected_capability,
+            problem_type=str(route.intent_recognition.get("problem_type", "")),
+            selected_skill_ids=list(snapshot.selected_skills),
+            selected_tool_ids=list(snapshot.selected_tools),
+            risk_level=str(request.options.get("risk_level", "low")),
+            planner_version=snapshot.planner_version,
+            user_id=(
+                str(request.options.get("user_id"))
+                if request.options.get("user_id")
+                else None
+            ),
+        )
+        influence = await prior.shadow(
+            snapshot.canonical_plan.model_dump(mode="json")
+            if snapshot.canonical_plan is not None
+            else {},
+            query,
+            preflight_result={
+                "route_status": route.route_status.value,
+                "route_source": route.route_source,
+                "baseline_plan_id": baseline.canonical_plan.plan_id,
+            },
+        )
+        return PlannerExperienceShadow(baseline=baseline, influence=influence)
 
     def _select_skills(
         self,

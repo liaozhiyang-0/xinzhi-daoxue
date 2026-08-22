@@ -408,6 +408,90 @@ class MemoryModel(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class ExperienceRecordModel(Base):
+    """One governed store for success, failure, and strategy experience.
+
+    This table is intentionally separate from ``memories``.  Experience
+    lifecycle and promotion are not user-memory semantics.
+    """
+
+    __tablename__ = "experience_records"
+    __table_args__ = (
+        Index(
+            "ix_experience_records_lifecycle_scope",
+            "lifecycle_status",
+            "scope",
+        ),
+        Index(
+            "ix_experience_records_course_capability",
+            "course_id",
+            "capability_id",
+        ),
+        Index(
+            "ix_experience_records_owner_lifecycle",
+            "scope_owner_id",
+            "lifecycle_status",
+        ),
+        Index(
+            "ix_experience_records_expiry",
+            "lifecycle_status",
+            "expires_at",
+        ),
+    )
+
+    experience_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    record_version: Mapped[int] = mapped_column(Integer, default=1)
+    experience_type: Mapped[str] = mapped_column(String(32), index=True)
+    lifecycle_status: Mapped[str] = mapped_column(String(32), index=True)
+    scope: Mapped[str] = mapped_column(String(32), index=True)
+    scope_owner_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, index=True
+    )
+    course_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    capability_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    skill_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    skill_versions: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    tool_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tool_versions: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    planner_version: Mapped[str] = mapped_column(String(64), default="")
+    plan_signature: Mapped[str] = mapped_column(String(128), default="")
+    model_versions: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    input_feature_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    problem_type: Mapped[str] = mapped_column(String(128), default="")
+    risk_level: Mapped[str] = mapped_column(String(32), default="low")
+    strategy_summary: Mapped[str] = mapped_column(Text, default="")
+    failure_stage: Mapped[str] = mapped_column(String(128), default="")
+    error_codes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    verification_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    reflection_result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    outcome_metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence_level: Mapped[str] = mapped_column(String(64), index=True)
+    source_trace_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    source_run_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    source_eval_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    supersedes: Mapped[str | None] = mapped_column(
+        String(80), nullable=True, index=True
+    )
+    conflicts_with: Mapped[list[str]] = mapped_column(JSON, default=list)
+    privacy_class: Mapped[str] = mapped_column(String(64))
+    redaction_status: Mapped[str] = mapped_column(String(32), default="required")
+    promotion_provenance: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    applicability: Mapped[list[str]] = mapped_column(JSON, default=list)
+    counterexamples: Mapped[list[str]] = mapped_column(JSON, default=list)
+    failure_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    forgotten_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class FileModel(Base):
     __tablename__ = "files"
 

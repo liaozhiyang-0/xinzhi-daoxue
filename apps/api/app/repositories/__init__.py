@@ -4,6 +4,7 @@ from app.repositories.agent_runtime import (
 )
 from app.repositories.artifacts import ArtifactRepository
 from app.repositories.conversations import ConversationRepository
+from app.repositories.experience_memory import ExperienceRecordRepository
 from app.repositories.files import FileRepository
 from app.repositories.learning import LearningRecordRepository
 from app.repositories.memories import MemoryRepository
@@ -19,6 +20,7 @@ __all__ = [
     "AgentRunRepository",
     "ConversationRepository",
     "FileRepository",
+    "ExperienceRecordRepository",
     "LearningRecordRepository",
     "MemoryRepository",
     "RuntimeContextRepository",

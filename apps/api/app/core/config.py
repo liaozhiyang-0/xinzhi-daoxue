@@ -531,6 +531,20 @@ class Settings(BaseSettings):
     reflection_canary_agent_ids: str = ""
     reflection_critic_budget_tokens: int = Field(default=512, ge=128, le=4096)
     reflection_critic_budget_ms: int = Field(default=3000, ge=250, le=120000)
+    # Phase E Experience prior.  Retrieval remains shadow-only unless all
+    # gates are explicitly enabled by an operator.
+    experience_planner_prior_enabled: bool = False
+    experience_planner_capability_allowlist: str = ""
+    experience_planner_minimum_evidence: Literal[
+        "synthetic_provider_free",
+        "offline_real_case",
+        "real_provider_test",
+        "controlled_canary",
+        "production",
+    ] = "offline_real_case"
+    experience_planner_max_influence_weight: float = Field(
+        default=0.15, ge=0, le=1
+    )
 
     @field_validator("log_level")
     @classmethod
