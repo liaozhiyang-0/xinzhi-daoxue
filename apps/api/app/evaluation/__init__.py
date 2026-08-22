@@ -4,6 +4,25 @@ from app.evaluation.contracts import (
     FailureStage,
 )
 from app.evaluation.loader import EvaluationCaseLoader
+from app.evaluation.loop import (
+    EvaluationLoop,
+    EvaluationLoopSummary,
+    EvaluationRecord,
+    EvaluationRecordAdapter,
+    FailureAttribution,
+    FailureAttributor,
+    FailurePattern,
+    FailurePatternAggregator,
+    FailureRecord,
+    ImprovementProposal,
+    ImprovementProposalService,
+    LoopFailureStage,
+    OfflineReplayService,
+    PromotionDecision,
+    PromotionGovernance,
+    ReplayPolicy,
+    ReplayResult,
+)
 from app.evaluation.runner import EvaluationRunner
 
 __all__ = [
@@ -12,4 +31,21 @@ __all__ = [
     "EvaluationResult",
     "EvaluationRunner",
     "FailureStage",
+    "EvaluationLoop",
+    "EvaluationLoopSummary",
+    "EvaluationRecord",
+    "EvaluationRecordAdapter",
+    "FailureAttribution",
+    "FailureAttributor",
+    "FailurePattern",
+    "FailurePatternAggregator",
+    "FailureRecord",
+    "ImprovementProposal",
+    "ImprovementProposalService",
+    "LoopFailureStage",
+    "OfflineReplayService",
+    "PromotionDecision",
+    "PromotionGovernance",
+    "ReplayPolicy",
+    "ReplayResult",
 ]

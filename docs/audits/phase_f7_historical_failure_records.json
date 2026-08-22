@@ -1,0 +1,122 @@
+[
+  {
+    "evaluation_id": "hist_eval_CT-C01-Q01",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "CT-C01-Q01",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "CT",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  },
+  {
+    "evaluation_id": "hist_eval_KB-CT-11-13",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "KB-CT-11-13",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "CT",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  },
+  {
+    "evaluation_id": "hist_eval_AE-10-1-2",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "AE-10-1-2",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "AE",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  },
+  {
+    "evaluation_id": "hist_eval_DE-3-2-11",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "DE-3-2-11",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "DE",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  },
+  {
+    "evaluation_id": "hist_eval_SS-C03-Q05",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "SS-C03-Q05",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "SS",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  },
+  {
+    "evaluation_id": "hist_eval_KB-DSP-3-16",
+    "suite_id": "phase_e_historical_timeout",
+    "case_id": "KB-DSP-3-16",
+    "evidence_level": "offline_real_case",
+    "task_family": "ACADEMIC_SOLVING",
+    "course": "DSP",
+    "capability": "academic_solver",
+    "expected_outcome": {"status": "completed"},
+    "actual_outcome": {
+      "result_status": "timeout",
+      "historical_source": "docs/optimization/targeted_solver_test_report_v1.md"
+    },
+    "overall_score": 0,
+    "status": "timeout",
+    "failure_stage": "infrastructure",
+    "failure_codes": ["timeout"],
+    "latency_ms": 180000,
+    "reproducible": false
+  }
+]
