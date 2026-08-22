@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, cast
 
 from app.contracts import AgentExecutionPlan, RouteDecision
@@ -9,6 +10,7 @@ from app.contracts.planner import (
     CanonicalPlan,
     CanonicalPlanNode,
     PlannerBudget,
+    SkillExecutionDescriptor,
 )
 from app.runtime import AgentRunPlan, RuntimeGoal, RuntimeNode
 
@@ -127,6 +129,7 @@ class CanonicalPlanAdapter:
                 constraints=dict(goal.constraints),
                 context_requirements=list(goal.required_capabilities),
             ),
+            skill_bindings=_skill_bindings_from_context(goal),
             nodes=[
                 CanonicalPlanNode(
                     node_id=node.node_id,
@@ -220,7 +223,14 @@ class CanonicalPlanAdapter:
         plan: CanonicalPlan,
         *,
         handler_prefix: str = "workflow",
+        skill_bindings: Sequence[SkillExecutionDescriptor] | None = None,
     ) -> AgentRunPlan:
+        bindings = {
+            item.skill_id: item
+            for item in (
+                skill_bindings if skill_bindings is not None else plan.skill_bindings
+            )
+        }
         goal = RuntimeGoal(
             objective=plan.goal.objective or "runtime task",
             success_criteria=list(plan.success_criteria),
@@ -230,6 +240,9 @@ class CanonicalPlanAdapter:
             context={
                 "canonical_plan_version": plan.version,
                 "canonical_plan_source": plan.source,
+                "skill_bindings": [
+                    item.model_dump(mode="json") for item in bindings.values()
+                ],
             },
             source="canonical_plan",
         )
@@ -239,16 +252,10 @@ class CanonicalPlanAdapter:
             goal=goal.objective,
             goal_contract=goal,
             nodes=[
-                RuntimeNode(
-                    node_id=node.node_id,
-                    node_type=node.node_type,
-                    handler_id=f"{handler_prefix}.{node.target_id}",
-                    target_id=node.target_id,
-                    depends_on=list(node.depends_on),
-                    parallel_group=node.parallel_group,
-                    timeout_ms=node.timeout_ms,
-                    max_retries=node.max_retries,
-                    optional=node.optional,
+                _runtime_node(
+                    node,
+                    bindings=bindings,
+                    handler_prefix=handler_prefix,
                 )
                 for node in plan.nodes
             ],
@@ -291,4 +298,56 @@ def _canonical_node_type(value: str) -> str:
         value
         if value in {"agent", "tool", "skill", "retrieval", "verifier", "compose"}
         else "tool"
+    )
+
+
+def _skill_bindings_from_context(
+    goal: RuntimeGoal,
+) -> list[SkillExecutionDescriptor]:
+    raw_bindings = goal.context.get("skill_bindings", [])
+    if not isinstance(raw_bindings, list):
+        return []
+    bindings: list[SkillExecutionDescriptor] = []
+    for item in raw_bindings:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            bindings.append(SkillExecutionDescriptor.model_validate(item))
+        except ValueError:
+            continue
+    return bindings
+
+
+def _runtime_node(
+    node: CanonicalPlanNode,
+    *,
+    bindings: Mapping[str, SkillExecutionDescriptor],
+    handler_prefix: str,
+) -> RuntimeNode:
+    binding = bindings.get(node.target_id) if node.node_type == "skill" else None
+    if binding is None:
+        return RuntimeNode(
+            node_id=node.node_id,
+            node_type=node.node_type,
+            handler_id=f"{handler_prefix}.{node.target_id}",
+            target_id=node.target_id,
+            depends_on=list(node.depends_on),
+            parallel_group=node.parallel_group,
+            timeout_ms=node.timeout_ms,
+            max_retries=node.max_retries,
+            optional=node.optional,
+        )
+    return RuntimeNode(
+        node_id=node.node_id,
+        node_type=binding.handler_kind,
+        handler_id=binding.handler_id,
+        target_id=binding.target_id or node.target_id,
+        depends_on=list(node.depends_on),
+        parallel_group=node.parallel_group,
+        timeout_ms=min(node.timeout_ms, binding.max_timeout_ms),
+        max_retries=node.max_retries,
+        optional=node.optional,
+        skill_id=binding.skill_id,
+        skill_version=binding.version,
+        skill_binding_id=binding.binding_id,
     )

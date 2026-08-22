@@ -192,6 +192,14 @@ class PlanExecutor:
                 raise RuntimeNodeError(
                     "observation_node_mismatch", "Runtime observation node_id 不匹配"
                 )
+            if node.skill_id:
+                result = result.model_copy(
+                    update={
+                        "skill_id": node.skill_id,
+                        "skill_version": node.skill_version,
+                        "skill_binding_id": node.skill_binding_id,
+                    }
+                )
             return result
 
         gathered = await _gather_with_exceptions(

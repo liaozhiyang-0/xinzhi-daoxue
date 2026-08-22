@@ -69,6 +69,30 @@ class PlannerSkillSelection(BaseModel):
     reason_codes: list[str] = Field(default_factory=list, max_length=16)
 
 
+class SkillBinding(BaseModel):
+    """A reviewed mapping from one registered Skill to an existing handler."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    binding_id: str = Field(min_length=1, max_length=160)
+    skill_id: str = Field(min_length=1, max_length=128)
+    version: str = Field(min_length=1, max_length=32)
+    handler_id: str = Field(min_length=1, max_length=160)
+    operation: str = Field(min_length=1, max_length=160)
+    target_id: str = Field(default="", max_length=160)
+
+
+class SkillExecutionDescriptor(SkillBinding):
+    """Runtime policy copied from the resolved existing Handler descriptor."""
+
+    handler_kind: Literal["tool", "agent", "provider", "subagent", "workflow"]
+    risk_level: Literal["low", "medium", "high", "critical"] = "low"
+    requires_approval: bool = False
+    side_effecting: bool = False
+    replay_safe: bool = True
+    max_timeout_ms: int = Field(default=900_000, ge=100, le=900_000)
+
+
 class CanonicalPlan(BaseModel):
     """The single future plan vocabulary between planning and Runtime adapters."""
 
@@ -82,6 +106,9 @@ class CanonicalPlan(BaseModel):
     selected_agents: list[str] = Field(default_factory=list, max_length=32)
     selected_skills: list[str] = Field(default_factory=list, max_length=32)
     skill_selection: list[PlannerSkillSelection] = Field(
+        default_factory=list, max_length=32
+    )
+    skill_bindings: list[SkillExecutionDescriptor] = Field(
         default_factory=list, max_length=32
     )
     skill_selection_status: Literal[

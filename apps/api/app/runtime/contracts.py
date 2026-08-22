@@ -279,6 +279,9 @@ class RuntimeNode(BaseModel):
     max_retries: int = Field(default=0, ge=0, le=5)
     optional: bool = False
     input_artifact_ids: list[str] = Field(default_factory=list, max_length=100)
+    skill_id: str = Field(default="", max_length=128)
+    skill_version: str = Field(default="", max_length=32)
+    skill_binding_id: str = Field(default="", max_length=160)
 
 
 class AgentRunPlan(BaseModel):
@@ -374,6 +377,9 @@ class RuntimeObservation(BaseModel):
     warnings: list[str] = Field(default_factory=list, max_length=32)
     errors: list[str] = Field(default_factory=list, max_length=32)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    skill_id: str = Field(default="", max_length=128)
+    skill_version: str = Field(default="", max_length=32)
+    skill_binding_id: str = Field(default="", max_length=160)
 
 
 class RuntimeDecision(BaseModel):
@@ -405,6 +411,9 @@ class RuntimeNodeState(BaseModel):
     effect_status: RuntimeEffectStatus = RuntimeEffectStatus.NOT_STARTED
     observation: RuntimeObservation | None = None
     error_code: str = ""
+    skill_id: str = Field(default="", max_length=128)
+    skill_version: str = Field(default="", max_length=32)
+    skill_binding_id: str = Field(default="", max_length=160)
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -466,9 +475,22 @@ class AgentRun(BaseModel):
         expected = set(expected_node_ids)
         if not self.nodes:
             self.nodes = {
-                node_id: RuntimeNodeState(node_id=node_id)
-                for node_id in expected_node_ids
+                node.node_id: RuntimeNodeState(
+                    node_id=node.node_id,
+                    skill_id=node.skill_id,
+                    skill_version=node.skill_version,
+                    skill_binding_id=node.skill_binding_id,
+                )
+                for node in self.plan.nodes
             }
         elif set(self.nodes) != expected:
             raise ValueError("run node state does not match its plan")
+        else:
+            for node in self.plan.nodes:
+                state = self.nodes[node.node_id]
+                state.skill_id = state.skill_id or node.skill_id
+                state.skill_version = state.skill_version or node.skill_version
+                state.skill_binding_id = (
+                    state.skill_binding_id or node.skill_binding_id
+                )
         return self

@@ -150,6 +150,8 @@ from app.contracts.planner import (
     PlannerPlanShape,
     PlannerRouteProjection,
     PlannerSnapshot,
+    SkillBinding,
+    SkillExecutionDescriptor,
 )
 from app.contracts.research import (
     ResearchBriefDraft,
@@ -271,6 +273,8 @@ __all__ = [
     "PlannerPlanShape",
     "PlannerRouteProjection",
     "PlannerSnapshot",
+    "SkillBinding",
+    "SkillExecutionDescriptor",
     "IntentExecutionPlan",
     "IntentRecognition",
     "PlanNode",
