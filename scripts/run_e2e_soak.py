@@ -23,7 +23,14 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = ROOT / "evaluation" / "reports" / "e2e-soak.jsonl"
-TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+TERMINAL_STATUSES = {
+    "completed",
+    "failed",
+    "cancelled",
+    "waiting_review",
+    "waiting_user",
+    "waiting_input",
+}
 LOGGER = logging.getLogger("xzd.e2e_soak")
 
 
