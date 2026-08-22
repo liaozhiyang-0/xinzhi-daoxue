@@ -525,6 +525,12 @@ class Settings(BaseSettings):
     planner_takeover_enabled: bool = False
     planner_canary_agent_ids: str = ""
     planner_canary_scenario_ids: str = ""
+    # Phase D Reflection controls. Both paths remain disabled unless explicitly enabled.
+    reflection_shadow_enabled: bool = False
+    reflection_revision_enabled: bool = False
+    reflection_canary_agent_ids: str = ""
+    reflection_critic_budget_tokens: int = Field(default=512, ge=128, le=4096)
+    reflection_critic_budget_ms: int = Field(default=3000, ge=250, le=120000)
 
     @field_validator("log_level")
     @classmethod

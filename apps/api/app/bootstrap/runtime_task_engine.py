@@ -42,6 +42,16 @@ from app.services.lesson_prep_runtime import LessonPrepRuntimeService
 from app.services.math_formatting_service import MathFormattingService
 from app.services.overall_routing import OverallRoutingService
 from app.services.rag_retrieval import RAGRetrievalService
+from app.services.reflection_policy import (
+    ReflectionPolicy,
+    ReflectionPolicyConfig,
+    parse_agent_allowlist,
+)
+from app.services.reflection_service import (
+    InternalCriticWorker,
+    InternalRevisionWorker,
+    ReflectionService,
+)
 from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.research_knowledge import ResearchKnowledgeService
@@ -300,6 +310,30 @@ def build_runtime_task_engine(
         course_registry=course_registry,
         teaching_foundation=teaching_foundation,
     )
+    reflection_worker = (
+        InternalCriticWorker(internal_agents.hub)
+        if internal_agents is not None
+        else None
+    )
+    reflection = ReflectionService(
+        ReflectionPolicy(
+            ReflectionPolicyConfig(
+                shadow_enabled=settings.reflection_shadow_enabled,
+                revision_enabled=settings.reflection_revision_enabled,
+                allowed_agent_ids=parse_agent_allowlist(
+                    settings.reflection_canary_agent_ids
+                ),
+                critic_budget_tokens=settings.reflection_critic_budget_tokens,
+                critic_budget_ms=settings.reflection_critic_budget_ms,
+            )
+        ),
+        critic=reflection_worker,
+        reviser=(
+            InternalRevisionWorker(reflection_worker)
+            if reflection_worker is not None
+            else None
+        ),
+    )
     presentation = TaskResultPresentationService(
         BusinessResultRendererRegistry(),
         MathFormattingService(),
@@ -361,6 +395,7 @@ def build_runtime_task_engine(
                 progress,
                 post_processing,
                 plan_proposals_enabled=settings.agent_runtime_plan_proposals_enabled,
+                reflection=reflection,
             ),
             task_leases=leases,
             external_retrieval_gateway=external_gateway,

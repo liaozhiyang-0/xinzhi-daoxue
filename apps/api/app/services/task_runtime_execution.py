@@ -12,6 +12,7 @@ from app.contracts import (
 )
 from app.core.errors import NotConfiguredError, ProviderCancelledError
 from app.runtime import RuntimeNodeError, RuntimeRunStatus
+from app.services.reflection_service import ReflectionService
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.runtime_persistence_hooks import RuntimePersistenceHooks
@@ -44,6 +45,7 @@ class TaskRuntimeExecutionService:
         post_processing: TaskPostProcessingService,
         *,
         plan_proposals_enabled: bool,
+        reflection: ReflectionService | None = None,
     ) -> None:
         self.runtime_boundary = runtime_boundary
         self.runtime_hooks = runtime_hooks
@@ -51,6 +53,7 @@ class TaskRuntimeExecutionService:
         self.progress = progress
         self.post_processing = post_processing
         self.plan_proposals_enabled = plan_proposals_enabled
+        self.reflection = reflection
 
     async def execute(
         self,
@@ -113,6 +116,24 @@ class TaskRuntimeExecutionService:
             intent_plan=prepared.intent_plan,
             overall_route_metadata=prepared.route_metadata,
         )
+        if self.reflection is not None:
+            reflected = await self.reflection.apply(
+                agent_id=prepared.agent_id,
+                request=request,
+                result=governed.result,
+                validation=governed.validation,
+                reverify=lambda revised: self.result_pipeline.reverify(
+                    definition=prepared.agent_definition,
+                    agent_id=prepared.agent_id,
+                    request=request,
+                    result=revised,
+                ),
+            )
+            governed = governed.__class__(
+                reflected.result,
+                reflected.validation,
+                governed.routing,
+            )
         await self.progress.append(
             request.task_id,
             prepared.agent_id,

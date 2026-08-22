@@ -153,6 +153,14 @@ from app.contracts.planner import (
     SkillBinding,
     SkillExecutionDescriptor,
 )
+from app.contracts.reflection import (
+    CriticResult,
+    ReflectionDecision,
+    ReflectionMetrics,
+    ReflectionTrace,
+    RevisionProposal,
+    RevisionRequest,
+)
 from app.contracts.research import (
     ResearchBriefDraft,
     ResearchFinding,
@@ -414,4 +422,10 @@ __all__ = [
     "MemoryStatus",
     "MemoryType",
     "MemoryUpdate",
+    "CriticResult",
+    "ReflectionDecision",
+    "ReflectionMetrics",
+    "ReflectionTrace",
+    "RevisionProposal",
+    "RevisionRequest",
 ]

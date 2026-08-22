@@ -22,6 +22,7 @@ from app.agents.internal.contracts import (
     VisionExtraction,
 )
 from app.contracts import ImageInput, ModelResponse, ModelUsage
+from app.contracts.reflection import CriticResult, RevisionProposal
 from app.contracts.research import ResearchBriefDraft, ResearchIntentDecision
 from app.core.errors import InvalidModelRequestError, ModelProviderError
 from app.services.model_service import ModelService
@@ -38,6 +39,29 @@ class InternalAgentDefinition:
 
 
 INTERNAL_AGENT_DEFINITIONS = (
+    InternalAgentDefinition(
+        "REFLECTION_CRITIC_LOCAL_V1",
+        "reflection_critic",
+        "只读已有草稿、证据和工具观察的内部 Reflection Critic",
+        (
+            "你是芯智导学的内部答案审核器，不是公开Agent。只能检查输入中的草稿、"
+            "已有evidence_refs、工具观察和确定性校验结果。不得补造事实、引用或工具结果。"
+            "只输出CriticResult；如果没有明确问题输出pass；如果问题可由已有证据支持的局部修改"
+            "解决输出revise；证据不足或无法安全修改输出needs_review或fail。"
+        ),
+        CriticResult,
+    ),
+    InternalAgentDefinition(
+        "REFLECTION_REVISION_LOCAL_V1",
+        "reflection_revision",
+        "只执行一次、仅按 CriticResult 约束修改草稿的内部 Revision Worker",
+        (
+            "你是芯智导学的内部受限修订器。只能修改CriticResult.required_changes明确指出的"
+            "答案或业务字段；必须保留所有引用、工具结果、证据ID、确定性校验观察和任务范围。"
+            "不得新增输入中不存在的事实。只输出RevisionProposal；无法安全修订时输出failed。"
+        ),
+        RevisionProposal,
+    ),
     InternalAgentDefinition(
         "OVERALL_ROUTER_LOCAL_V1",
         "overall_routing",

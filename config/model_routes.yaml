@@ -1,4 +1,16 @@
 routes:
+  reflection_critic:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {temperature: 0.0, max_tokens: 512}
+  reflection_revision:
+    primary: qwen_text_fast
+    fallback: qwen_vision_primary
+    max_retries: 0
+    fallback_on_timeout: false
+    options: {temperature: 0.0, max_tokens: 768}
   overall_routing:
     primary: qwen_text_fast
     max_retries: 0

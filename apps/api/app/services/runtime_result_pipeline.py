@@ -131,6 +131,34 @@ class RuntimeResultPipeline:
         )
         return GovernedRuntimeResult(result, validation, routing)
 
+    def reverify(
+        self,
+        *,
+        definition: AgentDefinition,
+        agent_id: str,
+        request: AgentRequest,
+        result: AgentResult,
+    ) -> GovernedRuntimeResult:
+        """Re-run existing deterministic gates after one bounded revision.
+
+        Reflection may propose a changed draft, but it does not get a second
+        publication path.  This method intentionally skips model-producing
+        enrichment and reuses the existing solver, scenario, and result
+        validators before the caller can commit anything.
+        """
+
+        checked = self._apply_solver_quality_gate(result, request, agent_id)
+        checked = self.scenario_contract.enrich(checked, request)
+        validation = self.validators.validate(definition, checked, request, None)
+        structured = dict(checked.structured_result)
+        structured["validation"] = validation.model_dump(mode="json")
+        structured["result_status"] = validation.result_status
+        return GovernedRuntimeResult(
+            checked.model_copy(update={"structured_result": structured}),
+            validation,
+            {},
+        )
+
     @staticmethod
     def _ensure_response_depth_metadata(
         result: AgentResult, request: AgentRequest, agent_id: str
