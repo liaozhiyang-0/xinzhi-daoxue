@@ -60,8 +60,6 @@ def clean_checkout_fixtures() -> None:
                 "source_path": "CT/fixtures/ct.md",
                 "parse_status": "parsed",
                 "quality_status": "review",
-                "ocr_status": "complete",
-                "ocr_confidence": 0.95,
                 "manual_review_required": False,
             },
             {
@@ -71,8 +69,6 @@ def clean_checkout_fixtures() -> None:
                 "source_path": "AE/fixtures/ae.md",
                 "parse_status": "parsed",
                 "quality_status": "review",
-                "ocr_status": "complete",
-                "ocr_confidence": 0.95,
                 "manual_review_required": False,
             },
         )
