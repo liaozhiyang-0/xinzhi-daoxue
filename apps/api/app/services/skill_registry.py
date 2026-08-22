@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import re
 from pathlib import Path
 from time import perf_counter
@@ -161,8 +162,8 @@ class SkillRegistry:
         self,
         skill_id: str,
         *,
-        available_skill_ids: list[str] | tuple[str, ...] = (),
-    ) -> tuple[bool, list[str]]:
+        available_skill_ids: builtins.list[str] | tuple[str, ...] = (),
+    ) -> tuple[bool, builtins.list[str]]:
         """Return whether all direct prerequisites are available and registered."""
 
         skill = self.resolve(skill_id)
@@ -178,8 +179,8 @@ class SkillRegistry:
         *,
         course_id: str,
         problem_type: str | None = None,
-        capability_ids: list[str] | tuple[str, ...] = (),
-        terms: list[str] | tuple[str, ...] = (),
+        capability_ids: builtins.list[str] | tuple[str, ...] = (),
+        terms: builtins.list[str] | tuple[str, ...] = (),
     ) -> SkillMappingResult:
         started = perf_counter()
         course = course_id.upper()

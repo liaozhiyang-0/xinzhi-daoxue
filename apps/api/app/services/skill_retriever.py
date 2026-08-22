@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -128,7 +128,7 @@ class SkillRetriever:
         self,
         skill: SkillDefinition,
         request: SkillRetrievalRequest,
-    ) -> str:
+    ) -> Literal["satisfied", "missing", "unknown"]:
         if not skill.prerequisites:
             return "satisfied"
         satisfied, _ = self.registry.validate_prerequisites(

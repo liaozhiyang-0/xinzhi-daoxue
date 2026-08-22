@@ -1297,6 +1297,7 @@ class InternalAgentExecutionService:
             minutes for item in flow if (minutes := _duration_minutes(item)) is not None
         ]
         planned_duration = sum(planned_durations) if planned_durations else None
+        duration_check: dict[str, Any]
         if requested_duration is None:
             duration_check = {"status": "not_requested"}
         elif planned_duration is None:
