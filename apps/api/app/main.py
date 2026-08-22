@@ -58,6 +58,7 @@ from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from app.services.next_check_question import NextCheckQuestionService
 from app.services.overall_routing import OverallRoutingService
+from app.services.planner import PlannerService
 from app.services.rag_debug import RAGDebugService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.rag_runtime import (
@@ -143,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
         model_tracer,
     )
+    planner = PlannerService()
     course_registry = default_course_registry()
     capability_registry = default_capability_registry()
     skill_registry = SkillRegistry(course_registry, capability_registry)
@@ -391,6 +393,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         provider=provider,
         development_mock_provider=development_mock_provider,
         agent_contract_results={},
+        planner=planner,
         agent_registry=agent_registry,
         task_router=task_router,
         trace_store=trace_store,

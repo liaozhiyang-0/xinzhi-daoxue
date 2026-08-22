@@ -93,7 +93,10 @@ class Settings(BaseSettings):
     qwen_vision_high_resolution: bool = True
 
     # A single fast model call may refine the deterministic route before execution.
-    overall_routing_enabled: bool = True
+    # Overall Router is an explicit legacy compatibility switch after Phase B.
+    # Planner/TaskRouter own the default control path; opt-in is retained for
+    # rollback and older deployments that still need the second-pass route.
+    overall_routing_enabled: bool = False
     overall_routing_timeout_seconds: float = Field(default=10, gt=0, le=30)
     overall_routing_max_tokens: int = Field(default=160, ge=64, le=512)
     overall_routing_skip_confidence_threshold: float = Field(
@@ -517,6 +520,11 @@ class Settings(BaseSettings):
     agent_runtime_semantic_evidence: str = ""
     agent_runtime_release_authorizations: str = ""
     agent_runtime_release_gate_required: bool = True
+    # Phase B Planner controls. All remain disabled unless explicitly enabled.
+    planner_shadow_enabled: bool = False
+    planner_takeover_enabled: bool = False
+    planner_canary_agent_ids: str = ""
+    planner_canary_scenario_ids: str = ""
 
     @field_validator("log_level")
     @classmethod

@@ -22,6 +22,7 @@ from app.services.evaluation_attachment_cleanup import (
 )
 from app.services.event_service import append_task_event
 from app.services.intent_plan import IntentPlanCompiler
+from app.services.planner import PlannerService, PlannerSnapshot
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
 from app.services.teaching_input import normalize_teaching_options
@@ -29,13 +30,18 @@ from app.services.teaching_input import normalize_teaching_options
 
 class TaskCreationService:
     def __init__(
-        self, db: AsyncSession, provider_name: str, settings: Settings | None = None
+        self,
+        db: AsyncSession,
+        provider_name: str,
+        settings: Settings | None = None,
+        planner: PlannerService | None = None,
     ) -> None:
         self.db = db
         self.provider_name = provider_name
         self.settings = settings or Settings()
         self.repository = TaskRepository(db)
         self.plan_compiler = IntentPlanCompiler()
+        self.planner = planner or PlannerService(self.plan_compiler)
 
     async def create_queued(
         self,
@@ -60,6 +66,46 @@ class TaskCreationService:
                 details={"session_id": request.session_id},
             )
         request = SessionContextService(self.settings).apply(session, request)
+        planner_snapshot: PlannerSnapshot | None = None
+        if self.planner.shadow_enabled(self.settings) or self.planner.takeover_allowed(
+            request, self.settings
+        ):
+            try:
+                planner_output = self.planner.build(
+                    request,
+                    route,
+                    settings=self.settings,
+                    intent_plan=intent_plan,
+                    mode=(
+                        "takeover"
+                        if self.planner.takeover_allowed(request, self.settings)
+                        else "shadow"
+                    ),
+                )
+                planner_snapshot = planner_output.snapshot
+                if planner_snapshot.mode == "takeover":
+                    route = self.planner.takeover_route(route)
+                    request = self._with_route_context(request, route)
+                    intent_plan = self.plan_compiler.compile(request, route)
+                    request = self._with_intent_plan(request, intent_plan)
+                    # Rebind the immutable Planner snapshot to the accepted
+                    # route revision; this keeps route/plan lineage aligned
+                    # without invoking a second intelligent router.
+                    planner_snapshot = self.planner.build(
+                        request,
+                        route,
+                        settings=self.settings,
+                        intent_plan=intent_plan,
+                        mode="takeover",
+                    ).snapshot
+            except Exception as exc:
+                planner_snapshot = self.planner.failed_snapshot(
+                    request,
+                    route,
+                    error_type=type(exc).__name__,
+                )
+            if planner_snapshot is not None:
+                request = self._with_planner_snapshot(request, planner_snapshot)
         idempotency_key = str(request.options.get("idempotency_key", "")).strip()
         if idempotency_key:
             if not 8 <= len(idempotency_key) <= 128:
@@ -162,12 +208,17 @@ class TaskCreationService:
             agent_id=route.agent_id,
             data=route.intent_recognition,
         )
+        plan_event_data = intent_plan.model_dump(mode="json")
+        if planner_snapshot is not None:
+            plan_event_data["planner_snapshot"] = planner_snapshot.model_dump(
+                mode="json"
+            )
         await append_task_event(
             self.db,
             task.id,
             AgentEventType.PLAN_CREATED,
             agent_id=route.agent_id,
-            data=intent_plan.model_dump(mode="json"),
+            data=plan_event_data,
         )
         if intent_plan.selected_skills:
             await append_task_event(
@@ -269,6 +320,14 @@ class TaskCreationService:
         options["intent_capabilities"] = list(plan.capabilities)
         options["selected_tools"] = list(plan.selected_tools)
         options["selected_skills"] = list(plan.selected_skills)
+        return request.model_copy(update={"options": options})
+
+    @staticmethod
+    def _with_planner_snapshot(
+        request: AgentRequest, snapshot: PlannerSnapshot
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options["_planner_snapshot"] = snapshot.model_dump(mode="json")
         return request.model_copy(update={"options": options})
 
     @staticmethod

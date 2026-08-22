@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from app.services.model_registry import ModelRegistry
     from app.services.model_service import ModelService
     from app.services.next_check_question import NextCheckQuestionService
+    from app.services.planner import PlannerService
     from app.services.rag_debug import RAGDebugService
     from app.services.rag_retrieval import RAGRetrievalService
     from app.services.research_frontier_service import ResearchFrontierService
@@ -79,6 +80,7 @@ class ApplicationContainer:
     agent_contract_results: dict[str, Any]
     agent_registry: AgentRegistry
     task_router: TaskRouter
+    planner: PlannerService
     trace_store: TraceStore
     spark_provider: IflytekSparkProvider
     qwen_provider: DashScopeQwenProvider

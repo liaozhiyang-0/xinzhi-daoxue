@@ -223,7 +223,10 @@ async def create_task(
             detail="数据分析功能当前已冻结，暂不接受新任务；已有任务和数据未被修改。",
         )
     task = await TaskCreationService(
-        db, provider.provider_name, request.app.state.settings
+        db,
+        provider.provider_name,
+        request.app.state.settings,
+        planner=request.app.state.planner,
     ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)

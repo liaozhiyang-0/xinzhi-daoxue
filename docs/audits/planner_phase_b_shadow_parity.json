@@ -1,0 +1,823 @@
+{
+  "report_version": "planner-phase-b-shadow-v1",
+  "evidence_level": "synthetic_provider_free",
+  "readiness": "GO_FOR_CONTROLLED_CANARY",
+  "no_production_takeover": true,
+  "thresholds": {
+    "invalid_target_rate_max": 0.0,
+    "unsupported_capability_rate_max": 0.0,
+    "critical_route_regression_max": 0.0,
+    "planner_error_rate_max": 0.01,
+    "route_parity_rate_min": 0.99,
+    "plan_parity_rate_min": 0.99,
+    "latency_overhead_ms_max": 100.0,
+    "token_cost_overhead_max": 0.0
+  },
+  "checks": {
+    "invalid_target_rate": 0.0,
+    "unsupported_capability_rate": 0.0,
+    "critical_route_regression_rate": 0.0,
+    "planner_error_rate": 0.0,
+    "route_parity_rate": 1.0,
+    "plan_parity_rate": 1.0,
+    "max_latency_overhead_ms": 0.0,
+    "token_cost_overhead": 0.0,
+    "resume_rollback_integrity": true
+  },
+  "case_count": 5,
+  "categories": [
+    "academic_solver",
+    "general_fallback",
+    "knowledge_qa",
+    "research",
+    "teaching"
+  ],
+  "disagreement_taxonomy": {
+    "old_route_wrong_planner_better": 0,
+    "planner_wrong_old_route_better": 0,
+    "both_valid": 5,
+    "insufficient_evidence": 0,
+    "availability_or_fallback_difference": 0
+  },
+  "results": [
+    {
+      "id": "academic_solver_ct",
+      "category": "academic_solver",
+      "route": {
+        "agent_id": "ACADEMIC_PROBLEM_SOLVER",
+        "scene": "learning",
+        "course_id": "CT",
+        "intent": "solve_problem",
+        "route_status": "selected",
+        "reason": "matched configured route course_id=CT, intent=solve_problem",
+        "retrieval_required": true,
+        "provider_required": false,
+        "route_source": "local_fast",
+        "route_confidence": 1.0,
+        "fallback_used": false,
+        "original_agent_id": null,
+        "fallback_instruction": "",
+        "task_subtype": "",
+        "secondary_intents": [],
+        "requires_pipeline": false,
+        "candidate_agents": [],
+        "reason_codes": [
+          "intent:solve_problem",
+          "keyword_signal",
+          "explicit_intent",
+          "request_text_present",
+          "route_target_alignment",
+          "structured_intent",
+          "explicit_course_hint",
+          "explicit_intent:solve_problem"
+        ],
+        "local_confidence": 1.0,
+        "cloud_router_invoked": false,
+        "availability": {
+          "enabled": true,
+          "published": true,
+          "local_ready": true,
+          "provider_available": true,
+          "input_mode_supported": true,
+          "course_supported": true,
+          "intent_supported": true,
+          "external_retrieval_required": false,
+          "external_retrieval_available": true,
+          "generation_required": false,
+          "generation_available": true
+        },
+        "material_extraction": {
+          "raw_text": "求电阻网络节点电压，并给出推导过程",
+          "materials": {},
+          "source_fields": {},
+          "confidence": 0.0,
+          "assumptions": [],
+          "warnings": [],
+          "attachment_types": [],
+          "latency_ms": 8.22279998101294
+        },
+        "inferred_user_role": "student",
+        "visited_agents": [
+          "ACADEMIC_PROBLEM_SOLVER"
+        ],
+        "reroute_count": 0,
+        "intent_recognition": {
+          "task_family": "solving",
+          "intent": "solve_problem",
+          "capabilities": [
+            "problem_solving",
+            "deterministic_verification"
+          ],
+          "selected_tools": [],
+          "selected_skills": [],
+          "complexity": "medium",
+          "route_mode": "single_agent",
+          "needs_retrieval": true,
+          "needs_external_retrieval": false,
+          "needs_subagents": false,
+          "parallelizable": false,
+          "confidence": 0.88,
+          "reason_codes": [
+            "intent:solve_problem",
+            "keyword_signal",
+            "explicit_intent",
+            "request_text_present",
+            "route_target_alignment"
+          ],
+          "clarification_prompt": ""
+        },
+        "capabilities": [
+          "problem_solving",
+          "deterministic_verification"
+        ],
+        "selected_tools": [],
+        "selected_skills": [],
+        "route_mode": "single_agent",
+        "complexity": "medium",
+        "needs_subagents": false,
+        "parallelizable": false,
+        "route_revision": 0,
+        "route_trace": [
+          {
+            "stage": "deterministic",
+            "source": "local_fast",
+            "agent_id": "ACADEMIC_PROBLEM_SOLVER",
+            "intent": "solve_problem",
+            "confidence": 1.0
+          }
+        ]
+      },
+      "expected_agent_id": "ACADEMIC_PROBLEM_SOLVER",
+      "preflight_match": true,
+      "route_match": true,
+      "plan_match": true,
+      "invalid_targets": [],
+      "unsupported_capabilities": false,
+      "critical_route_regression": false,
+      "disagreement": "both_valid",
+      "latency_ms": 0,
+      "end_to_end_measurement_ms": 17,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_cost": 0.0,
+      "lineage": {
+        "task_id": "eval-academic-solver-ct",
+        "request_id": "",
+        "trace_id": "",
+        "route_revision": 0,
+        "current_plan_id": "plan_9537aaf0bbab4f579817b64b4cca57f1",
+        "current_plan_version": "1",
+        "context_snapshot_id": "e5cad1432987f9f8",
+        "registry_snapshot_id": "33c8bf4eb9b20675",
+        "source": "task_creation"
+      }
+    },
+    {
+      "id": "knowledge_qa_dsp",
+      "category": "knowledge_qa",
+      "route": {
+        "agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+        "scene": "learning",
+        "course_id": "DSP",
+        "intent": "explain_concept",
+        "route_status": "selected",
+        "reason": "matched configured route course_id=DSP, intent=explain_concept",
+        "retrieval_required": true,
+        "provider_required": false,
+        "route_source": "local_fast",
+        "route_confidence": 1.0,
+        "fallback_used": false,
+        "original_agent_id": null,
+        "fallback_instruction": "",
+        "task_subtype": "",
+        "secondary_intents": [],
+        "requires_pipeline": false,
+        "candidate_agents": [],
+        "reason_codes": [
+          "intent:explain_concept",
+          "keyword_signal",
+          "explicit_intent",
+          "request_text_present",
+          "route_target_alignment",
+          "structured_intent",
+          "explicit_course_hint",
+          "explicit_intent:explain_concept"
+        ],
+        "local_confidence": 1.0,
+        "cloud_router_invoked": false,
+        "availability": {
+          "enabled": true,
+          "published": true,
+          "local_ready": true,
+          "provider_available": true,
+          "input_mode_supported": true,
+          "course_supported": true,
+          "intent_supported": true,
+          "external_retrieval_required": false,
+          "external_retrieval_available": true,
+          "generation_required": false,
+          "generation_available": true
+        },
+        "material_extraction": {
+          "raw_text": "解释离散时间采样定理及其混叠条件",
+          "materials": {},
+          "source_fields": {},
+          "confidence": 0.0,
+          "assumptions": [],
+          "warnings": [],
+          "attachment_types": [],
+          "latency_ms": 0.6935000419616699
+        },
+        "inferred_user_role": "student",
+        "visited_agents": [
+          "LEARN_01_KNOWLEDGE_QA_V1"
+        ],
+        "reroute_count": 0,
+        "intent_recognition": {
+          "task_family": "learning",
+          "intent": "explain_concept",
+          "capabilities": [
+            "course_knowledge",
+            "grounded_answer"
+          ],
+          "selected_tools": [],
+          "selected_skills": [],
+          "complexity": "medium",
+          "route_mode": "single_agent",
+          "needs_retrieval": true,
+          "needs_external_retrieval": false,
+          "needs_subagents": false,
+          "parallelizable": false,
+          "confidence": 0.88,
+          "reason_codes": [
+            "intent:explain_concept",
+            "keyword_signal",
+            "explicit_intent",
+            "request_text_present",
+            "route_target_alignment"
+          ],
+          "clarification_prompt": ""
+        },
+        "capabilities": [
+          "course_knowledge",
+          "grounded_answer"
+        ],
+        "selected_tools": [],
+        "selected_skills": [],
+        "route_mode": "single_agent",
+        "complexity": "medium",
+        "needs_subagents": false,
+        "parallelizable": false,
+        "route_revision": 0,
+        "route_trace": [
+          {
+            "stage": "deterministic",
+            "source": "local_fast",
+            "agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+            "intent": "explain_concept",
+            "confidence": 1.0
+          }
+        ]
+      },
+      "expected_agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+      "preflight_match": true,
+      "route_match": true,
+      "plan_match": true,
+      "invalid_targets": [],
+      "unsupported_capabilities": false,
+      "critical_route_regression": false,
+      "disagreement": "both_valid",
+      "latency_ms": 0,
+      "end_to_end_measurement_ms": 3,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_cost": 0.0,
+      "lineage": {
+        "task_id": "eval-knowledge-qa-dsp",
+        "request_id": "",
+        "trace_id": "",
+        "route_revision": 0,
+        "current_plan_id": "plan_513e665a62a3416ca8acfb773e294d40",
+        "current_plan_version": "1",
+        "context_snapshot_id": "25e89d37a3b6101f",
+        "registry_snapshot_id": "71ee7571c989554c",
+        "source": "task_creation"
+      }
+    },
+    {
+      "id": "teaching_lesson_prep",
+      "category": "teaching",
+      "route": {
+        "agent_id": "TEACH_01_LESSON_PREP_V1",
+        "scene": "teaching",
+        "course_id": "CT",
+        "intent": "lesson_prep",
+        "route_status": "selected",
+        "reason": "local deterministic routing selected TEACH_01_LESSON_PREP_V1",
+        "retrieval_required": true,
+        "provider_required": false,
+        "route_source": "local_fast",
+        "route_confidence": 1.0,
+        "fallback_used": false,
+        "original_agent_id": null,
+        "fallback_instruction": "",
+        "task_subtype": "",
+        "secondary_intents": [],
+        "requires_pipeline": false,
+        "candidate_agents": [
+          {
+            "agent_id": "TEACH_01_LESSON_PREP_V1",
+            "score": 1.0,
+            "available": false,
+            "reason_codes": [
+              "explicit_intent:lesson_prep"
+            ]
+          },
+          {
+            "agent_id": "ACADEMIC_PROBLEM_SOLVER",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "LEARN_01_LOCAL_RETRIEVAL_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+            "score": 0.0,
+            "available": true,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          }
+        ],
+        "reason_codes": [
+          "intent:lesson_prep",
+          "keyword_signal",
+          "explicit_intent",
+          "request_text_present",
+          "route_target_alignment",
+          "structured_intent",
+          "explicit_course_hint",
+          "explicit_intent:lesson_prep"
+        ],
+        "local_confidence": 1.0,
+        "cloud_router_invoked": false,
+        "availability": {
+          "enabled": true,
+          "published": true,
+          "local_ready": true,
+          "provider_available": true,
+          "input_mode_supported": true,
+          "course_supported": true,
+          "intent_supported": true,
+          "external_retrieval_required": false,
+          "external_retrieval_available": true,
+          "generation_required": false,
+          "generation_available": true
+        },
+        "material_extraction": {
+          "raw_text": "设计一节电路理论教案，包含课堂活动和形成性评价",
+          "materials": {},
+          "source_fields": {},
+          "confidence": 0.0,
+          "assumptions": [],
+          "warnings": [],
+          "attachment_types": [],
+          "latency_ms": 0.6278000073507428
+        },
+        "inferred_user_role": "teacher",
+        "visited_agents": [
+          "TEACH_01_LESSON_PREP_V1"
+        ],
+        "reroute_count": 0,
+        "intent_recognition": {
+          "task_family": "teaching",
+          "intent": "lesson_prep",
+          "capabilities": [
+            "lesson_design",
+            "course_knowledge"
+          ],
+          "selected_tools": [],
+          "selected_skills": [],
+          "complexity": "medium",
+          "route_mode": "single_agent",
+          "needs_retrieval": true,
+          "needs_external_retrieval": false,
+          "needs_subagents": false,
+          "parallelizable": false,
+          "confidence": 0.88,
+          "reason_codes": [
+            "intent:lesson_prep",
+            "keyword_signal",
+            "explicit_intent",
+            "request_text_present",
+            "route_target_alignment"
+          ],
+          "clarification_prompt": ""
+        },
+        "capabilities": [
+          "lesson_design",
+          "course_knowledge"
+        ],
+        "selected_tools": [],
+        "selected_skills": [],
+        "route_mode": "single_agent",
+        "complexity": "medium",
+        "needs_subagents": false,
+        "parallelizable": false,
+        "route_revision": 0,
+        "route_trace": [
+          {
+            "stage": "deterministic",
+            "source": "local_fast",
+            "agent_id": "TEACH_01_LESSON_PREP_V1",
+            "intent": "lesson_prep",
+            "confidence": 1.0
+          }
+        ]
+      },
+      "expected_agent_id": "TEACH_01_LESSON_PREP_V1",
+      "preflight_match": true,
+      "route_match": true,
+      "plan_match": true,
+      "invalid_targets": [],
+      "unsupported_capabilities": false,
+      "critical_route_regression": false,
+      "disagreement": "both_valid",
+      "latency_ms": 0,
+      "end_to_end_measurement_ms": 2,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_cost": 0.0,
+      "lineage": {
+        "task_id": "eval-teaching-lesson",
+        "request_id": "",
+        "trace_id": "",
+        "route_revision": 0,
+        "current_plan_id": "plan_4d12f3b5d1e5422f8e682bb862633331",
+        "current_plan_version": "1",
+        "context_snapshot_id": "e0dbf73ec55812ad",
+        "registry_snapshot_id": "cd431f8f85a52349",
+        "source": "task_creation"
+      }
+    },
+    {
+      "id": "research_frontier_search",
+      "category": "research",
+      "route": {
+        "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+        "scene": "research",
+        "course_id": "UNKNOWN",
+        "intent": "academic_search",
+        "route_status": "selected",
+        "reason": "识别为论文检索请求，进入外部学术检索能力",
+        "retrieval_required": false,
+        "provider_required": false,
+        "route_source": "local_fast",
+        "route_confidence": 1.0,
+        "fallback_used": false,
+        "original_agent_id": null,
+        "fallback_instruction": "",
+        "task_subtype": "academic_search",
+        "secondary_intents": [],
+        "requires_pipeline": false,
+        "candidate_agents": [],
+        "reason_codes": [
+          "intent:academic_search",
+          "keyword_signal",
+          "explicit_intent",
+          "request_text_present",
+          "route_target_alignment",
+          "structured_intent",
+          "research_workflow_neutral_course",
+          "academic_search_request"
+        ],
+        "local_confidence": 1.0,
+        "cloud_router_invoked": false,
+        "availability": {
+          "enabled": true,
+          "published": true,
+          "local_ready": true,
+          "provider_available": true,
+          "input_mode_supported": true,
+          "course_supported": true,
+          "intent_supported": true,
+          "external_retrieval_required": true,
+          "external_retrieval_available": true,
+          "generation_required": false,
+          "generation_available": true
+        },
+        "material_extraction": {
+          "raw_text": "整理近年的边缘计算论文趋势并给出证据边界",
+          "materials": {
+            "writing_task": "整理近年的边缘计算论文趋势并给出证据边界"
+          },
+          "source_fields": {
+            "writing_task": "instruction"
+          },
+          "confidence": 0.25,
+          "assumptions": [],
+          "warnings": [],
+          "attachment_types": [],
+          "latency_ms": 0.6090999813750386
+        },
+        "inferred_user_role": "student",
+        "visited_agents": [
+          "RESEARCH_01_ACADEMIC_SEARCH_V1"
+        ],
+        "reroute_count": 0,
+        "intent_recognition": {
+          "task_family": "research",
+          "intent": "academic_search",
+          "capabilities": [
+            "academic_search",
+            "evidence_review",
+            "evidence_synthesis"
+          ],
+          "selected_tools": [
+            "academic_search",
+            "paper_reader"
+          ],
+          "selected_skills": [
+            "academic-frontier"
+          ],
+          "complexity": "complex",
+          "route_mode": "workflow",
+          "needs_retrieval": true,
+          "needs_external_retrieval": true,
+          "needs_subagents": true,
+          "parallelizable": true,
+          "confidence": 0.94,
+          "reason_codes": [
+            "intent:academic_search",
+            "keyword_signal",
+            "explicit_intent",
+            "request_text_present",
+            "route_target_alignment"
+          ],
+          "clarification_prompt": ""
+        },
+        "capabilities": [
+          "academic_search",
+          "evidence_review",
+          "evidence_synthesis"
+        ],
+        "selected_tools": [
+          "academic_search",
+          "paper_reader"
+        ],
+        "selected_skills": [
+          "academic-frontier"
+        ],
+        "route_mode": "workflow",
+        "complexity": "complex",
+        "needs_subagents": true,
+        "parallelizable": true,
+        "route_revision": 0,
+        "route_trace": [
+          {
+            "stage": "deterministic",
+            "source": "local_fast",
+            "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+            "intent": "academic_search",
+            "confidence": 1.0
+          }
+        ]
+      },
+      "expected_agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+      "preflight_match": true,
+      "route_match": true,
+      "plan_match": true,
+      "invalid_targets": [],
+      "unsupported_capabilities": false,
+      "critical_route_regression": false,
+      "disagreement": "both_valid",
+      "latency_ms": 0,
+      "end_to_end_measurement_ms": 1,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_cost": 0.0,
+      "lineage": {
+        "task_id": "eval-research-search",
+        "request_id": "",
+        "trace_id": "",
+        "route_revision": 0,
+        "current_plan_id": "plan_0bd0e852955442c291ea14774834d167",
+        "current_plan_version": "1",
+        "context_snapshot_id": "4843dc1b3dd2ce3c",
+        "registry_snapshot_id": "9b36288944c6699b",
+        "source": "task_creation"
+      }
+    },
+    {
+      "id": "general_fallback",
+      "category": "general_fallback",
+      "route": {
+        "agent_id": "GENERAL_QUESTION_V1",
+        "scene": "learning",
+        "course_id": "CT",
+        "intent": "general_qa",
+        "route_status": "selected",
+        "reason": "专用能力路由置信度不足，使用通用问题回答能力",
+        "retrieval_required": false,
+        "provider_required": false,
+        "route_source": "local_general_fallback",
+        "route_confidence": 0.35,
+        "fallback_used": false,
+        "original_agent_id": null,
+        "fallback_instruction": "",
+        "task_subtype": "",
+        "secondary_intents": [],
+        "requires_pipeline": false,
+        "candidate_agents": [
+          {
+            "agent_id": "LEARN_01_KNOWLEDGE_QA_V1",
+            "score": 0.3,
+            "available": false,
+            "reason_codes": [
+              "generic_question_candidate"
+            ]
+          },
+          {
+            "agent_id": "ACADEMIC_PROBLEM_SOLVER",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "LEARN_01_LOCAL_RETRIEVAL_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+            "score": 0.0,
+            "available": true,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "RESEARCH_03_DATA_ANALYSIS_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "TEACH_01_LESSON_PREP_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          },
+          {
+            "agent_id": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+            "score": 0.0,
+            "available": false,
+            "reason_codes": []
+          }
+        ],
+        "reason_codes": [
+          "intent:general_qa",
+          "request_text_present",
+          "route_target_alignment",
+          "structured_intent",
+          "course_unspecified_default_context",
+          "local_router_low_confidence",
+          "cloud_router_not_authorized",
+          "general_question_fallback"
+        ],
+        "local_confidence": 0.3,
+        "cloud_router_invoked": false,
+        "availability": {
+          "enabled": true,
+          "published": true,
+          "local_ready": true,
+          "provider_available": true,
+          "input_mode_supported": true,
+          "course_supported": true,
+          "intent_supported": true,
+          "external_retrieval_required": false,
+          "external_retrieval_available": true,
+          "generation_required": false,
+          "generation_available": true
+        },
+        "material_extraction": {
+          "raw_text": "请回答一个跨课程但信息不足的问题",
+          "materials": {},
+          "source_fields": {},
+          "confidence": 0.0,
+          "assumptions": [],
+          "warnings": [],
+          "attachment_types": [],
+          "latency_ms": 0.5485000438056886
+        },
+        "inferred_user_role": "student",
+        "visited_agents": [
+          "GENERAL_QUESTION_V1"
+        ],
+        "reroute_count": 0,
+        "intent_recognition": {
+          "task_family": "learning",
+          "intent": "general_qa",
+          "capabilities": [
+            "general_answer"
+          ],
+          "selected_tools": [],
+          "selected_skills": [],
+          "complexity": "simple",
+          "route_mode": "single_agent",
+          "needs_retrieval": false,
+          "needs_external_retrieval": false,
+          "needs_subagents": false,
+          "parallelizable": false,
+          "confidence": 0.55,
+          "reason_codes": [
+            "intent:general_qa",
+            "request_text_present",
+            "route_target_alignment"
+          ],
+          "clarification_prompt": ""
+        },
+        "capabilities": [
+          "general_answer"
+        ],
+        "selected_tools": [],
+        "selected_skills": [],
+        "route_mode": "single_agent",
+        "complexity": "simple",
+        "needs_subagents": false,
+        "parallelizable": false,
+        "route_revision": 0,
+        "route_trace": [
+          {
+            "stage": "deterministic",
+            "source": "local_general_fallback",
+            "agent_id": "GENERAL_QUESTION_V1",
+            "intent": "general_qa",
+            "confidence": 0.35
+          }
+        ]
+      },
+      "expected_agent_id": "GENERAL_QUESTION_V1",
+      "preflight_match": true,
+      "route_match": true,
+      "plan_match": true,
+      "invalid_targets": [],
+      "unsupported_capabilities": false,
+      "critical_route_regression": false,
+      "disagreement": "both_valid",
+      "latency_ms": 0,
+      "end_to_end_measurement_ms": 1,
+      "model_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_cost": 0.0,
+      "lineage": {
+        "task_id": "eval-general-fallback",
+        "request_id": "",
+        "trace_id": "",
+        "route_revision": 0,
+        "current_plan_id": "plan_0307e8f5c8e4459f97121906d1e1c2c0",
+        "current_plan_version": "1",
+        "context_snapshot_id": "185581347adcdfdd",
+        "registry_snapshot_id": "5bceab74a6f199da",
+        "source": "task_creation"
+      }
+    }
+  ]
+}

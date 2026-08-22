@@ -1,0 +1,67 @@
+version: planner-phase-b-shadow-v1
+evidence_level: synthetic_provider_free
+cases:
+  - id: academic_solver_ct
+    category: academic_solver
+    expected_agent_id: ACADEMIC_PROBLEM_SOLVER
+    request:
+      task_id: eval-academic-solver-ct
+      session_id: eval-session-academic
+      user_id: eval-user
+      scene: solving
+      course_id: CT
+      intent: solve_problem
+      canonical_input:
+        text: 求电阻网络节点电压，并给出推导过程
+
+  - id: knowledge_qa_dsp
+    category: knowledge_qa
+    expected_agent_id: LEARN_01_KNOWLEDGE_QA_V1
+    request:
+      task_id: eval-knowledge-qa-dsp
+      session_id: eval-session-knowledge
+      user_id: eval-user
+      scene: learning
+      course_id: DSP
+      intent: explain_concept
+      canonical_input:
+        text: 解释离散时间采样定理及其混叠条件
+
+  - id: teaching_lesson_prep
+    category: teaching
+    expected_agent_id: TEACH_01_LESSON_PREP_V1
+    request:
+      task_id: eval-teaching-lesson
+      session_id: eval-session-teaching
+      user_id: eval-user
+      scene: teaching
+      course_id: CT
+      intent: lesson_prep
+      canonical_input:
+        text: 设计一节电路理论教案，包含课堂活动和形成性评价
+
+  - id: research_frontier_search
+    category: research
+    expected_agent_id: RESEARCH_01_ACADEMIC_SEARCH_V1
+    request:
+      task_id: eval-research-search
+      session_id: eval-session-research
+      user_id: eval-user
+      scene: research
+      course_id: UNKNOWN
+      intent: academic_search
+      canonical_input:
+        text: 整理近年的边缘计算论文趋势并给出证据边界
+
+  - id: general_fallback
+    category: general_fallback
+    expected_agent_id: GENERAL_QUESTION_V1
+    request:
+      task_id: eval-general-fallback
+      session_id: eval-session-general
+      user_id: eval-user
+      scene: dispatch
+      course_id: UNKNOWN
+      intent: unknown
+      canonical_input:
+        text: 请回答一个跨课程但信息不足的问题

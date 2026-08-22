@@ -154,7 +154,10 @@ async def _submit(
         session_context=context,
     )
     task = await TaskCreationService(
-        db, provider.provider_name, request.app.state.settings
+        db,
+        provider.provider_name,
+        request.app.state.settings,
+        planner=request.app.state.planner,
     ).create_queued(prepared.request, route=prepared.route)
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)

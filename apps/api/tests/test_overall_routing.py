@@ -57,7 +57,9 @@ class FakeOverallHub:
 
 @pytest.mark.asyncio
 async def test_overall_router_uses_original_input_and_candidate_paths() -> None:
-    settings = Settings(app_env="development", _env_file=None)
+    settings = Settings(
+        app_env="development", overall_routing_enabled=True, _env_file=None
+    )
     router = TaskRouter(AgentRegistry(), settings)
     request = _request("help me decide how to organize a study project")
     current = router.route(request)
@@ -90,6 +92,7 @@ async def test_overall_router_uses_original_input_and_candidate_paths() -> None:
 async def test_overall_router_timeout_keeps_deterministic_route() -> None:
     settings = Settings(
         app_env="development",
+        overall_routing_enabled=True,
         overall_routing_timeout_seconds=0.01,
         _env_file=None,
     )
@@ -116,7 +119,9 @@ async def test_overall_router_timeout_keeps_deterministic_route() -> None:
 
 @pytest.mark.asyncio
 async def test_overall_router_skips_decisive_local_route() -> None:
-    settings = Settings(app_env="development", _env_file=None)
+    settings = Settings(
+        app_env="development", overall_routing_enabled=True, _env_file=None
+    )
     router = TaskRouter(AgentRegistry(), settings)
     request = _request("请解释电容两端电压为什么不能突变")
     current = router.route(request).model_copy(
@@ -140,7 +145,9 @@ async def test_overall_router_skips_decisive_local_route() -> None:
 
 @pytest.mark.asyncio
 async def test_overall_router_does_not_override_research_continuity() -> None:
-    settings = Settings(app_env="development", _env_file=None)
+    settings = Settings(
+        app_env="development", overall_routing_enabled=True, _env_file=None
+    )
     router = TaskRouter(AgentRegistry(), settings)
     request = _request("接着提供一些额外的论文信息").model_copy(
         update={
@@ -171,7 +178,9 @@ async def test_overall_router_does_not_override_research_continuity() -> None:
 
 @pytest.mark.asyncio
 async def test_overall_router_does_not_override_high_confidence_research() -> None:
-    settings = Settings(app_env="development", _env_file=None)
+    settings = Settings(
+        app_env="development", overall_routing_enabled=True, _env_file=None
+    )
     router = TaskRouter(AgentRegistry(), settings)
     request = _request("find the latest research papers on flexible electronics")
     current = router.route(request)
@@ -198,7 +207,9 @@ async def test_overall_router_does_not_override_high_confidence_research() -> No
 
 @pytest.mark.asyncio
 async def test_overall_route_alignment_updates_structured_intent() -> None:
-    settings = Settings(app_env="development", _env_file=None)
+    settings = Settings(
+        app_env="development", overall_routing_enabled=True, _env_file=None
+    )
     router = TaskRouter(AgentRegistry(), settings)
     request = _request("help me decide how to organize a study project")
     current = router.route(request)

@@ -24,7 +24,14 @@ class OverallRoutingOutcome:
 
 
 class OverallRoutingService:
-    """One bounded model call that validates and refines the fast route."""
+    """Deprecated compatibility wrapper for the former second-pass route.
+
+    The default control path is now Planner/TaskRouter.  This service remains
+    callable only when ``overall_routing_enabled`` is explicitly enabled for
+    rollback or an older deployment.
+    """
+
+    deprecated = True
 
     agent_id = "OVERALL_ROUTER_LOCAL_V1"
 

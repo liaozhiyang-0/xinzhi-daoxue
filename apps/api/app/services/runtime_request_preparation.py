@@ -145,7 +145,23 @@ class RuntimeRequestPreparationService:
         route_reevaluated: dict[str, object] | None = None
         final_agent_id = agent_id
         route_latency_ms = 0
-        if self.overall_router is not None and not runtime_resume:
+        planner_snapshot = request.options.get("_planner_snapshot", {})
+        planner_takeover = (
+            isinstance(planner_snapshot, dict)
+            and planner_snapshot.get("mode") == "takeover"
+            and planner_snapshot.get("status") == "completed"
+        )
+        if planner_takeover:
+            route_metadata = {
+                "status": "planner_takeover",
+                "model_calls": 0,
+                "planner_version": planner_snapshot.get("planner_version", ""),
+            }
+        if (
+            self.overall_router is not None
+            and not runtime_resume
+            and not planner_takeover
+        ):
             outcome = await self.overall_router.route(request, decision)
             route_latency_ms = outcome.latency_ms
             route_metadata = dict(outcome.metadata)

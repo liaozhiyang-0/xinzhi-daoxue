@@ -517,6 +517,11 @@ async def get_execution(
                 "materials": materials,
             },
             "route": route or summary.get("route", {}),
+            "planner": (
+                input_content.get("options", {}).get("_planner_snapshot", {})
+                if isinstance(input_content.get("options", {}), dict)
+                else {}
+            ),
             "execution_plan": structured.get("execution_plan", {}),
             "retrieval": {
                 "policy": summary.get("retrieval_policy", ""),

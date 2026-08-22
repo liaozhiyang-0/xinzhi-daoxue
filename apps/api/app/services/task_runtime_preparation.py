@@ -16,11 +16,13 @@ from app.contracts import (
     RouteDecision,
 )
 from app.contracts.conversation import ConversationContextBundle
+from app.contracts.planner import CanonicalPlan
 from app.core.errors import NotConfiguredError
 from app.models import TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository, TaskRepository
 from app.runtime import AgentRun, AgentRunPlan
+from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.event_service import append_task_event
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
@@ -274,6 +276,14 @@ class TaskRuntimePreparationService:
                 if runtime_resume and runtime_snapshot is not None
                 else self.runtime_boundary.build_plan(task.agent_id, request)
             )
+            planner_runtime_plan = self._planner_runtime_plan(request)
+            if not runtime_resume and planner_runtime_plan is not None:
+                runtime_plan = planner_runtime_plan
+                route_metadata = {
+                    **route_metadata,
+                    "canonical_plan_id": planner_runtime_plan.plan_id,
+                    "runtime_plan_source": "planner_canonical",
+                }
             if runtime_plan is None:
                 # Keep published legacy agents executable while their
                 # business Runtime adapter is migrated.  The compatibility
@@ -327,6 +337,25 @@ class TaskRuntimePreparationService:
             return None
         try:
             return IntentExecutionPlan.model_validate(raw_plan)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _planner_runtime_plan(request: AgentRequest) -> AgentRunPlan | None:
+        raw_snapshot = request.options.get("_planner_snapshot")
+        if not isinstance(raw_snapshot, dict):
+            return None
+        if (
+            raw_snapshot.get("mode") != "takeover"
+            or raw_snapshot.get("status") != "completed"
+        ):
+            return None
+        raw_plan = raw_snapshot.get("canonical_plan")
+        if not isinstance(raw_plan, dict):
+            return None
+        try:
+            canonical_plan = CanonicalPlan.model_validate(raw_plan)
+            return CanonicalPlanAdapter.to_runtime_plan(canonical_plan)
         except ValueError:
             return None
 

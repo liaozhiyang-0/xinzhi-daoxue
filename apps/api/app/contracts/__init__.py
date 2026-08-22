@@ -170,6 +170,16 @@ from app.contracts.research_analysis import (
     ResearchVariable,
 )
 from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
+from app.contracts.planner import (
+    CanonicalGoal,
+    CanonicalPlan,
+    CanonicalPlanNode,
+    PlannerBudget,
+    PlannerLineage,
+    PlannerPlanShape,
+    PlannerRouteProjection,
+    PlannerSnapshot,
+)
 from app.contracts.runtime import (
     AgentExecutionPlan,
     AgentResultEnvelope,
@@ -253,6 +263,14 @@ __all__ = [
     "RouteCandidate",
     "RouteDecision",
     "RouteStatus",
+    "CanonicalGoal",
+    "CanonicalPlan",
+    "CanonicalPlanNode",
+    "PlannerBudget",
+    "PlannerLineage",
+    "PlannerPlanShape",
+    "PlannerRouteProjection",
+    "PlannerSnapshot",
     "IntentExecutionPlan",
     "IntentRecognition",
     "PlanNode",
