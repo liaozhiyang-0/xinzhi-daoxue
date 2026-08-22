@@ -58,6 +58,23 @@ class BaseCoursePack:
     def build_verification_prompt(self, problem: AcademicProblem) -> str:
         return "只报告错误类型、位置、修正指令和置信度，不重新生成整份答案。"
 
+    def required_solution_steps(self, problem: AcademicProblem) -> list[dict[str, Any]]:
+        """Expose course checks that remain pending without numeric inputs."""
+
+        if (
+            problem.problem_type in {"bjt_bias", "mos_bias"}
+            and "operating_region" in self.verification_rules
+        ):
+            return [
+                {
+                    "stage": "course_verification",
+                    "check": "operating_region",
+                    "label": "工作区判断",
+                    "status": "pending",
+                }
+            ]
+        return []
+
     def validate_structured_problem(self, problem: AcademicProblem) -> list[str]:
         errors: list[str] = []
         if not problem.problem_text.strip():

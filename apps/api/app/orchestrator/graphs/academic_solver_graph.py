@@ -353,6 +353,7 @@ class AcademicProblemSolverGraph:
                 {"stage": "structure", "status": normalized.structure_status},
                 {"stage": "capability_selection", "items": selected_capabilities},
                 {"stage": "deterministic_validation", "tools": selected_tools},
+                *pack.required_solution_steps(normalized),
             ],
             key_equations=normalized.equations_given,
             intermediate_results=[
