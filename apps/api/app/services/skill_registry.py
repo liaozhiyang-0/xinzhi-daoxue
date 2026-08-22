@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.capabilities import CapabilityRegistry
 from app.courses import CourseRegistry
@@ -21,14 +21,44 @@ class SkillDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     skill_id: str = Field(min_length=3, max_length=128)
+    version: str = Field(default="1.0", min_length=1, max_length=32)
     title: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=200)
+    description: str = Field(default="", max_length=2_000)
     course_id: str = Field(min_length=2, max_length=16)
+    domain: str = Field(default="", max_length=128)
     chapter: str = Field(min_length=1, max_length=128)
     prerequisites: list[str] = Field(default_factory=list)
     problem_types: list[str] = Field(default_factory=list)
     capability_ids: list[str] = Field(default_factory=list)
+    input_contract: dict[str, object] = Field(default_factory=dict)
+    output_contract: dict[str, object] = Field(default_factory=dict)
+    eligible_workers: list[str] = Field(default_factory=list)
+    eligible_tools: list[str] = Field(default_factory=list)
+    required_evidence: list[str] = Field(default_factory=list)
+    risk: Literal["low", "medium", "high", "critical"] = "low"
+    budget_hint: dict[str, int | float | str] = Field(default_factory=dict)
+    verification_requirements: list[str] = Field(default_factory=list)
     common_error_signatures: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    semantic_description: str = Field(default="", max_length=2_000)
+    status: Literal["active", "experimental", "frozen", "deprecated"] = "active"
+
+    @model_validator(mode="after")
+    def complete_legacy_metadata(self) -> "SkillDefinition":
+        """Keep the existing title/chapter YAML vocabulary source-compatible."""
+
+        if not self.name:
+            self.name = self.title
+        if not self.description:
+            self.description = self.title
+        if not self.domain:
+            self.domain = self.course_id
+        if not self.semantic_description:
+            self.semantic_description = "；".join(
+                [self.title, *self.keywords]
+            )
+        return self
 
 
 class SkillCatalog(BaseModel):
@@ -47,6 +77,20 @@ class SkillMappingResult(BaseModel):
     status: Literal["mapped", "partial", "unavailable"]
     warnings: list[str] = Field(default_factory=list)
     latency_ms: float = Field(default=0, ge=0)
+
+
+class SkillMatch(BaseModel):
+    """A retrieval/policy result; it never represents an executable Agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str = Field(min_length=3, max_length=128)
+    score: float = Field(default=0, ge=0)
+    match_reasons: list[str] = Field(default_factory=list)
+    eligibility: Literal["eligible", "ineligible"] = "ineligible"
+    prerequisite_status: Literal["satisfied", "missing", "unknown"] = "unknown"
+    policy_status: Literal["approved", "rejected", "pending"] = "pending"
+    version: str = Field(min_length=1, max_length=32)
 
 
 class SkillRegistry:
