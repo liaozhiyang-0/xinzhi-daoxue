@@ -126,6 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     agent_registry = AgentRegistry()
     provider = get_agent_provider(app_settings, agent_registry)
     development_mock_provider = DevelopmentMockProvider(app_settings, agent_registry)
+    task_router = TaskRouter(agent_registry, app_settings)
     trace_store = TraceStore(
         max_records=app_settings.rag_debug_trace_max_records,
         ttl_seconds=int(app_settings.rag_debug_trace_ttl_seconds),
@@ -142,11 +143,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "dashscope": qwen_provider,
         },
         model_tracer,
-    )
-    task_router = TaskRouter(
-        agent_registry,
-        app_settings,
-        model_preflight=model_service.preflight,
     )
     planner = PlannerService()
     course_registry = default_course_registry()
@@ -398,9 +394,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         provider=provider,
         development_mock_provider=development_mock_provider,
         agent_contract_results={},
+        planner=planner,
         agent_registry=agent_registry,
         task_router=task_router,
-        planner=planner,
         trace_store=trace_store,
         spark_provider=spark_provider,
         qwen_provider=qwen_provider,
