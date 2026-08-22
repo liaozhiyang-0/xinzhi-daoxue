@@ -301,6 +301,11 @@ def repair_python_environment() -> None:
     ready, _detail = python_environment_ready()
     if ready:
         return
+    if not VENV.exists():
+        # A missing environment is created by ensure_python_environment().
+        # Only move an existing, broken environment into the recoverable
+        # backup area.
+        return
     candidates = _python_repair_candidates()
     if not candidates:
         raise LaunchError(
@@ -561,7 +566,13 @@ def runtime_checks(
 ) -> list[RuntimeCheck]:
     """Collect actionable, non-secret checks for the local development stack."""
 
-    env = environment or build_host_environment(parse_dotenv(ROOT / ".env"))
+    environment_supplied = environment is not None
+    env = (
+        environment
+        if environment_supplied
+        else build_host_environment(parse_dotenv(ROOT / ".env"))
+    )
+    dotenv_present = (ROOT / ".env").is_file()
     docker_ok = shutil.which("docker") is not None and docker_engine_ready()
     python_ok, python_detail = python_environment_ready()
     checks = [
@@ -578,8 +589,14 @@ def runtime_checks(
         ),
         RuntimeCheck(
             ".env",
-            (ROOT / ".env").is_file(),
-            "存在" if (ROOT / ".env").is_file() else "缺失（start 可创建）",
+            dotenv_present or environment_supplied,
+            (
+                "存在"
+                if dotenv_present
+                else "已提供显式运行环境"
+                if environment_supplied
+                else "缺失（start 可创建）"
+            ),
             repairable=True,
         ),
         RuntimeCheck(
