@@ -65,9 +65,12 @@ class SkillRetriever:
             if skill.skill_id in requested:
                 score += 100
                 reasons.append("explicit_skill_request")
+            prerequisite_status = self._prerequisite_status(skill, request)
+            if prerequisite_status == "missing":
+                score = max(0, score - 10)
+                reasons.append("prerequisite_missing")
             if score <= 0:
                 continue
-            prerequisite_status = self._prerequisite_status(skill, request)
             matches.append(
                 SkillMatch(
                     skill_id=skill.skill_id,

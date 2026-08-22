@@ -56,6 +56,19 @@ class CanonicalPlanNode(BaseModel):
     optional: bool = False
 
 
+class PlannerSkillSelection(BaseModel):
+    """Trace-only skill selection metadata; it is not a Runtime node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_id: str = Field(min_length=1, max_length=128)
+    version: str = ""
+    score: float = Field(default=0, ge=0)
+    status: Literal["selected", "rejected"]
+    match_reasons: list[str] = Field(default_factory=list, max_length=16)
+    reason_codes: list[str] = Field(default_factory=list, max_length=16)
+
+
 class CanonicalPlan(BaseModel):
     """The single future plan vocabulary between planning and Runtime adapters."""
 
@@ -68,6 +81,12 @@ class CanonicalPlan(BaseModel):
     capabilities: list[str] = Field(default_factory=list, max_length=32)
     selected_agents: list[str] = Field(default_factory=list, max_length=32)
     selected_skills: list[str] = Field(default_factory=list, max_length=32)
+    skill_selection: list[PlannerSkillSelection] = Field(
+        default_factory=list, max_length=32
+    )
+    skill_selection_status: Literal[
+        "selected", "empty", "rejected", "unavailable"
+    ] = "empty"
     selected_tools: list[str] = Field(default_factory=list, max_length=32)
     success_criteria: list[str] = Field(default_factory=list, max_length=32)
     budget: PlannerBudget = Field(default_factory=PlannerBudget)
@@ -136,6 +155,13 @@ class PlannerSnapshot(BaseModel):
     planner_tools: list[str] = Field(default_factory=list, max_length=32)
     current_skills: list[str] = Field(default_factory=list, max_length=32)
     planner_skills: list[str] = Field(default_factory=list, max_length=32)
+    planner_skill_selection: list[PlannerSkillSelection] = Field(
+        default_factory=list, max_length=32
+    )
+    skill_selection_status: Literal[
+        "selected", "empty", "rejected", "unavailable"
+    ] = "empty"
+    skill_rejection_reasons: list[str] = Field(default_factory=list, max_length=32)
     current_plan_shape: PlannerPlanShape
     planner_plan_shape: PlannerPlanShape
     route_match: bool = False

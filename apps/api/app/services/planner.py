@@ -13,11 +13,15 @@ from app.contracts.planner import (
     PlannerLineage,
     PlannerPlanShape,
     PlannerRouteProjection,
+    PlannerSkillSelection,
     PlannerSnapshot,
 )
 from app.core.config import Settings
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.intent_plan import IntentPlanCompiler
+from app.services.skill_policy import SkillPolicy
+from app.services.skill_registry import SkillRegistry
+from app.services.skill_retriever import SkillRetrievalRequest, SkillRetriever
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,11 +88,21 @@ class PlannerService:
 
     VERSION = "planner-v1"
 
-    def __init__(self, plan_compiler: IntentPlanCompiler | None = None) -> None:
+    def __init__(
+        self,
+        plan_compiler: IntentPlanCompiler | None = None,
+        skill_registry: SkillRegistry | None = None,
+    ) -> None:
         self.plan_compiler = plan_compiler or IntentPlanCompiler()
         self.goal_interpreter = GoalInterpreter()
         self.candidate_builder = CandidateBuilder()
         self.plan_compiler_boundary = PlannerPlanCompiler()
+        self.skill_registry = skill_registry
+
+    def configure_skill_registry(self, registry: SkillRegistry) -> None:
+        """Bind the composition-root registry; never create a second one."""
+
+        self.skill_registry = registry
 
     def build(
         self,
@@ -104,6 +118,9 @@ class PlannerService:
         task_family = str(route.intent_recognition.get("task_family", ""))
         canonical_plan = self.plan_compiler_boundary.compile(plan, route)
         objective = self.goal_interpreter.interpret(request, route, plan)
+        canonical_plan, skill_selection, skill_status, skill_rejections = (
+            self._select_skills(request, route, plan, canonical_plan, objective)
+        )
         current_route = self._route_projection(route)
         planner_route = current_route.model_copy()
         current_shape = self._intent_plan_shape(plan)
@@ -138,7 +155,7 @@ class PlannerService:
             ),
             selected_capability=route.agent_id,
             selected_agents=list(canonical_plan.selected_agents),
-            selected_skills=list(plan.selected_skills),
+            selected_skills=list(canonical_plan.selected_skills),
             selected_tools=list(plan.selected_tools),
             success_criteria=list(canonical_plan.success_criteria),
             constraints=dict(canonical_plan.goal.constraints),
@@ -158,6 +175,9 @@ class PlannerService:
             planner_tools=list(canonical_plan.selected_tools),
             current_skills=list(plan.selected_skills),
             planner_skills=list(canonical_plan.selected_skills),
+            planner_skill_selection=skill_selection,
+            skill_selection_status=skill_status,
+            skill_rejection_reasons=skill_rejections,
             current_plan_shape=current_shape,
             planner_plan_shape=planner_shape,
             route_match=current_route == planner_route,
@@ -170,6 +190,103 @@ class PlannerService:
             snapshot=snapshot,
             route=route,
             canonical_plan=canonical_plan,
+        )
+
+    def _select_skills(
+        self,
+        request: AgentRequest,
+        route: RouteDecision,
+        plan: IntentExecutionPlan,
+        canonical_plan: CanonicalPlan,
+        objective: str,
+    ) -> tuple[
+        CanonicalPlan,
+        list[PlannerSkillSelection],
+        Literal["selected", "empty", "rejected", "unavailable"],
+        list[str],
+    ]:
+        """Run bounded retrieval/policy in shadow metadata only."""
+
+        if self.skill_registry is None:
+            return canonical_plan, [], "unavailable", ["skill_registry_unavailable"]
+        raw_evidence = request.options.get("evidence_state", {})
+        evidence_state = raw_evidence if isinstance(raw_evidence, dict) else {}
+        raw_workers = request.options.get("available_workers", [])
+        raw_tools = request.options.get("available_tools", [])
+        retrieval = SkillRetrievalRequest(
+            goal=canonical_plan.goal,
+            course=route.course_id,
+            intent=route.intent,
+            problem_type=str(route.intent_recognition.get("problem_type", "")),
+            capabilities=list(
+                dict.fromkeys([*route.capabilities, *plan.capabilities])
+            ),
+            context_summary=objective,
+            evidence_state=evidence_state,
+            learner_state=(
+                request.options.get("learner_state", {})
+                if isinstance(request.options.get("learner_state", {}), dict)
+                else {}
+            ),
+            available_workers=[str(item) for item in raw_workers]
+            if isinstance(raw_workers, list)
+            else [],
+            available_tools=[str(item) for item in raw_tools]
+            if isinstance(raw_tools, list)
+            else [],
+            available_skill_ids=list(route.selected_skills),
+            requested_skill_ids=[],
+            role=str(request.options.get("role", "student")),
+        )
+        retriever = SkillRetriever(self.skill_registry)
+        policy = SkillPolicy(self.skill_registry)
+        matches = retriever.retrieve(retrieval, top_k=1)
+        policy_result = policy.evaluate(matches, retrieval)
+        selections = [
+            PlannerSkillSelection(
+                skill_id=item.skill_id,
+                version=item.version,
+                score=item.score,
+                status="selected",
+                match_reasons=list(item.match_reasons),
+            )
+            for item in policy_result.approved
+        ]
+        selections.extend(
+            PlannerSkillSelection(
+                skill_id=item.skill_id,
+                version=item.version,
+                score=0,
+                status="rejected",
+                reason_codes=list(item.reason_codes),
+            )
+            for item in policy_result.rejected
+        )
+        selected_ids = [item.skill_id for item in policy_result.approved]
+        rejection_reasons = [
+            reason
+            for item in policy_result.rejected
+            for reason in item.reason_codes
+        ]
+        status: Literal["selected", "empty", "rejected", "unavailable"]
+        if selected_ids:
+            status = "selected"
+        elif policy_result.rejected:
+            status = "rejected"
+        else:
+            status = "empty"
+        canonical_plan = canonical_plan.model_copy(
+            update={
+                "selected_skills": selected_ids,
+                "skill_selection": selections,
+                "skill_selection_status": status,
+            }
+        )
+        return (
+            canonical_plan,
+            selections,
+            status,
+            list(dict.fromkeys(rejection_reasons)),
         )
 
     def failed_snapshot(
