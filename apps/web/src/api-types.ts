@@ -1540,6 +1540,9 @@ export type RuntimeNode = {
   max_retries?: number;
   optional?: boolean;
   input_artifact_ids?: string[];
+  skill_id?: string;
+  skill_version?: string;
+  skill_binding_id?: string;
 };
 
 export type RuntimeNodeActivation = "all_succeeded" | "any_failed" | "always";
