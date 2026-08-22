@@ -1,0 +1,38 @@
+version: "1.0"
+course_id: "RESEARCH"
+skills:
+  - skill_id: "RESEARCH.QUERY_PLANNING"
+    version: "1.0"
+    title: "学术查询规划"
+    course_id: "RESEARCH"
+    chapter: "research_planning"
+    domain: "research"
+    problem_types: ["academic_search"]
+    eligible_workers: ["AcademicSearchPlannerService"]
+    required_evidence: ["query_scope"]
+    verification_requirements: ["query_scope_present"]
+    keywords: ["检索规划", "研究问题", "query planning"]
+  - skill_id: "RESEARCH.EVIDENCE_REVIEW"
+    version: "1.0"
+    title: "证据评审"
+    course_id: "RESEARCH"
+    chapter: "evidence_review"
+    domain: "research"
+    problem_types: ["evidence_review"]
+    prerequisites: ["RESEARCH.QUERY_PLANNING"]
+    eligible_workers: ["AcademicPaperReviewService", "ResearchAnalysisReviewService"]
+    required_evidence: ["source_refs"]
+    verification_requirements: ["source_refs_present"]
+    keywords: ["证据评审", "文献评审", "evidence review"]
+  - skill_id: "RESEARCH.EVIDENCE_SYNTHESIS"
+    version: "1.0"
+    title: "证据综合"
+    course_id: "RESEARCH"
+    chapter: "evidence_synthesis"
+    domain: "research"
+    problem_types: ["evidence_synthesis"]
+    prerequisites: ["RESEARCH.EVIDENCE_REVIEW"]
+    eligible_workers: ["ResearchKnowledgeService", "ResearchAnalysisRuntimeService"]
+    required_evidence: ["source_refs", "claim_evidence_links"]
+    verification_requirements: ["claim_evidence_coverage"]
+    keywords: ["证据综合", "研究综合", "evidence synthesis"]

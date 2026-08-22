@@ -29,6 +29,22 @@ def test_ct_ae_de_skill_catalogs_load_and_map_stable_ids() -> None:
     assert skills.map_skills(
         course_id="DE", problem_type="logic_simplification", terms=["卡诺图"]
     ).skill_ids[0] == "DE.KMAP"
+    assert len(skills.list_for_course("RESEARCH")) == 3
+    assert len(skills.list_for_course("KNOWLEDGE")) == 2
+
+
+def test_registry_filters_versions_and_prerequisites_without_execution() -> None:
+    skills = registry()
+
+    assert skills.validate_identity_version("CT.KCL", "1.0") is True
+    assert skills.list(status="active", domain="research")[0].skill_id == (
+        "RESEARCH.EVIDENCE_REVIEW"
+    )
+    assert skills.validate_prerequisites("CT.NODAL", available_skill_ids=[])[0] is False
+    assert skills.validate_prerequisites(
+        "CT.NODAL", available_skill_ids=["CT.KCL"]
+    ) == (True, [])
+    assert skills.serialize("CT.KCL")["skill_id"] == "CT.KCL"
 
 
 def test_unsupported_course_and_unknown_skill_do_not_fabricate_mapping() -> None:

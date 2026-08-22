@@ -13,8 +13,8 @@ from app.courses import CourseRegistry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_SKILL_ROOT = PROJECT_ROOT / "config" / "skills"
-SUPPORTED_SKILL_COURSES = frozenset({"CT", "AE", "DE"})
 PROBLEM_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+VERSION_PATTERN = re.compile(r"^\d+\.\d+(?:\.\d+)?$")
 
 
 class SkillDefinition(BaseModel):
@@ -110,13 +110,66 @@ class SkillRegistry:
         self._load()
 
     def get(self, skill_id: str) -> SkillDefinition:
+        return self.resolve(skill_id)
+
+    def resolve(self, skill_id: str, *, version: str | None = None) -> SkillDefinition:
+        """Resolve a legacy or canonical ID without inventing aliases."""
+
+        normalized_id = str(skill_id).strip()
         try:
-            return self._skills[skill_id]
+            skill = self._skills[normalized_id]
         except KeyError as exc:
-            raise KeyError(f"未注册教学技能: {skill_id}") from exc
+            raise KeyError(f"未注册教学技能: {normalized_id}") from exc
+        if version is not None and skill.version != version:
+            raise ValueError(
+                f"技能版本不匹配: {normalized_id} expected={version} actual={skill.version}"
+            )
+        return skill
+
+    def validate_identity_version(self, skill_id: str, version: str) -> bool:
+        self.resolve(skill_id, version=version)
+        return True
 
     def list_for_course(self, course_id: str) -> list[SkillDefinition]:
         return list(self._by_course.get(course_id.upper(), []))
+
+    def list(
+        self,
+        *,
+        course_id: str | None = None,
+        status: str | None = None,
+        domain: str | None = None,
+    ) -> list[SkillDefinition]:
+        """List registered metadata with deterministic filters."""
+
+        items = list(self._skills.values())
+        if course_id is not None:
+            items = [
+                item
+                for item in items
+                if item.course_id.upper() == course_id.upper()
+            ]
+        if status is not None:
+            items = [item for item in items if item.status == status]
+        if domain is not None:
+            items = [item for item in items if item.domain == domain]
+        return sorted(items, key=lambda item: item.skill_id)
+
+    def validate_prerequisites(
+        self,
+        skill_id: str,
+        *,
+        available_skill_ids: list[str] | tuple[str, ...] = (),
+    ) -> tuple[bool, list[str]]:
+        """Return whether all direct prerequisites are available and registered."""
+
+        skill = self.resolve(skill_id)
+        available = {str(item).strip() for item in available_skill_ids}
+        missing = [item for item in skill.prerequisites if item not in available]
+        return not missing, missing
+
+    def serialize(self, skill_id: str) -> dict[str, object]:
+        return self.resolve(skill_id).model_dump(mode="json")
 
     def map_skills(
         self,
@@ -128,7 +181,7 @@ class SkillRegistry:
     ) -> SkillMappingResult:
         started = perf_counter()
         course = course_id.upper()
-        if course not in SUPPORTED_SKILL_COURSES:
+        if course not in self._by_course:
             return SkillMappingResult(
                 course_id=course,
                 status="unavailable",
@@ -178,16 +231,22 @@ class SkillRegistry:
             item.capability_id
             for item in self.capability_registry.list_capabilities()
         }
-        for course_id in sorted(SUPPORTED_SKILL_COURSES):
-            path = self.config_root / f"{course_id}.yaml"
-            if not path.is_file():
-                raise ValueError(f"缺少教学技能配置: {path}")
+        paths = sorted(self.config_root.glob("*.yaml"))
+        if not paths:
+            raise ValueError(f"缺少教学技能配置: {self.config_root}")
+        for path in paths:
             raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             catalog = SkillCatalog.model_validate(raw)
-            if catalog.course_id.upper() != course_id:
-                raise ValueError(f"{path}: course_id 必须为 {course_id}")
+            course_id = catalog.course_id.upper()
+            if not VERSION_PATTERN.fullmatch(catalog.version):
+                raise ValueError(f"{path}: version 格式无效: {catalog.version}")
             course_pack = self.course_registry.get(course_id)
+            is_registered_course = course_pack.course_code.upper() == course_id
             for skill in catalog.skills:
+                if skill.version != catalog.version:
+                    raise ValueError(
+                        f"{skill.skill_id}: skill version 必须与 catalog version 一致"
+                    )
                 if skill.course_id.upper() != course_id:
                     raise ValueError(
                         f"{path}: {skill.skill_id} course_id 与目录不一致"
@@ -202,7 +261,10 @@ class SkillRegistry:
                     item
                     for item in skill.problem_types
                     if not PROBLEM_TYPE_PATTERN.fullmatch(item)
-                    or item not in course_pack.supported_problem_types
+                    or (
+                        is_registered_course
+                        and item not in course_pack.supported_problem_types
+                    )
                 ]
                 if invalid_problem_types:
                     raise ValueError(

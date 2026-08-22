@@ -1,0 +1,26 @@
+version: "1.0"
+course_id: "KNOWLEDGE"
+skills:
+  - skill_id: "KNOWLEDGE.QUERY_REWRITE"
+    version: "1.0"
+    title: "知识查询改写"
+    course_id: "KNOWLEDGE"
+    chapter: "query_rewrite"
+    domain: "knowledge"
+    problem_types: ["knowledge_qa"]
+    eligible_workers: ["KnowledgeQAService"]
+    required_evidence: ["query_text"]
+    verification_requirements: ["query_intent_present"]
+    keywords: ["查询改写", "问题改写", "query rewrite"]
+  - skill_id: "KNOWLEDGE.GROUNDED_EXPLANATION"
+    version: "1.0"
+    title: "有依据知识解释"
+    course_id: "KNOWLEDGE"
+    chapter: "grounded_explanation"
+    domain: "knowledge"
+    problem_types: ["knowledge_qa"]
+    prerequisites: ["KNOWLEDGE.QUERY_REWRITE"]
+    eligible_workers: ["KnowledgeQAService", "RetrievalContextService"]
+    required_evidence: ["retrieval_refs"]
+    verification_requirements: ["answer_grounded"]
+    keywords: ["知识解释", "有依据回答", "grounded explanation"]
