@@ -35,6 +35,7 @@ class SkillDefinition(BaseModel):
     output_contract: dict[str, object] = Field(default_factory=dict)
     eligible_workers: list[str] = Field(default_factory=list)
     eligible_tools: list[str] = Field(default_factory=list)
+    allowed_roles: list[str] = Field(default_factory=list)
     required_evidence: list[str] = Field(default_factory=list)
     risk: Literal["low", "medium", "high", "critical"] = "low"
     budget_hint: dict[str, int | float | str] = Field(default_factory=dict)
@@ -45,7 +46,7 @@ class SkillDefinition(BaseModel):
     status: Literal["active", "experimental", "frozen", "deprecated"] = "active"
 
     @model_validator(mode="after")
-    def complete_legacy_metadata(self) -> "SkillDefinition":
+    def complete_legacy_metadata(self) -> SkillDefinition:
         """Keep the existing title/chapter YAML vocabulary source-compatible."""
 
         if not self.name:
@@ -122,7 +123,8 @@ class SkillRegistry:
             raise KeyError(f"未注册教学技能: {normalized_id}") from exc
         if version is not None and skill.version != version:
             raise ValueError(
-                f"技能版本不匹配: {normalized_id} expected={version} actual={skill.version}"
+                "技能版本不匹配: "
+                f"{normalized_id} expected={version} actual={skill.version}"
             )
         return skill
 
