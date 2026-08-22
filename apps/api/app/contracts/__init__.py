@@ -141,6 +141,16 @@ from app.contracts.orchestration import (
     TaskFamily,
     WorkflowStatus,
 )
+from app.contracts.planner import (
+    CanonicalGoal,
+    CanonicalPlan,
+    CanonicalPlanNode,
+    PlannerBudget,
+    PlannerLineage,
+    PlannerPlanShape,
+    PlannerRouteProjection,
+    PlannerSnapshot,
+)
 from app.contracts.research import (
     ResearchBriefDraft,
     ResearchFinding,
@@ -170,16 +180,6 @@ from app.contracts.research_analysis import (
     ResearchVariable,
 )
 from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
-from app.contracts.planner import (
-    CanonicalGoal,
-    CanonicalPlan,
-    CanonicalPlanNode,
-    PlannerBudget,
-    PlannerLineage,
-    PlannerPlanShape,
-    PlannerRouteProjection,
-    PlannerSnapshot,
-)
 from app.contracts.runtime import (
     AgentExecutionPlan,
     AgentResultEnvelope,
