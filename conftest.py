@@ -60,7 +60,6 @@ def clean_checkout_fixtures() -> None:
                 "source_path": "CT/fixtures/ct.md",
                 "parse_status": "parsed",
                 "quality_status": "review",
-                "manual_review_required": False,
             },
             {
                 "course_id": "AE",
@@ -69,7 +68,6 @@ def clean_checkout_fixtures() -> None:
                 "source_path": "AE/fixtures/ae.md",
                 "parse_status": "parsed",
                 "quality_status": "review",
-                "manual_review_required": False,
             },
         )
     ) + "\n"
