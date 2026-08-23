@@ -1307,6 +1307,8 @@ export type MathExpression = {
   source_text?: string | null;
   normalized?: boolean;
   validation_status?: string;
+  render_status?: string;
+  error_code?: string | null;
   variables?: string[];
   warnings?: string[];
   metadata?: {
@@ -1574,6 +1576,7 @@ export type RuntimeNode = {
   timeout_ms?: number;
   max_retries?: number;
   optional?: boolean;
+  failure_policy?: string;
   input_artifact_ids?: string[];
   skill_id?: string;
   skill_version?: string;

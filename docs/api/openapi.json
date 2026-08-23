@@ -16403,6 +16403,22 @@
             "title": "Validation Status",
             "default": "unchecked"
           },
+          "render_status": {
+            "type": "string",
+            "title": "Render Status",
+            "default": "unchecked"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
           "variables": {
             "items": {
               "type": "string"
@@ -17788,6 +17804,12 @@
             "type": "boolean",
             "title": "Optional",
             "default": false
+          },
+          "failure_policy": {
+            "type": "string",
+            "pattern": "^(fatal|nonfatal)$",
+            "title": "Failure Policy",
+            "default": "fatal"
           },
           "input_artifact_ids": {
             "items": {
