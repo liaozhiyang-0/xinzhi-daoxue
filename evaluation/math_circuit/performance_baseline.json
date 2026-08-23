@@ -1,0 +1,27 @@
+{
+  "schema_version": "math_circuit_performance.v1",
+  "source_root": "C:\\Users\\86184\\Desktop\\xinzhi-daoxue",
+  "math_formula_count": 64316,
+  "corpus_scan_ms": 16588.419,
+  "math_normalization_ms": {
+    "p50": 0.2234,
+    "p95": 0.73223,
+    "max": 14.6131
+  },
+  "circuit_fixture_count": 13,
+  "circuit_validation_ms": {
+    "p50": 0.4322,
+    "p95": 1.78624
+  },
+  "svg_render_ms": {
+    "p50": 2.1657,
+    "p95": 3.16986
+  },
+  "svg_size_bytes": {
+    "min": 1260,
+    "max": 2115,
+    "mean": 1803.62
+  },
+  "network_simulation": false,
+  "external_provider_calls": 0
+}

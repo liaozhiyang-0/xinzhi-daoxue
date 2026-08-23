@@ -79,6 +79,50 @@ class _RecordingModelService:
         )
 
 
+def test_knowledge_output_normalizes_math_but_preserves_verilog_monitor(
+    tmp_path: Path,
+) -> None:
+    service = KnowledgeQAService(
+        make_service(
+            tmp_path,
+            {
+                "CT": {
+                    "math.md": (
+                        "# KCL\n"
+                        "节点方程为 \\(i_1+i_2=i_3\\)。\n"
+                        "\\[\\begin{bmatrix}i_1\\\\i_2\\end{bmatrix}=b\\]\n"
+                        "```verilog\n"
+                        '$monitor("v=%0d", v);\n'
+                        "```\n"
+                    )
+                }
+            },
+        ),
+        RetrievalContextService(2000),
+    )
+    request = AgentRequest(
+        session_id="s-math-output",
+        user_id="u-math-output",
+        scene="learning",
+        course_id="CT",
+        intent="general_qa",
+        canonical_input={"question": "KCL"},
+        options={"allow_cloud": False},
+    )
+
+    execution = service.run("LEARN_01_LOCAL_RETRIEVAL_V1", request)
+
+    assert execution.result.answer
+    assert "\\(" not in execution.result.answer
+    assert "\\[" not in execution.result.answer
+    assert "$i_1+i_2=i_3$" in execution.result.answer
+    assert '$monitor("v=%0d", v);' in execution.result.answer
+    assert execution.result.structured_result["math_rendering"]["status"] in {
+        "passed",
+        "needs_review",
+    }
+
+
 async def test_knowledge_qa_skips_generation_when_cloud_is_disabled(
     tmp_path: Path,
 ) -> None:
@@ -116,11 +160,7 @@ async def test_governance_uses_model_to_organize_input_and_evidence(
     service = KnowledgeQAService(
         make_service(
             tmp_path,
-            {
-                "CT": {
-                    "governance.md": "# 节点电压法\n课程资产版本需要逐项复核。"
-                }
-            },
+            {"CT": {"governance.md": "# 节点电压法\n课程资产版本需要逐项复核。"}},
         ),
         RetrievalContextService(2000),
         model_service=model,  # type: ignore[arg-type]
@@ -241,9 +281,7 @@ async def test_governance_rejects_mock_model_as_publishable_synthesis(
 async def test_learning_path_synthesizes_user_evidence_without_local_chunks(
     tmp_path: Path,
 ) -> None:
-    model = _RecordingModelService(
-        "证据摘要：三次分数下降；薄弱点暂定为参考方向符号。"
-    )
+    model = _RecordingModelService("证据摘要：三次分数下降；薄弱点暂定为参考方向符号。")
     service = KnowledgeQAService(
         make_service(tmp_path, {"CT": {"unrelated.md": "完全无关的章节。"}}),
         RetrievalContextService(2000),
@@ -256,9 +294,7 @@ async def test_learning_path_synthesizes_user_evidence_without_local_chunks(
         course_id="CT",
         intent="learning_advice",
         scenario_id="student_learning_path_v1",
-        canonical_input={
-            "text": "三次KCL得分80、60、40，参考方向题经常写反。"
-        },
+        canonical_input={"text": "三次KCL得分80、60、40，参考方向题经常写反。"},
         options={"scenario_id": "student_learning_path_v1"},
     )
 

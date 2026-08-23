@@ -250,6 +250,73 @@ i_L
     assert expression.validation_status == "valid"
 
 
+@pytest.mark.parametrize(
+    ("source", "error_code"),
+    [
+        (r"\unknownmacro{x}", "UNSUPPORTED_RENDER"),
+        (r"\input{student.tex}", "UNSAFE_COMMAND"),
+        (r"\frac{1}{2", "MALFORMED_LATEX"),
+    ],
+)
+def test_math_failures_keep_raw_latex_and_expose_typed_error(
+    formatter: MathFormattingService, source: str, error_code: str
+) -> None:
+    expression = formatter.normalize_latex(source)
+
+    assert expression.latex == source
+    assert expression.normalized is False
+    assert expression.render_status == "fallback"
+    assert expression.error_code == error_code
+    assert expression.metadata["raw_latex"] == source
+
+
+def test_array_matrix_aligned_cases_are_not_damaged(
+    formatter: MathFormattingService,
+) -> None:
+    sources = [
+        r"\begin{array}{cc}a&b\\c&d\end{array}",
+        r"\begin{matrix}a&b\\c&d\end{matrix}",
+        r"\begin{aligned}x&=1\\y&=2\end{aligned}",
+        r"\begin{cases}0,&x<0\\1,&x\ge 0\end{cases}",
+    ]
+
+    for source in sources:
+        expression = formatter.normalize_latex(source)
+        assert expression.latex == source
+        assert expression.error_code is None
+        assert expression.render_status == "ready"
+
+
+def test_dollar_and_bracket_delimiters_are_canonicalized(
+    formatter: MathFormattingService,
+) -> None:
+    content = formatter.process_markdown(
+        r"inline $x^2$ and \(y^2\), display $$\begin{aligned}x&=1\end{aligned}$$"
+    )
+
+    assert content.markdown.count("$") >= 6
+    assert "\\(" not in content.markdown
+    assert "\\)" not in content.markdown
+    assert all(item.render_status == "ready" for item in content.math_expressions)
+
+
+def test_verilog_monitor_and_inline_code_are_protected(
+    formatter: MathFormattingService,
+) -> None:
+    source = """```verilog
+$monitor(\"v=%0d\", v);
+dvdt = 1;
+```
+Inline `d2vdt2` and `$monitor` must remain text.
+"""
+
+    content = formatter.process_markdown(source)
+
+    assert '$monitor("v=%0d", v);' in content.markdown
+    assert "`d2vdt2`" in content.markdown
+    assert all(item.source_text != "$monitor" for item in content.math_expressions)
+
+
 def test_completed_task_transports_math_content_without_breaking_answer_text(
     api: Any, client: Any
 ) -> None:

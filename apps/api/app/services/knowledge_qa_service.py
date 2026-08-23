@@ -17,7 +17,10 @@ from app.contracts import (
 from app.contracts.learning import LearningPathDraft
 from app.services.evidence_excerpt import display_evidence_excerpt
 from app.services.knowledge_base import KnowledgeBaseService
-from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
+from app.services.math_formatting_service import (
+    MATH_OUTPUT_INSTRUCTION,
+    MathFormattingService,
+)
 from app.services.model_service import ModelService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.response_depth import (
@@ -93,6 +96,7 @@ class KnowledgeQAService:
         self.context_service = context_service
         self.rag_retrieval = rag_retrieval
         self.model_service = model_service
+        self.math_formatter = MathFormattingService()
 
     async def run_with_generation(
         self, agent_id: str, request: AgentRequest
@@ -260,9 +264,7 @@ class KnowledgeQAService:
             learning_path_draft = LearningPathDraft.model_validate_json(
                 generated.content
             )
-            generated_content = self._render_learning_path_draft(
-                learning_path_draft
-            )
+            generated_content = self._render_learning_path_draft(learning_path_draft)
         else:
             generated_content = generated.content
         generated_content = re.sub(
@@ -284,6 +286,7 @@ class KnowledgeQAService:
                 generated_content,
             )
             declared -= invalid_ids
+        generated_content, math_quality = self._format_markdown(generated_content)
         citations = [
             source
             for evidence_id, source in evidence_by_id.items()
@@ -293,6 +296,8 @@ class KnowledgeQAService:
             execution.result.warnings.append("模型回答未包含可验证的证据编号")
         execution.result.provider = generated.provider
         execution.result.answer = generated_content
+        execution.result.structured_result["math_rendering"] = math_quality
+        execution.result.warnings.extend(self._math_warnings(math_quality))
         execution.result.citations = citations
         execution.result.metrics.provider_latency_ms = (
             execution.result.metrics.provider_latency_ms or 0
@@ -443,9 +448,7 @@ class KnowledgeQAService:
 
     def run(self, agent_id: str, request: AgentRequest) -> KnowledgeQAExecution:
         question = self._question(request)
-        retrieval_limit = policy_for(
-            request.options, "knowledge_qa"
-        ).retrieval_limit
+        retrieval_limit = policy_for(request.options, "knowledge_qa").retrieval_limit
         if self.rag_retrieval is None:
             retrieval = self._local_lexical_search(
                 question, request.course_id, top_k=retrieval_limit
@@ -558,7 +561,10 @@ class KnowledgeQAService:
             source_refs=context.source_refs,
             confidence=retrieval.confidence,
         )
-        answer = self._build_grounded_answer(question, context, summary, policy)
+        answer, math_quality = self._format_markdown(
+            self._build_grounded_answer(question, context, summary, policy)
+        )
+        content["math_rendering"] = math_quality
         result = AgentResult(
             agent_id=agent_id,
             provider="local",
@@ -577,8 +583,19 @@ class KnowledgeQAService:
             retrieval_latency_ms=retrieval.latency_ms,
             index_version=retrieval.index_version,
         )
+        result.warnings.extend(self._math_warnings(math_quality))
         result.metrics.retrieval_calls = 1
         return KnowledgeQAExecution(result=result, retrieval=retrieval, context=context)
+
+    def _format_markdown(self, markdown: str) -> tuple[str, dict[str, object]]:
+        formatted = self.math_formatter.process_markdown(markdown)
+        quality = self.math_formatter.quality_summary(formatted)
+        return formatted.markdown, quality
+
+    @staticmethod
+    def _math_warnings(quality: dict[str, object]) -> list[str]:
+        warnings = quality.get("warnings", [])
+        return [str(item) for item in warnings] if isinstance(warnings, list) else []
 
     @staticmethod
     def _build_grounded_answer(
@@ -646,6 +663,8 @@ class KnowledgeQAService:
 
     @staticmethod
     def _is_learning_path_request(request: AgentRequest) -> bool:
-        return str(request.options.get("scenario_id", "")).strip() == (
-            "student_learning_path_v1"
-        ) or request.scenario_id == "student_learning_path_v1"
+        return (
+            str(request.options.get("scenario_id", "")).strip()
+            == ("student_learning_path_v1")
+            or request.scenario_id == "student_learning_path_v1"
+        )

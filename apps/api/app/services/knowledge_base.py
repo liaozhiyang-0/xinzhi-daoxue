@@ -99,11 +99,9 @@ def tokenize(text: str) -> list[str]:
 
 
 def clean_markdown(text: str) -> str:
+    """Remove indexing-only noise without changing math or code semantics."""
     text = IMAGE_RE.sub(lambda match: f" 图示：{match.group(1)} ", text)
     text = HTML_RE.sub(" ", text)
-    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
-    text = re.sub(r"[`*_>|]", " ", text)
-    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 

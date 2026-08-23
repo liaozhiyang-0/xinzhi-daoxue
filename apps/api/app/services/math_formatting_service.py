@@ -114,18 +114,17 @@ class MathFormattingService:
         )
         validation_warnings = self.validate_latex(normalized)
         warnings = list(dict.fromkeys([*repair_warnings, *validation_warnings]))
-        invalid = any(
-            item.startswith(
-                (
-                    "dangerous_command",
-                    "unbalanced_",
-                    "mismatched_",
-                    "unclosed_",
-                    "empty_formula",
-                )
+        error_code = self._error_code(warnings)
+        if error_code is not None:
+            # Never publish a repaired interpretation of a formula that is
+            # structurally unsafe or outside the renderer contract.  The
+            # original body remains available to the caller as a raw fallback.
+            normalized = body
+            warnings = list(
+                dict.fromkeys([*repair_warnings, *self.validate_latex(body)])
             )
-            for item in warnings
-        )
+            error_code = self._error_code(warnings)
+        invalid = error_code is not None
         expression_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
         return MathExpression(
             expression_id=f"math_{expression_hash}",
@@ -138,9 +137,15 @@ class MathFormattingService:
             else "warning"
             if warnings
             else "valid",
+            render_status="fallback" if invalid else "ready",
+            error_code=error_code,
             variables=self._variables(normalized),
             warnings=warnings,
-            metadata={"expression_hash": expression_hash},
+            metadata={
+                "expression_hash": expression_hash,
+                "raw_latex": body,
+                "fallback": invalid,
+            },
         )
 
     def normalize_equation_list(self, equations: list[str]) -> list[MathExpression]:
@@ -213,9 +218,7 @@ class MathFormattingService:
                     delimiter = f"$$\n{expression.latex}\n$$"
                     if trailing_newline:
                         delimiter += "\n"
-                    chunks.append(
-                        self._math_chunk(delimiter, expression, display=True)
-                    )
+                    chunks.append(self._math_chunk(delimiter, expression, display=True))
                 index += consumed
                 continue
             if self._is_markdown_table_line(line):
@@ -329,6 +332,30 @@ class MathFormattingService:
                 warnings.append(f"unsupported_command:{name}")
         warnings.extend(self._matrix_warnings(text))
         return list(dict.fromkeys(warnings))
+
+    @staticmethod
+    def _error_code(warnings: Iterable[str]) -> str | None:
+        values = tuple(warnings)
+        if any(item.startswith("dangerous_command") for item in values):
+            return "UNSAFE_COMMAND"
+        if any(
+            item.startswith(("unsupported_command", "unsupported_environment"))
+            for item in values
+        ):
+            return "UNSUPPORTED_RENDER"
+        if any(
+            item.startswith(
+                (
+                    "empty_formula",
+                    "unbalanced_",
+                    "mismatched_",
+                    "unclosed_",
+                )
+            )
+            for item in values
+        ):
+            return "MALFORMED_LATEX"
+        return None
 
     @staticmethod
     def debug_summary(content: MathRichContent) -> dict[str, Any]:
@@ -524,6 +551,7 @@ class MathFormattingService:
         for source, target in sorted(
             SYMBOLS.items(), key=lambda item: len(item[0]), reverse=True
         ):
+
             def substitute(_match: re.Match[str], value: str = target) -> str:
                 return value
 
@@ -674,6 +702,7 @@ class MathFormattingService:
         for opener, closer, kind in (
             ("`", "`", MathSegmentType.CODE),
             ("\\(", "\\)", MathSegmentType.INLINE_MATH),
+            ("\\[", "\\]", MathSegmentType.DISPLAY_MATH),
             ("$$", "$$", MathSegmentType.DISPLAY_MATH),
             ("$", "$", MathSegmentType.INLINE_MATH),
             ("<", ">", MathSegmentType.HTML),
