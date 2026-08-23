@@ -92,6 +92,7 @@ def decide_circuit_visualization(
     ) if circuit else 0
     component_count = len(circuit.components) if circuit else 0
     reasons: list[str] = []
+    decision: CircuitDecision
 
     if feature_mode == "off":
         reasons.append("feature_mode_off")

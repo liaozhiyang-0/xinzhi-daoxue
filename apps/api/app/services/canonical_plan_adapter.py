@@ -53,7 +53,10 @@ class CanonicalPlanAdapter:
                     timeout_ms=node.timeout_ms,
                     max_retries=node.max_retries,
                     optional=node.optional,
-                    failure_policy=getattr(node, "failure_policy", "fatal"),
+                    failure_policy=cast(
+                        Literal["fatal", "nonfatal"],
+                        getattr(node, "failure_policy", "fatal"),
+                    ),
                 )
                 for node in plan.nodes
             ],
@@ -151,7 +154,9 @@ class CanonicalPlanAdapter:
                     timeout_ms=node.timeout_ms,
                     max_retries=node.max_retries,
                     optional=node.optional,
-                    failure_policy=node.failure_policy,
+                    failure_policy=cast(
+                        Literal["fatal", "nonfatal"], node.failure_policy
+                    ),
                 )
                 for node in plan.nodes
             ],
