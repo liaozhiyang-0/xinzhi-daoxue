@@ -34,6 +34,8 @@ class MathExpression(BaseModel):
     source_text: str | None = None
     normalized: bool = False
     validation_status: str = "unchecked"
+    render_status: str = "unchecked"
+    error_code: str | None = None
     variables: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

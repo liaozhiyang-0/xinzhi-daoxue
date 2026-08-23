@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from app.circuit.tool import circuit_render_tool
 from app.tools.calculator import calculate
 from app.tools.sympy_solver import solve_equations
 from app.tools.unit_checker import check_unit_compatibility
@@ -70,7 +71,7 @@ class ToolRegistry:
         return sorted(self._tools)
 
 
-def default_tool_registry() -> ToolRegistry:
+def default_tool_registry(*, circuit_render_enabled: bool = False) -> ToolRegistry:
     registry = ToolRegistry()
     active: dict[str, tuple[Callable[..., Any], set[str]]] = {
         "calculator": (calculate, {"algebra", "complex_numbers"}),
@@ -112,4 +113,19 @@ def default_tool_registry() -> ToolRegistry:
                 enabled=False,
             )
         )
+    registry.register(
+        ToolDefinition(
+            "circuit.render",
+            "CircuitIR SVG renderer",
+            frozenset({"circuit_render"}),
+            {"type": "object", "required": ["circuit"]},
+            {"type": "object", "required": ["status", "validation_state", "warnings"]},
+            timeout_seconds=10,
+            side_effect_level="none",
+            requires_sandbox=False,
+            enabled=circuit_render_enabled,
+            deterministic=True,
+        ),
+        circuit_render_tool if circuit_render_enabled else None,
+    )
     return registry
