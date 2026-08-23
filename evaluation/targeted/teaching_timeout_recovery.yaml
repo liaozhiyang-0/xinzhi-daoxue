@@ -1,0 +1,30 @@
+schema_version: targeted_suite.v1
+suite_id: teaching_timeout_recovery
+title: Teaching timeout and recovery regression suite
+source_catalog: evaluation/cases
+source_catalog_scope: declared_case_catalog_84_official_plus_12_not_official
+evidence_level: synthetic_provider_free
+owner_patterns: [P02, P03, P07, P11, P14, P16, P17]
+case_count: 20
+hidden_targeted_count: 5
+cases:
+  - {case_id: COMMERCIAL_FACULTY_001, category: positive, hidden_targeted: false, source_pattern: P03}
+  - {case_id: CONTEST_TEACH_001, category: positive, hidden_targeted: true, source_pattern: P03}
+  - {case_id: TF01_LEGACY_DEFAULT_MODE, category: positive, hidden_targeted: false, source_pattern: P16}
+  - {case_id: TP2-01, category: positive, hidden_targeted: false, source_pattern: P16}
+  - {case_id: TP3-01, category: positive, hidden_targeted: false, source_pattern: P16}
+  - {case_id: COMMERCIAL_ASSESS_001, category: negative, hidden_targeted: false, source_pattern: P02}
+  - {case_id: CONTEST_ASSESS_001, category: negative, hidden_targeted: false, source_pattern: P02}
+  - {case_id: COMMERCIAL_LEARNING_001, category: negative, hidden_targeted: false, source_pattern: P11}
+  - {case_id: COMMERCIAL_GOVERNANCE_001, category: negative, hidden_targeted: false, source_pattern: P14}
+  - {case_id: TP3-05, category: negative, hidden_targeted: true, source_pattern: P07}
+  - {case_id: BOUNDARY_MISSING_001, category: boundary, hidden_targeted: false, source_pattern: P03}
+  - {case_id: BOUNDARY_UNREADABLE_001, category: boundary, hidden_targeted: false, source_pattern: P03}
+  - {case_id: BOUNDARY_COURSE_CONFLICT_001, category: boundary, hidden_targeted: true, source_pattern: P07}
+  - {case_id: TF14_MEMORY_BOUNDARY, category: boundary, hidden_targeted: false, source_pattern: P16}
+  - {case_id: TF15_MASTERY_BOUNDARY, category: boundary, hidden_targeted: false, source_pattern: P16}
+  - {case_id: TF03_CHECK_MY_WORK_CONTEXT, category: already_correct, hidden_targeted: false, source_pattern: P17}
+  - {case_id: TF04_CT_SKILL_MAPPING, category: already_correct, hidden_targeted: false, source_pattern: P17}
+  - {case_id: TF05_AE_SKILL_MAPPING, category: already_correct, hidden_targeted: true, source_pattern: P17}
+  - {case_id: TF06_DE_SKILL_MAPPING, category: already_correct, hidden_targeted: false, source_pattern: P17}
+  - {case_id: TF08_SOLUTION_PACKET_COMPAT, category: already_correct, hidden_targeted: true, source_pattern: P17}

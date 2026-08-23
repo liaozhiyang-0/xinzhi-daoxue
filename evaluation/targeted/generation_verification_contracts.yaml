@@ -1,0 +1,30 @@
+schema_version: targeted_suite.v1
+suite_id: generation_verification_contracts
+title: Numeric generation and verification contract suite
+source_catalog: evaluation/cases
+source_catalog_scope: declared_case_catalog_84_official_plus_12_not_official
+evidence_level: synthetic_provider_free
+owner_patterns: [P08, P09, P10, P16, P17]
+case_count: 20
+hidden_targeted_count: 5
+cases:
+  - {case_id: AE_OPAMP_001, category: positive, hidden_targeted: false, source_pattern: P08}
+  - {case_id: CT_POWER_001, category: positive, hidden_targeted: false, source_pattern: P08}
+  - {case_id: DE_NUMBER_001, category: positive, hidden_targeted: true, source_pattern: P09}
+  - {case_id: TF05_AE_SKILL_MAPPING, category: positive, hidden_targeted: true, source_pattern: P17}
+  - {case_id: TF06_DE_SKILL_MAPPING, category: positive, hidden_targeted: false, source_pattern: P17}
+  - {case_id: AE_DIODE_001, category: negative, hidden_targeted: false, source_pattern: P08}
+  - {case_id: CT_KCL_001, category: negative, hidden_targeted: false, source_pattern: P08}
+  - {case_id: DE_BOOLEAN_001, category: negative, hidden_targeted: false, source_pattern: P09}
+  - {case_id: SS_LINEAR_001, category: negative, hidden_targeted: false, source_pattern: P10}
+  - {case_id: QA_CT_001, category: negative, hidden_targeted: false, source_pattern: P10}
+  - {case_id: AE_SMALL_SIGNAL_INSUFFICIENT_001, category: boundary, hidden_targeted: false, source_pattern: P08}
+  - {case_id: CT_INSUFFICIENT_001, category: boundary, hidden_targeted: true, source_pattern: P08}
+  - {case_id: SS_FREQ_INSUFFICIENT_001, category: boundary, hidden_targeted: false, source_pattern: P10}
+  - {case_id: BOUNDARY_MISSING_001, category: boundary, hidden_targeted: false, source_pattern: P09}
+  - {case_id: BOUNDARY_UNREADABLE_001, category: boundary, hidden_targeted: true, source_pattern: P10}
+  - {case_id: AE_BJT_001, category: already_correct, hidden_targeted: false, source_pattern: P08}
+  - {case_id: CT_NODE_001, category: already_correct, hidden_targeted: false, source_pattern: P08}
+  - {case_id: DE_COMB_001, category: already_correct, hidden_targeted: false, source_pattern: P09}
+  - {case_id: SS_CONVOLUTION_001, category: already_correct, hidden_targeted: false, source_pattern: P10}
+  - {case_id: TF08_SOLUTION_PACKET_COMPAT, category: already_correct, hidden_targeted: true, source_pattern: P17}

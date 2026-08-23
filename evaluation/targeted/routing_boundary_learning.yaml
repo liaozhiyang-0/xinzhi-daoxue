@@ -1,0 +1,30 @@
+schema_version: targeted_suite.v1
+suite_id: routing_boundary_learning
+title: Routing, learning, research and governance boundary suite
+source_catalog: evaluation/cases
+source_catalog_scope: declared_case_catalog_84_official_plus_12_not_official
+evidence_level: synthetic_provider_free
+owner_patterns: [P07, P11, P12, P13, P14]
+case_count: 20
+hidden_targeted_count: 5
+cases:
+  - {case_id: SYN_LEARN_CT_001, category: positive, hidden_targeted: false, source_pattern: P11}
+  - {case_id: COMMERCIAL_LEARNING_001, category: positive, hidden_targeted: false, source_pattern: P11}
+  - {case_id: COMMERCIAL_FRONTIER_001, category: positive, hidden_targeted: true, source_pattern: P12}
+  - {case_id: CONTEST_RESEARCH_001, category: positive, hidden_targeted: false, source_pattern: P13}
+  - {case_id: COMMERCIAL_GOVERNANCE_001, category: positive, hidden_targeted: false, source_pattern: P14}
+  - {case_id: BOUNDARY_QA_NOT_SOLVER_001, category: negative, hidden_targeted: true, source_pattern: P07}
+  - {case_id: DE_NUMBER_001, category: negative, hidden_targeted: false, source_pattern: P07}
+  - {case_id: QA_DE_001, category: negative, hidden_targeted: false, source_pattern: P07}
+  - {case_id: RUNTIME_COURSE_SWITCH_001, category: negative, hidden_targeted: false, source_pattern: P07}
+  - {case_id: COMMERCIAL_DATA_001, category: negative, hidden_targeted: false, source_pattern: P12}
+  - {case_id: BOUNDARY_COURSE_CONFLICT_001, category: boundary, hidden_targeted: true, source_pattern: P07}
+  - {case_id: BOUNDARY_MISSING_001, category: boundary, hidden_targeted: false, source_pattern: P11}
+  - {case_id: BOUNDARY_UNREADABLE_001, category: boundary, hidden_targeted: false, source_pattern: P12}
+  - {case_id: TF07_UNKNOWN_SKILL, category: boundary, hidden_targeted: false, source_pattern: P14}
+  - {case_id: TF13_ERROR_POOL_NO_FUZZY_MATCH, category: boundary, hidden_targeted: true, source_pattern: P14}
+  - {case_id: QA_AE_001, category: already_correct, hidden_targeted: false, source_pattern: P11}
+  - {case_id: QA_SS_001, category: already_correct, hidden_targeted: false, source_pattern: P13}
+  - {case_id: RUNTIME_ISOLATION_001, category: already_correct, hidden_targeted: false, source_pattern: P07}
+  - {case_id: RUNTIME_RESTORE_001, category: already_correct, hidden_targeted: true, source_pattern: P07}
+  - {case_id: TF04_CT_SKILL_MAPPING, category: already_correct, hidden_targeted: false, source_pattern: P14}

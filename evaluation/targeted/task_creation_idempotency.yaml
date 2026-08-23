@@ -1,0 +1,30 @@
+schema_version: targeted_suite.v1
+suite_id: task_creation_idempotency
+title: Task creation idempotency and lifecycle recovery suite
+source_catalog: evaluation/cases
+source_catalog_scope: declared_case_catalog_84_official_plus_12_not_official
+evidence_level: synthetic_provider_free
+owner_patterns: [P04]
+case_count: 20
+hidden_targeted_count: 5
+cases:
+  - {case_id: RUNTIME_FOLLOW_UP_001, category: positive, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_CORRECTION_001, category: positive, hidden_targeted: true, source_pattern: P04}
+  - {case_id: RUNTIME_COURSE_SWITCH_001, category: positive, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_COMPACTION_001, category: positive, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_ARCHIVE_001, category: positive, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_REMEMBER_001, category: negative, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_FORGET_001, category: negative, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_MEMORY_CONFLICT_001, category: negative, hidden_targeted: true, source_pattern: P04}
+  - {case_id: RUNTIME_ISOLATION_001, category: negative, hidden_targeted: false, source_pattern: P04}
+  - {case_id: RUNTIME_RESTORE_001, category: negative, hidden_targeted: true, source_pattern: P04}
+  - {case_id: SYN_RELIABILITY_001, category: boundary, hidden_targeted: false, source_pattern: P04}
+  - {case_id: BOUNDARY_COURSE_CONFLICT_001, category: boundary, hidden_targeted: true, source_pattern: P04}
+  - {case_id: BOUNDARY_QA_NOT_SOLVER_001, category: boundary, hidden_targeted: false, source_pattern: P04}
+  - {case_id: BOUNDARY_MISSING_001, category: boundary, hidden_targeted: false, source_pattern: P04}
+  - {case_id: CT_INSUFFICIENT_001, category: boundary, hidden_targeted: false, source_pattern: P04}
+  - {case_id: CT_FIRST_ORDER_001, category: already_correct, hidden_targeted: false, source_pattern: P04}
+  - {case_id: TP2-02, category: already_correct, hidden_targeted: false, source_pattern: P04}
+  - {case_id: TP2-03, category: already_correct, hidden_targeted: true, source_pattern: P04}
+  - {case_id: TP2-04, category: already_correct, hidden_targeted: false, source_pattern: P04}
+  - {case_id: TP2-05, category: already_correct, hidden_targeted: false, source_pattern: P04}

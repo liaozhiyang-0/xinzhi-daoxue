@@ -1,0 +1,30 @@
+schema_version: targeted_suite.v1
+suite_id: visual_fixture_acceptance
+title: Visual and citation fixture acceptance suite
+source_catalog: evaluation/cases
+source_catalog_scope: declared_case_catalog_84_official_plus_12_not_official
+evidence_level: synthetic_provider_free
+owner_patterns: [P05, P06]
+case_count: 20
+hidden_targeted_count: 5
+cases:
+  - {case_id: COMMERCIAL_ACADEMIC_VISUAL_001, category: positive, hidden_targeted: true, source_pattern: P05}
+  - {case_id: COMMERCIAL_ACADEMIC_SPECTRUM_001, category: positive, hidden_targeted: false, source_pattern: P06}
+  - {case_id: AE_OPAMP_001, category: positive, hidden_targeted: false, source_pattern: P05}
+  - {case_id: CT_PHASOR_001, category: positive, hidden_targeted: true, source_pattern: P06}
+  - {case_id: SS_CONVOLUTION_001, category: positive, hidden_targeted: false, source_pattern: P05}
+  - {case_id: BOUNDARY_UNREADABLE_001, category: negative, hidden_targeted: true, source_pattern: P05}
+  - {case_id: BOUNDARY_MISSING_001, category: negative, hidden_targeted: false, source_pattern: P05}
+  - {case_id: QA_AE_001, category: negative, hidden_targeted: false, source_pattern: P05}
+  - {case_id: QA_SS_001, category: negative, hidden_targeted: false, source_pattern: P06}
+  - {case_id: COMMERCIAL_FRONTIER_001, category: negative, hidden_targeted: false, source_pattern: P05}
+  - {case_id: BOUNDARY_COURSE_CONFLICT_001, category: boundary, hidden_targeted: false, source_pattern: P05}
+  - {case_id: CT_INSUFFICIENT_001, category: boundary, hidden_targeted: false, source_pattern: P05}
+  - {case_id: AE_SMALL_SIGNAL_INSUFFICIENT_001, category: boundary, hidden_targeted: false, source_pattern: P05}
+  - {case_id: SS_FREQ_INSUFFICIENT_001, category: boundary, hidden_targeted: true, source_pattern: P06}
+  - {case_id: SYN_RELIABILITY_001, category: boundary, hidden_targeted: false, source_pattern: P05}
+  - {case_id: AE_DIODE_001, category: already_correct, hidden_targeted: false, source_pattern: P05}
+  - {case_id: CT_CAPACITOR_001, category: already_correct, hidden_targeted: false, source_pattern: P06}
+  - {case_id: AE_BJT_001, category: already_correct, hidden_targeted: false, source_pattern: P05}
+  - {case_id: SS_TIME_INVARIANT_001, category: already_correct, hidden_targeted: false, source_pattern: P06}
+  - {case_id: QA_CT_001, category: already_correct, hidden_targeted: true, source_pattern: P05}
