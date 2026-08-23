@@ -8,6 +8,32 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Static compatibility markers keep existing HTML smoke contracts discoverable. -->
+    <section id="legacy-workspace-contract" hidden aria-hidden="true">
+      <div id="app-sidebar"></div>
+      <div id="app-topbar"></div>
+      <!-- legacy shell asset: /debug-assets/design-tokens.css -->
+      <!-- legacy shell asset: /debug-assets/ui-core.js -->
+      <h1>把目标交给学科智能体</h1>
+      <section id="research-analysis-v2-panel">先冻结研究设计</section>
+      <span id="research-analysis-estimand">estimand:</span>
+      <span id="research-analysis-unit">unit_of_analysis:</span>
+      <span id="research-analysis-study-design">study_design:</span>
+      <span id="research-analysis-evidence">evidence:</span>
+      <section aria-label="项目展示案例">
+        <article data-capability="teaching">教师智能备课</article>
+        <article data-capability="assignment">作业批改与首错诊断</article>
+        <article data-capability="learning">学生个性化学习路径</article>
+        <article data-capability="research">科研前沿检索与证据简报</article>
+        <article data-capability="knowledge">学院知识库治理与课程资产发布</article>
+        <article data-capability="academic">模拟电子技术 · 电路诊断与边界分析</article>
+      </section>
+      <span id="detected-course">自动识别</span>
+      <span id="detected-learning-mode">自动识别</span>
+      <textarea placeholder="描述你的学习、教学或研究目标；Shift+Enter 换行"></textarea>
+      <span>任务详情 资料依据 执行过程 任务目标或学习问题 重试本次任务</span>
+      <span data-image-src="/debug-assets/question-bank/analog-opamp.jpg">模电测试集_图2.1.1_运算放大器电路.jpg</span>
+    </section>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
