@@ -842,6 +842,14 @@ export type HealthRead = {
   active_provider: string;
   provider_mode: string;
   version: string;
+  runtime_identity?: {
+  [key: string]: unknown;
+};
+  configuration_status?: string;
+  configuration_warnings?: string[];
+  model_runtime?: {
+  [key: string]: unknown;
+};
   external_retrieval?: {
   [key: string]: unknown;
 };
@@ -1632,6 +1640,12 @@ export type ScenarioDemoCase = {
   evidence_requirements: string[];
   review_boundary: string;
   acceptance_conditions: string[];
+  formula_output_contract?: {
+  [key: string]: unknown;
+} | null;
+  visual_acceptance?: {
+  [key: string]: unknown;
+} | null;
 };
 
 export type ScenarioEvidenceReviewRequest = {
