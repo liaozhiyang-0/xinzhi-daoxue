@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import pytest
 from app.circuit import CircuitIR
+from app.circuit import renderer as renderer_module
 from app.contracts import AgentRequest, AgentResult
 from app.contracts.planner import (
     CanonicalGoal,
@@ -29,6 +31,23 @@ def _request(*, text: str, circuit_ir: CircuitIR | None = None) -> AgentRequest:
         session_id="session-v3",
         user_id="user-v3",
         canonical_input=canonical_input,
+    )
+
+
+def _valid_circuit() -> CircuitIR:
+    return CircuitIR.model_validate(
+        {
+            "components": [
+                {
+                    "id": "r1",
+                    "type": "resistor",
+                    "ports": {"p": "in", "n": "gnd"},
+                    "value": "1k",
+                },
+                {"id": "gnd", "type": "ground", "ports": {"g": "gnd"}},
+            ],
+            "nets": [{"id": "in"}, {"id": "gnd"}],
+        }
     )
 
 
@@ -147,6 +166,45 @@ def test_failed_circuit_render_is_a_nonfatal_runtime_observation() -> None:
     nested = observation.facts["circuit_render_observation"]
     assert nested["status"] == "failed"
     assert nested["recoverable"] is False
+
+
+def test_primary_schemdraw_projection(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        renderer_module,
+        "_try_schemdraw",
+        lambda circuit, options: "<svg data-renderer='schemdraw' />",
+    )
+    result = renderer_module.render_circuit(_valid_circuit())
+
+    assert result.status == "rendered"
+    assert result.renderer == "schemdraw"
+
+
+def test_deterministic_fallback_projection(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unavailable(circuit: CircuitIR, options: object) -> str:
+        raise ModuleNotFoundError("schemdraw")
+
+    monkeypatch.setattr(renderer_module, "_try_schemdraw", unavailable)
+    result = renderer_module.render_circuit(_valid_circuit())
+
+    assert result.status == "degraded"
+    assert result.renderer == "fallback_svg"
+    assert result.svg is not None
+
+
+def test_dependency_unavailable_is_projected_as_nonfatal_failure() -> None:
+    observation = runtime_observation_from_tool(
+        node_id="circuit.visualize",
+        execution_key="run:circuit.visualize",
+        circuit_payload=None,
+        result=None,
+        error="schemdraw_dependency_unavailable",
+    )
+
+    nested = observation.facts["circuit_render_observation"]
+    assert observation.terminal_status.value == "succeeded"
+    assert nested["status"] == "failed"
+    assert nested["renderer"] == "none"
 
 
 def test_rendered_observation_projects_to_a_circuit_svg_artifact() -> None:
