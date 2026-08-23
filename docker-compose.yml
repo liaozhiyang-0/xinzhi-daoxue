@@ -119,6 +119,10 @@ services:
       QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
     volumes:
       - type: bind
+        source: ${QUESTION_BANK_IMAGE_HOST_PATH:-./evaluation/cache/storage}
+        target: /workspace/evaluation/cache/storage
+        read_only: true
+      - type: bind
         source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
         target: /knowledge/CT
         read_only: true

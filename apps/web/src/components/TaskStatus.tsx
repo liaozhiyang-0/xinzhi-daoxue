@@ -16,7 +16,7 @@ const labels: Record<string, string> = {
 export function TaskStatus({ status }: TaskStatusProps) {
   return (
     <span className={`task-status task-status-${status}`} role="status">
-      {labels[status] || status}
+      {labels[status] || "处理中"}
     </span>
   );
 }

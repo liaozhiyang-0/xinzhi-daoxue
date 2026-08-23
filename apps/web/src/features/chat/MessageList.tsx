@@ -11,13 +11,13 @@ export function MessageList({ messages }: { messages: ChatMessage[] }) {
     <section className="message-list" aria-live="polite" data-testid="message-list">
       {messages.length === 0 ? (
         <div className="welcome-card">
-          <span className="eyebrow">AI LEARNING WORKSPACE</span>
-          <h1>把目标交给学科智能体</h1>
-          <p>React Workspace 仅负责展示、交互和调用既有 API；任务、Planner、Skill、Runtime 与证据仍由后端负责。</p>
+          <span className="eyebrow">芯智导学</span>
+          <h1>从一个真实学习任务开始</h1>
+          <p>左侧选择示范场景，系统会填入示例任务；提交后将展示任务规划、能力调用、证据依据、结果复核和下一步。</p>
         </div>
       ) : messages.map((message) => (
         <article className={`message message-${message.role}`} key={message.id}>
-          <span className="message-role">{message.role === "user" ? "我" : "芯智导学"}</span>
+          <span className="message-role">{message.role === "user" ? "我的任务" : "芯智导学"}</span>
           <MarkdownRenderer value={message.text} />
         </article>
       ))}

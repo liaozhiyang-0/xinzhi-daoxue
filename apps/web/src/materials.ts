@@ -48,7 +48,7 @@ const allowedMimeTypes = new Set([
   "application/vnd.apache.parquet",
 ]);
 
-const allowedFileExtension = /\.(md|txt|csv|json|pdf|doc|docx|xlsx|parquet)$/i;
+const allowedFileExtension = /\.(jpg|jpeg|png|webp|md|txt|csv|json|pdf|doc|docx|xlsx|parquet)$/i;
 const maxFileBytes = 20 * 1024 * 1024;
 
 export function createMaterialManager({

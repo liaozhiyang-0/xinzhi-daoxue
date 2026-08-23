@@ -4,11 +4,21 @@ interface ComposerProps {
   disabled: boolean;
   onSubmit: (text: string, files: File[]) => Promise<void>;
   onCancel: () => void;
+  initialText?: string;
+  initialFiles?: readonly File[];
+  scenarioTitle?: string;
 }
 
-export function Composer({ disabled, onSubmit, onCancel }: ComposerProps) {
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
+export function Composer({
+  disabled,
+  onSubmit,
+  onCancel,
+  initialText = "",
+  initialFiles = [],
+  scenarioTitle,
+}: ComposerProps) {
+  const [text, setText] = useState(initialText);
+  const [files, setFiles] = useState<File[]>([...initialFiles]);
   const [busy, setBusy] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -26,6 +36,7 @@ export function Composer({ disabled, onSubmit, onCancel }: ComposerProps) {
 
   return (
     <form className="composer" onSubmit={submit}>
+      {scenarioTitle && <div className="composer-scenario">当前场景：{scenarioTitle}</div>}
       {files.length > 0 && <div className="attachment-strip">已选择：{files.map((file) => file.name).join("、")}</div>}
       <textarea
         value={text}
@@ -42,6 +53,7 @@ export function Composer({ disabled, onSubmit, onCancel }: ComposerProps) {
           <input
             type="file"
             multiple
+            accept="image/jpeg,image/png,image/webp,.txt,.md,.csv,.json,.pdf,.doc,.docx,.xlsx,.parquet"
             onChange={(event) => setFiles(Array.from(event.target.files || []))}
             disabled={disabled || busy}
           />
