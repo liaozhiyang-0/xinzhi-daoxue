@@ -43,7 +43,7 @@ def validate_circuit(circuit: CircuitIR) -> ValidationReport:
             )
         )
 
-    graph = nx.Graph()
+    graph: nx.Graph = nx.Graph()
     for component in circuit.components:
         node = f"component:{component.id}"
         graph.add_node(node, kind="component")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import importlib
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 from app.circuit.contracts import CircuitIR, CircuitRenderOptions, CircuitRenderResult
 from app.circuit.layout import (
@@ -32,7 +32,7 @@ def render_circuit(
     try:
         svg = _try_schemdraw(circuit, render_options)
         renderer = "schemdraw"
-        status = "rendered"
+        status: Literal["rendered", "degraded"] = "rendered"
     except Exception as exc:
         warnings.append(f"schemdraw_fallback:{type(exc).__name__}")
         svg = _render_fallback_svg(circuit, render_options)
