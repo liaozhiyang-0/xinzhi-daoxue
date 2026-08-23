@@ -50,6 +50,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--suite",
         choices=(
             "academic_solver",
+            "expanded_benchmark_v2",
             "knowledge_qa",
             "learning_loop",
             "task_reliability",
