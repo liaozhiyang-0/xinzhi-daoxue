@@ -504,14 +504,15 @@ flowchart LR
 
 新增或修改端点后必须重新运行 `scripts/export_openapi.py` 和 `test_openapi_export.py`。
 
-## 13. 静态前端
+## 13. 前端
 
-前端位于 `apps/api/app/static/debug/`，无 Node 构建步骤，由 FastAPI 直接提供静态资源。
+正式学生工作台使用 `apps/web/` 中的 React/Vite 源码，并由 FastAPI 提供构建产物；调试、管理和系统页面仍位于 `apps/api/app/static/debug/`。
 
 | 页面 URL | HTML/JS | 用途 |
 |---|---|---|
 | `/` | `home.html` | 能力入口导航。 |
-| `/workspace`、`/student` | `workspace.html` + `workspace.js` | 正式学生工作台、历史、SSE、证据和学习动作。 |
+| `/workspace` | `apps/web/src/` + `static/debug/react/` | 正式学生工作台、历史、SSE、证据和学习动作。 |
+| `/student` | 重定向到 `/workspace` | 兼容旧书签，不再提供旧静态学生页面。 |
 | `/debug`、`/demo` | `demo.html` + `demo.js` | 演示与调试任务。 |
 | `/debug/agents` | `agents.html` + `agents.js` | Agent 注册和合同调试。 |
 | `/debug/rag`、`/debug/execution` | `execution.html` + `execution.js` | RAG/任务瀑布和聚合指标。 |
@@ -522,7 +523,7 @@ flowchart LR
 - `ui-core.js`：请求、状态、导航、主题和本地 KaTeX 接口；
 - `design-tokens.css`：颜色、字体、间距等 token；
 - `components.css`、`pages.css`：共享组件和页面布局；
-- `workspace-v2.css`、`execution-v2.css`：复杂页面专用布局；
+- `execution-v2.css`：调试执行页专用布局；
 - `vendor/katex/`：完全本地的公式渲染库和字体。
 
 修改 Workspace 时重点检查：
@@ -807,7 +808,7 @@ git diff --check
 - 证据/状态：`learning_outcome.py`、`learning_loop.py`
 - 延迟再测：`retest_plans.py`、`practice_generation.py`
 - API：`app/api/v1/learning.py`
-- Workspace：`workspace.html`、`workspace.js`、`workspace-v2.css`
+- Workspace：`apps/web/src/`、`apps/api/app/static/debug/react/`
 - 配置：`config/learning_mastery.yaml`
 - 案例：`evaluation/cases/teaching_loop_phase3/`
 # Agent Runtime Foundation 导航
@@ -822,7 +823,6 @@ git diff --check
 - 记忆：`app/repositories/memories.py`、`app/services/memory_service.py`
 - API：`app/api/v1/sessions.py`、`app/api/v1/memories.py`
 - 执行链接入：`task_creation_service.py`、`application/tasks/coordinator.py`、`runtime_task_engine.py`
-- Workspace：`app/static/debug/workspace.html`、`workspace.js`、
-  `workspace-v2.css`
+- Workspace：`apps/web/src/`、`app/static/debug/react/`
 - migration：`20260723_0006_agent_runtime_foundation.py`
 - 专项测试：`tests/test_agent_runtime_foundation.py`

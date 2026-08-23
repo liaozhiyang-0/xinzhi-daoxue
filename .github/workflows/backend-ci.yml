@@ -27,7 +27,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: apps/api/app/static/debug/ts/
+          path: apps/api/app/static/debug/react/
           if-no-files-found: ignore
 
   test:

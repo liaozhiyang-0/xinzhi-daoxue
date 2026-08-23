@@ -16,10 +16,11 @@
 
 ## Compatibility routes
 
-`/student`, `/workspace-legacy`, and `/workspace-react` remain only as compatibility entry points during migration. They must redirect to `/workspace` after parity and regression gates pass.
+`/student`, `/workspace-legacy`, and `/workspace-react` are compatibility redirects to `/workspace`. They do not have a separate page implementation.
 
-## Stale assets retained for cleanup gate
+## Removed legacy assets
 
-- `student.html` is an older learning page and is not the asset served by `/student`.
-- `workspace.html`/`workspace.js` remain as rollback and parity references until final legacy cleanup.
+- `student.html`/`student.js` and `workspace.html`/`workspace.js` have been deleted.
+- The old Workspace adapters and generated static boundary files under `static/debug/ts/` have been deleted.
+- `/workspace` serves only `react/index.html`; it contains no hidden legacy compatibility markup.
 - `demo.html` is a separate scenario presentation surface; it remains outside the formal workspace.

@@ -2,11 +2,11 @@
 
 ## Current entry
 
-旧 Workspace 的主入口是：
+当前 Workspace 的唯一主入口是：
 
 ```text
-apps/api/app/static/debug/workspace.html
-  └─ workspace.js（约 2,300 行，DOM orchestration / fetch / SSE / rendering 混合）
+apps/api/app/static/debug/react/index.html
+  └─ apps/web/src/（React、TypeScript、Vite）
 ```
 
 `apps/web/src/` 当前已有可复用的 TypeScript boundary 模块：
@@ -20,7 +20,7 @@ apps/api/app/static/debug/workspace.html
 
 ## Feature inventory
 
-| Feature | 旧 DOM surface | React target | parity risk | move order |
+| Feature | React owner | React target | parity risk | move order |
 | --- | --- | --- | --- | --- |
 | App shell | sidebar/topbar/page shell | `app/App.tsx`、`app/layout` | low | M2 |
 | Chat messages | `#messages`、answer panel | `features/chat/MessageList`、`AnswerPanel` | markdown/math/citation | M5 |
@@ -37,4 +37,4 @@ apps/api/app/static/debug/workspace.html
 
 ## Architectural decision
 
-M2 creates a React/Vite alternate entry and typed API client without deleting `workspace.js`. M5/M6 migrate feature by feature. Only after M7 parity evidence passes will `/workspace` switch to React by default; the legacy page remains a clearly named rollback snapshot until M8 confirms zero primary usage.
+The React/Vite workspace is now the only student implementation. Compatibility routes redirect to it, and the former static Workspace source plus generated adapters are deleted. Further parity work must extend the React owner instead of recreating a second page.

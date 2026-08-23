@@ -226,8 +226,8 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
     workspace.raise_for_status()
     html = workspace.text
     asset_paths = (
-        "/debug-assets/ui-core.js?v=20260815-subject-agents-v1",
-        "/debug-assets/workspace.js?v=20260815-subject-agents-v1",
+        "/react-assets/assets/index-NRUFDfgf.js",
+        "/react-assets/assets/index-Bs4hMYKJ.css",
     )
     asset_statuses: dict[str, int] = {}
     for path in asset_paths:
@@ -239,8 +239,9 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
         "workspace_status": workspace.status_code,
         "frontend_asset_statuses": asset_statuses,
         "frontend_build_ready": (
-            "ui-core.js?v=20260815-subject-agents-v1" in html
-            and "workspace.js?v=20260815-subject-agents-v1" in html
+            '<div id="root"></div>' in html
+            and "/react-assets/assets/index-" in html
+            and "legacy-workspace-contract" not in html
             and all(status == 200 for status in asset_statuses.values())
         ),
     }

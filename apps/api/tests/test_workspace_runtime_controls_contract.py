@@ -156,41 +156,26 @@ async def test_teacher_runtime_controls_can_project_learner_owned_task(
 
 
 def test_workspace_markup_uses_public_runtime_control_projection() -> None:
-    static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
-    html = (static_root / "workspace.html").read_text(encoding="utf-8")
-    script = (static_root / "workspace.js").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[3]
+    app = (root / "apps/web/src/app/App.tsx").read_text(encoding="utf-8")
+    tasks = (root / "apps/web/src/api/tasks.ts").read_text(encoding="utf-8")
 
-    assert 'id="runtime-task-controls"' in html
-    assert 'id="runtime-task-pause"' in html
-    assert 'id="runtime-task-resume"' in html
-    assert 'id="runtime-task-approve"' in html
-    assert 'id="runtime-task-input-form"' in html
-    assert 'id="runtime-task-reject-proposal"' in html
-    assert "/runtime-controls" in script
-    assert "runtime-plan-proposals/" in script
-    assert 'decision: action === "approve" ? "approved" : "rejected"' in script
-    assert "function runtimeApprovalAllowed()" in script
-    assert '["teacher", "admin"]' in script
-    assert '"RESEARCH_02_ACADEMIC_WRITING_V1"' in script
-    assert "/api/v1/learning/runtime/" in script
-    assert 'control_scope === "learning_loop"' in script
-    assert '...(action === "input" ? { data: payload?.data || {} } : {})' in script
-    assert "result.runtime_run_id" in script
-    assert "/debug/execution" not in script
-    assert "expected_state_version: runtimeTaskControls?.state_version" in script
-    assert "runtimeTaskControlAvailable(action)" in script
+    assert "task-controls" in app
+    assert "runtimeControls.pause" in app
+    assert "runtimeControls.resume" in app
+    assert "runtimeControls.approve" in app
+    assert "runtimeControls.input" in app
+    assert "/runtime-controls" in tasks
+    assert "/pause" in tasks
+    assert "/resume" in tasks
+    assert "/approve" in tasks
+    assert "/input" in tasks
+    assert "/debug/execution" not in app
 
 
 def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
-    static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
-    script = "\n".join(
-        (
-            (static_root / "workspace.js").read_text(encoding="utf-8"),
-            (static_root / "ts" / "task-transport.js").read_text(
-                encoding="utf-8"
-            ),
-        )
-    )
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/web/src/task-transport.ts").read_text(encoding="utf-8")
     error_block = script.split("events.onerror = () => {", 1)[1].split("};", 1)[0]
 
     assert "Last-Event-ID" in error_block
@@ -200,11 +185,9 @@ def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
 
 
 def test_workspace_reconciles_controls_while_sse_is_open() -> None:
-    static_root = Path(__file__).parents[1] / "app" / "static" / "debug"
-    script = (static_root / "ts" / "task-transport.js").read_text(
-        encoding="utf-8"
-    )
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/web/src/task-transport.ts").read_text(encoding="utf-8")
 
-    assert "let controlRefreshTimer = null" in script
+    assert "controlRefreshTimer: number | null" in script
     assert "controlRefreshTimer = window.setInterval" in script
     assert "clearInterval(controlRefreshTimer)" in script

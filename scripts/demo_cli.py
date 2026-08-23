@@ -27,7 +27,6 @@ def preflight(base_url: str) -> int:
     checks: list[tuple[str, bool, str]] = []
     for name in (
         "home.html",
-        "student.html",
         "rag.html",
         "agents.html",
         "system.html",

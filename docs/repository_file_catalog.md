@@ -650,19 +650,12 @@
 | `pages.css` | 活动 | 静态前端样式：pages。 |
 | `rag.html` | 活动 | 静态前端页面：多模态 RAG 调试 · 芯智导学。 |
 | `rag.js` | 活动 | 静态前端交互逻辑：rag。 |
-| `student.html` | 活动 | 静态前端页面：智能学习 · 芯智导学。 |
-| `student.js` | 活动 | 静态前端交互逻辑：student。 |
 | `system.html` | 活动 | 静态前端页面：系统状态 · 芯智导学。 |
 | `system.js` | 活动 | 静态前端交互逻辑：system。 |
 | `teacher.css` | 活动 | 静态前端样式：teacher。 |
 | `teacher.html` | 活动 | 静态前端页面：教师学习反馈工作台 · 芯智导学。 |
 | `teacher.js` | 活动 | 静态前端交互逻辑：teacher。 |
 | `ui-core.js` | 活动 | 静态前端交互逻辑：ui-core。 |
-| `workspace-materials.js` | 活动 | 静态前端交互逻辑：workspace-materials。 |
-| `workspace-task-transport.js` | 活动 | 静态前端交互逻辑：workspace-task-transport。 |
-| `workspace-v2.css` | 活动 | 静态前端样式：workspace-v2。 |
-| `workspace.html` | 活动 | 静态前端页面：智能任务工作台 · 芯智导学。 |
-| `workspace.js` | 活动 | 静态前端交互逻辑：workspace。 |
 
 ### `apps/api/app/static/debug/assets`
 

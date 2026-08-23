@@ -14,8 +14,8 @@
 
 ## 前端工程化与类型合同
 
-- TypeScript 边界模块在 `apps/web/src/`，构建产物输出到
-  `apps/api/app/static/debug/ts/`（`npm --prefix apps/web run build`）。
+- React/TypeScript 边界模块在 `apps/web/src/`，Vite 构建产物输出到
+  `apps/api/app/static/debug/react/`（`npm --prefix apps/web run build`）。
 - `scripts/generate_openapi_types.py` 从导出的 OpenAPI
   （`docs/api/openapi.json`）生成 `apps/web/src/api-types.ts`；
   `apps/web/src/api-contract-check.ts` 在编译期校验手写前端合同
