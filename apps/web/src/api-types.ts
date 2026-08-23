@@ -265,6 +265,33 @@ export type AgentRunPlan = {
   max_parallelism?: number;
 };
 
+export type AnalyticsReportRead = {
+  version?: string;
+  data_source?: string;
+  window_start: string;
+  window_end: string;
+  filters?: {
+  [key: string]: string | null;
+};
+  row_limit: number;
+  truncated?: boolean;
+  metrics?: {
+  [key: string]: number | string | null;
+};
+  breakdowns?: {
+  [key: string]: {
+  [key: string]: number | null;
+} | {
+  [key: string]: unknown;
+}[];
+};
+  definitions?: {
+  [key: string]: string;
+};
+  data_quality_warnings?: string[];
+  [key: string]: unknown;
+};
+
 export type AnswerReviewResult = {
   status: "correct" | "partially_correct" | "incorrect" | "insufficient";
   aligned_steps?: {
