@@ -183,7 +183,7 @@ def test_workspace_new_session_reenables_task_controls() -> None:
     assert "setTask(null)" in app
     assert (
         'disabled={Boolean(task && !["completed", "failed", "cancelled"].includes('
-        'task.status)))}'
+        'task.status))}'
         in app
     )
 
