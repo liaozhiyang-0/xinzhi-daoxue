@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Hashable, Sequence
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -224,18 +225,14 @@ class AcademicProblemSolverGraph:
         return {"configurable": {"thread_id": thread_id or f"graph_{uuid4().hex}"}}
 
     @staticmethod
-    def _merge_state(
-        state: XZDGraphState | None, completed: dict[str, Any]
-    ) -> None:
+    def _merge_state(state: XZDGraphState | None, completed: dict[str, Any]) -> None:
         if state is None:
             return
         known_keys = XZDGraphState.__annotations__
         state.update(
             cast(
                 Any,
-                {
-                    key: value for key, value in completed.items() if key in known_keys
-                },
+                {key: value for key, value in completed.items() if key in known_keys},
             )
         )
 
@@ -257,7 +254,10 @@ class AcademicProblemSolverGraph:
         if prepared:
             assert state is not None
             pack = self.courses.get(str(state["selected_course_pack"]))
-            normalized = AcademicProblem.model_validate(state["structured_problem"])
+            normalized = self._derive_numeric_problem(
+                pack.course_code,
+                AcademicProblem.model_validate(state["structured_problem"]),
+            )
             problem_type = str(state.get("problem_type") or "general")
             normalized = normalized.model_copy(update={"problem_type": problem_type})
             errors = [
@@ -271,13 +271,17 @@ class AcademicProblemSolverGraph:
             path = cast(ExecutionPath, path_value)
         else:
             pack = self.courses.get(problem.course)
-            normalized = pack.normalize_problem(problem)
+            normalized = self._derive_numeric_problem(
+                pack.course_code, pack.normalize_problem(problem)
+            )
             problem_type = pack.classify_problem_type(normalized)
             normalized = normalized.model_copy(update={"problem_type": problem_type})
             errors = pack.validate_structured_problem(normalized)
             path = self._select_path(normalized, pack.implementation_status)
             selected_capabilities = pack.select_capabilities(normalized)
-            selected_tools = self._select_tools(selected_capabilities)
+            selected_tools = self._select_tools(
+                selected_capabilities, problem_type=problem_type
+            )
         if state is not None:
             state.update(
                 {
@@ -317,7 +321,11 @@ class AcademicProblemSolverGraph:
             final_answer = f"{pack.display_name}课程包暂不支持题型：{problem_type}。"
         elif successful is not None:
             status = "success"
-            final_answer = f"确定性工具校验结果：{successful.result.get('value')}"
+            value = successful.result.get("value")
+            if problem_type == "number_encoding":
+                final_answer = f"确定性工具校验结果：数制转换结果：{value}"
+            else:
+                final_answer = f"确定性工具校验结果：{value}"
         elif missing:
             status = "partial"
             final_answer = (
@@ -404,6 +412,101 @@ class AcademicProblemSolverGraph:
             )
         return result
 
+    @staticmethod
+    def _derive_numeric_problem(
+        course_code: str, problem: AcademicProblem
+    ) -> AcademicProblem:
+        """Structure only unambiguous scalar forms before deterministic solving.
+
+        This is intentionally limited to patterns whose quantities, units, and
+        governing relation are explicit in the text. It does not infer missing
+        circuit topology or enable any course tool that is currently disabled.
+        """
+
+        if problem.equations_given or problem.target_quantities:
+            return problem
+
+        text = problem.problem_text
+        if course_code == "CT":
+            voltage = re.search(r"电压\s*[uU]\s*=\s*([-+]?\d+(?:\.\d+)?)\s*[vV]", text)
+            current = re.search(r"电流\s*[iI]\s*=\s*([-+]?\d+(?:\.\d+)?)\s*[aA]", text)
+            if voltage and current and "功率" in text:
+                voltage_value = voltage.group(1)
+                current_value = current.group(1)
+                return problem.model_copy(
+                    update={
+                        "problem_type": problem.problem_type or "power",
+                        "known_conditions": [
+                            {"name": "u", "value": voltage_value, "unit": "V"},
+                            {"name": "i", "value": current_value, "unit": "A"},
+                        ],
+                        "target_quantities": [{"name": "P", "unit": "W"}],
+                        "equations_given": [f"P={voltage_value}*{current_value}"],
+                    }
+                )
+
+        if course_code == "DE":
+            binary = re.search(r"二进制\s*([01]+)", text)
+            if binary and ("十进制" in text or "转换" in text):
+                decimal_value = str(int(binary.group(1), 2))
+                return problem.model_copy(
+                    update={
+                        "problem_type": problem.problem_type or "number_encoding",
+                        "known_conditions": [
+                            {
+                                "name": "binary",
+                                "representation": binary.group(1),
+                                "base": 2,
+                            }
+                        ],
+                        "target_quantities": [{"name": "value"}],
+                        "equations_given": [f"value={decimal_value}"],
+                    }
+                )
+
+        if course_code == "AE":
+            resistance_pattern = r"{label}\s*([-+]?\d+(?:\.\d+)?)\s*(k|K)?\s*[Ω欧姆]"
+            input_resistance = re.search(
+                resistance_pattern.format(label="输入电阻"), text
+            )
+            feedback_resistance = re.search(
+                resistance_pattern.format(label="反馈电阻"), text
+            )
+            input_voltage = re.search(r"输入\s*([-+]?\d+(?:\.\d+)?)\s*[vV]", text)
+            if input_resistance and feedback_resistance and input_voltage:
+                resistance_values: list[str] = []
+                for match in (input_resistance, feedback_resistance):
+                    value = match.group(1)
+                    if match.group(2):
+                        value = f"{value}000"
+                    resistance_values.append(value)
+                input_value = input_voltage.group(1)
+                input_resistance_value, feedback_resistance_value = resistance_values
+                return problem.model_copy(
+                    update={
+                        "problem_type": problem.problem_type or "op_amp",
+                        "known_conditions": [
+                            {
+                                "name": "Rin",
+                                "value": input_resistance_value,
+                                "unit": "Ω",
+                            },
+                            {
+                                "name": "Rf",
+                                "value": feedback_resistance_value,
+                                "unit": "Ω",
+                            },
+                            {"name": "Vin", "value": input_value, "unit": "V"},
+                        ],
+                        "target_quantities": [{"name": "vo", "unit": "V"}],
+                        "equations_given": [
+                            f"vo=-({feedback_resistance_value}/{input_resistance_value})*{input_value}"
+                        ],
+                    }
+                )
+
+        return problem
+
     def verify_high_risk(
         self,
         problem: AcademicProblem,
@@ -449,7 +552,9 @@ class AcademicProblemSolverGraph:
             pack = self.courses.get(
                 str(value.get("selected_course_pack", problem.course))
             )
-            normalized = pack.normalize_problem(problem)
+            normalized = self._derive_numeric_problem(
+                pack.course_code, pack.normalize_problem(problem)
+            )
             problem_type = pack.classify_problem_type(normalized)
             normalized = normalized.model_copy(update={"problem_type": problem_type})
             return {
@@ -495,7 +600,9 @@ class AcademicProblemSolverGraph:
             return {
                 "current_stage": "select_capabilities",
                 "selected_capabilities": capabilities,
-                "selected_tools": self._select_tools(capabilities),
+                "selected_tools": self._select_tools(
+                    capabilities, problem_type=problem.problem_type
+                ),
             }
 
         def retrieve_domain_knowledge(value: XZDGraphState) -> dict[str, Any]:
@@ -508,10 +615,13 @@ class AcademicProblemSolverGraph:
         preparation_nodes = (
             ("normalize_problem_input", normalize_problem_input),
             ("resolve_course_pack", resolve_course_pack),
-            ("multimodal_extraction_if_needed", lambda value: {
-                "current_stage": "multimodal_extraction_if_needed",
-                "warnings": list(value.get("warnings", [])),
-            }),
+            (
+                "multimodal_extraction_if_needed",
+                lambda value: {
+                    "current_stage": "multimodal_extraction_if_needed",
+                    "warnings": list(value.get("warnings", [])),
+                },
+            ),
             ("structure_problem", structure_problem),
             ("check_problem_quality", check_problem_quality),
             ("assess_solvability", assess_solvability),
@@ -531,9 +641,7 @@ class AcademicProblemSolverGraph:
             problem_type = str(
                 value.get("problem_type") or problem.problem_type or "general"
             )
-            normalized = problem.model_copy(
-                update={"problem_type": problem_type}
-            )
+            normalized = problem.model_copy(update={"problem_type": problem_type})
             capabilities = list(value.get("selected_capabilities", []))
             path = self._select_path(normalized, pack.implementation_status)
             return {
@@ -542,7 +650,9 @@ class AcademicProblemSolverGraph:
                 "problem_type": problem_type,
                 "selected_course_pack": pack.course_code,
                 "selected_capabilities": capabilities,
-                "selected_tools": self._select_tools(capabilities),
+                "selected_tools": self._select_tools(
+                    capabilities, problem_type=problem_type
+                ),
                 "execution_path": path,
                 "structured_problem": normalized.model_dump(mode="json"),
             }
@@ -640,13 +750,21 @@ class AcademicProblemSolverGraph:
         builder.add_edge("finalize_solver_response", END)
         return builder.compile(checkpointer=self.checkpointer, name=self.graph_name)
 
-    def _select_tools(self, capability_ids: list[str]) -> list[str]:
+    def _select_tools(
+        self, capability_ids: list[str], *, problem_type: str | None = None
+    ) -> list[str]:
         selected: list[str] = []
         for capability_id in capability_ids:
             capability = self.capabilities.get(capability_id)
             for tool_id in capability.tool_ids:
                 if tool_id not in selected and self.tools.describe(tool_id).enabled:
                     selected.append(tool_id)
+        if (
+            problem_type == "number_encoding"
+            and "sympy_solver" not in selected
+            and self.tools.describe("sympy_solver").enabled
+        ):
+            selected.append("sympy_solver")
         return selected
 
     def _execute_tools(
@@ -669,11 +787,20 @@ class AcademicProblemSolverGraph:
         started = perf_counter()
         try:
             value = self.tools.get(tool_id)(problem.equations_given, symbols)
+            result_value: Any = value
+            if (
+                problem.problem_type == "number_encoding"
+                and isinstance(value, list)
+                and len(value) == 1
+                and isinstance(value[0], dict)
+                and len(value[0]) == 1
+            ):
+                result_value = next(iter(value[0].values()))
             return [
                 ToolResult(
                     tool_id=tool_id,
                     status="success",
-                    result={"value": value},
+                    result={"value": result_value},
                     elapsed_ms=int((perf_counter() - started) * 1000),
                 )
             ]
