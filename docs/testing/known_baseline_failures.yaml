@@ -1,0 +1,40 @@
+schema_version: known_baseline_failures.v1
+captured_at: '2026-08-23T08:06:59+08:00'
+policy: Pre-existing or data-availability failures are recorded separately and are not silently attributed to T0.
+failures:
+  - id: missing_336_case_catalog
+    category: fixture
+    status: known_baseline
+    severity: critical
+    observed: 252 authorized 336-case entries are not present in evaluation/cases.
+    evidence: evaluation/baselines/current_system_manifest.json
+    owner: evaluation-data
+    reproducible: true
+    action: Supply an authorized case catalog; do not synthesize replacements or change expected answers.
+  - id: phase_h_provider_free_non_pass_cases
+    category: evaluation
+    status: known_baseline
+    severity: major
+    observed: Phase H recorded 60 passed, 18 failed, 2 error, and 4 timeout among 84 available synthetic cases.
+    evidence: docs/audits/phase_h_large_benchmark.md
+    owner: evaluation-or-runtime
+    reproducible: true
+    action: Attribute failures in T2 before any T4 optimization.
+  - id: commercial_scenario_coverage_mismatch_in_dirty_worktree
+    category: fixture
+    status: pre_existing_worktree_change
+    severity: major
+    observed: config/scenarios.yaml contains entries without matching cases in evaluation/cases/commercial_scenarios/six_scenarios.yaml.
+    evidence: scripts/validate_commercial_scenarios.py
+    owner: pre_existing-worktree-change
+    reproducible: true
+    action: Do not stage or alter these unrelated files in the testing campaign.
+  - id: model_evaluation_workflow_log_unavailable
+    category: ci
+    status: non_gating_observation
+    severity: minor
+    observed: The independent model-evaluation workflow exits immediately with `log not found` and no diagnostic step log.
+    evidence: GitHub Actions runs 32596238271 and prior equivalent runs
+    owner: workflow-infrastructure
+    reproducible: true
+    action: Keep separate from backend-ci quality results; investigate workflow observability separately.

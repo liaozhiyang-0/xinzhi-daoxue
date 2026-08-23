@@ -1,0 +1,68 @@
+{
+  "schema_version": "testing_baseline_manifest.v1",
+  "captured_at": "2026-08-23T08:06:59+08:00",
+  "repository": {
+    "branch": "agentic/full-testing-campaign",
+    "base_commit_sha": "ba85c792af3e110c9fcab4b13bbff71f15401ac5",
+    "working_tree_dirty": true,
+    "dirty_file_count": 187,
+    "dirty_tree_policy": "pre-existing_changes_preserved_and_not_part_of_T0_artifacts"
+  },
+  "evaluation_dataset": {
+    "loader": "apps/api/app/evaluation/loader.py",
+    "case_root": "evaluation/cases",
+    "target_case_count": 336,
+    "loaded_official_case_count": 84,
+    "missing_target_case_count": 252,
+    "catalog_case_ids_sha256": "aa7c52f88f0e6a67919d65db2b5fffd2b5f7bb0f1af8553970bb84bce57021a9",
+    "catalog_content_sha256": "f49af6e0eab94e8e4a7c3b27b3172bdff29563494fbb431ff6d23fec49edbe26",
+    "source_files_sha256": "11edb760e107499d6368d82173b0cf42e149c92348f0c6741fb5d93c17f2a781",
+    "attachment_manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "attachment_count": 0,
+    "source_type": "synthetic",
+    "courses": {"AE": 11, "CT": 52, "DE": 12, "SS": 9},
+    "difficulty": {"easy": 15, "medium": 56, "boundary": 7, "hard": 6},
+    "input_type": {"text": 82, "mixed": 2},
+    "metadata_validation": {
+      "missing_case_id": 0,
+      "missing_course": 0,
+      "missing_task_family": 0,
+      "missing_problem_type": 28,
+      "missing_difficulty": 0,
+      "missing_input_type": 0,
+      "missing_expected_agent": 0,
+      "missing_message": 0,
+      "missing_source": 73,
+      "missing_reference_answer": 84,
+      "missing_reference_solution": 73,
+      "policy": "missing optional/reference metadata is recorded; source cases and expected assertions are not rewritten by T0"
+    }
+  },
+  "component_versions": {
+    "planner": {"version": "repository_current", "evidence": ["apps/api/app/services/planner.py", "apps/api/app/contracts/planner.py", "apps/api/app/runtime/goal_planner.py"]},
+    "skill": {"version": "repository_current", "evidence": ["apps/api/app/services/skill_registry.py", "apps/api/app/services/skill_retriever.py", "apps/api/app/services/skill_policy.py"]},
+    "prompt": {"version": "repository_current", "evidence": ["agent_configs/registry.yaml"]},
+    "rag": {"version": "rag_schema_v2; semantic_v2; clean_v1", "evidence": ["apps/api/app/core/config.py", "apps/api/app/services/rag_index.py", "apps/api/app/services/rag_retrieval.py"]},
+    "tool": {"version": "repository_current", "evidence": ["apps/api/app/tools/registry.py", "apps/api/app/tools/calculator.py", "apps/api/app/tools/sympy_solver.py"]},
+    "reflection": {"version": "repository_current", "evidence": ["apps/api/app/services/reflection_policy.py", "apps/api/app/services/reflection_service.py", "apps/api/app/services/reflection_evaluation.py"]},
+    "experience": {"version": "repository_current", "evidence": ["apps/api/app/services/experience_memory.py", "apps/api/app/services/memory_service.py", "apps/api/app/repositories/experience_memory.py"]},
+    "evaluation": {"version": "evaluation_record.v1; evaluation_case_catalog.v1; evaluation_case_source_files.v1; evaluation_case_attachments.v1", "evidence": ["apps/api/app/evaluation/contracts.py", "apps/api/app/evaluation/runner.py", "apps/api/app/evaluation/reporting.py"]},
+    "frozen_solver_baseline": {"version": "SOLVER_CT v1.0 / workflow 1.0.0", "evidence": ["agent_configs/workflows/solver_ct_v1.yaml"]}
+  },
+  "provider_and_model": {
+    "test_mode": "offline",
+    "executed_provider": "mock",
+    "executed_model": "not_applicable",
+    "real_provider_status": "skipped",
+    "skip_reason": "no explicit API key, case budget, call budget, token budget, cost ceiling, and timeout approval in scope",
+    "configured_model_catalog": ["spark-x", "qwen3.7-plus", "qwen3.6-flash", "qwen3.5-flash"],
+    "model_calls_allowed_by_T0": false
+  },
+  "validation": {
+    "command": ".venv\\Scripts\\python.exe scripts/run_evaluation.py --validate-only",
+    "result": "PASS",
+    "sends_api_requests": false,
+    "registry_errors": [],
+    "attachment_manifest_errors": []
+  }
+}
