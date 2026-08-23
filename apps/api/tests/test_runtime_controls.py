@@ -226,6 +226,8 @@ def test_cancel_waiting_approval_is_durable(tmp_path) -> None:
             cancelled = await controls.cancel("task-cancel")
             assert cancelled.status == TaskStatus.CANCELLED
             assert cancelled.cancellation_requested is True
+            assert cancelled.failure_category == "cancelled"
+            assert cancelled.error_message == "任务已取消"
 
         async with session_factory() as session:
             restored = await AgentRunRepository(session).restore("runtime-cancel")

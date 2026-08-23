@@ -187,6 +187,42 @@ ENGINEERING_EDUCATION_EVIDENCE_TERMS = (
 COMPOUND_TOPIC_TERM_GROUPS = (
     ("\u91cf\u5b50", "quantum"),
     ("\u73ca\u745a", "coral"),
+    ("sic", "\u78b3\u5316\u7845", "silicon carbide"),
+    ("gan", "\u6c2e\u5316\u9553", "gallium nitride"),
+    (
+        "\u529f\u7387\u5668\u4ef6",
+        "\u529f\u7387\u534a\u5bfc\u4f53",
+        "power device",
+        "power semiconductor",
+    ),
+    ("\u591a\u6a21\u6001", "multimodal", "vision-language", "vlm"),
+    (
+        "\u590d\u6742\u89c6\u89c9\u7406\u89e3",
+        "\u89c6\u89c9\u7406\u89e3",
+        "complex visual understanding",
+        "visual understanding",
+        "visual reasoning",
+    ),
+    ("llm", "large language model", "\u5927\u8bed\u8a00\u6a21\u578b"),
+    ("\u8fb9\u7f18", "edge device", "edge deployment", "edge"),
+    ("yolo",),
+    ("\u526a\u679d", "pruning", "\u7a00\u758f\u5316", "sparsification"),
+    ("\u91cf\u5316", "quantization"),
+    ("risc-v", "riscv"),
+    ("\u4fa7\u4fe1\u9053", "side-channel", "side channel"),
+    (
+        "\u786c\u4ef6\u9632\u5fa1",
+        "hardware defense",
+        "hardware countermeasure",
+        "countermeasure",
+    ),
+    ("cmos",),
+    (
+        "ota",
+        "\u8fd0\u7b97\u653e\u5927\u5668",
+        "operational amplifier",
+        "operational transconductance amplifier",
+    ),
 )
 ELECTRONICS_EDUCATION_REQUEST_TERMS = (
     "电子信息",
@@ -348,6 +384,19 @@ def research_topic_conflicts(current_query: str, previous_query: str) -> bool:
     return bool(current and previous and current.isdisjoint(previous))
 
 
+def _contains_compound_term(normalized_text: str, term: str) -> bool:
+    """Match ASCII abbreviations as tokens while keeping Chinese phrase matching."""
+
+    normalized_term = term.casefold()
+    if normalized_term.isascii():
+        suffix = r"(?:s|v\d+)?" if normalized_term in {"llm", "yolo"} else ""
+        return re.search(
+            rf"(?<![a-z0-9]){re.escape(normalized_term)}{suffix}(?![a-z0-9])",
+            normalized_text,
+        ) is not None
+    return normalized_term in normalized_text
+
+
 def filter_research_evidence(
     query: str, items: list[ExternalEvidenceItem]
 ) -> list[ExternalEvidenceItem]:
@@ -376,7 +425,7 @@ def filter_research_evidence(
     required_compound_topic_groups = [
         group
         for group in COMPOUND_TOPIC_TERM_GROUPS
-        if any(term.casefold() in normalized_query for term in group)
+        if any(_contains_compound_term(normalized_query, term) for term in group)
     ]
     if not requested and not electronics_education_request:
         if (
@@ -389,7 +438,7 @@ def filter_research_evidence(
         evidence_text = f"{item.title}\n{item.content_excerpt}"
         normalized_evidence = evidence_text.casefold()
         evidence_families = research_topic_families(evidence_text)
-        if evidence_families and requested.isdisjoint(evidence_families):
+        if requested and evidence_families and requested.isdisjoint(evidence_families):
             continue
         if "artificial_intelligence" in requested:
             # A flexible/wearable paper may mention AI as an incidental tool.
@@ -418,7 +467,10 @@ def filter_research_evidence(
             ):
                 continue
         if any(
-            not any(term.casefold() in normalized_evidence for term in group)
+            not any(
+                _contains_compound_term(normalized_evidence, term)
+                for term in group
+            )
             for group in required_compound_topic_groups
         ):
             continue

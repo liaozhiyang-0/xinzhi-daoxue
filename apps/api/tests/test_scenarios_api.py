@@ -8,13 +8,13 @@ def test_scenario_catalog_endpoint_lists_and_filters(client: TestClient) -> None
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 5
+    assert len(payload) == 8
     assert {item["id"] for item in payload} >= {
         "faculty_course_copilot_v1",
         "assessment_diagnosis_v1",
     }
     assert all(item["evidence_policy"]["manual_review_required"] for item in payload)
-    assert all(len(item["demo_cases"]) == 1 for item in payload)
+    assert all(len(item["demo_cases"]) >= 1 for item in payload)
     assert all(len(item["demo_cases"][0]["prompt"]) >= 80 for item in payload)
     assert all(item["demo_cases"][0]["expected_agent"] for item in payload)
 
@@ -82,7 +82,7 @@ def test_scenario_readiness_endpoint_batches_all_scenarios(
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 5
+    assert len(payload) == 9
     assert {item["scenario_id"] for item in payload} >= {
         "faculty_course_copilot_v1",
     }

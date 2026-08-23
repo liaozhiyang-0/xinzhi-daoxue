@@ -141,6 +141,33 @@ def test_agent_rag_modes_preserve_learn_and_solver_boundaries() -> None:
     )
 
 
+def test_presentation_prefers_capability_profile_over_agent_id() -> None:
+    definition = AgentRegistry().get("GENERAL_QUESTION_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local",
+        course_id="CT",
+        intent="lesson_prep",
+        answer="教案草稿",
+        structured_result={
+            "presentation_profile": {
+                "capability_id": "teaching.lesson_design"
+            }
+        },
+    )
+
+    presentation, summary, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.title == "教案设计"
+    assert summary.agent_label == "教案设计"
+
+
 def test_learn_presentation_uses_only_validated_evidence() -> None:
     definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
     result = AgentResult(
@@ -238,6 +265,61 @@ def test_runtime_knowledge_result_does_not_render_rejected_candidate_hits() -> N
     assert evidence == []
     assert summary.evidence_count == 0
     assert "课程资料" in presentation.source_summary
+
+
+def test_knowledge_without_evidence_does_not_claim_model_generation() -> None:
+    definition = AgentRegistry().get("LEARN_01_KNOWLEDGE_QA_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local",
+        course_id="CT",
+        intent="explain_concept",
+        answer="当前课程资料不足。",
+        evidence_status="insufficient",
+        structured_result={"mode": "retrieval_only"},
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={"route_source": "runtime"},
+        timings={"total_ms": 120},
+    )
+
+    assert presentation.status_label == "资料不足，待补充"
+    assert presentation.answer_quality_status == "needs_review"
+    assert presentation.generation_complete is False
+    assert presentation.execution_steps[-1]["status"] == "partial"
+
+
+def test_runtime_generation_provenance_overrides_evidence_skip_message() -> None:
+    definition = AgentRegistry().get("TEACH_01_LESSON_PREP_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="CT",
+        intent="lesson_prep",
+        answer="已生成教案草稿，但课程证据仍需教师确认。",
+        evidence_status="insufficient",
+        structured_result={
+            "generation_provider": "dashscope",
+            "generation_model": "qwen3.5-flash",
+            "quality_gate": {"status": "partial"},
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={"route_source": "runtime"},
+        timings={"total_ms": 120},
+    )
+
+    assert presentation.generation_complete is True
+    assert "未生成模型答案" not in presentation.answer_quality_message
+    assert presentation.execution_steps[-1]["status"] == "completed"
 
 
 def test_runtime_core_retrieval_summary_populates_evidence_view() -> None:
@@ -429,6 +511,35 @@ def test_quality_gate_and_fallback_are_visible_to_workspace() -> None:
     assert presentation.requires_review is True
     assert "确定性验证" in presentation.answer_quality_message
     assert presentation.execution_steps[-2]["status"] == "partial"
+
+
+def test_governance_validation_issue_is_visible_in_answer_quality() -> None:
+    definition = AgentRegistry().get("TEACH_02_ASSIGNMENT_REVIEW_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="AE",
+        intent="assignment_review",
+        answer="需要教师复核。",
+        structured_result={
+            "validation": {
+                "validation_status": "warning",
+                "validation_issues": ["semantic_conflict"],
+            }
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.answer_quality_status == "needs_review"
+    assert presentation.requires_review is True
+    assert "semantic_conflict" in presentation.answer_quality_message
 
 
 def test_lesson_fallback_keeps_retrieved_materials_visible_but_not_cited() -> None:

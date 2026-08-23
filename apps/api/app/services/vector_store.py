@@ -59,7 +59,12 @@ class VectorStoreAdapter(Protocol):
         content_types: Sequence[str] = (),
     ) -> list[VectorSearchHit]: ...
 
-    def prune(self, *, text_ids: set[str], image_ids: set[str]) -> dict[str, int]: ...
+    def prune(
+        self,
+        *,
+        text_ids: set[str] | None = None,
+        image_ids: set[str] | None = None,
+    ) -> dict[str, int]: ...
 
     def ensure_research_collection(self, dimension: int) -> None: ...
 
@@ -79,7 +84,12 @@ class VectorStoreAdapter(Protocol):
 
     def delete_research(self, evidence_ids: Sequence[str]) -> int: ...
 
-    def health(self) -> dict[str, Any]: ...
+    def health(
+        self,
+        *,
+        expected_text_dimension: int | None = None,
+        expected_image_dimension: int | None = None,
+    ) -> dict[str, Any]: ...
 
     def metrics(self) -> dict[str, dict[str, Any]]: ...
 
@@ -146,7 +156,14 @@ class QdrantVectorStoreAdapter:
             try:
                 if self.mode == "local":
                     self.local_path.mkdir(parents=True, exist_ok=True)
-                    self._client = QdrantClient(path=str(self.local_path))
+                    # qdrant-client performs a SQLite thread-safety probe with
+                    # a connection that is not closed on Python 3.13. Local
+                    # RAG access already crosses the service's thread boundary,
+                    # so use the library's explicit opt-out and avoid that leak.
+                    self._client = QdrantClient(
+                        path=str(self.local_path),
+                        force_disable_check_same_thread=True,
+                    )
                 else:
                     self._client = QdrantClient(
                         url=self.url,
@@ -432,13 +449,22 @@ class QdrantVectorStoreAdapter:
         return output
 
     @_observe("prune")
-    def prune(self, *, text_ids: set[str], image_ids: set[str]) -> dict[str, int]:
+    def prune(
+        self,
+        *,
+        text_ids: set[str] | None = None,
+        image_ids: set[str] | None = None,
+    ) -> dict[str, int]:
         return {
-            "text_deleted": self._prune_collection(
-                self.text_collection, "chunk_id", text_ids
+            "text_deleted": (
+                self._prune_collection(self.text_collection, "chunk_id", text_ids)
+                if text_ids is not None
+                else 0
             ),
-            "image_deleted": self._prune_collection(
-                self.image_collection, "image_id", image_ids
+            "image_deleted": (
+                self._prune_collection(self.image_collection, "image_id", image_ids)
+                if image_ids is not None
+                else 0
             ),
         }
 
@@ -505,8 +531,30 @@ class QdrantVectorStoreAdapter:
             for operation, values in self._operation_metrics.items()
         }
 
+    def _collection_dimensions(self, collection: str) -> dict[str, int]:
+        """Read named-vector dimensions without mutating an existing collection."""
+
+        if not self._exists(collection):
+            return {}
+        info = self.client.get_collection(collection)
+        vectors = getattr(getattr(info, "config", None), "params", None)
+        vectors = getattr(vectors, "vectors", None)
+        if isinstance(vectors, dict):
+            return {
+                str(name): int(params.size)
+                for name, params in vectors.items()
+                if params.size is not None
+            }
+        size = getattr(vectors, "size", None)
+        return {"default": int(size)} if size is not None else {}
+
     @_observe("health")
-    def health(self) -> dict[str, Any]:
+    def health(
+        self,
+        *,
+        expected_text_dimension: int | None = None,
+        expected_image_dimension: int | None = None,
+    ) -> dict[str, Any]:
         try:
             text_count = (
                 self.client.count(self.text_collection, exact=True).count
@@ -518,16 +566,50 @@ class QdrantVectorStoreAdapter:
                 if self._exists(self.image_collection)
                 else 0
             )
+            collection_dimensions = {
+                self.text_collection: self._collection_dimensions(
+                    self.text_collection
+                ),
+                self.image_collection: self._collection_dimensions(
+                    self.image_collection
+                ),
+            }
+            dimension_mismatches: list[dict[str, Any]] = []
+            expected_vectors = {
+                f"{self.text_collection}:text_dense": expected_text_dimension,
+                f"{self.image_collection}:image_visual": expected_image_dimension,
+                f"{self.image_collection}:image_caption_dense": expected_text_dimension,
+            }
+            for key, expected in expected_vectors.items():
+                if expected is None:
+                    continue
+                collection, vector_name = key.split(":", 1)
+                actual = collection_dimensions[collection].get(vector_name)
+                if actual is not None and actual != expected:
+                    dimension_mismatches.append(
+                        {
+                            "collection": collection,
+                            "vector_name": vector_name,
+                            "expected": expected,
+                            "actual": actual,
+                        }
+                    )
+            reason = None
+            if dimension_mismatches:
+                reason = "vector_dimension_mismatch"
             return {
-                "status": "ready",
+                "status": "ready" if not dimension_mismatches else "degraded",
                 "connected": True,
+                "compatible": not dimension_mismatches,
                 "mode": self.mode,
                 "text_collection": self.text_collection,
                 "image_collection": self.image_collection,
                 "research_collection": self.research_collection,
                 "text_vector_count": int(text_count),
                 "image_vector_count": int(image_count),
-                "reason": None,
+                "collection_dimensions": collection_dimensions,
+                "dimension_mismatches": dimension_mismatches,
+                "reason": reason,
                 "backend": "embedded_sqlite" if self.mode == "local" else "remote_http",
                 "metrics": self.metrics(),
             }
@@ -536,12 +618,15 @@ class QdrantVectorStoreAdapter:
             return {
                 "status": "failed",
                 "connected": False,
+                "compatible": False,
                 "mode": self.mode,
                 "text_collection": self.text_collection,
                 "image_collection": self.image_collection,
                 "research_collection": self.research_collection,
                 "text_vector_count": 0,
                 "image_vector_count": 0,
+                "collection_dimensions": {},
+                "dimension_mismatches": [],
                 "reason": self._error,
                 "backend": "embedded_sqlite" if self.mode == "local" else "remote_http",
                 "metrics": self.metrics(),

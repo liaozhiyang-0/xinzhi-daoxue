@@ -30,7 +30,10 @@
 
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key 或 Secret。
 
-所有已注册 Agent 统一通过 durable Agent Runtime 执行；Task API 只负责创建任务和读取状态/SSE，不再存在 Legacy 执行分支、按 Agent 启停开关或请求级 Runtime 退出选项。开发、测试和生产环境使用同一执行架构，发布证据仅用于就绪度审计，不改变请求的执行引擎。
+所有新任务统一通过 durable Agent Runtime 执行。active 模式的生产控制面由
+`Unified Ingress → GoalContract → Planner → CanonicalPlan → Runtime` 负责；旧
+`IntentPlanCompiler`、Overall Router 和 `legacy-runtime:*` 只保留 shadow/旧 checkpoint
+兼容边界，active 任务缺少有效 CanonicalPlan 时失败关闭，不回退到旧 workflow。
 
 业务请求统一通过本地 Runtime 执行：本地 RAG、课程知识、学科求解、备课、作业复核和科研能力共享同一套可观测执行边界。请求中的历史 `allow_cloud` 字段会在入口被丢弃，不会触发远程工作流。
 
@@ -73,6 +76,25 @@ API 与任务编排：Python 3.11+ / FastAPI / 非阻塞 TaskExecutionCoordinato
 部署：Docker Compose（本地使用 `docker-compose.yml`，服务器使用 `docker-compose.server.yml` 覆盖）
 检索：BGE dense + BM25 sparse + SigLIP2 visual + Qdrant + RRF + BGE reranker
 ```
+
+## Phase N v2：当前生产控制面
+
+```text
+React / chat / tasks
+  → UnifiedRequestPreparationService
+  → GoalContract
+  → TaskRouter deterministic preflight
+  → PlannerService(active)
+  → Capability + Skill binding
+  → CanonicalPlan
+  → RuntimeTaskEngine / PlanExecutor
+  → RAG / Tool / Model / Verification
+  → Governance / Result / SSE / React
+```
+
+`TaskRouter` 只负责输入和可用性预检；`scenario_catalog` 只提供案例 metadata、约束和证据策略。六案例仍通过统一展示合同渲染，不新增固定 Agent 页面。收口证据见
+[Phase N 控制面收口](docs/architecture/phase_n_control_plane_closeout.md) 和
+[N8 takeover 评估](docs/architecture/phase_n8_takeover_evaluation.md)。
 
 早期 Spring Boot、MySQL、Vue3 和 MaaS 微调方案已经移除。仓库只保留当前 FastAPI 多智能体平台、检索评测、运行文档与本地课程资料入口。
 
@@ -218,8 +240,8 @@ POST /api/v1/knowledge/search
 POST /api/v1/knowledge/evaluate-query
 POST /api/v1/knowledge/rag-search
 GET  /api/v1/knowledge/health
-GET  /api/v1/knowledge/images/{course_id}/{relative_path}
-GET  /api/v1/knowledge/documents/{course_id}/{relative_path}
+GET  /api/v1/knowledge/images/{course_id}/{relative_path}  # 认证开启时需登录
+GET  /api/v1/knowledge/documents/{course_id}/{relative_path}  # 认证开启时需登录
 GET  /api/v1/knowledge/benchmark-summary
 POST /api/v1/knowledge/reload
 GET  /api/v1/agents/status
@@ -240,7 +262,11 @@ GET  /debug/agents
 GET  /student
 ```
 
+`/api/v1/observability/summary`、`/api/v1/observability/metrics` 和 `/metrics` 属于运维观测面；认证开启时需要管理员身份。生产环境还应在反向代理或 Prometheus 抓取配置中使用最小权限凭据。
+
 `http://localhost:8000/debug` 是原生 HTML/CSS/JavaScript 一页式演示界面。文字和图片共用 `POST /api/v1/tasks`，并通过 SSE 展示“正在识别、正在求解、正在整理答案”等步骤；真实本地 Runtime、Mock 和本地结果使用不同标识。
+
+认证开启时，`/debug`、`/debug/rag`、`/debug/agents`、`/debug/execution`、`/system`、`/demo` 及题库调试图片均仅限管理员访问；`/student` 和 `/workspace` 为学生端入口。
 
 `http://localhost:8000/debug/agents` 用于开发态Agent注册、映射预览、Mock和契约检查；`http://localhost:8000/workspace`（`/student` 同入口）是正式学生端，支持自然语言自动路由和本地学术求解器多图输入。
 

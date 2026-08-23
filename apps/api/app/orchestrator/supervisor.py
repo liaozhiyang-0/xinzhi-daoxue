@@ -260,8 +260,14 @@ class XZDSupervisor:
         )
 
         route_started = perf_counter()
-        route = self.router.route(legacy)
         settings = self.router.settings
+        if settings.planner_mode != "shadow":
+            legacy = legacy.model_copy(
+                update={
+                    "options": {**legacy.options, "_planner_preflight": True}
+                }
+            )
+        route = self.router.route(legacy)
         structured_intent = str(route.intent_recognition.get("intent", ""))
         if (
             settings.enable_local_knowledge_qa

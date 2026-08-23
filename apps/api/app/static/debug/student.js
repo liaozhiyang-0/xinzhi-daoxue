@@ -144,7 +144,8 @@ function renderResult(task) {
   const sources = mergeStudentSources(hits, externalItems);
   state.lastAnswer = result.math_content?.markdown || result.structured_result?.math_content?.markdown || result.answer || task.error_message || "未返回回答";
   $("#answer-panel").hidden = false; $("#answer-agent").textContent = task.agent_id || "统一运行框架";
-  const statusBadge = badge(task.status === "completed" ? (result.fallback_used ? "degraded" : "success") : "failed", task.status === "completed" ? (result.fallback_used ? "降级完成" : "已完成") : "未完成");
+  const taskStatus = String(task.status || "").toLowerCase();
+  const statusBadge = badge(taskStatus === "completed" ? (result.fallback_used ? "degraded" : "success") : taskStatus === "cancelled" ? "cancelled" : "failed", taskStatus === "completed" ? (result.fallback_used ? "降级完成" : "已完成") : taskStatus === "cancelled" ? "已停止" : "未完成");
   statusBadge.id = "answer-status"; $("#answer-status").replaceWith(statusBadge);
   const courseName = { CT: "电路理论", AE: "模拟电子技术", DE: "数字电子技术" }[task.course_id || selectedCourse()] || task.course_id || "课程";
   $("#answer-route").textContent = `${state.mode === "solve" ? "电路解题" : "知识问答"} · ${courseName}`;

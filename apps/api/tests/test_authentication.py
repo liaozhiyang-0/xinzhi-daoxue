@@ -145,3 +145,68 @@ def test_debug_surfaces_require_admin_when_auth_is_required(
 
     register(auth_client, login="student-debug@example.com")
     assert auth_client.get("/api/v1/debug/rag/status").status_code == 403
+
+
+def test_observability_surfaces_require_admin_when_auth_is_required(
+    auth_client: TestClient,
+) -> None:
+    auth_client.cookies.clear()
+    assert auth_client.get("/api/v1/observability/summary").status_code == 401
+    assert auth_client.get("/api/v1/observability/metrics").status_code == 401
+    assert auth_client.get("/metrics").status_code == 401
+
+    register(auth_client, login="student-observability@example.com")
+    assert auth_client.get("/api/v1/observability/summary").status_code == 403
+    assert auth_client.get("/api/v1/observability/metrics").status_code == 403
+    assert auth_client.get("/metrics").status_code == 403
+
+
+def test_debug_question_bank_asset_requires_admin_when_auth_is_required(
+    auth_client: TestClient,
+) -> None:
+    assert auth_client.get("/demo-assets/case6-opamp.png").status_code == 200
+
+    auth_client.cookies.clear()
+    assert (
+        auth_client.get("/debug-assets/question-bank/analog-opamp.jpg").status_code
+        == 401
+    )
+
+    register(auth_client, login="student-question-bank@example.com")
+    assert (
+        auth_client.get("/debug-assets/question-bank/analog-opamp.jpg").status_code
+        == 403
+    )
+
+
+def test_debug_pages_require_admin_when_auth_is_required(
+    auth_client: TestClient,
+) -> None:
+    paths = (
+        "/debug",
+        "/debug/rag",
+        "/debug/agents",
+        "/debug/execution",
+        "/system",
+        "/demo",
+    )
+    auth_client.cookies.clear()
+    assert all(auth_client.get(path).status_code == 401 for path in paths)
+
+    register(auth_client, login="student-debug-pages@example.com")
+    assert all(auth_client.get(path).status_code == 403 for path in paths)
+
+
+def test_raw_knowledge_resources_require_identity_when_auth_is_required(
+    auth_client: TestClient,
+) -> None:
+    paths = (
+        "/api/v1/knowledge/images/CT/missing.png",
+        "/api/v1/knowledge/documents/CT/missing.md",
+        "/api/v1/knowledge/document-pages/CT/missing.md",
+    )
+    auth_client.cookies.clear()
+    assert all(auth_client.get(path).status_code == 401 for path in paths)
+
+    register(auth_client, login="student-knowledge-resource@example.com")
+    assert all(auth_client.get(path).status_code == 404 for path in paths)

@@ -126,6 +126,7 @@ class TaskPostProcessingService:
                         db,
                         session=session,
                         source_task_id=task_id,
+                        course_id=task.course_id,
                     )
                     payload = dict(task.result_content or {})
                     usage = dict(payload.get("context_usage") or {})

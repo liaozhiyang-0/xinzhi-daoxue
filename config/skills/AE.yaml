@@ -91,3 +91,83 @@ skills:
     capability_ids: ["circuit_analysis", "equation_system"]
     common_error_signatures: ["op_amp_assumption_missing"]
     keywords: ["理想运放", "虚短", "虚断"]
+  - skill_id: "AE.CIRCUIT_IMAGE_PARSE"
+    title: "电路图像解析"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "visual_circuit"
+    problem_types: ["op_amp", "waveform_circuit"]
+    capability_ids: ["vision.circuit_parse"]
+    eligible_workers: ["AcademicProblemSolver"]
+    required_evidence: ["image_observation"]
+    verification_requirements: ["visual_fields_reviewed"]
+    keywords: ["电路图", "图像解析", "元件标注"]
+  - skill_id: "AE.ANALOG_FEEDBACK_ANALYSIS"
+    title: "模拟反馈分析"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "feedback"
+    prerequisites: ["AE.IDEAL_OP_AMP"]
+    problem_types: ["feedback", "op_amp"]
+    capability_ids: ["academic.solve"]
+    eligible_workers: ["AcademicProblemSolver"]
+    required_evidence: ["circuit_topology", "feedback_polarity"]
+    verification_requirements: ["operating_region_checked"]
+    keywords: ["负反馈", "虚短", "虚断", "饱和"]
+  - skill_id: "AE.SATURATION_CHECK"
+    title: "输出饱和边界检查"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "verification"
+    prerequisites: ["AE.ANALOG_FEEDBACK_ANALYSIS"]
+    problem_types: ["op_amp", "waveform_circuit"]
+    capability_ids: ["academic.solve", "vision.circuit_parse"]
+    eligible_workers: ["AcademicProblemSolver"]
+    required_evidence: ["supply_range", "output_observation"]
+    verification_requirements: ["saturation_boundary_disclosed"]
+    keywords: ["输出饱和", "电源轨", "削峰"]
+  - skill_id: "AE.COURSE_GOAL_ALIGNMENT"
+    title: "课程目标对齐"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "teaching_design"
+    problem_types: ["op_amp"]
+    capability_ids: ["teaching.lesson_design"]
+    eligible_workers: ["LessonPrepRuntimeService"]
+    required_evidence: ["course_objectives", "course_materials"]
+    verification_requirements: ["teacher_review_boundary"]
+    keywords: ["课程目标", "目标对齐", "教学设计"]
+  - skill_id: "AE.DIFFERENTIATED_PRACTICE"
+    title: "分层练习设计"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "teaching_design"
+    prerequisites: ["AE.COURSE_GOAL_ALIGNMENT"]
+    problem_types: ["waveform_circuit"]
+    capability_ids: ["teaching.lesson_design"]
+    eligible_workers: ["LessonPrepRuntimeService"]
+    required_evidence: ["learner_levels", "practice_constraints"]
+    verification_requirements: ["difficulty_review_required"]
+    keywords: ["分层练习", "基础", "达标", "挑战"]
+  - skill_id: "AE.FIRST_ERROR_DIAGNOSIS"
+    title: "首错诊断"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "assessment_review"
+    problem_types: ["bjt_bias"]
+    capability_ids: ["learning.first_error_diagnosis"]
+    eligible_workers: ["AssignmentReviewRuntimeService"]
+    required_evidence: ["student_steps", "scoring_rubric"]
+    verification_requirements: ["first_error_and_propagation_separated"]
+    keywords: ["首错", "错误传播", "作业诊断"]
+  - skill_id: "AE.LEARNING_DEPENDENCY_ANALYSIS"
+    title: "学习先修关系分析"
+    course_id: "AE"
+    scope: "domain"
+    chapter: "learning_path"
+    problem_types: ["bjt_bias"]
+    capability_ids: ["learning.path_plan"]
+    eligible_workers: ["LearningPathRuntimeService"]
+    required_evidence: ["attempt_history", "knowledge_dependencies"]
+    verification_requirements: ["retest_task_present"]
+    keywords: ["先修关系", "学习路径", "复测"]

@@ -22,6 +22,13 @@ from app.repositories import (
 )
 from app.services.context_budget import ContextBudgetManager
 from app.services.context_cache import ContextAssemblyCache
+from app.services.course_material_manifest import (
+    REVOCATION_STATE_UNAVAILABLE,
+    collect_material_source_refs,
+    load_material_revocation_version,
+    load_revoked_material_ids,
+    material_id_from_source_ref,
+)
 from app.services.session_working_state import SessionWorkingStateService
 
 
@@ -53,9 +60,52 @@ class ContextAssemblyService:
         session = await sessions.get_for_user(session_id, user_id)
         if session is None:
             raise NotFoundError("会话不存在", details={"session_id": session_id})
+        course = course_id.upper()
         runtime = RuntimeContextRepository(db)
         memories = MemoryRepository(db)
-        summary = await runtime.latest_summary(session_id)
+        messages = ConversationRepository(db)
+        revoked_material_ids = load_revoked_material_ids(
+            self.settings.knowledge_index_path
+        )
+        material_revocation_version = load_material_revocation_version(
+            self.settings.knowledge_index_path
+        )
+        # A session may legitimately switch courses.  Selecting the globally
+        # newest summary first makes a newer AE summary hide an older, still
+        # valid CT summary; that silently breaks follow-up continuity.  The
+        # repository already performs the bounded course-safe selection.
+        summary = await runtime.latest_summary_for_course(session_id, course)
+        summary_source_ids = (
+            list(summary.source_message_ids)
+            if summary is not None
+            and isinstance(summary.source_message_ids, list)
+            else []
+        )
+        summary_source_models = (
+            await messages.list_by_ids(
+                session_id,
+                user_id=user_id,
+                message_ids=summary_source_ids,
+            )
+            if summary is not None
+            else []
+        )
+        summary_sources_traceable = (
+            bool(summary_source_ids)
+            and len(summary_source_models) == len(set(summary_source_ids))
+        )
+        summary_contains_revoked_material = any(
+            self._contains_revoked_material(item, revoked_material_ids)
+            for item in summary_source_models
+        )
+        state = await SessionWorkingStateService(db).get(session_id)
+        if summary is not None and (
+            not self._summary_matches_course(summary, course)
+            or self._contains_revoked_material(summary, revoked_material_ids)
+            or not summary_sources_traceable
+            or summary_contains_revoked_material
+        ):
+            summary = None
         memory_revision = (
             await memories.max_revision(user_id) if session.memory_enabled else 0
         )
@@ -70,6 +120,8 @@ class ContextAssemblyService:
                 "context_config_version": self.settings.context_config_version,
                 "memory_revision": memory_revision,
                 "summary_version": summary.version if summary else 0,
+                "revoked_material_ids": sorted(revoked_material_ids),
+                "material_revocation_version": material_revocation_version,
                 "rag_context_version": rag_context_version,
             }
         )
@@ -83,23 +135,27 @@ class ContextAssemblyService:
                 }
             )
 
-        messages = ConversationRepository(db)
         recent_models = await messages.list_recent(
             session_id,
             user_id=user_id,
             limit=self.settings.context_recent_message_limit,
         )
-        course = course_id.upper()
-        recent = [
-            self._context_message(item)
+        filtered_recent_models = [
+            item
             for item in recent_models
             if item.id != current_message_id
-            and (
-                not item.metadata_data.get("course_id")
-                or str(item.metadata_data.get("course_id", "")).upper() == course
-            )
+            and self._message_matches_course(item, course)
+            and not self._contains_revoked_material(item, revoked_material_ids)
         ]
-        oldest_sequence = recent_models[0].sequence if recent_models else 1
+        recent = [
+            self._context_message(item)
+            for item in filtered_recent_models
+        ]
+        oldest_sequence = (
+            filtered_recent_models[0].sequence
+            if filtered_recent_models
+            else 1
+        )
         older_models = (
             await messages.list_older(
                 session_id,
@@ -114,12 +170,16 @@ class ContextAssemblyService:
             )
             else []
         )
+        older_models = [
+            item
+            for item in older_models
+            if not self._contains_revoked_material(item, revoked_material_ids)
+        ]
         older = self._select_relevant(
             [self._context_message(item) for item in older_models],
             recent[-1].content_text if recent else "",
             course,
         )[: self.settings.context_relevant_older_limit]
-        state = await SessionWorkingStateService(db).get(session_id)
         memory_models = (
             await memories.list_for_user(
                 user_id,
@@ -196,15 +256,56 @@ class ContextAssemblyService:
     @staticmethod
     def _context_message(model: Any) -> ContextMessage:
         text = model.content_text
+        metadata = model.metadata_data if isinstance(model.metadata_data, dict) else {}
         return ContextMessage(
             message_id=model.id,
             sequence=model.sequence,
             role=MessageRole(model.role),
             content_text=text[:4000],
-            course_id=str(model.metadata_data.get("course_id", "")),
+            course_id=str(metadata.get("course_id", "")),
             is_correction=any(
                 marker in text for marker in ("纠正", "不是", "改为", "应为")
             ),
+        )
+
+    @staticmethod
+    def _message_matches_course(model: Any, course_id: str) -> bool:
+        metadata = model.metadata_data if isinstance(model.metadata_data, dict) else {}
+        message_course = str(metadata.get("course_id", "")).strip()
+        return not message_course or message_course.upper() == course_id
+
+    @staticmethod
+    def _summary_matches_course(model: Any, course_id: str) -> bool:
+        structured = (
+            model.structured_state
+            if isinstance(model.structured_state, dict)
+            else {}
+        )
+        summary_course = str(structured.get("course_id", "")).strip()
+        return bool(summary_course) and summary_course.upper() == course_id
+
+    @staticmethod
+    def _contains_revoked_material(
+        model: Any,
+        revoked_material_ids: set[str],
+    ) -> bool:
+        if not revoked_material_ids:
+            return False
+        refs = collect_material_source_refs(
+            getattr(model, "structured_state", None)
+            if hasattr(model, "structured_state")
+            else {
+                "metadata": getattr(model, "metadata_data", None),
+                "content_data": getattr(model, "content_data", None),
+            }
+        )
+        return any(
+            material_id_from_source_ref(ref) in revoked_material_ids
+            or (
+                REVOCATION_STATE_UNAVAILABLE in revoked_material_ids
+                and material_id_from_source_ref(ref) is not None
+            )
+            for ref in refs
         )
 
     @staticmethod

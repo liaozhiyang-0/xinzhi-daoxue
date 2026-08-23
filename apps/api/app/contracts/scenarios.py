@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,6 +41,8 @@ class ScenarioDemoCase(BaseModel):
     evidence_requirements: list[str] = Field(min_length=1, max_length=12)
     review_boundary: str = Field(min_length=1, max_length=1_000)
     acceptance_conditions: list[str] = Field(min_length=1, max_length=16)
+    formula_output_contract: dict[str, Any] | None = None
+    visual_acceptance: dict[str, Any] | None = None
 
 
 class ScenarioEvidenceSource(BaseModel):

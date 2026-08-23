@@ -178,3 +178,123 @@ cases:
     official_scoring: false
     judge_type: hybrid
     requires_manual_review: true
+
+  - case_id: COMMERCIAL_ACADEMIC_VISUAL_001
+    title: Academic visual problem solver with structural acceptance
+    course: SS
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: hard
+    input_type: mixed
+    message: First extract the support intervals, amplitudes, endpoints, and overlap breakpoints from the uploaded signal diagram, then derive the complete convolution expression and explain the waveform. Keep visual facts, mathematical derivation, and review boundaries separate; refuse to guess missing image fields.
+    task_options: {scenario_id: academic_visual_problem_solver_v1, user_role: student}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: SS
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [visual_structure, piecewise_expression, breakpoint, review_boundary]
+    required_steps: [visual_extraction, visual_acceptance, academic_solution, quality_review]
+    reference_solution:
+      required_sections: [visual_structure, visual_acceptance, piecewise_expression, waveform, review_boundary]
+    evidence_requirements:
+      standard_answer: user-provided problem image and reviewed signal-system references
+      authoritative_sources: user-provided problem image and course pack
+      user_validation: student or teacher review of image fields and final formula
+    tags: [commercial, synthetic, academic-solving, multimodal]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_ACADEMIC_SPECTRUM_001
+    title: Academic spectrum visual problem solver
+    course: CT
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: hard
+    input_type: mixed
+    message: Extract the triangular spectrum support and modulation centers from the uploaded diagram, then derive the signed Fourier-domain expression and disclose every visual review boundary.
+    task_options: {scenario_id: academic_visual_spectrum_solver_v1, user_role: student}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: CT
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [visual_structure, spectrum_expression, frequency_bands, review_boundary]
+    required_steps: [visual_extraction, visual_acceptance, frequency_domain_solution, quality_review]
+    reference_solution:
+      required_sections: [visual_structure, visual_acceptance, spectrum_expression, frequency_bands, review_boundary]
+    evidence_requirements:
+      standard_answer: user-provided spectrum image and reviewed signal-system references
+      authoritative_sources: user-provided spectrum image and course pack
+      user_validation: student or teacher review of frequency fields and final formula
+    tags: [commercial, synthetic, academic-solving, multimodal]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_ACADEMIC_TEXT_001
+    title: Academic text circuit diagnosis and verification
+    course: AE
+    task_family: ACADEMIC_SOLVING
+    intent: solve_problem
+    difficulty: hard
+    input_type: text
+    message: Diagnose a measured transistor-amplifier symptom, separate observations from hypotheses, propose safe verification steps, and disclose parameters that require laboratory review.
+    task_options: {scenario_id: academic_text_diagnostic_solver_v1, user_role: student}
+    expected_agent: ACADEMIC_PROBLEM_SOLVER
+    expected_course_pack: AE
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [observation, operating_region, diagnostic_steps, safety_boundary]
+    required_steps: [observation_summary, operating_region, candidate_causes, diagnostic_steps]
+    reference_solution:
+      required_sections: [observation_summary, operating_region, candidate_causes, diagnostic_steps, safety_boundary]
+    evidence_requirements:
+      standard_answer: user-provided measurement observations and reviewed analog-circuit references
+      authoritative_sources: user observations and course pack
+      user_validation: student or teacher review of measurements and safety boundaries
+    tags: [commercial, synthetic, academic-solving, safety]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true
+
+  - case_id: COMMERCIAL_RUBRIC_001
+    title: Teacher rubric generation with review boundary
+    course: DE
+    task_family: GENERAL_QA
+    intent: general_qa
+    difficulty: medium
+    input_type: text
+    message: Generate a reviewable rubric for a digital-design project with explicit dimensions, performance levels, evidence requirements, and a prohibition on automatically scoring students.
+    task_options: {scenario_id: rubric_generation_v1, user_role: teacher}
+    expected_agent: GENERAL_QUESTION_V1
+    expected_course_pack: DE
+    expected_execution_paths: [STANDARD, HIGH_RISK]
+    expected_citations: true
+    min_citation_count: 1
+    required_keywords: [rubric_dimensions, rubric_levels, evidence, review_boundary]
+    required_steps: [dimension_coverage, level_description, evidence_requirement, review_boundary]
+    reference_solution:
+      required_sections: [rubric_dimensions, rubric_levels, evidence_requirements, student_score_excluded, review_boundary]
+    evidence_requirements:
+      standard_answer: course project requirements and teacher-reviewed assessment criteria
+      authoritative_sources: project specification and teacher review
+      user_validation: authorized teacher review
+    tags: [commercial, synthetic, teaching, assessment]
+    source: owner-designed commercial scenario catalog
+    input_source: synthetic
+    provenance: {source_type: synthetic, source_name: commercial scenario catalog, license_or_authorization: synthetic local evaluation content, publishable: true}
+    official_scoring: false
+    judge_type: hybrid
+    requires_manual_review: true

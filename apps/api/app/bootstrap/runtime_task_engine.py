@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents import AgentRegistry, TaskRouter
 from app.application.tasks import TaskLeaseManager
+from app.application.tasks.progress import TaskProgressReporter
 from app.courses import CourseRegistry
 from app.providers.base import AgentProvider
 from app.providers.retrieval.academic import AcademicSearchService
@@ -77,7 +78,6 @@ from app.services.student_attempts import StudentAttemptService
 from app.services.task_completion import TaskCompletionService
 from app.services.task_failure_service import TaskFailureService
 from app.services.task_post_processing import TaskPostProcessingService
-from app.services.task_progress import TaskProgressReporter
 from app.services.task_result_commit import TaskResultCommitService
 from app.services.task_result_presentation import TaskResultPresentationService
 from app.services.task_runtime_execution import TaskRuntimeExecutionService
@@ -85,6 +85,16 @@ from app.services.task_runtime_preparation import TaskRuntimePreparationService
 from app.services.task_session_commit import TaskSessionCommitService
 from app.services.teaching_foundation import TeachingFoundationService
 from app.tools.registry import ToolRegistry
+
+
+def _runtime_service_agent_ids(service: object) -> tuple[str, ...]:
+    """Return the primary and alias Agent IDs owned by one Runtime service."""
+
+    values = {str(getattr(service, "agent_id", ""))}
+    supported = getattr(service, "supported_agent_ids", ())
+    if isinstance(supported, (tuple, list, set, frozenset)):
+        values.update(str(item) for item in supported if str(item))
+    return tuple(sorted(item for item in values if item))
 
 
 def build_runtime_task_engine(
@@ -143,15 +153,26 @@ def build_runtime_task_engine(
         if internal_agents is not None
         else None
     )
-    request_preparation = RuntimeRequestPreparationService(
-        AgentExecutionPlanner(agent_registry, settings),
-        overall_router,
-        context_assembly,
+    # Runtime route refinement is retained only for the explicit shadow
+    # compatibility mode. Controlled/active Planner modes receive the
+    # immutable preflight route and CanonicalPlan without a second router.
+    compatibility_overall_router = (
+        overall_router if settings.planner_mode == "shadow" else None
+    )
+    compatibility_fallback_router = (
         FallbackRoutingService(
             agent_registry,
             TaskRouter(agent_registry, settings),
             provider,
-        ),
+        )
+        if settings.planner_mode == "shadow"
+        else None
+    )
+    request_preparation = RuntimeRequestPreparationService(
+        AgentExecutionPlanner(agent_registry, settings),
+        compatibility_overall_router,
+        context_assembly,
+        compatibility_fallback_router,
     )
     external_research = (
         ExternalResearchRuntimeService(
@@ -295,10 +316,11 @@ def build_runtime_task_engine(
     launch_policy = RuntimeLaunchPolicy(
         release_gate_required=settings.agent_runtime_release_gate_required,
         local_agents=(
-            service.agent_id
+            agent_id
             for service in (*business_services, research_analysis)
             if service is not None
             if getattr(service, "agent_id", "") != "*"
+            for agent_id in _runtime_service_agent_ids(service)
         ),
     )
     result_pipeline = RuntimeResultPipeline(

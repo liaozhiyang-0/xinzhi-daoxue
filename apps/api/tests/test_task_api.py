@@ -1,3 +1,9 @@
+import json
+
+from app.models import ConversationMessageModel, TaskModel
+from sqlalchemy import select
+
+
 def test_create_query_and_artifact(api, client) -> None:
     session = api.create_session()
     created = api.create_task(session["id"])
@@ -21,6 +27,67 @@ def test_create_query_and_artifact(api, client) -> None:
     assert history.json()[0]["question"] == "求电阻两端电压"
     assert history.json()[0]["answer"]
     assert "result_content" not in history.json()[0]
+
+
+def test_revoked_material_is_filtered_from_task_history_and_chat(api, client) -> None:
+    session = api.create_session()
+    task = api.wait_for_task(api.create_task(session["id"])["id"])
+
+    async def persist_withdrawn_evidence() -> None:
+        async with api.client.app.state.session_factory() as db:
+            model = await db.get(TaskModel, task["id"])
+            assert model is not None
+            result = dict(model.result_content or {})
+            structured = dict(result.get("structured_result") or {})
+            withdrawn = "kb-material://CT/file-withdrawn#chunk-0"
+            structured["evidence_view"] = [{"source_ref": withdrawn}]
+            structured["knowledge"] = {"hits": [{"source_ref": withdrawn}]}
+            structured["evidence_packet"] = {"sources": [{"source_ref": withdrawn}]}
+            result["citations"] = [withdrawn]
+            result["structured_result"] = structured
+            model.result_content = result
+            message = await db.scalar(
+                select(ConversationMessageModel).where(
+                    ConversationMessageModel.source_task_id == task["id"],
+                    ConversationMessageModel.role == "assistant",
+                )
+            )
+            assert message is not None
+            message.content_data = {"evidence_view": [{"source_ref": withdrawn}]}
+            await db.commit()
+
+    api.client.portal.call(persist_withdrawn_evidence)
+    state_path = (
+        api.client.app.state.settings.knowledge_index_path / "rag_index_state.json"
+    )
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"revoked_material_ids": ["file-withdrawn"]}),
+        encoding="utf-8",
+    )
+
+    public = client.get(f"/api/v1/tasks/{task['id']}")
+    assert public.status_code == 200
+    assert "kb-material://" not in json.dumps(public.json(), ensure_ascii=False)
+    assert public.json()["result_content"]["structured_result"]["revocation_notice"][
+        "status"
+    ] == "needs_review"
+
+    history = client.get(f"/api/v1/sessions/{session['id']}/tasks")
+    assert history.status_code == 200
+    assert "课程资料已撤回" in history.json()[0]["answer"]
+
+    messages = client.get(
+        f"/api/v1/sessions/{session['id']}/messages",
+        params={"user_id": session["user_id"]},
+    )
+    assert messages.status_code == 200
+    assert "kb-material://" not in json.dumps(messages.json(), ensure_ascii=False)
+    assert any("课程资料已撤回" in item["content_text"] for item in messages.json())
+
+    chat = client.get(f"/api/v1/chat/{task['id']}")
+    assert chat.status_code == 200
+    assert "kb-material://" not in json.dumps(chat.json(), ensure_ascii=False)
 
 
 def test_legacy_task_scenario_binds_catalog_agent_and_policy(api) -> None:

@@ -1,7 +1,9 @@
+import json
 from pathlib import Path
 from typing import Any
 
 from app.contracts import AgentRequest, ModelResponse, RetrievalResult
+from app.contracts.learning import LearningPathDraft
 from app.services.knowledge_qa_service import DISCLAIMER, KnowledgeQAService
 from app.services.retrieval_context import RetrievalContextService
 
@@ -42,6 +44,37 @@ class _RecordingModelService:
             provider=self.provider,
             model="test-governance-model",
             content=self.content,
+            elapsed_ms=1,
+        )
+
+    async def generate_json_for_task(
+        self, task_type: str, **kwargs: Any
+    ) -> ModelResponse:
+        self.task_type = task_type
+        self.messages = list(kwargs["messages"])
+        return ModelResponse(
+            provider=self.provider,
+            model="test-learning-path-model",
+            content=json.dumps(
+                {
+                    "evidence_summary": "三次作答记录显示分数下降。[S1]",
+                    "weak_knowledge_points": [
+                        {
+                            "knowledge_point": "参考方向符号",
+                            "basis": "用户明确描述反复写反",
+                            "confidence": "tentative",
+                        }
+                    ],
+                    "prerequisite_path": ["符号约定", "KCL", "方程自检"],
+                    "staged_plan": [
+                        {"day": 1, "goal": "复习符号约定", "duration_minutes": 20}
+                    ],
+                    "verification_tasks": ["完成一道新题", "提交符号自检"],
+                    "completion_evidence": ["提交独立完成的新题推导"],
+                    "teacher_intervention_points": ["连续两次验证仍错误时复核"],
+                },
+                ensure_ascii=False,
+            ),
             elapsed_ms=1,
         )
 
@@ -114,6 +147,8 @@ async def test_governance_uses_model_to_organize_input_and_evidence(
     assert execution.result.structured_result["mode"] == "governance_model_generation"
     assert execution.result.provider == "test-model"
     assert execution.result.citations == ["kb://CT/governance.md#chunk-1"]
+    assert execution.result.metrics.provider_latency_ms == 1
+    assert execution.result.metrics.model_latency_ms == 1
     assert execution.result.structured_result["synthesis_trace"] == {
         "task_type": "knowledge_answer",
         "raw_request_included": True,
@@ -237,6 +272,106 @@ async def test_learning_path_synthesizes_user_evidence_without_local_chunks(
         "learning_path_model_generation"
     )
     assert execution.result.answer.startswith("证据摘要")
+
+
+async def test_learning_path_preserves_requested_two_week_horizon(
+    tmp_path: Path,
+) -> None:
+    model = _RecordingModelService()
+    service = KnowledgeQAService(
+        make_service(tmp_path, {"AE": {"unrelated.md": "无关资料。"}}),
+        RetrievalContextService(2000),
+        model_service=model,  # type: ignore[arg-type]
+    )
+    request = AgentRequest(
+        session_id="s-learning-two-week",
+        user_id="u-learning-two-week",
+        scene="learning",
+        course_id="AE",
+        intent="learning_advice",
+        scenario_id="student_learning_path_v1",
+        canonical_input={
+            "text": "请制定为期两周的BJT静态工作点与动态参数专项复习计划。"
+        },
+        options={"scenario_id": "student_learning_path_v1"},
+    )
+
+    execution = await service.run_with_generation(
+        "LEARN_01_LOCAL_RETRIEVAL_V1", request
+    )
+
+    assert "至少14天" in model.messages[0]["content"]
+    assert execution.result.business_data["plan_horizon_check"] == {
+        "status": "mismatch",
+        "requested_days": 14,
+        "planned_days": 1,
+        "reason": "模型计划未覆盖请求的完整周期",
+    }
+
+
+def test_learning_path_normalizes_provider_object_shaped_plan() -> None:
+    draft = LearningPathDraft.model_validate(
+        {
+            "evidence_summary": "输入证据有限",
+            "weak_knowledge_points": ["BJT静态工作点"],
+            "prerequisite_path": ["器件基础"],
+            "staged_plan": {
+                "day_1": {"focus": "复盘静态工作点"},
+                "day_2": {"focus": "验证动态参数"},
+            },
+            "verification_tasks": ["计算Q点", "完成测量记录"],
+            "completion_evidence": ["提交复盘记录"],
+            "teacher_intervention_points": ["测量异常时复核"],
+        }
+    )
+
+    assert draft.staged_plan[0]["day"] == 1
+    assert draft.staged_plan[1]["day"] == 2
+
+
+def test_learning_path_flattens_nested_week_plan() -> None:
+    payload = {
+        "evidence_summary": "输入证据有限",
+        "weak_knowledge_points": ["BJT静态工作点"],
+        "prerequisite_path": ["器件基础"],
+        "staged_plan": {
+            "week_1": {
+                "day_1": "复盘静态工作点",
+                "day_2": "验证动态参数",
+            },
+            "week_2": {
+                "day_8": "完成测量记录",
+                "day_14": "综合复测",
+            },
+        },
+        "verification_tasks": ["计算Q点", "完成测量记录"],
+        "completion_evidence": ["提交复盘记录"],
+        "teacher_intervention_points": ["测量异常时复核"],
+    }
+
+    draft = LearningPathDraft.model_validate(payload)
+
+    assert len(draft.staged_plan) == 4
+    assert [item["day"] for item in draft.staged_plan] == [1, 2, 8, 14]
+
+
+def test_learning_path_preserves_outer_week_markers() -> None:
+    payload = {
+        "evidence_summary": "输入证据有限",
+        "weak_knowledge_points": ["Buck闭环"],
+        "prerequisite_path": ["电源基础"],
+        "staged_plan": {
+            "week_1": {"focus": "闭环建模"},
+            "week_2": {"focus": "PCB抗干扰"},
+        },
+        "verification_tasks": ["完成仿真", "记录波形"],
+        "completion_evidence": ["提交实验记录"],
+        "teacher_intervention_points": ["上电前复核"],
+    }
+
+    draft = LearningPathDraft.model_validate(payload)
+
+    assert [item["week"] for item in draft.staged_plan] == [1, 2]
 
 
 async def test_learning_path_does_not_publish_local_only_result_without_model(

@@ -5,6 +5,7 @@ from time import perf_counter
 
 from app.agents import AgentRegistry, TaskRouter
 from app.contracts import AgentRequest, RouteDecision
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.providers.base import AgentProvider
 
 
@@ -42,6 +43,7 @@ class FallbackRoutingService:
         # entry is a compatibility marker, not an invitation to call a
         # remote workflow or a second model.
         started = perf_counter()
+        architecture_telemetry.increment("fallback_route_count")
         fallback = self.router.route(request)
         if self.required(fallback):
             fallback = fallback.model_copy(

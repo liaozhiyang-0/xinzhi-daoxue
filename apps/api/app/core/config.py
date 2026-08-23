@@ -247,7 +247,10 @@ class Settings(BaseSettings):
     text_embedding_query_instruction: str = ""
     rag_model_local_files_only: bool = True
     text_colbert_enabled: bool = False
-    legacy_hash_embedding_enabled: bool = True
+    # Hash vectors are a compatibility fixture, not a semantic RAG fallback.
+    # Enable explicitly for isolated legacy tests; normal development must fail
+    # closed when the configured real embedding model is unavailable.
+    legacy_hash_embedding_enabled: bool = False
     legacy_hash_embedding_dimension: int = Field(default=384, ge=8, le=4096)
 
     image_embedding_enabled: bool = True
@@ -520,7 +523,11 @@ class Settings(BaseSettings):
     agent_runtime_semantic_evidence: str = ""
     agent_runtime_release_authorizations: str = ""
     agent_runtime_release_gate_required: bool = True
-    # Phase B Planner controls. All remain disabled unless explicitly enabled.
+    # Phase N Planner control plane. One mode is authoritative; the two older
+    # booleans remain read-compatible for historical tests and adapters only.
+    planner_mode: Literal["shadow", "controlled", "active"] = "active"
+    # Deprecated Phase B compatibility switches; production code must use
+    # planner_mode instead.
     planner_shadow_enabled: bool = False
     planner_takeover_enabled: bool = False
     planner_canary_agent_ids: str = ""
@@ -606,6 +613,8 @@ class Settings(BaseSettings):
         # bypassed by a misconfigured deploy.
         if self.app_env == "production" and self.allow_mock_fallback:
             raise ValueError("ALLOW_MOCK_FALLBACK must be false in production")
+        if self.app_env == "production" and self.default_agent_provider == "mock":
+            raise ValueError("DEFAULT_AGENT_PROVIDER=mock is forbidden in production")
         if self.app_env == "production" and self.allow_agent_mocks:
             raise ValueError("ALLOW_AGENT_MOCKS must be false in production")
         if self.app_env == "production" and self.enable_debug_api:

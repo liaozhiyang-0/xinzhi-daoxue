@@ -41,6 +41,7 @@ from app.contracts.feedback import (
     FeedbackRead,
     FeedbackSatisfaction,
 )
+from app.contracts.goal import GoalContract
 from app.contracts.intent import IntentExecutionPlan, IntentRecognition, PlanNode
 from app.contracts.knowledge import (
     CourseAssetEvidenceCheckRead,
@@ -82,6 +83,7 @@ from app.contracts.learning import (
     FeedbackUptakeV1,
     HintDecisionV1,
     LearningMetricsRead,
+    LearningPathDraft,
     LearningRuntimeApprovalRequest,
     LearningRuntimeNodeStatusRead,
     LearningRuntimeStatusRead,
@@ -145,6 +147,7 @@ from app.contracts.planner import (
     CanonicalGoal,
     CanonicalPlan,
     CanonicalPlanNode,
+    CapabilityBinding,
     PlannerBudget,
     PlannerLineage,
     PlannerPlanShape,
@@ -231,6 +234,7 @@ __all__ = [
     "AgentEvent",
     "AgentEventType",
     "AgentRequest",
+    "GoalContract",
     "AgentResult",
     "AgentResultStatus",
     "Artifact",
@@ -274,6 +278,7 @@ __all__ = [
     "RouteDecision",
     "RouteStatus",
     "CanonicalGoal",
+    "CapabilityBinding",
     "CanonicalPlan",
     "CanonicalPlanNode",
     "PlannerBudget",
@@ -407,6 +412,7 @@ __all__ = [
     "FeedbackUptakeStatus",
     "FeedbackUptakeV1",
     "LearningMetricsRead",
+    "LearningPathDraft",
     "LearningRuntimeApprovalRequest",
     "LearningRuntimeNodeStatusRead",
     "LearningRuntimeStatusRead",

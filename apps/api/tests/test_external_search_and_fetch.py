@@ -558,6 +558,84 @@ def test_compound_topic_requires_each_explicit_topic_term() -> None:
     assert filtered == []
 
 
+@pytest.mark.parametrize(
+    ("query", "direct", "unrelated"),
+    [
+        (
+            "请检索近三年 SiC/GaN 功率器件产业瓶颈",
+            (
+                "Recent SiC and GaN power device reliability bottlenecks",
+                "This study examines silicon carbide and gallium nitride "
+                "power semiconductor devices in industry.",
+            ),
+            ("Transformer language models", "This paper studies text models."),
+        ),
+        (
+            "检索过去12个月多模态 LLM 复杂视觉理解",
+            (
+                "Multimodal LLMs for complex visual understanding",
+                "This work evaluates multimodal large language models for "
+                "complex visual reasoning.",
+            ),
+            (
+                "Text-only LLM instruction tuning",
+                "This work studies language-only tuning.",
+            ),
+        ),
+        (
+            "检索过去18个月边缘设备 YOLO 剪枝和量化",
+            (
+                "Edge YOLO pruning and quantization",
+                "This paper evaluates YOLO edge deployment with pruning and "
+                "quantization.",
+            ),
+            ("Cloud image classification", "This work targets a cloud classifier."),
+        ),
+        (
+            "近期 RISC-V 侧信道 硬件防御 面积 功耗",
+            (
+                "RISC-V hardware countermeasures against side-channel attacks",
+                "This paper proposes a hardware defense for RISC-V side-channel "
+                "leakage under area and power constraints.",
+            ),
+            ("RISC-V cache optimization", "This work optimizes cache throughput."),
+        ),
+        (
+            "检索 2023-2026 低功耗 CMOS 运算放大器 OTA",
+            (
+                "A low-power CMOS OTA",
+                "This paper presents a low-power CMOS operational transconductance "
+                "amplifier.",
+            ),
+            ("GaN power amplifier", "This work studies a GaN RF power amplifier."),
+        ),
+    ],
+)
+def test_feedback_research_topics_drop_cross_domain_evidence(
+    query: str,
+    direct: tuple[str, str],
+    unrelated: tuple[str, str],
+) -> None:
+    direct_item = _item("https://example.org/direct").model_copy(
+        update={
+            "evidence_id": "direct",
+            "title": direct[0],
+            "content_excerpt": direct[1],
+        }
+    )
+    unrelated_item = _item("https://example.org/unrelated").model_copy(
+        update={
+            "evidence_id": "unrelated",
+            "title": unrelated[0],
+            "content_excerpt": unrelated[1],
+        }
+    )
+
+    filtered = filter_research_evidence(query, [direct_item, unrelated_item])
+
+    assert [item.evidence_id for item in filtered] == ["direct"]
+
+
 def test_enabled_external_retrieval_preserves_async_sse_order(api, client, app) -> None:
     class FakeSearch:
         async def search(self, query: str, **_: object) -> ExternalRetrievalResult:

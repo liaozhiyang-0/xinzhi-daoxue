@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import TaskModel, TaskStatus
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.observability.model_tracer import ModelTracer
 from app.observability.tracer import TraceStore
 from app.services.task_observability import elapsed_ms, percentile_ms
@@ -163,6 +164,7 @@ async def build_observability_snapshot(
         "traces": trace_snapshot(trace_store),
         "tasks": await task_snapshot(session_factory),
         "queue": await queue_snapshot(task_queue, task_executor_mode),
+        "architecture": architecture_telemetry.snapshot(),
     }
 
 
@@ -188,6 +190,15 @@ def prometheus_text(snapshot: dict[str, Any]) -> str:
         "# HELP xzd_task_status_total Task count by current status.",
         "# TYPE xzd_task_status_total gauge",
     ]
+    architecture = snapshot.get("architecture", {})
+    lines.extend(
+        [
+            "# HELP xzd_architecture_control_total Control-plane migration counters.",
+            "# TYPE xzd_architecture_control_total counter",
+        ]
+    )
+    for name in sorted(architecture):
+        lines.append(_metric(f"xzd_architecture_{name}_total", architecture[name]))
     status_counts = snapshot.get("tasks", {}).get("status_counts", {})
     for status, count in sorted(status_counts.items()):
         lines.append(_metric("xzd_task_status_total", count, {"status": status}))

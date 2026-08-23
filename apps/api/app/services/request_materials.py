@@ -11,6 +11,8 @@ MATERIAL_FIELDS = {
     "topic",
     "student_level",
     "class_duration",
+    "preclass_duration",
+    "in_class_duration",
     "lesson_count",
     "teaching_goals",
     "prerequisites",
@@ -48,6 +50,8 @@ LABEL_ALIASES = {
     "topic": ("主题", "课题", "教学主题"),
     "student_level": ("学生层次", "学生水平", "授课对象", "年级"),
     "class_duration": ("课时", "时长", "课堂时长"),
+    "preclass_duration": ("课前时长", "课前时间"),
+    "in_class_duration": ("课堂讨论时长", "课堂时长", "课内时长"),
     "lesson_count": ("课次数", "课时数", "节数"),
     "assignment_text": ("题目", "作业题目", "作业"),
     "student_answer": ("学生答案", "学生作答", "作答"),
@@ -176,10 +180,25 @@ class RequestMaterialExtractor:
     def _extract_teaching_fields(
         text: str, materials: dict[str, Any], sources: dict[str, str]
     ) -> None:
+        preclass = re.search(r"课前\s*(\d{1,3})\s*分钟", text)
+        if preclass and "preclass_duration" not in materials:
+            materials["preclass_duration"] = f"{preclass.group(1)}分钟"
+            sources["preclass_duration"] = "pattern"
+        in_class = re.search(r"课堂(?:讨论)?\s*(\d{1,3})\s*分钟", text)
+        if in_class and "in_class_duration" not in materials:
+            materials["in_class_duration"] = f"{in_class.group(1)}分钟"
+            sources["in_class_duration"] = "pattern"
         duration = re.search(r"(?<!\d)(\d{1,3})\s*分钟", text)
         if duration and "class_duration" not in materials:
             materials["class_duration"] = f"{duration.group(1)}分钟"
             sources["class_duration"] = "pattern"
+        if (
+            preclass
+            and in_class
+            and sources.get("class_duration") == "pattern"
+        ):
+            total = int(preclass.group(1)) + int(in_class.group(1))
+            materials["class_duration"] = f"{total}分钟"
         lesson_count = re.search(r"(?<!\d)(\d{1,2})\s*(?:节|课时)", text)
         if lesson_count and "lesson_count" not in materials:
             materials["lesson_count"] = lesson_count.group(1)

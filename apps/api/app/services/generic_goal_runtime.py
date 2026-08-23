@@ -47,6 +47,8 @@ class GenericGoalRuntimeService:
 
     def supports(self, _agent_id: str, request: AgentRequest) -> bool:
         options = request.options.get(self.runtime_option_key)
+        if self._has_authoritative_canonical_plan(request):
+            return True
         return isinstance(options, Mapping) and options.get("execute") is True
 
     def build_plan(self, request: AgentRequest) -> AgentRunPlan:
@@ -232,33 +234,47 @@ class GenericGoalRuntimeService:
 
     def _result(self, request: AgentRequest, run: AgentRun) -> AgentResult:
         answer = self._answer(run)
+        structured_result = {
+            "runtime_goal": (
+                run.goal_contract.model_dump(mode="json")
+                if run.goal_contract is not None
+                else {"objective": run.goal}
+            ),
+            "goal_intake": run.control_data.get("goal_intake", {}),
+            "iteration": run.iteration,
+            "last_decision": (
+                run.last_decision.model_dump(mode="json")
+                if run.last_decision is not None
+                else None
+            ),
+            "node_statuses": {
+                node_id: state.status.value
+                for node_id, state in run.nodes.items()
+            },
+            "observations": [
+                observation.model_dump(mode="json")
+                for observation in run.observations[-16:]
+            ],
+        }
+        delegated = self._delegated_result(run)
+        if delegated is not None:
+            return delegated.model_copy(
+                update={
+                    "structured_result": {
+                        **delegated.structured_result,
+                        **structured_result,
+                    },
+                    "trace_id": str(request.options.get("trace_id", "")),
+                    "task_id": request.task_id,
+                    "request_id": str(request.options.get("request_id", "")),
+                }
+            )
         return AgentResult(
             status=AgentResultStatus.COMPLETED,
             agent_id=request.options.get("runtime_agent_id", "RUNTIME_GOAL"),
             provider="runtime",
             answer=answer,
-            structured_result={
-                "runtime_goal": (
-                    run.goal_contract.model_dump(mode="json")
-                    if run.goal_contract is not None
-                    else {"objective": run.goal}
-                ),
-                "goal_intake": run.control_data.get("goal_intake", {}),
-                "iteration": run.iteration,
-                "last_decision": (
-                    run.last_decision.model_dump(mode="json")
-                    if run.last_decision is not None
-                    else None
-                ),
-                "node_statuses": {
-                    node_id: state.status.value
-                    for node_id, state in run.nodes.items()
-                },
-                "observations": [
-                    observation.model_dump(mode="json")
-                    for observation in run.observations[-16:]
-                ],
-            },
+            structured_result=structured_result,
             metrics=RunMetrics(
                 model_calls=run.budget.model_calls,
                 tool_calls=run.budget.tool_calls,
@@ -270,12 +286,37 @@ class GenericGoalRuntimeService:
             request_id=str(request.options.get("request_id", "")),
         )
 
+    @staticmethod
+    def _delegated_result(run: AgentRun) -> AgentResult | None:
+        for node_id in reversed(list(run.nodes)):
+            observation = run.nodes[node_id].observation
+            if observation is None:
+                continue
+            raw_result = observation.facts.get("result_payload")
+            if not isinstance(raw_result, Mapping):
+                continue
+            try:
+                return AgentResult.model_validate(raw_result)
+            except ValueError:
+                continue
+        return None
+
     @classmethod
     def _options(cls, request: AgentRequest) -> dict[str, Any]:
         raw = request.options.get(cls.runtime_option_key)
+        if cls._has_authoritative_canonical_plan(request):
+            if isinstance(raw, Mapping):
+                return {**raw, "execute": True}
+            return {"execute": True}
         if not isinstance(raw, Mapping) or raw.get("execute") is not True:
             raise NotConfiguredError("structured goal Runtime is not enabled")
         return dict(raw)
+
+    @staticmethod
+    def _has_authoritative_canonical_plan(request: AgentRequest) -> bool:
+        from app.services.runtime_business_registry import RuntimeBusinessRegistry
+
+        return RuntimeBusinessRegistry.is_authoritative_canonical_plan(request)
 
     @classmethod
     def _goal(cls, options: Mapping[str, Any]) -> RuntimeGoal:

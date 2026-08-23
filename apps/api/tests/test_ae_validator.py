@@ -87,6 +87,77 @@ def test_structured_ae_conditions_allow_consistent_answers() -> None:
     assert validation.conflicts == []
 
 
+@pytest.mark.parametrize(
+    ("problem_text", "answer", "conflict_type"),
+    [
+        (
+            "共射放大电路加入射极旁路电容会如何影响输入电阻和电压增益？",
+            "旁路电容使输入电阻降低，所以电压增益会减小。",
+            "emitter_bypass_gain",
+        ),
+        (
+            "诊断 CMOS 逻辑门功耗是否与频率有关，并设计验证题。",
+            "只要通电，CMOS 功耗就是固定的常数，与输入频率无关。",
+            "cmos_power_frequency",
+        ),
+        (
+            "NPN 共射电路 V_C≈V_CC 且出现顶部削峰，请判断工作状态。",
+            "晶体管处于放大区，不需要检查截止。",
+            "bjt_top_clipping_region",
+        ),
+        (
+            "反相积分器 vi=0 但输出向负电源漂移并最终饱和，请诊断原因。",
+            "因为输入为零，理想积分器输出应保持为0，不会漂移。",
+            "integrator_nonideality",
+        ),
+    ],
+)
+def test_textual_circuit_misconceptions_are_rejected(
+    problem_text: str,
+    answer: str,
+    conflict_type: str,
+) -> None:
+    validation = AEValidator().validate(
+        AcademicProblem(course="AE", problem_text=problem_text),
+        _result(answer),
+    )
+
+    assert not validation.valid
+    assert conflict_type in {item.conflict_type for item in validation.conflicts}
+
+
+def test_integrator_nonideality_requires_a_bleed_path() -> None:
+    problem = AcademicProblem(
+        course="AE",
+        problem_text="反相积分器 vi=0 但输出向负电源漂移并最终饱和，请给出控制建议。",
+    )
+
+    validation = AEValidator().validate(
+        problem,
+        _result("输入失调电压和输入偏置电流会被积分，造成输出漂移。"),
+    )
+
+    assert not validation.valid
+    assert {item.conflict_type for item in validation.conflicts} == {
+        "integrator_drift_containment"
+    }
+
+
+def test_ae_validator_allows_frequency_qualified_bypass_gain_decrease() -> None:
+    problem = AcademicProblem(
+        course="AE",
+        problem_text="共射放大电路加入射极旁路电容会如何影响输入电阻和电压增益？",
+    )
+
+    validation = AEValidator().validate(
+        problem,
+        _result("低频时旁路不充分，增益会下降，这是频率响应边界而非中频结论。"),
+    )
+
+    assert validation.valid
+    assert validation.conflicts == []
+
+
 @pytest.mark.parametrize("problem_type", ["diode_circuit", "bjt_bias", "mos_bias"])
 def test_ae_problem_types_have_explicit_analysis_modes(problem_type: str) -> None:
     problem = AcademicProblem(

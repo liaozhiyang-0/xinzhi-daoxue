@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -53,6 +55,93 @@ class StudentAttempt(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
     attachment_ids: list[str] = Field(default_factory=list, max_length=20)
     version: Literal["v1"] = "v1"
+
+
+class LearningPathDraft(BaseModel):
+    """Model-produced learning-path fields; no local example defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_summary: dict[str, Any] | str
+    weak_knowledge_points: list[dict[str, Any] | str] = Field(min_length=1)
+    prerequisite_path: list[str] = Field(min_length=1)
+    staged_plan: list[dict[str, Any] | str] = Field(min_length=1)
+    verification_tasks: list[dict[str, Any] | str] = Field(min_length=2)
+    completion_evidence: list[dict[str, Any] | str] = Field(min_length=1)
+    teacher_intervention_points: list[dict[str, Any] | str] = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_collection_fields(cls, value: Any) -> Any:
+        """Accept equivalent object-shaped JSON emitted by real providers.
+
+        Some models encode an ordered plan as ``{"day_1": {...}}`` even
+        when the contract asks for an array. Normalize only this transport
+        shape; the content remains model-produced and is still validated by
+        the typed contract.
+        """
+
+        if not isinstance(value, Mapping):
+            return value
+        normalized = dict(value)
+        for field in (
+            "weak_knowledge_points",
+            "staged_plan",
+            "verification_tasks",
+            "completion_evidence",
+            "teacher_intervention_points",
+        ):
+            items = normalized.get(field)
+            if not isinstance(items, Mapping):
+                continue
+            output: list[Any] = []
+            for key, item in items.items():
+                if (
+                    field == "staged_plan"
+                    and isinstance(item, Mapping)
+                    and any(
+                        re.search(r"(?:day|week)[_ -]?(\d+)", str(child_key), re.I)
+                        for child_key in item
+                    )
+                ):
+                    for child_key, child_item in item.items():
+                        marker = re.search(
+                            r"(?:day|week)[_ -]?(\d+)",
+                            str(child_key),
+                            re.I,
+                        )
+                        if isinstance(child_item, Mapping):
+                            child_value = dict(child_item)
+                            if marker and not any(
+                                name in child_value for name in ("day", "week")
+                            ):
+                                child_value["day"] = int(marker.group(1))
+                            output.append(child_value)
+                        else:
+                            output.append(
+                                {
+                                    "day": int(marker.group(1))
+                                    if marker
+                                    else str(child_key),
+                                    "activity": child_item,
+                                }
+                            )
+                    continue
+                if isinstance(item, Mapping):
+                    item_value = dict(item)
+                    if field == "staged_plan":
+                        marker = re.search(r"(?:day|week)[_ -]?(\d+)", str(key), re.I)
+                        if marker and not any(
+                            name in item_value for name in ("day", "week")
+                        ):
+                            item_value[
+                                "week" if str(key).lower().startswith("week") else "day"
+                            ] = int(marker.group(1))
+                    output.append(item_value)
+                else:
+                    output.append(item)
+            normalized[field] = output
+        return normalized
 
 
 class StudentAttemptStatus(StrEnum):

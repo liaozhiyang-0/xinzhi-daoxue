@@ -90,8 +90,11 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-xzd_minio}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me}
       MINIO_BUCKET: ${MINIO_BUCKET:-xzd-files}
-      DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-mock}
-      ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-true}
+      DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-local}
+      ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-false}
+      # Keep the data-analysis product freeze explicit; enable only for an
+      # authorized development canary after its readiness gates pass.
+      DATA_ANALYSIS_ENABLED: ${DATA_ANALYSIS_ENABLED:-false}
       LOCAL_STORAGE_FALLBACK: ${LOCAL_STORAGE_FALLBACK:-true}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/local_storage}
       KNOWLEDGE_ENABLED: ${KNOWLEDGE_ENABLED:-true}
@@ -114,10 +117,18 @@ services:
       IMAGE_EMBEDDING_DEVICE: ${IMAGE_EMBEDDING_DEVICE:-auto}
       RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
       RERANKER_DEVICE: ${RERANKER_DEVICE:-auto}
+      # Local HF snapshots are mounted read-only; offline mode prevents the
+      # hub from writing optional-file negative-cache metadata at warmup.
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
       QDRANT_MODE: server
       QDRANT_URL: http://qdrant:6333
       QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
     volumes:
+      - type: bind
+        source: ${HF_MODEL_CACHE_HOST_PATH:-./local_storage/huggingface}
+        target: /root/.cache/huggingface
+        read_only: true
       - type: bind
         source: ${QUESTION_BANK_IMAGE_HOST_PATH:-./evaluation/cache/storage}
         target: /workspace/evaluation/cache/storage
@@ -199,8 +210,9 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-xzd_minio}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me}
       MINIO_BUCKET: ${MINIO_BUCKET:-xzd-files}
-      DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-mock}
-      ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-true}
+      DEFAULT_AGENT_PROVIDER: ${DEFAULT_AGENT_PROVIDER:-local}
+      ALLOW_MOCK_FALLBACK: ${ALLOW_MOCK_FALLBACK:-false}
+      DATA_ANALYSIS_ENABLED: ${DATA_ANALYSIS_ENABLED:-false}
       LOCAL_STORAGE_FALLBACK: ${LOCAL_STORAGE_FALLBACK:-true}
       LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/local_storage}
       KNOWLEDGE_ENABLED: ${KNOWLEDGE_ENABLED:-true}
@@ -210,10 +222,16 @@ services:
       KNOWLEDGE_SS_PATH: /knowledge/SS
       KNOWLEDGE_DSP_PATH: /knowledge/DSP
       KNOWLEDGE_COMM_PATH: /knowledge/COMM
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
       QDRANT_MODE: server
       QDRANT_URL: http://qdrant:6333
       QDRANT_TRUST_ENV: ${QDRANT_TRUST_ENV:-false}
     volumes:
+      - type: bind
+        source: ${HF_MODEL_CACHE_HOST_PATH:-./local_storage/huggingface}
+        target: /root/.cache/huggingface
+        read_only: true
       - type: bind
         source: ${KNOWLEDGE_CT_HOST_PATH:-./local_knowledge/CT}
         target: /knowledge/CT

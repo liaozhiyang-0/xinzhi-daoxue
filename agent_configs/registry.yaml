@@ -465,7 +465,7 @@ agents:
     priority: 80
     capabilities:
       user_roles: [teacher]
-      courses: [CT, AE, DE]
+      courses: [CT, AE, DE, SS, DSP, COMM]
       intents: [lesson_prep]
       input_modes: [text]
       supports_session_context: true
@@ -561,7 +561,7 @@ agents:
       request_id: {target: request_id, parser: identity}
     capabilities:
       user_roles: [teacher]
-      courses: [CT, AE, DE]
+      courses: [CT, AE, DE, SS, DSP, COMM]
       intents: [assignment_review]
       input_modes: [text]
       supports_session_context: true

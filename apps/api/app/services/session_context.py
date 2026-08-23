@@ -3,6 +3,11 @@ from __future__ import annotations
 from app.contracts import AgentRequest, AgentResult
 from app.core.config import Settings
 from app.models import SessionModel
+from app.services.external_research_answer import (
+    ACADEMIC_SEARCH_AGENT_ID,
+    is_academic_search_follow_up,
+)
+from app.services.intent_recognition import IntentRecognitionService
 
 
 class SessionContextService:
@@ -32,6 +37,11 @@ class SessionContextService:
         )
         switched = bool(
             previous_course and previous_course != effective_course
+        )
+        previous_external_retrieval = self._previous_external_retrieval_for_request(
+            stored,
+            request,
+            switched=switched,
         )
         options = dict(request.options)
         options.update(
@@ -77,10 +87,7 @@ class SessionContextService:
                     "" if switched else str(stored.get("previous_external_query", ""))
                 ),
                 "previous_external_retrieval": (
-                    dict(stored.get("previous_external_retrieval", {}))
-                    if not switched
-                    and isinstance(stored.get("previous_external_retrieval", {}), dict)
-                    else {}
+                    previous_external_retrieval
                 ),
                 "continuity_state": {
                     "schema_version": self.CONTEXT_SCHEMA_VERSION,
@@ -150,19 +157,9 @@ class SessionContextService:
         previous_external_retrieval: dict[str, object] = {}
         if isinstance(external_payload, dict):
             previous_external_query = str(external_payload.get("query", ""))
-            previous_external_retrieval = dict(external_payload)
-            raw_items = external_payload.get("items", [])
-            if isinstance(raw_items, list):
-                compact_items: list[dict[str, object]] = []
-                for item in raw_items[:8]:
-                    if not isinstance(item, dict):
-                        continue
-                    compact = dict(item)
-                    excerpt = compact.get("content_excerpt")
-                    if isinstance(excerpt, str):
-                        compact["content_excerpt"] = excerpt[:3000]
-                    compact_items.append(compact)
-                previous_external_retrieval["items"] = compact_items
+            previous_external_retrieval = self._compact_external_retrieval(
+                external_payload
+            )
         session.context_data = {
             "context_schema_version": self.CONTEXT_SCHEMA_VERSION,
             "active_course": request.course_id.upper(),
@@ -210,3 +207,83 @@ class SessionContextService:
                 return value.strip()
         value = routing.get(key)
         return value.strip() if isinstance(value, str) and value.strip() else ""
+
+    @classmethod
+    def _previous_external_retrieval_for_request(
+        cls,
+        stored: dict[str, object],
+        request: AgentRequest,
+        *,
+        switched: bool,
+    ) -> dict[str, object]:
+        """Expose only approved research evidence on a compatible continuation.
+
+        Session state is an untrusted continuity cache, not an approval store.
+        Do not send the previous retrieval payload to unrelated agents, and do
+        not let a candidate result survive into a later retrieval round.
+        """
+
+        if switched:
+            return {}
+        previous_agent = str(stored.get("previous_agent", ""))
+        if previous_agent != ACADEMIC_SEARCH_AGENT_ID:
+            return {}
+        payload = stored.get("previous_external_retrieval")
+        if not isinstance(payload, dict):
+            return {}
+        text = request.input_text()
+        if IntentRecognitionService.is_circuit_diagnosis_request(text):
+            return {}
+        is_research_continuation = is_academic_search_follow_up(
+            text,
+            previous_agent=previous_agent,
+            previous_answer_summary=str(stored.get("previous_answer_summary", "")),
+            previous_query=str(stored.get("previous_external_query", "")),
+        )
+        if not is_research_continuation:
+            return {}
+        return cls._compact_external_retrieval(payload)
+
+    @staticmethod
+    def _compact_external_retrieval(
+        external_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """Bound session evidence and withhold anything not fully approved."""
+
+        compact_payload = dict(external_payload)
+        raw_items = external_payload.get("items", [])
+        if not isinstance(raw_items, list) or not raw_items:
+            compact_payload["items"] = []
+            return compact_payload
+        approved_count = external_payload.get("approved_count")
+        fully_approved = (
+            external_payload.get("review_status") == "approved"
+            and isinstance(approved_count, int)
+            and not isinstance(approved_count, bool)
+            and approved_count == len(raw_items)
+            and all(isinstance(item, dict) for item in raw_items)
+        )
+        if not fully_approved:
+            compact_payload["items"] = []
+            compact_payload["approved_count"] = 0
+            warnings = compact_payload.get("warnings", [])
+            warning_list = (
+                [str(item) for item in warnings if str(item).strip()]
+                if isinstance(warnings, list)
+                else []
+            )
+            marker = "previous external evidence withheld pending review"
+            if marker not in warning_list:
+                warning_list.append(marker)
+            compact_payload["warnings"] = warning_list[:20]
+            return compact_payload
+        compact_items: list[dict[str, object]] = []
+        for item in raw_items[:8]:
+            assert isinstance(item, dict)
+            compact = dict(item)
+            excerpt = compact.get("content_excerpt")
+            if isinstance(excerpt, str):
+                compact["content_excerpt"] = excerpt[:3000]
+            compact_items.append(compact)
+        compact_payload["items"] = compact_items
+        return compact_payload

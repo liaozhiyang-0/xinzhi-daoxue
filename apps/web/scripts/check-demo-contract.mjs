@@ -14,7 +14,7 @@ const requiredIds = [
 assert.equal((scenarios.match(/id: "[^"]+"/g) || []).filter((value) => requiredIds.some((id) => value.includes(id))).length, 6);
 for (const id of requiredIds) assert.ok(scenarios.includes(`id: "${id}"`), `缺少示范场景：${id}`);
 assert.match(scenarios, /runtimeScenarioId: null/);
-assert.match(scenarios, /analog-opamp\.jpg/);
+assert.match(scenarios, /case6-opamp\.png/);
 assert.match(scenarios, /任务规划/);
 assert.match(scenarios, /证据治理/);
 assert.match(scenarios, /边界验证/);

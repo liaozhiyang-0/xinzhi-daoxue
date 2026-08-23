@@ -94,6 +94,19 @@ class TaskLeaseManager:
                 await db.commit()
 
     async def recover(self) -> list[str]:
+        recovery = asyncio.create_task(
+            self._recover_once(),
+            name="xzd-task-lease-recovery",
+        )
+        try:
+            return await asyncio.shield(recovery)
+        except asyncio.CancelledError:
+            # Let an in-flight aiosqlite connect/close finish before the
+            # lifespan tears down the event loop.
+            await recovery
+            raise
+
+    async def _recover_once(self) -> list[str]:
         if not self.settings.task_recovery_enabled:
             return []
         now = _utc_now()

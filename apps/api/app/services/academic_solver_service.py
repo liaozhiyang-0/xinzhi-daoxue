@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+from collections.abc import Mapping
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +51,7 @@ from app.services.solver_runtime_policy import (
     RequestTimeBudget,
     SolverRuntimePolicy,
 )
+from app.services.visual_acceptance import evaluate_visual_acceptance
 
 if TYPE_CHECKING:
     from app.services.model_service import ModelService
@@ -133,7 +136,14 @@ class AcademicProblemSolverService:
             self._record_execution_fallback(vision_execution, fallback_tracker)
             if not boundary.intercepted:
                 visual_boundary_started = perf_counter()
-                visual_boundary = self.boundary_policy.evaluate(problem)
+                visual_acceptance = vision_execution.get("visual_acceptance")
+                prompt_facts_cover = isinstance(visual_acceptance, dict) and bool(
+                    visual_acceptance.get("prompt_facts_cover")
+                )
+                visual_boundary = self.boundary_policy.evaluate(
+                    problem,
+                    check_visual_topology=not prompt_facts_cover,
+                )
                 if visual_boundary.intercepted:
                     boundary = visual_boundary
                     node_timings.append(
@@ -390,6 +400,20 @@ class AcademicProblemSolverService:
                 "execution_source": "academic_problem_solver_graph",
             },
         )
+        execution_records = (
+            vision_execution,
+            model_execution,
+            verification_model_execution,
+        )
+        execution_latency_ms = 0
+        for item in execution_records:
+            if not isinstance(item, dict):
+                continue
+            elapsed_ms = item.get("elapsed_ms")
+            if isinstance(elapsed_ms, (int, float, str)):
+                execution_latency_ms += int(elapsed_ms)
+        usage = model_execution.get("usage", {})
+        usage = usage if isinstance(usage, dict) else {}
         return AgentResult(
             agent_id=self.agent_id,
             provider="local_graph",
@@ -402,6 +426,10 @@ class AcademicProblemSolverService:
             confidence=result.confidence,
             metrics=RunMetrics(
                 model_calls=model_call_count,
+                provider_latency_ms=execution_latency_ms,
+                model_latency_ms=execution_latency_ms,
+                input_tokens=usage.get("prompt_tokens"),
+                output_tokens=usage.get("completion_tokens"),
                 tool_calls=len(result.tool_verification),
                 deadline_remaining_ms=observability.deadline_remaining_ms,
                 time_budget_exhausted=observability.time_budget_exhausted,
@@ -506,7 +534,10 @@ class AcademicProblemSolverService:
                     ),
                     images=list(prepared.images),
                     request_id=str(request.options.get("request_id", "")) or None,
-                    json_mode=False,
+                    # Visual extraction is consumed by the typed parser below;
+                    # request a real JSON object so a natural-language summary
+                    # cannot masquerade as a usable visual structure.
+                    json_mode=True,
                 )
         except TimeoutError:
             return (
@@ -540,7 +571,74 @@ class AcademicProblemSolverService:
         problem, visual_structure = self._merge_visual_extraction(
             problem,
             visual_summary,
+            acceptance_spec=request.options.get("visual_acceptance"),
         )
+        visual_retry: dict[str, Any] = {}
+        acceptance = visual_structure.get("visual_acceptance", {})
+        if (
+            acceptance.get("status") == "blocked"
+            and isinstance(request.options.get("visual_acceptance"), Mapping)
+            and budget.can_start_optional_call()
+        ):
+            retry_started = perf_counter()
+            try:
+                async with asyncio.timeout(
+                    self._vision_call_timeout_seconds(budget, settings)
+                ):
+                    retry_response = (
+                        await self.model_service.analyze_images_for_task(
+                            task_type,
+                            prompt=(
+                                pack.build_extraction_prompt(problem)
+                                + " 这是一次严格的视觉验收复核。只依据原图，"
+                                "不要输出泛化的‘已提取’描述；必须在 JSON 顶层字段"
+                                "中逐项给出验收字段的原始可见值。若字段确实不可见，"
+                                "明确写入 uncertain_info，不得猜测。"
+                                + self._visual_acceptance_instruction(
+                                    request.options["visual_acceptance"]
+                                )
+                                + self._visual_extraction_instruction()
+                            ),
+                            images=list(prepared.images),
+                            request_id=(
+                                str(request.options.get("request_id", "")) or None
+                            ),
+                            json_mode=True,
+                            extra_options={"_allow_route_fallback": False},
+                        )
+                    )
+                retry_problem, retry_structure = self._merge_visual_extraction(
+                    problem,
+                    retry_response.content[:20_000],
+                    section_title="图片结构化提取·验收复核",
+                    acceptance_spec=request.options.get("visual_acceptance"),
+                )
+                retry_acceptance = retry_structure.get("visual_acceptance", {})
+                if retry_acceptance.get("status") == "passed":
+                    problem, visual_structure = retry_problem, retry_structure
+                visual_retry = {
+                    "status": (
+                        "passed"
+                        if retry_acceptance.get("status") == "passed"
+                        else "blocked"
+                    ),
+                    "provider": retry_response.provider,
+                    "model": retry_response.model,
+                    "elapsed_ms": max(
+                        0, int((perf_counter() - retry_started) * 1000)
+                    ),
+                    "model_calls": 1,
+                }
+            except (TimeoutError, AppError) as exc:
+                visual_retry = {
+                    "status": "failed",
+                    "error_type": (
+                        "vision_retry_time_budget_exhausted"
+                        if isinstance(exc, TimeoutError)
+                        else exc.code
+                    ),
+                    "model_calls": 1,
+                }
         return (
             problem,
             {
@@ -552,13 +650,14 @@ class AcademicProblemSolverService:
                 "image_count": len(images),
                 "source_image_count": len(images),
                 "model_image_count": len(prepared.images),
-                "model_calls": 1,
+                "model_calls": 1 + int(visual_retry.get("model_calls", 0)),
                 "original_order_preserved": (
                     prepared.strategy == "ordered_multi_image"
                 ),
                 "composite_width": prepared.composite_width,
                 "composite_height": prepared.composite_height,
                 **visual_structure,
+                "visual_retry": visual_retry,
                 **self._fallback_metadata(response),
             },
         )
@@ -610,7 +709,7 @@ class AcademicProblemSolverService:
                             request_id=(
                                 str(request.options.get("request_id", "")) or None
                             ),
-                            json_mode=False,
+                            json_mode=True,
                             extra_options={"_allow_route_fallback": index == 1},
                         )
                 except TimeoutError:
@@ -691,6 +790,7 @@ class AcademicProblemSolverService:
             problem,
             visual_summary,
             section_title="多图内容汇总",
+            acceptance_spec=request.options.get("visual_acceptance"),
         )
         uncertain = [
             *problem.uncertain_info,
@@ -1687,6 +1787,12 @@ class AcademicProblemSolverService:
 
     def _model_route_available(self, task_type: str) -> bool:
         assert self.model_service is not None
+        preflight = getattr(self.model_service, "preflight", None)
+        if callable(preflight):
+            # Reuse the gateway's primary/fallback check. Looking only at the
+            # primary alias could silently skip image extraction even when a
+            # usable fallback vision model was configured.
+            return bool(preflight(task_type, modality="image").available)
         route = self.model_service.registry.get_route(task_type)
         definition = self.model_service.registry.get_model(route.primary)
         provider = self.model_service.providers.get(definition.provider)
@@ -1826,12 +1932,28 @@ class AcademicProblemSolverService:
         return (
             " 只输出可观察内容，不补造参数。电路或逻辑图必须逐个子图列出器件、"
             "器件端点与节点连接、控制端、极性、参考方向和标号；波形图必须列出"
-            "分段区间、关键坐标、跳变以及端点是否包含。先覆盖全部子图，再描述"
+            "分段区间、关键坐标、跳变以及端点是否包含；频谱/带通采样图必须列出"
+            "频率轴、单位、正负非零频带的起止边界和方向。先覆盖全部子图，再描述"
             "不确定项，不得用通用电路类型替代实际拓扑。优先输出 JSON 对象，字段为"
             " recognized_text（字符串数组）、diagram_description（字符串）、components"
-            "（数组；每项包含 component_type、label、value、connections、certainty）、"
+            "（数组；每项包含 component_type、label、value、connections、"
+            "terminal_map、polarity、reference_direction、certainty）、"
             "uncertain_info（字符串数组）和 confidence（0 到 1）；若无法可靠结构化，"
             "仍需保留不确定项，不得臆造连接。"
+        )
+
+    @staticmethod
+    def _visual_acceptance_instruction(specification: Mapping[str, Any]) -> str:
+        """Turn the scenario contract into explicit real-model instructions."""
+
+        must_capture = specification.get("must_capture", [])
+        refuse_if_missing = specification.get("refuse_if_missing", [])
+        return (
+            " 验收必须捕获："
+            + ", ".join(str(item) for item in must_capture)
+            + "；缺失时必须拒答或待复核："
+            + ", ".join(str(item) for item in refuse_if_missing)
+            + "。"
         )
 
     @staticmethod
@@ -1846,10 +1968,137 @@ class AcademicProblemSolverService:
             except json.JSONDecodeError:
                 continue
             try:
-                return VisionExtraction.model_validate(payload)
+                return VisionExtraction.model_validate(
+                    AcademicProblemSolverService._normalize_visual_payload(payload)
+                )
             except ValidationError:
                 continue
         return None
+
+    @staticmethod
+    def _normalize_visual_payload(payload: Any) -> dict[str, Any]:
+        """Normalize common real-provider vision aliases into our envelope.
+
+        Vision providers frequently describe signal plots with fields such as
+        ``type``, ``shape``, ``amplitude`` and ``start_time`` instead of the
+        circuit-oriented ``component_type``/terminal fields.  Signal plots do
+        not form a circuit topology, so preserve their observable facts in the
+        searchable text while keeping strict component validation for actual
+        circuit elements.
+        """
+
+        if not isinstance(payload, dict):
+            return {}
+        recognized = [
+            str(item).strip()
+            for item in payload.get("recognized_text", [])
+            if str(item).strip()
+        ]
+        recognized.extend(
+            AcademicProblemSolverService._structured_visual_facts(payload)
+        )
+        components: list[dict[str, Any]] = []
+        for raw in payload.get("components", []):
+            if not isinstance(raw, dict):
+                continue
+            component_type = str(
+                raw.get("component_type") or raw.get("type") or raw.get("shape") or ""
+            ).strip()
+            label = str(raw.get("label") or "").strip()
+            value = raw.get("value")
+            if value is None and raw.get("amplitude") is not None:
+                value = str(raw["amplitude"])
+            signal_like = any(
+                marker in component_type.casefold()
+                for marker in ("signal", "plot", "waveform", "pulse", "频谱", "波形")
+            )
+            if signal_like:
+                start = raw.get("start_time", raw.get("start"))
+                end = raw.get("end_time", raw.get("end"))
+                facts = [label or component_type]
+                if value is not None:
+                    facts.append(f"amplitude {value}")
+                if start is not None or end is not None:
+                    facts.append(f"support [{start},{end}]")
+                recognized.append(" ".join(facts))
+                continue
+            if not component_type:
+                continue
+            components.append(
+                {
+                    "component_type": component_type,
+                    "label": label or None,
+                    "value": str(value) if value is not None else None,
+                    "connections": [str(item) for item in raw.get("connections", [])],
+                    "terminal_map": {
+                        str(key): str(item)
+                        for key, item in (raw.get("terminal_map") or {}).items()
+                    },
+                    "polarity": str(raw.get("polarity") or "") or None,
+                    "reference_direction": str(
+                        raw.get("reference_direction") or ""
+                    )
+                    or None,
+                    "certainty": (
+                        raw.get("certainty")
+                        if raw.get("certainty") in {"certain", "uncertain"}
+                        else "uncertain"
+                    ),
+                }
+            )
+        return {
+            "recognized_text": recognized,
+            "diagram_description": str(
+                payload.get("diagram_description")
+                or payload.get("description")
+                or "视觉内容已提取"
+            ).strip(),
+            "components": components,
+            "uncertain_info": [
+                item
+                for item in (
+                    str(raw).strip()
+                    for raw in payload.get("uncertain_info", [])
+                )
+                if item
+                and item.casefold()
+                not in {"none", "null", "n/a", "无", "无不确定项"}
+            ],
+            "confidence": payload.get("confidence", 0.5),
+        }
+
+    @staticmethod
+    def _structured_visual_facts(payload: Mapping[str, Any]) -> list[str]:
+        """Preserve provider-specific top-level visual fields for acceptance.
+
+        Real vision providers do not share one envelope: some emit the
+        compact ``recognized_text`` list while others put axis, interval and
+        polarity facts in named top-level fields.  These facts are already
+        provider observations, so flattening their bounded representation is
+        normalization rather than inference.  Dropping them would make a
+        valid real-model response look incomplete to the scenario contract.
+        """
+
+        ignored = {
+            "recognized_text",
+            "components",
+            "uncertain_info",
+            "confidence",
+            "diagram_description",
+            "description",
+        }
+        facts: list[str] = []
+        for key, value in payload.items():
+            if key in ignored or value in (None, "", [], {}):
+                continue
+            if isinstance(value, (Mapping, list, tuple)):
+                rendered = json.dumps(value, ensure_ascii=False, default=str)
+            else:
+                rendered = str(value)
+            rendered = rendered.strip()
+            if rendered:
+                facts.append(f"{key}: {rendered[:800]}")
+        return facts[:40]
 
     @staticmethod
     def _merge_visual_extraction(
@@ -1857,6 +2106,7 @@ class AcademicProblemSolverService:
         content: str,
         *,
         section_title: str = "图片结构化提取",
+        acceptance_spec: Mapping[str, Any] | None = None,
     ) -> tuple[AcademicProblem, dict[str, Any]]:
         parsed = AcademicProblemSolverService._parse_visual_extraction(content)
         if parsed is None:
@@ -1870,6 +2120,7 @@ class AcademicProblemSolverService:
                             *problem.uncertain_info,
                             {"description": "图片内容由视觉模型提取，需以原图为准"},
                         ],
+                        "can_continue": False,
                     }
                 ),
                 {
@@ -1877,6 +2128,8 @@ class AcademicProblemSolverService:
                     "visual_structure_status": "unstructured",
                     "visual_component_count": 0,
                     "visual_relation_count": 0,
+                    "visual_topology_issues": ["visual_extraction_unstructured"],
+                    "visual_topology_validated": False,
                 },
             )
 
@@ -1886,6 +2139,9 @@ class AcademicProblemSolverService:
                 "label": item.label,
                 "value": item.value,
                 "connections": list(item.connections),
+                "terminal_map": dict(item.terminal_map),
+                "polarity": item.polarity,
+                "reference_direction": item.reference_direction,
                 "certainty": item.certainty,
                 "source": "visual_extraction",
             }
@@ -1902,15 +2158,66 @@ class AcademicProblemSolverService:
             for item in parsed.components
             for connection in item.connections
         ]
-        topology_complete = bool(
-            parsed.components
-            and parsed.confidence >= 0.75
-            and all(
-                item.certainty == "certain"
-                and len(set(item.connections)) >= 2
-                for item in parsed.components
+        validation_extraction = parsed
+        explicit_signal_problem = (
+            AcademicProblemSolverService._prompt_describes_explicit_signal_problem(
+                problem.problem_text
             )
         )
+        signal_text_facts_available = explicit_signal_problem and not parsed.components
+        visual_text_fallback = (
+            explicit_signal_problem
+            and not parsed.components
+            and not AcademicProblemSolverService._visual_is_signal_extraction(parsed)
+        )
+        signal_uncertainty_noncritical = (
+            AcademicProblemSolverService._signal_uncertainty_is_noncritical(
+                parsed.uncertain_info,
+                problem_text=problem.problem_text,
+            )
+        )
+        if signal_text_facts_available or signal_uncertainty_noncritical:
+            # Keep the provider's caveat in the published assumptions, but do
+            # not block a continuous-time operation when the prompt already
+            # supplies the operation and all interval/amplitude facts.
+            validation_extraction = parsed.model_copy(update={"uncertain_info": []})
+        topology_complete, topology_issues = (
+            AcademicProblemSolverService._validate_visual_topology(
+                validation_extraction,
+                problem_text=problem.problem_text,
+                require_component_topology=(
+                    AcademicProblemSolverService._visual_requires_component_topology(
+                        acceptance_spec
+                    )
+                    and not (
+                        AcademicProblemSolverService._visual_is_signal_extraction(
+                            parsed
+                        )
+                        or signal_text_facts_available
+                    )
+                ),
+            )
+        )
+        visual_acceptance = evaluate_visual_acceptance(parsed, acceptance_spec)
+        prompt_facts_cover = (
+            AcademicProblemSolverService._prompt_covers_visual_acceptance(
+                problem.problem_text,
+                acceptance_spec,
+            )
+        )
+        if acceptance_spec is not None:
+            visual_acceptance["prompt_facts_cover"] = prompt_facts_cover
+        acceptance_issues: list[str] = []
+        if visual_acceptance["status"] == "blocked":
+            acceptance_issues.extend(
+                f"visual_acceptance_missing:{item}"
+                for item in (
+                    *visual_acceptance["missing_must_capture"],
+                    *visual_acceptance["missing_refuse_if_missing"],
+                )
+            )
+        topology_issues = list(dict.fromkeys([*topology_issues, *acceptance_issues]))
+        topology_complete = topology_complete and not acceptance_issues
         recognized_text = "\n".join(parsed.recognized_text).strip()
         summary_parts = [parsed.diagram_description.strip()]
         if recognized_text:
@@ -1930,12 +2237,14 @@ class AcademicProblemSolverService:
                 "uncertain_info": [
                     *problem.uncertain_info,
                     *({"description": item} for item in parsed.uncertain_info),
+                    *({"description": item} for item in topology_issues),
                     {"description": "图片内容由视觉模型提取，需以原图为准"},
                 ],
                 "structure_status": (
                     "complete" if topology_complete else problem.structure_status
                 ),
-                "can_continue": problem.can_continue and topology_complete,
+                "can_continue": problem.can_continue
+                and (topology_complete or prompt_facts_cover),
                 "extraction_confidence": min(
                     problem.extraction_confidence,
                     parsed.confidence,
@@ -1947,12 +2256,295 @@ class AcademicProblemSolverService:
             {
                 "structured_extraction": True,
                 "visual_structure_status": (
-                    "complete" if topology_complete else "partial"
+                    "partial"
+                    if visual_text_fallback
+                    else "complete"
+                    if topology_complete
+                    else "partial"
                 ),
                 "visual_component_count": len(entities),
                 "visual_relation_count": len(relations),
                 "visual_extraction_confidence": parsed.confidence,
+                "visual_topology_issues": topology_issues,
+                "visual_topology_validated": (
+                    topology_complete and not visual_text_fallback
+                ),
+                "visual_text_fallback": visual_text_fallback,
+                "visual_acceptance": visual_acceptance,
             },
+        )
+
+    @staticmethod
+    def _validate_visual_topology(
+        extraction: VisionExtraction,
+        *,
+        problem_text: str = "",
+        require_component_topology: bool = True,
+    ) -> tuple[bool, list[str]]:
+        """Reject visual structures that are not safe enough to solve."""
+
+        issues: list[str] = []
+        if require_component_topology and not extraction.components:
+            issues.append("visual_topology_missing_components")
+        if extraction.confidence < 0.75:
+            issues.append("visual_topology_low_confidence")
+        if extraction.uncertain_info and not (
+            AcademicProblemSolverService._visual_is_signal_extraction(extraction)
+            and AcademicProblemSolverService._signal_uncertainty_is_noncritical(
+                extraction.uncertain_info,
+                problem_text=problem_text,
+            )
+        ):
+            issues.append("visual_topology_contains_uncertain_info")
+
+        # Signal and spectrum figures may still be represented as provider
+        # components, but their geometry is not a circuit graph. Do not apply
+        # terminal/connectivity checks to those components.
+        if not require_component_topology:
+            return not issues, list(dict.fromkeys(issues))
+
+        # Signal and spectrum figures are structured by intervals, axes and
+        # breakpoints rather than by component terminal maps.  They still
+        # require the scenario acceptance contract above, but must not be
+        # rejected merely because a valid signal extraction has no components.
+        if not extraction.components:
+            return not issues, list(dict.fromkeys(issues))
+
+        labels: set[str] = set()
+        duplicate_labels: set[str] = set()
+        node_degrees: dict[str, int] = {}
+        uncertain_markers = (
+            "unknown",
+            "uncertain",
+            "不确定",
+            "未知",
+            "不清",
+            "无法",
+            "未识别",
+        )
+        for component in extraction.components:
+            label = (component.label or "").strip()
+            if label:
+                if label in labels:
+                    duplicate_labels.add(label)
+                labels.add(label)
+            connections = {
+                value.strip()
+                for value in component.connections
+                if value.strip()
+            }
+            terminal_map = {
+                str(key).strip(): str(value).strip()
+                for key, value in component.terminal_map.items()
+                if str(key).strip() and str(value).strip()
+            }
+            if component.certainty != "certain":
+                issues.append("visual_component_uncertain")
+            if len(connections) < 2:
+                issues.append("visual_component_missing_terminal_connection")
+            elif not terminal_map:
+                issues.append("visual_component_missing_terminal_map")
+            elif not set(terminal_map.values()).issubset(connections):
+                issues.append("visual_component_terminal_map_mismatch")
+            if len(connections) != len(component.connections):
+                issues.append("visual_component_has_empty_or_duplicate_connection")
+            if any(
+                any(marker in node.casefold() for marker in uncertain_markers)
+                for node in connections
+            ):
+                issues.append("visual_component_has_uncertain_connection")
+            component_type = component.component_type.casefold()
+            orientation_required = any(
+                marker in component_type
+                for marker in (
+                    "voltage source",
+                    "current source",
+                    "电压源",
+                    "电流源",
+                    "battery",
+                    "电池",
+                    "diode",
+                    "二极管",
+                )
+            )
+            if orientation_required and not (
+                component.polarity or component.reference_direction
+            ):
+                issues.append(
+                    "visual_component_missing_polarity_or_reference_direction"
+                )
+            for node in connections:
+                node_degrees[node] = node_degrees.get(node, 0) + 1
+
+        if duplicate_labels:
+            issues.append("visual_topology_duplicate_component_label")
+        if len(extraction.components) > 1 and not any(
+            degree >= 2 for degree in node_degrees.values()
+        ):
+            issues.append("visual_topology_disconnected_components")
+        return not issues, list(dict.fromkeys(issues))
+
+    @staticmethod
+    def _visual_requires_component_topology(
+        specification: Mapping[str, Any] | None,
+    ) -> bool:
+        """Infer whether an acceptance contract describes a circuit figure.
+
+        The vision envelope is shared by circuit and signal images. Circuit
+        contracts name component/network/terminal concepts; signal contracts
+        rely on axes, intervals, bands and timing markers.
+        """
+
+        if not isinstance(specification, Mapping):
+            return True
+        markers = [
+            str(item).casefold()
+            for key in ("must_capture", "refuse_if_missing")
+            for item in specification.get(key, [])
+            if isinstance(item, str)
+        ]
+        component_markers = (
+            "terminal",
+            "source",
+            "resistor",
+            "transistor",
+            "amplifier",
+            "opamp",
+            "r2r",
+            "network",
+            "topology",
+            "dependent",
+            "bit_order",
+        )
+        return any(
+            any(token in marker for token in component_markers)
+            for marker in markers
+        )
+
+    @staticmethod
+    def _visual_is_signal_extraction(extraction: VisionExtraction) -> bool:
+        searchable = " ".join(
+            [*extraction.recognized_text, extraction.diagram_description]
+        ).casefold()
+        return any(
+            marker in searchable
+            for marker in ("signal", "x(t)", "h(t)", "波形", "频谱", "脉冲", "support")
+        )
+
+    @staticmethod
+    def _prompt_describes_explicit_signal_problem(problem_text: str) -> bool:
+        """Allow complete textual signal facts to survive visual variance."""
+
+        text = str(problem_text).casefold()
+        has_signal_markers = any(
+            marker in text
+            for marker in ("x(t)", "h(t)", "卷积", "convolution", "signal")
+        )
+        has_interval_marker = bool(
+            re.search(r"(?:0\s*[≤<=]\s*t\s*[≤<=]|support|支撑|区间)", text)
+        )
+        has_amplitude_marker = any(
+            marker in text for marker in ("幅值", "幅度", "amplitude")
+        )
+        has_band_marker = bool(
+            re.search(
+                r"(?:正|负)频带.*?[-+]?\d+(?:\.\d+)?\s*[–−-]\s*"
+                r"[-+]?\d+(?:\.\d+)?\s*(?:khz|mhz|hz)",
+                text,
+            )
+        )
+        return (
+            has_signal_markers and has_interval_marker and has_amplitude_marker
+        ) or has_band_marker
+
+    @staticmethod
+    def _prompt_covers_visual_acceptance(
+        problem_text: str,
+        acceptance_spec: Mapping[str, Any] | None,
+    ) -> bool:
+        """Check whether the user explicitly supplied all required visual facts.
+
+        This does not mark the image extraction as passed.  It only allows the
+        solver to use facts explicitly present in the user's text while the
+        visual contract remains blocked and the result stays non-publishable.
+        """
+
+        if not isinstance(acceptance_spec, Mapping):
+            return False
+        prompt_extraction = VisionExtraction(
+            recognized_text=[str(problem_text)],
+            diagram_description="user supplied problem facts",
+            confidence=1.0,
+        )
+        decision = evaluate_visual_acceptance(prompt_extraction, acceptance_spec)
+        return decision["status"] == "passed"
+
+    @staticmethod
+    def _signal_uncertainty_is_noncritical(
+        items: list[str],
+        *,
+        problem_text: str = "",
+    ) -> bool:
+        """Endpoint open/closed ambiguity does not change a continuous integral."""
+
+        endpoint_markers = (
+            "endpoint",
+            "closed",
+            "open",
+            "端点",
+            "开区间",
+            "闭区间",
+            "开/闭",
+            "题号",
+            "题目编号",
+            "标识",
+            "identifier",
+            "label",
+        )
+        spectrum_expression_markers = (
+            "函数表达式",
+            "解析式",
+            "function expression",
+            "analytic expression",
+        )
+        spectrum_display_markers = (
+            "显示范围",
+            "延伸长度",
+            "超出显示范围",
+            "坐标轴范围",
+            "坐标轴刻度",
+            "刻度",
+            "刻度线",
+            "axis tick",
+            "tick mark",
+            "scale",
+            "箭头",
+            "正方向",
+        )
+        problem_lower = problem_text.casefold()
+        explicit_spectrum_geometry = all(
+            marker in problem_lower for marker in ("频谱", "支撑区间", "三角")
+        )
+        return bool(items) and all(
+            any(marker in item.casefold() for marker in endpoint_markers)
+            or (
+                explicit_spectrum_geometry
+                and any(
+                    marker in item.casefold()
+                    for marker in (
+                        *spectrum_expression_markers,
+                        *spectrum_display_markers,
+                    )
+                )
+            )
+            or (
+                any(
+                    marker in item.casefold()
+                    for marker in ("relationship", "correlation", "convolution")
+                )
+                and any(marker in problem_text.casefold() for marker in ("卷积", "*"))
+            )
+            for item in items
         )
 
     @staticmethod

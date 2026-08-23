@@ -115,7 +115,12 @@ class IntentRecognitionService:
     )
     _learning_path_patterns = (
         r"\u5b66\u4e60\u8def\u5f84|\u5206\u9636\u6bb5\u5b66\u4e60|\u590d\u6d4b|\u5f31\u77e5\u8bc6\u70b9|"
-        r"\u4f5c\u7b54\u8bc1\u636e|\u590d\u4e60\u8ba1\u5212|\u6bcf\u5929\u4e0d\u8d85\u8fc7",
+        r"\u4f5c\u7b54\u8bc1\u636e|\u590d\u4e60\u8ba1\u5212|\u590d\u4e60\u8def\u5f84|"
+        r"\u8865\u5f3a\u8def\u5f84|\u77e5\u8bc6\u7f3a\u53e3|\u638c\u63e1\u6807\u51c6|"
+        r"\u4e2a\u6027\u5316.{0,8}(?:\u8def\u5f84|\u8ba1\u5212|\u8bad\u7ec3)|"
+        r"\u4e13\u9879\u590d\u4e60\u8ba1\u5212|\u5bfc\u5e08\u4ecb\u5165|"
+        r"\u6bcf\u5468.{0,8}(?:\u8bad\u7ec3|\u4efb\u52a1)|"
+        r"\u4e3a\u671f(?:\d+|[\u4e00-\u4e5d\u5341\u4e24]+)\u5468|\u6bcf\u5929\u4e0d\u8d85\u8fc7",
     )
     _knowledge_governance_patterns = (
         r"\u77e5\u8bc6\u5e93|\u8bfe\u7a0b\u8d44\u4ea7|\u7248\u672c\u51b2\u7a81|\u5ba1\u6279|\u53d1\u5e03\u963b\u585e|"
@@ -166,6 +171,39 @@ class IntentRecognitionService:
             term.casefold() in normalized for term in cls._review_context_terms
         )
         return has_rubric and has_generation_action and not has_review_context
+
+    @classmethod
+    def is_first_error_review_request(cls, text: str) -> bool:
+        """Recognize a student-claim diagnosis before generic circuit routing."""
+
+        return cls._has(text, cls._first_error_patterns) and cls._has(
+            text, cls._student_answer_patterns
+        )
+
+    @classmethod
+    def is_student_claim_review_request(cls, text: str) -> bool:
+        """Route diagnosed student misconceptions to answer review."""
+
+        if cls._has(text, cls._learning_path_patterns):
+            return False
+        return cls._has(text, cls._student_claim_patterns) and cls._has(
+            text, cls._review_diagnosis_patterns
+        )
+
+    @classmethod
+    def is_circuit_diagnosis_request(cls, text: str) -> bool:
+        """Keep text-only circuit faults on the academic solver path."""
+
+        if (
+            cls._has(text, cls._assignment_patterns)
+            or cls.is_student_claim_review_request(text)
+            or any(marker in text for marker in ("学生步骤", "学生作答", "作业答案"))
+        ):
+            return False
+        return cls._has(text, cls._circuit_diagnosis_topic_patterns) and cls._has(
+            text, cls._circuit_diagnosis_patterns
+        )
+
     _solver_patterns = (
         r"\u6c42\u89e3|\u8ba1\u7b97|\u63a8\u5bfc|\u65b9\u7a0b|\u7535\u8def|\u7535\u963b|\u7535\u5bb9|\u7535\u611f|\u4f20\u9012\u51fd\u6570|\u62c9\u666e\u62c9\u65af|\u771f\u503c\u8868",
         r"solve|calculate|derive|circuit|equation|transfer function",
@@ -181,6 +219,35 @@ class IntentRecognitionService:
     _dynamic_circuit_patterns = (
         r"\u52a8\u6001\u7535\u8def|\u72b6\u6001\u53d8\u91cf|\u72b6\u6001\u65b9\u7a0b|\u5fae\u5206\u65b9\u7a0b",
         r"dynamic circuit|state variable|state equation|differential equation",
+    )
+    _circuit_diagnosis_patterns = (
+        r"\u8bca\u65ad|\u6545\u969c|\u6392\u67e5|\u9a8c\u8bc1\u6b65\u9aa4|"
+        r"\u5de5\u4f5c\u72b6\u6001|\u524a\u5cf0|\u6f02\u79fb|\u9971\u548c",
+        r"diagnos(?:e|is)|fault|debug|verification steps|clipping|drift|saturat",
+    )
+    _circuit_diagnosis_topic_patterns = (
+        r"\u7535\u8def|\u653e\u5927\u5668|\u8fd0\u653e|\u8fd0\u7b97\u653e\u5927\u5668|"
+        r"\u79ef\u5206\u5668|\u5171\u5c04|\u4e09\u6781\u7ba1|\u6676\u4f53\u7ba1|"
+        r"\u529f\u8017|CMOS|BJT|MOS",
+        r"circuit|amplifier|op[- ]?amp|integrator|transistor|CMOS|BJT|MOS",
+    )
+    _first_error_patterns = (
+        r"\u903b\u8f91\u9996\u9519|\u9996\u4e2a\u9519\u8bef|\u7b2c\u4e00\u5904\u9519\u8bef|"
+        r"\u5b9a\u4f4d.{0,8}\u9519\u8bef",
+        r"first error|first logical error|locate the error",
+    )
+    _student_answer_patterns = (
+        r"\u5b66\u751f.{0,12}(?:\u5199\u9053|\u7b54\u9053|\u8ba4\u4e3a|\u8868\u793a)",
+        r"student.{0,20}(?:wrote|answers?|claims?)",
+    )
+    _student_claim_patterns = (
+        r"\u5b66\u751f.{0,24}(?:\u5199\u9053|\u7b54\u9053|\u8ba4\u4e3a|\u8868\u793a|\u6d4b\u8bd5|\u8ba1\u7b97)",
+        r"student.{0,24}(?:wrote|answers?|claims?|calculated)",
+    )
+    _review_diagnosis_patterns = (
+        r"\u903b\u8f91\u9996\u9519|\u7b2c\u4e00\u4e2a\u9519\u8bef|\u9519\u8bef|\u8ba4\u77e5\u9519\u8bef|"
+        r"\u8bca\u65ad|\u9a8c\u8bc1\u9898|\u6838\u5fc3\u9519\u8bef",
+        r"first error|mistake|diagnos|verification question",
     )
 
     _capability_map = {
@@ -384,18 +451,28 @@ class IntentRecognitionService:
         return "\n".join(values).strip()
 
     def _match(self, text: str) -> str | None:
-        if self._has(text, self._dynamic_circuit_patterns) and self._has(
-            text, self._solver_patterns
-        ):
-            return "solve_problem"
-        # These two showcase workflows have vocabulary that overlaps with
-        # research and concept explanation (for example, “evidence” and
-        # “explain”). Resolve their bounded business intent before generic
-        # keyword groups can claim the request.
+        # Explicit workflow contracts take precedence over domain terms. A
+        # learning-path request may mention circuits, equations, or saturation
+        # while still requiring planning rather than a one-shot solution.
         if self._has(text, self._knowledge_governance_patterns):
             return "summarize_knowledge"
         if self._has(text, self._learning_path_patterns):
             return "learning_advice"
+        if self._has(text, self._dynamic_circuit_patterns) and self._has(
+            text, self._solver_patterns
+        ):
+            return "solve_problem"
+        if (
+            self.is_first_error_review_request(text)
+            or self.is_student_claim_review_request(text)
+        ):
+            return "assignment_review"
+        # These two showcase workflows have vocabulary that overlaps with
+        # research and concept explanation (for example, “evidence” and
+        # “explain”). Resolve their bounded business intent before generic
+        # keyword groups can claim the request.
+        if self.is_circuit_diagnosis_request(text):
+            return "solve_problem"
         if self.is_rubric_generation_request(text):
             return "general_qa"
         # Explicit paper retrieval is a higher-level workflow than writing:

@@ -429,6 +429,28 @@ class AgentExecutionPlanner:
             context_format_budget_ms=self.settings.context_format_budget_ms,
             local_total_p95_target_ms=self.settings.local_total_p95_target_ms,
         )
+        availability_checks = {
+            "enabled": definition.enabled,
+            "published": definition.publication_status in {"published", "local"},
+            "local_ready": self.registry.is_configured(
+                definition.agent_id, self.settings
+            ),
+            "provider_available": self.registry.is_runtime_available(
+                definition.agent_id, self.settings
+            ),
+            "input_mode_supported": input_mode in definition.supports,
+            "course_supported": (
+                decision.course_id.upper() in {"AUTO", "UNKNOWN"}
+                or decision.course_id.upper() in definition.course_ids
+            ),
+            "intent_supported": (
+                not definition.capabilities.intents
+                or decision.intent in definition.capabilities.intents
+            ),
+        }
+        for key, value in decision.availability.items():
+            if isinstance(value, bool):
+                availability_checks[key] = value
         return AgentExecutionPlan(
             agent_id=definition.agent_id,
             provider_type=definition.provider,
@@ -459,22 +481,7 @@ class AgentExecutionPlanner:
             ],
             rag_mode=RAGInteractionMode(policy.interaction_mode),
             rag_used=policy.enabled and policy.mode != "no_rag",
-            availability_checks={
-                "enabled": definition.enabled,
-                "published": definition.publication_status in {"published", "local"},
-                "local_ready": self.registry.is_configured(
-                    definition.agent_id, self.settings
-                ),
-                "provider_available": self.registry.is_runtime_available(
-                    definition.agent_id, self.settings
-                ),
-                "input_mode_supported": input_mode in definition.supports,
-                "course_supported": request.course_id in definition.course_ids,
-                "intent_supported": (
-                    not definition.capabilities.intents
-                    or request.intent.value in definition.capabilities.intents
-                ),
-            },
+            availability_checks=availability_checks,
         )
 
     @staticmethod

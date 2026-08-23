@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import json
+import warnings
 from pathlib import Path
 
 from app.contracts import KnowledgeHit, RetrievalContextPacket, RetrievalResult
@@ -9,7 +11,7 @@ from app.services.citation_validator import CitationValidator
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.knowledge_resources import resolve_course_resource
 from app.services.rag_index import IndexVersionInfo, MultimodalRAGIndexer
-from app.services.rag_retrieval import RAGRetrievalService
+from app.services.rag_retrieval import RAGRetrievalService, _Candidate
 from app.services.vector_store import QdrantVectorStoreAdapter
 from pytest import MonkeyPatch
 
@@ -148,25 +150,67 @@ def seed(store: QdrantVectorStoreAdapter) -> None:
 
 
 def test_qdrant_named_vectors_upsert_filter_and_persist(tmp_path: Path) -> None:
-    config = settings(tmp_path)
-    store = store_for(config)
-    seed(store)
-    query = DeterministicFakeTextEmbeddingProvider().embed_query("电容电路")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        config = settings(tmp_path)
+        store = store_for(config)
+        seed(store)
+        query = DeterministicFakeTextEmbeddingProvider().embed_query("电容电路")
 
-    hits = store.search_text(query, course_id="CT", limit=3)
-    assert [item.item_id for item in hits] == ["ct-1"]
-    assert not store.search_text(query, course_id="DE", limit=3)
-    assert store.health()["text_vector_count"] == 2
-    metrics = store.metrics()
-    assert metrics["ensure_collections"]["count"] == 1
-    assert metrics["upsert_text"]["count"] == 1
-    assert metrics["search_text"]["count"] == 2
-    assert store.health()["backend"] == "embedded_sqlite"
+        hits = store.search_text(query, course_id="CT", limit=3)
+        assert [item.item_id for item in hits] == ["ct-1"]
+        assert not store.search_text(query, course_id="DE", limit=3)
+        assert store.health()["text_vector_count"] == 2
+        metrics = store.metrics()
+        assert metrics["ensure_collections"]["count"] == 1
+        assert metrics["upsert_text"]["count"] == 1
+        assert metrics["search_text"]["count"] == 2
+        assert store.health()["backend"] == "embedded_sqlite"
+        store.close()
+
+        reopened = store_for(config)
+        assert reopened.health()["image_vector_count"] == 1
+        reopened.close()
+        gc.collect()
+
+    assert not any("unclosed database" in str(item.message) for item in caught)
+
+
+def test_vector_health_exposes_embedding_dimension_mismatch(tmp_path: Path) -> None:
+    store = QdrantVectorStoreAdapter(
+        mode="local",
+        url="",
+        api_key="",
+        local_path=tmp_path / "qdrant",
+        text_collection="text_test",
+        image_collection="image_test",
+    )
+    store.ensure_collections(512, 768)
+
+    health = store.health(
+        expected_text_dimension=384,
+        expected_image_dimension=768,
+    )
+
+    assert health["connected"] is True
+    assert health["compatible"] is False
+    assert health["reason"] == "vector_dimension_mismatch"
+    assert health["collection_dimensions"]["text_test"]["text_dense"] == 512
+    assert health["dimension_mismatches"] == [
+        {
+            "collection": "text_test",
+            "vector_name": "text_dense",
+            "expected": 384,
+            "actual": 512,
+        },
+        {
+            "collection": "image_test",
+            "vector_name": "image_caption_dense",
+            "expected": 384,
+            "actual": 512,
+        },
+    ]
     store.close()
-
-    reopened = store_for(config)
-    assert reopened.health()["image_vector_count"] == 1
-    reopened.close()
 
 
 def test_multimodal_rrf_text_to_image_image_to_image_and_rerank(
@@ -207,6 +251,76 @@ def test_multimodal_rrf_text_to_image_image_to_image_and_rerank(
     assert image_result.hits[0].chunk_id == "ct-1"
     assert not service.search(query_text="电容", course_id="DE").hits
     service.close()
+
+
+def test_rag_rejects_stale_vectors_for_revoked_material(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path)
+    config.knowledge_index_path.mkdir(parents=True, exist_ok=True)
+    (config.knowledge_index_path / "rag_index_state.json").write_text(
+        json.dumps(
+            {
+                "index_version": "v1",
+                "material_revocation_version": "revoked-1",
+                "revoked_material_chunk_ids": ["ct-1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = store_for(config)
+    seed(store)
+    service = RAGRetrievalService(
+        config,
+        KnowledgeBaseService(config),
+        DeterministicFakeTextEmbeddingProvider(),
+        DeterministicFakeImageEmbeddingProvider(),
+        DeterministicFakeReranker(),
+        store,
+    )
+
+    result = service.search(
+        query_text="电容电路为什么不能突变",
+        course_id="CT",
+        intent="explain_concept",
+        target_agent_id="LEARN_01_KNOWLEDGE_QA_V1",
+    )
+
+    assert all(hit.chunk_id != "ct-1" for hit in result.hits)
+    assert all(image.image_id != "ct-image" for image in result.image_hits)
+    assert "revoked_course_material_filtered" in " ".join(result.warnings)
+    assert service._index_version().endswith("material-revocation:revoked-1")
+    service.close()
+
+
+def test_rag_revokes_sparse_uploaded_material_by_source_uri() -> None:
+    candidate = _Candidate(
+        KnowledgeHit(
+            evidence_id="material-0",
+            course_id="CT",
+            course_name="电路理论",
+            document_path="materials/file-1/lesson.txt",
+            title="上传课程资料",
+            content_type="course_material",
+            content="KCL lesson",
+            score=1.0,
+            source_ref="kb-material://CT/file-1#chunk-0",
+        ),
+        {},
+    )
+
+    assert RAGRetrievalService._candidate_is_revoked(
+        "material-file-1-0",
+        candidate,
+        revoked_chunk_ids=set(),
+        revoked_material_ids={"file-1"},
+    )
+    assert RAGRetrievalService._candidate_is_revoked(
+        "material-file-1-0",
+        candidate,
+        revoked_chunk_ids=set(),
+        revoked_material_ids={"__revocation_state_unavailable__"},
+    )
 
 
 def test_visual_parent_retrieval_respects_content_type_policy(

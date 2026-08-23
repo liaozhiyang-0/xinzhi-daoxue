@@ -1,12 +1,14 @@
 # Architecture Overview
 
-The current control chain is preserved as:
+The current production control chain is:
 
 ```text
 User Input
   -> API / non-blocking Task creation
-  -> Supervisor / route decision
-  -> Router + Planner adapter
+  -> Unified ingress / GoalContract
+  -> deterministic preflight
+  -> Planner + Capability/Skill binding
+  -> CanonicalPlan
   -> Task Runtime preparation
   -> Runtime Plan / checkpoint / recovery
   -> Agent execution
@@ -15,7 +17,7 @@ User Input
   -> result presentation and commit
 ```
 
-The architecture audit remains the source of truth for ownership and consolidation. Phase K does not add a second Runtime, second trace system, or another public Agent. Planner, Skill, Reflection, Experience and Evaluation remain bounded capabilities behind the existing task/runtime contracts.
+The architecture audit remains the source of truth for ownership and consolidation. Phase N does not add a second Runtime, second trace system, or another public Agent. Planner, Skill, Reflection, Experience and Evaluation remain bounded capabilities behind the existing task/runtime contracts. Overall Router, IntentPlanCompiler and legacy-runtime remain compatibility-only boundaries during persisted-checkpoint migration.
 
 ## Compatibility surface
 

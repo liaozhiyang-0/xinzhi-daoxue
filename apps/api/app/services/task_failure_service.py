@@ -17,6 +17,12 @@ from app.services.evaluation_attachment_cleanup import (
 )
 from app.services.event_service import append_task_event
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
+from app.services.task_audit import (
+    audit_for_terminal,
+    audit_from_task_input,
+    replace_task_audit,
+    terminal_event_data,
+)
 from app.services.task_observability import elapsed_ms
 
 logger = logging.getLogger(__name__)
@@ -49,7 +55,11 @@ class TaskFailureService:
         reason: str,
     ) -> None:
         task = await TaskRepository(db).get(task_id, for_update=True)
-        if task is None:
+        if task is None or task.status in {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }:
             return
         now = _utc_now()
         task.status = TaskStatus.CANCELLED
@@ -57,7 +67,15 @@ class TaskFailureService:
         task.updated_at = now
         task.error_message = reason
         task.failure_category = "cancelled"
+        task.execution_owner = None
+        task.heartbeat_at = now
         task.lease_expires_at = None
+        audit = audit_from_task_input(task.input_content)
+        metrics_data = None
+        if audit:
+            audit = audit_for_terminal(audit, TaskStatus.CANCELLED.value, "cancelled")
+            task.input_content = replace_task_audit(task.input_content, audit)
+            metrics_data = {"audit": audit}
         runtime_finalized = await self.runtime_boundary.finalize(
             db,
             task_id=task.id,
@@ -66,6 +84,7 @@ class TaskFailureService:
             latency_ms=elapsed_ms(task.started_at, now) if task.started_at else None,
             error_code="cancelled",
             terminal_reason=reason,
+            metrics_data=metrics_data,
         )
         if task.started_at and runtime_finalized is None:
             db.add(
@@ -77,6 +96,7 @@ class TaskFailureService:
                     latency_ms=elapsed_ms(task.started_at, now),
                     started_at=task.started_at,
                     completed_at=now,
+                    metrics_data=metrics_data or {},
                 )
             )
         await append_task_event(
@@ -84,7 +104,18 @@ class TaskFailureService:
             task_id,
             AgentEventType.TASK_CANCELLED,
             agent_id=task.agent_id,
-            data={"reason": reason},
+            data=terminal_event_data(
+                status=TaskStatus.CANCELLED.value,
+                failure_category="cancelled",
+                error_code="cancelled",
+                error_message=reason,
+                runtime_run_id=(
+                    str(getattr(runtime_finalized, "run_id", ""))
+                    if runtime_finalized is not None
+                    else str((audit or {}).get("runtime_run_id", ""))
+                ),
+                reason=reason,
+            ),
         )
         message = await ConversationMessageService(db).append_terminal_failure(
             task,
@@ -148,6 +179,7 @@ class TaskFailureService:
             task = await TaskRepository(db).get(task_id, for_update=True)
             if task is None or task.status in {
                 TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
                 TaskStatus.CANCELLED,
             }:
                 return
@@ -165,7 +197,14 @@ class TaskFailureService:
             task.completed_at = now
             task.updated_at = now
             task.heartbeat_at = now
+            task.execution_owner = None
             task.lease_expires_at = None
+            audit = audit_from_task_input(task.input_content)
+            metrics_data = None
+            if audit:
+                audit = audit_for_terminal(audit, TaskStatus.FAILED.value, code)
+                task.input_content = replace_task_audit(task.input_content, audit)
+                metrics_data = {"audit": audit}
             runtime_finalized = await self.runtime_boundary.finalize(
                 db,
                 task_id=task.id,
@@ -176,6 +215,7 @@ class TaskFailureService:
                 ),
                 error_code=code,
                 terminal_reason=message,
+                metrics_data=metrics_data,
             )
             if runtime_finalized is None:
                 db.add(
@@ -191,6 +231,7 @@ class TaskFailureService:
                         ),
                         started_at=task.started_at,
                         completed_at=now,
+                        metrics_data=metrics_data or {},
                     )
                 )
             await append_task_event(
@@ -198,7 +239,17 @@ class TaskFailureService:
                 task.id,
                 AgentEventType.TASK_FAILED,
                 agent_id=task.agent_id,
-                data={"error_code": code},
+                data=terminal_event_data(
+                    status=TaskStatus.FAILED.value,
+                    failure_category=code,
+                    error_code=code,
+                    error_message=message,
+                    runtime_run_id=(
+                        str(getattr(runtime_finalized, "run_id", ""))
+                        if runtime_finalized is not None
+                        else str((audit or {}).get("runtime_run_id", ""))
+                    ),
+                ),
             )
             message_model = await ConversationMessageService(
                 db

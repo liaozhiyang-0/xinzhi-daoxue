@@ -231,11 +231,45 @@ async def test_general_question_returns_model_answer_without_course_citation() -
     assert result.evidence_status == "not_requested"
     assert result.structured_result["source_policy"] == "no_course_evidence_claimed"
     assert result.metrics.model_calls == 1
+    assert result.structured_result["model_execution"]["providers"] == [
+        "iflytek_spark"
+    ]
+    assert result.structured_result["model_execution"]["models"] == ["spark-x"]
     assert fake.calls[0]["task_type"] == "general_question_answer"
     assert fake.calls[0]["extra_options"] == {"max_tokens": 4096}
     system_prompt = fake.calls[0]["messages"][0]["content"]
     assert "日常常识、生活、语言和一般科普问题直接给出简洁答案" in system_prompt
     assert "严格遵守用户提出的字数、受众、语气、格式" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_rubric_generation_contract_is_not_assignment_review() -> None:
+    fake = FakeGeneralModelService([response("这是一个待课程确认的评分量规模板。")])
+    service = GeneralQuestionService(cast(ModelService, fake))
+    rubric_request = request(
+        "请为数字钟项目生成代码规范、资源占用、功能完整性和防抖动四维评分量规。"
+    ).model_copy(
+        update={
+            "options": {
+                "request_id": "rubric-contract-test",
+                "response_depth": "standard",
+                "task_subtype": "rubric_generation",
+            }
+        }
+    )
+
+    result = await service.run(rubric_request)
+
+    assert result.structured_result["task_subtype"] == "rubric_generation"
+    assert result.structured_result["response_contract"] == "rubric_generation_v1"
+    assert (
+        result.structured_result["source_policy"]
+        == "course_standard_required_for_publish"
+    )
+    system_prompt = fake.calls[0]["messages"][0]["content"]
+    assert "不是批改某个学生的作业" in system_prompt
+    assert "通用建议/待课程确认" in system_prompt
+    assert "首错诊断" in system_prompt
 
 
 @pytest.mark.asyncio

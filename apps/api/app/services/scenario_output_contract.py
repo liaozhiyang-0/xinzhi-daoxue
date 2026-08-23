@@ -7,6 +7,16 @@ from typing import Any
 from app.contracts import AgentRequest, AgentResult
 
 
+def _requested_research_count(query: str) -> int | None:
+    match = re.search(
+        r"(?:至少|不少于|不低于|at\s+least)\s*(\d+)\s*"
+        r"(?:篇|条|项|papers?|sources?)?",
+        query,
+        flags=re.IGNORECASE,
+    )
+    return int(match.group(1)) if match else None
+
+
 class ScenarioOutputContractService:
     """Materialize the configured demo-case contract in a task result.
 
@@ -22,6 +32,10 @@ class ScenarioOutputContractService:
         "student_learning_path_v1": "学生个性化学习路径",
         "research_frontier_radar_v1": "科研前沿检索与证据简报",
         "department_knowledge_governance_v1": "学院知识库治理与课程资产发布",
+        "academic_visual_problem_solver_v1": "学术题图视觉求解",
+        "academic_visual_spectrum_solver_v1": "学术题图频谱视觉求解",
+        "academic_text_diagnostic_solver_v1": "学术纯文本电路诊断",
+        "rubric_generation_v1": "教师评分量规生成",
     }
 
     def enrich(self, result: AgentResult, request: AgentRequest) -> AgentResult:
@@ -57,11 +71,14 @@ class ScenarioOutputContractService:
         nested_data = result.structured_result.get("business_data")
         if isinstance(nested_data, Mapping):
             data = {**dict(nested_data), **data}
+        data.setdefault("final_answer", result.answer)
         if "external_retrieval" in result.structured_result:
             data.setdefault(
                 "external_retrieval",
                 result.structured_result.get("external_retrieval"),
             )
+        data.setdefault("scenario_id", scenario_id)
+        data.setdefault("scenario_case_id", contract.get("demo_case_id", ""))
         evidence = self._evidence(result)
         fields = self._build_fields(scenario_id, data, evidence, contract, request)
         data.update(fields)
@@ -74,7 +91,7 @@ class ScenarioOutputContractService:
         present_fields = [
             key
             for key in expected_output
-            if key in data and data[key] not in (None, "")
+            if self._field_is_present(data.get(key))
         ]
         missing_fields = [key for key in expected_output if key not in present_fields]
         has_unavailable = any(
@@ -91,6 +108,53 @@ class ScenarioOutputContractService:
         evidence_status = str(
             result.evidence_status or evidence.get("status", "insufficient")
         )
+        duration_check = data.get("duration_check")
+        has_duration_gap = isinstance(duration_check, Mapping) and str(
+            duration_check.get("status", "")
+        ) in {"missing", "mismatch"}
+        plan_horizon_check = data.get("plan_horizon_check")
+        has_plan_horizon_gap = isinstance(plan_horizon_check, Mapping) and str(
+            plan_horizon_check.get("status", "")
+        ) in {"missing", "mismatch"}
+        external_retrieval = data.get("external_retrieval")
+        external_review_status = (
+            self._external_review_status(external_retrieval)
+            if isinstance(external_retrieval, Mapping)
+            else "not_applicable"
+        )
+        has_evidence_review_gap = (
+            scenario_id == "research_frontier_radar_v1"
+            and external_review_status not in {"approved", "not_applicable"}
+        )
+        research_quality = data.get("research_evidence_quality")
+        has_research_quality_gap = (
+            scenario_id == "research_frontier_radar_v1"
+            and isinstance(research_quality, Mapping)
+            and str(research_quality.get("status", ""))
+            in {"insufficient", "partial"}
+        )
+        raw_visual_acceptance = data.get("visual_acceptance")
+        if not isinstance(raw_visual_acceptance, Mapping):
+            raw_vision = data.get("vision_execution")
+            raw_visual_acceptance = (
+                raw_vision.get("visual_acceptance")
+                if isinstance(raw_vision, Mapping)
+                else None
+            )
+        has_visual_acceptance_gap = (
+            scenario_id.startswith("academic_visual_")
+            and isinstance(raw_visual_acceptance, Mapping)
+            and str(raw_visual_acceptance.get("status", "")) != "passed"
+        )
+        has_manual_review_gap = scenario_id == "academic_text_diagnostic_solver_v1"
+        evidence_policy = request.options.get("scenario_evidence_policy")
+        manual_review_required = isinstance(evidence_policy, Mapping) and bool(
+            evidence_policy.get("manual_review_required", False)
+        )
+        has_policy_review_gap = manual_review_required
+        course_confirmation_required = bool(
+            contract.get("course_confirmation_required", False)
+        )
         model_synthesis_required = governance and (
             result.structured_result.get("mode") != "governance_model_generation"
         )
@@ -99,7 +163,18 @@ class ScenarioOutputContractService:
             if model_synthesis_required
             else (
                 "completed_with_gaps"
-                if has_unavailable or evidence_status != "sufficient"
+                if (
+                    has_unavailable
+                    or evidence_status != "sufficient"
+                    or has_duration_gap
+                    or has_plan_horizon_gap
+                    or has_evidence_review_gap
+                    or has_research_quality_gap
+                    or has_visual_acceptance_gap
+                    or has_manual_review_gap
+                    or has_policy_review_gap
+                    or course_confirmation_required
+                )
                 else "completed"
             )
         )
@@ -111,6 +186,31 @@ class ScenarioOutputContractService:
             "present_fields": present_fields,
             "missing_fields": missing_fields,
             "evidence_status": evidence_status,
+            "evidence_review_status": external_review_status,
+            "quality_gaps": (
+                [
+                    *(["duration_constraint"] if has_duration_gap else []),
+                    *(["plan_horizon"] if has_plan_horizon_gap else []),
+                    *(["evidence_review"] if has_evidence_review_gap else []),
+                    *(
+                        ["research_evidence_quality"]
+                        if has_research_quality_gap
+                        else []
+                    ),
+                    *(["visual_acceptance"] if has_visual_acceptance_gap else []),
+                    *(["manual_review"] if has_manual_review_gap else []),
+                    *(
+                        ["manual_review_required"]
+                        if has_policy_review_gap
+                        else []
+                    ),
+                    *(
+                        ["course_confirmation"]
+                        if course_confirmation_required
+                        else []
+                    ),
+                ]
+            ),
             "evidence_source_refs": evidence.get("source_refs", []),
             "model_synthesis": {
                 "status": "required" if model_synthesis_required else "completed",
@@ -126,6 +226,26 @@ class ScenarioOutputContractService:
         )
         return result
 
+    @staticmethod
+    def _field_is_present(value: Any) -> bool:
+        """Count only usable values as present in the scenario contract.
+
+        Availability envelopes are intentionally kept in ``business_data`` so
+        the UI can explain why a field is missing.  They must not, however,
+        satisfy an acceptance contract merely because the mapping is non-empty.
+        """
+
+        if value in (None, "", [], {}):
+            return False
+        if isinstance(value, Mapping) and str(value.get("status", "")) in {
+            "not_available",
+            "unknown",
+            "not_determinable",
+            "possible_conflict_needs_review",
+        }:
+            return False
+        return True
+
     def _build_fields(
         self,
         scenario_id: str,
@@ -140,12 +260,224 @@ class ScenarioOutputContractService:
         if scenario_id == "department_knowledge_governance_v1":
             return self._governance_fields(data, evidence, review, request)
         if scenario_id == "research_frontier_radar_v1":
-            return self._research_fields(data, evidence, review)
+            return self._research_fields(data, evidence, review, request.input_text())
         if scenario_id == "faculty_course_copilot_v1":
             return self._lesson_fields(data, evidence, review)
         if scenario_id == "assessment_diagnosis_v1":
             return self._assignment_fields(data, evidence, review)
+        if scenario_id == "rubric_generation_v1":
+            return self._rubric_fields(data, review)
+        if scenario_id == "academic_text_diagnostic_solver_v1":
+            return self._academic_text_diagnostic_fields(data, review)
+        if scenario_id.startswith("academic_visual_"):
+            return self._academic_visual_fields(data, review)
         return {"evidence": evidence, "review_boundary": review}
+
+    @staticmethod
+    def _rubric_fields(
+        data: Mapping[str, Any], review: str
+    ) -> dict[str, Any]:
+        answer = str(data.get("final_answer") or data.get("answer_text") or "")
+        dimensions = ("代码规范性", "资源占用率", "功能完整性", "防抖动处理")
+        levels = ("优秀", "良好", "及格", "不及格")
+        has_student_score = bool(
+            re.search(
+                r"(?:学生|该生).{0,16}(?:得分|总分|成绩)\s*[:：=]?\s*\d",
+                answer,
+            )
+        )
+        return {
+            "rubric_dimensions": {
+                "status": "available"
+                if all(item in answer for item in dimensions)
+                else "not_available",
+                "source": "final_answer",
+            },
+            "rubric_levels": {
+                "status": "available"
+                if all(item in answer for item in levels)
+                else "not_available",
+                "source": "final_answer",
+            },
+            "student_score_excluded": {
+                "status": "not_available" if has_student_score else "available",
+                "source": "answer_policy",
+            },
+            "review_boundary": review,
+        }
+
+    @staticmethod
+    def _academic_text_diagnostic_fields(
+        data: Mapping[str, Any], review: str
+    ) -> dict[str, Any]:
+        """Expose only semantic markers actually present in the model answer.
+
+        The text-diagnostic scenario is intentionally conservative: these
+        fields are availability envelopes, not generated facts.  Missing
+        headings or safety boundaries remain visible as contract gaps.
+        """
+
+        answer = str(data.get("final_answer") or data.get("answer_text") or "")
+
+        def availability(markers: tuple[str, ...]) -> dict[str, str]:
+            return {
+                "status": "available"
+                if any(marker.casefold() in answer.casefold() for marker in markers)
+                else "not_available",
+                "source": "final_answer",
+            }
+
+        return {
+            "observation_summary": availability(
+                (
+                    "VCC",
+                    "集电极直流电位",
+                    "顶部削峰",
+                    "输出漂移",
+                    "输出电压",
+                    "随时间线性漂移",
+                    "最终饱和",
+                )
+            ),
+            "operating_region": availability(("截止区", "饱和区", "放大区")),
+            "candidate_causes": availability(("可能原因", "原因一", "原因1")),
+            "diagnostic_steps": availability(
+                ("验证步骤", "验证：", "验证实验", "实验验证", "验证方案")
+            ),
+            "safety_boundary": availability(
+                ("安全边界", "断电", "电源范围", "数据手册")
+            ),
+            "nonideality_diagnosis": availability(
+                ("非理想", "输入失调", "偏置电流", "漏电", "漂移")
+            ),
+            "compensation_component": availability(
+                (
+                    "泄放电阻",
+                    "并联电阻",
+                    "补偿元件",
+                    "增加电阻",
+                    "并联一个",
+                    "反馈电容两端",
+                    "R_f",
+                    "Rf",
+                )
+            ),
+            "review_boundary": review,
+        }
+
+    @staticmethod
+    def _academic_visual_fields(
+        data: Mapping[str, Any], review: str
+    ) -> dict[str, Any]:
+        vision = data.get("vision_execution")
+        vision = dict(vision) if isinstance(vision, Mapping) else {}
+        acceptance = vision.get("visual_acceptance")
+        acceptance = (
+            dict(acceptance) if isinstance(acceptance, Mapping) else None
+        )
+        answer = str(data.get("final_answer") or data.get("answer_text") or "")
+        answer_available = not any(
+            marker in answer for marker in ("当前题目信息缺失", "无法唯一求解")
+        )
+
+        def availability(status: str, *, source: str) -> dict[str, Any]:
+            return {"status": status, "source": source}
+
+        has_piecewise = answer_available and bool(
+            re.search(r"分段表达式|begin\s*\{cases\}|y\s*\(\s*t\s*\)", answer)
+        )
+        has_waveform = answer_available and "波形" in answer
+        has_breakpoints = answer_available and all(
+            re.search(rf"t\s*=\s*{value}\b", answer) for value in (0, 1, 4, 5)
+        )
+        if str(data.get("scenario_id", "")) == "academic_visual_spectrum_solver_v1":
+            return {
+                "visual_structure": (
+                    vision
+                    if vision
+                    else ScenarioOutputContractService._not_available(
+                        "未获得结构化视觉输出"
+                    )
+                ),
+                "visual_acceptance": (
+                    acceptance
+                    if acceptance is not None
+                    else ScenarioOutputContractService._not_available(
+                        "未执行题图视觉验收"
+                    )
+                ),
+                "spectrum_expression": availability(
+                    "available"
+                    if answer_available and re.search(r"Y\s*\(|频谱|傅里叶", answer)
+                    else "not_available",
+                    source="final_answer",
+                ),
+                "frequency_bands": availability(
+                    "available"
+                    if answer_available and re.search(r"频带|支撑区间|[-−]π", answer)
+                    else "not_available",
+                    source="final_answer",
+                ),
+                "center_peak_sign": availability(
+                    "available"
+                    if answer_available
+                    and all(marker in answer for marker in ("中心", "峰值"))
+                    else "not_available",
+                    source="final_answer",
+                ),
+                "review_boundary": review,
+            }
+        if str(data.get("scenario_case_id", "")) != "signal-convolution":
+            return {
+                "visual_structure": (
+                    vision
+                    if vision
+                    else ScenarioOutputContractService._not_available(
+                        "未获得结构化视觉输出"
+                    )
+                ),
+                "visual_acceptance": (
+                    acceptance
+                    if acceptance is not None
+                    else ScenarioOutputContractService._not_available(
+                        "未执行题图视觉验收"
+                    )
+                ),
+                "solution": availability(
+                    "available" if answer_available else "not_available",
+                    source="final_answer",
+                ),
+                "review_boundary": review,
+            }
+        return {
+            "visual_structure": (
+                vision
+                if vision
+                else ScenarioOutputContractService._not_available(
+                    "未获得结构化视觉输出"
+                )
+            ),
+            "visual_acceptance": (
+                acceptance
+                if acceptance is not None
+                else ScenarioOutputContractService._not_available(
+                    "未执行题图视觉验收"
+                )
+            ),
+            "piecewise_expression": availability(
+                "available" if has_piecewise else "not_available",
+                source="final_answer",
+            ),
+            "waveform": availability(
+                "available" if has_waveform else "not_available",
+                source="final_answer",
+            ),
+            "breakpoint_explanation": availability(
+                "available" if has_breakpoints else "not_available",
+                source="final_answer",
+            ),
+            "review_boundary": review,
+        }
 
     @staticmethod
     def _not_available(reason: str) -> dict[str, str]:
@@ -158,77 +490,33 @@ class ScenarioOutputContractService:
         return {
             "evidence_summary": data.get(
                 "evidence_summary",
-                {
-                    "status": "partial",
-                "basis": (
-                    "用户在示例问题中提供了两次作答表现和复测要求；"
-                    "系统未获得完整成绩历史。"
+                ScenarioOutputContractService._not_available(
+                    "真实模型未提供证据摘要"
                 ),
-                    "retrieved_source_refs": evidence.get("source_refs", []),
-                },
             ),
             "weak_knowledge_points": data.get(
                 "weak_knowledge_points",
-                [
-                    {
-                        "knowledge_point": "支路电流参考方向与符号约定",
-                        "basis": "示例问题中的符号错误与该知识点直接相关",
-                        "confidence": "tentative",
-                        "qualification": "这是学习建议，不是正式能力认定。",
-                    }
-                ],
+                ScenarioOutputContractService._not_available(
+                    "真实模型未提供薄弱知识点"
+                ),
             ),
             "prerequisite_path": data.get(
                 "prerequisite_path",
-                [
-                    "电流方向与符号约定",
-                    "基尔霍夫电流定律（KCL）",
-                    "支路/节点方程列写",
-                    "带符号结果的量纲与合理性检查",
-                ],
+                ScenarioOutputContractService._not_available(
+                    "真实模型未提供前置知识路径"
+                ),
             ),
             "staged_plan": data.get(
                 "staged_plan",
-                [
-                    {
-                        "day": day,
-                        "duration_minutes": 25,
-                        "goal": goal,
-                        "evidence_to_submit": evidence_to_submit,
-                    }
-                    for day, goal, evidence_to_submit in (
-                        (
-                            1,
-                            "复习电流方向、参考方向和正负号约定",
-                            "用自己的话解释两种参考方向",
-                        ),
-                        (2, "练习节点电流的正负号判断", "完成 3 道节点符号判断题"),
-                        (3, "按固定步骤列写 KCL 方程", "提交 2 道带草稿步骤的 KCL 题"),
-                        (
-                            4,
-                            "检查方程的单位、方向和守恒关系",
-                            "逐项标注一次方程检查结果",
-                        ),
-                        (
-                            5,
-                            "完成含未知支路电流的综合题",
-                            "保留正确步骤并标出首个不确定点",
-                        ),
-                        (
-                            6,
-                            "针对错误点做间隔复习和变式练习",
-                            "完成 2 道变式题且说明符号选择",
-                        ),
-                        (7, "进行不看提示的复测", "提交 1 道新题的完整推导和自检清单"),
-                    )
-                ],
+                ScenarioOutputContractService._not_available(
+                    "真实模型未提供阶段学习计划"
+                ),
             ),
             "verification_tasks": data.get(
                 "verification_tasks",
-                [
-                    "独立完成一道新的节点电流题，并解释每个电流方向的符号。",
-                    "提交完整推导后，用 KCL、单位和结果符号各做一次自检。",
-                ],
+                ScenarioOutputContractService._not_available(
+                    "真实模型未提供验证任务"
+                ),
             ),
             "evidence": evidence,
             "review_boundary": review,
@@ -374,7 +662,10 @@ class ScenarioOutputContractService:
 
     @staticmethod
     def _research_fields(
-        data: Mapping[str, Any], evidence: dict[str, Any], review: str
+        data: Mapping[str, Any],
+        evidence: dict[str, Any],
+        review: str,
+        query: str,
     ) -> dict[str, Any]:
         external = data.get("external_retrieval")
         if not isinstance(external, Mapping):
@@ -382,6 +673,9 @@ class ScenarioOutputContractService:
         items = external.get("items", [])
         if not isinstance(items, list):
             items = []
+        external_review_status = ScenarioOutputContractService._external_review_status(
+            external
+        )
         table = [
             {
                 "title": item.get("title", ""),
@@ -390,7 +684,14 @@ class ScenarioOutputContractService:
                 "arxiv_id": item.get("arxiv_id", ""),
                 "url": item.get("canonical_url", ""),
                 "source_ref": item.get("source_ref", ""),
-                "evidence_status": item.get("evidence_status", "candidate"),
+                # Item-level status is not an authoritative review decision.
+                # Only a consistent aggregate review envelope can promote all
+                # displayed items to approved evidence.
+                "evidence_status": (
+                    "approved"
+                    if external_review_status == "approved"
+                    else "candidate"
+                ),
             }
             for item in items
             if isinstance(item, Mapping)
@@ -416,6 +717,18 @@ class ScenarioOutputContractService:
         evidence_summary.update(
             {"status": evidence_status, "item_count": item_count}
         )
+        research_quality = ScenarioOutputContractService._research_quality(
+            query, items
+        )
+        raw_limitations = data.get("limitations")
+        limitations = (
+            [str(item) for item in raw_limitations if str(item).strip()]
+            if isinstance(raw_limitations, list)
+            else []
+        )
+        for limitation in research_quality["limitations"]:
+            if limitation not in limitations:
+                limitations.append(limitation)
         return {
             "research_scope": data.get(
                 "research_scope",
@@ -430,11 +743,131 @@ class ScenarioOutputContractService:
             "open_questions": data.get(
                 "open_questions", ["未通过相关性和原文核验的候选结果不能作为最终证据。"]
             ),
-            "limitations": data.get(
-                "limitations", ["摘要、标识和链接必须由研究人员打开原文复核。"]
-            ),
+            "limitations": limitations
+            or ["摘要、标识和链接必须由研究人员打开原文复核。"],
+            "research_evidence_quality": research_quality,
             "review_boundary": review,
         }
+
+    @staticmethod
+    def _research_quality(query: str, items: list[Any]) -> dict[str, Any]:
+        """Check evidence completeness without inferring paper facts."""
+
+        requested_minimum = _requested_research_count(query)
+        if not items:
+            return {
+                "status": "insufficient",
+                "item_count": 0,
+                "identifier_count": 0,
+                "dated_count": 0,
+                "source_count": 0,
+                "requested_minimum": requested_minimum,
+                "missing": ["至少一条可核验外部证据"],
+                "limitations": ["当前没有可核验外部证据，不能形成研究结论。"],
+            }
+
+        identifier_count = sum(
+            int(
+                isinstance(item, Mapping)
+                and bool(str(item.get("doi") or item.get("arxiv_id") or "").strip())
+            )
+            for item in items
+        )
+        dated_count = sum(
+            int(
+                isinstance(item, Mapping)
+                and bool(
+                    str(
+                        item.get("published_at")
+                        or item.get("updated_at")
+                        or ""
+                    ).strip()
+                )
+            )
+            for item in items
+        )
+        source_count = sum(
+            int(
+                isinstance(item, Mapping)
+                and bool(
+                    str(
+                        item.get("source_ref")
+                        or item.get("canonical_url")
+                        or item.get("url")
+                        or ""
+                    ).strip()
+                )
+            )
+            for item in items
+        )
+        normalized_query = query.casefold()
+        requires_identifier = any(
+            marker in normalized_query
+            for marker in (
+                "doi",
+                "arxiv",
+                "唯一标识",
+                "可核验一手论文",
+                "论文",
+                "文献",
+                "paper",
+                "publication",
+            )
+        )
+        missing: list[str] = []
+        if requested_minimum is not None and len(items) < requested_minimum:
+            missing.append(f"至少 {requested_minimum} 条证据（当前 {len(items)} 条）")
+        if requires_identifier and identifier_count < len(items):
+            missing.append("每条论文证据的 DOI 或 arXiv 标识")
+        if dated_count < len(items):
+            missing.append("每条证据的可核验发布日期")
+        if source_count < len(items):
+            missing.append("每条证据的来源链接或来源引用")
+        limitations = ["摘要级证据不能替代原文、实验条件和定量结果核验。"]
+        if missing:
+            limitations.append("证据完整性缺口：" + "；".join(missing) + "。")
+        return {
+            "status": "sufficient" if not missing else "partial",
+            "item_count": len(items),
+            "identifier_count": identifier_count,
+            "dated_count": dated_count,
+            "source_count": source_count,
+            "requested_minimum": requested_minimum,
+            "missing": missing,
+            "limitations": limitations,
+        }
+
+    @staticmethod
+    def _external_review_status(external: Mapping[str, Any]) -> str:
+        """Derive review status from an internally consistent evidence envelope.
+
+        ``review_status`` is metadata that can be copied into an Agent result;
+        it is not sufficient by itself to authorize publication.  The approved
+        count must cover every displayed item.  This mirrors the Runtime
+        external-research gate and prevents a result from claiming approval
+        while omitting or falsifying its accounting metadata.
+        """
+
+        status = str(external.get("review_status", "not_run")).strip().casefold()
+        raw_items = external.get("items")
+        if not isinstance(raw_items, list) or not raw_items:
+            if status in {"not_run", "rejected", "failed"}:
+                # An empty list can mean that candidates were deliberately
+                # withheld pending review. Preserve that state instead of
+                # presenting it as if external evidence was never attempted.
+                return status
+            return "not_applicable"
+        items = [item for item in raw_items if isinstance(item, Mapping)]
+        if len(items) != len(raw_items):
+            return "incomplete"
+        if status in {"not_run", "rejected", "failed"}:
+            return status
+        approved_count = external.get("approved_count")
+        if isinstance(approved_count, bool) or not isinstance(approved_count, int):
+            return "incomplete"
+        if status == "approved" and approved_count == len(items):
+            return "approved"
+        return "incomplete"
 
     @staticmethod
     def _lesson_fields(
@@ -473,6 +906,21 @@ class ScenarioOutputContractService:
     def _assignment_fields(
         data: Mapping[str, Any], evidence: dict[str, Any], review: str
     ) -> dict[str, Any]:
+        concept_correction = data.get("concept_correction")
+        if concept_correction in (None, "", [], {}):
+            correction_text = str(
+                data.get("correction") or data.get("teacher_feedback") or ""
+            ).strip()
+            if correction_text:
+                concept_correction = {
+                    "status": "available",
+                    "content": correction_text,
+                    "source": "teacher_feedback",
+                }
+            else:
+                concept_correction = ScenarioOutputContractService._not_available(
+                    "未提供概念纠正"
+                )
         return {
             "first_error": data.get(
                 "first_error",
@@ -508,6 +956,19 @@ class ScenarioOutputContractService:
                 data.get(
                     "next_check",
                     ScenarioOutputContractService._not_available("未生成验证题"),
+                ),
+            ),
+            "concept_correction": concept_correction,
+            "verification_task": data.get(
+                "verification_task",
+                data.get(
+                    "verification_problem",
+                    data.get(
+                        "next_check",
+                        ScenarioOutputContractService._not_available(
+                            "未生成验证任务"
+                        ),
+                    ),
                 ),
             ),
             "evidence": evidence,

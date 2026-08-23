@@ -171,6 +171,9 @@ class VisionComponent(BaseModel):
     label: str | None = Field(default=None, max_length=80)
     value: str | None = Field(default=None, max_length=80)
     connections: list[str] = Field(default_factory=list, max_length=8)
+    terminal_map: dict[str, str] = Field(default_factory=dict, max_length=8)
+    polarity: str | None = Field(default=None, max_length=80)
+    reference_direction: str | None = Field(default=None, max_length=120)
     certainty: Literal["certain", "uncertain"] = "certain"
 
 
@@ -196,3 +199,4 @@ class InternalAgentResult(BaseModel):
     total_tokens: int | None = Field(default=None, ge=0)
     elapsed_ms: int = Field(ge=0)
     provider_request_id: str | None = None
+    raw_metadata: dict[str, Any] = Field(default_factory=dict)

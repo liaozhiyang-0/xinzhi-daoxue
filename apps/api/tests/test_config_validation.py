@@ -58,6 +58,7 @@ def test_runtime_timeout_is_bounded_and_local_context_defaults_on() -> None:
     assert settings.workflow_default_timeout_seconds == 120
     assert settings.knowledge_enabled is True
     assert settings.agent_runtime_semantic_evidence == ""
+    assert settings.legacy_hash_embedding_enabled is False
 
     with pytest.raises(ValidationError):
         Settings(
@@ -97,6 +98,7 @@ def test_production_requires_server_qdrant() -> None:
             app_env="production",
             auth_required=True,
             auth_allow_guest=False,
+            default_agent_provider="local",
             qdrant_mode="local",
             _env_file=None,
         )
@@ -105,6 +107,7 @@ def test_production_requires_server_qdrant() -> None:
         app_env="production",
         auth_required=True,
         auth_allow_guest=False,
+        default_agent_provider="local",
         qdrant_mode="server",
         langgraph_checkpoint_enabled=False,
         langgraph_checkpoint_backend="disabled",
@@ -144,6 +147,7 @@ def test_production_forbids_mock_and_debug_surfaces(
         app_env="production",
         auth_required=True,
         auth_allow_guest=False,
+        default_agent_provider="local",
         qdrant_mode="server",
         langgraph_checkpoint_enabled=False,
         langgraph_checkpoint_backend="disabled",
@@ -158,11 +162,32 @@ def test_production_forbids_mock_and_debug_surfaces(
         Settings(**base)
 
 
+def test_production_rejects_mock_agent_provider() -> None:
+    with pytest.raises(
+        ValidationError, match="DEFAULT_AGENT_PROVIDER=mock is forbidden"
+    ):
+        Settings(
+            app_env="production",
+            auth_required=True,
+            auth_allow_guest=False,
+            qdrant_mode="server",
+            default_agent_provider="mock",
+            allow_mock_fallback=False,
+            allow_agent_mocks=False,
+            enable_debug_api=False,
+            rag_debug_enabled=False,
+            langgraph_checkpoint_enabled=False,
+            langgraph_checkpoint_backend="disabled",
+            _env_file=None,
+        )
+
+
 def test_production_fail_closed_without_mock_or_debug() -> None:
     settings = Settings(
         app_env="production",
         auth_required=True,
         auth_allow_guest=False,
+        default_agent_provider="local",
         qdrant_mode="server",
         langgraph_checkpoint_enabled=False,
         langgraph_checkpoint_backend="disabled",

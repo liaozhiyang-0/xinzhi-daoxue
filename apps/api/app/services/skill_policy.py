@@ -117,7 +117,8 @@ class SkillPolicy:
         if skill.status in {"frozen", "deprecated"}:
             reasons.append(f"status_{skill.status}")
         if (
-            request.normalized_course
+            skill.scope == "course"
+            and request.normalized_course
             and skill.course_id.upper() != request.normalized_course
         ):
             reasons.append("course_mismatch")

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from typing import Literal, cast
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import (
     AgentEventType,
     AgentRequest,
+    GoalContract,
     Intent,
     RouteDecision,
     RouteStatus,
@@ -16,6 +19,7 @@ from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
 from app.repositories import FileRepository, SessionRepository, TaskRepository
+from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.conversation_message_service import ConversationMessageService
 from app.services.evaluation_attachment_cleanup import (
     cleanup_evaluation_attachments,
@@ -25,7 +29,15 @@ from app.services.intent_plan import IntentPlanCompiler
 from app.services.planner import PlannerService, PlannerSnapshot
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
+from app.services.task_audit import (
+    audit_for_terminal,
+    audit_from_task_input,
+    build_task_audit,
+    replace_task_audit,
+    terminal_event_data,
+)
 from app.services.teaching_input import normalize_teaching_options
+from app.services.unified_request_preparation import UnifiedRequestPreparationService
 
 
 class TaskCreationService:
@@ -42,6 +54,56 @@ class TaskCreationService:
         self.repository = TaskRepository(db)
         self.plan_compiler = IntentPlanCompiler()
         self.planner = planner or PlannerService(self.plan_compiler)
+        self.goal_preparation = UnifiedRequestPreparationService()
+
+    @staticmethod
+    def _route_failure(route: RouteDecision) -> tuple[str, str] | None:
+        if route.route_status != RouteStatus.SELECTED:
+            return "route_unresolved", route.reason
+        availability = route.availability
+        capability_failures = (
+            ("enabled", "agent_disabled", "当前 Agent 已停用，请稍后重试。"),
+            (
+                "published",
+                "agent_not_published",
+                "当前 Agent 尚未发布，暂不能执行该任务。",
+            ),
+            (
+                "input_mode_supported",
+                "agent_input_not_supported",
+                "当前 Agent 不支持该输入类型，请改用文字或切换支持图片的 Agent。",
+            ),
+            (
+                "course_supported",
+                "agent_course_not_supported",
+                "当前 Agent 不支持该课程，请切换课程或执行路径。",
+            ),
+            (
+                "intent_supported",
+                "agent_intent_not_supported",
+                "当前 Agent 不支持该任务意图，请重新描述任务。",
+            ),
+        )
+        for key, code, message in capability_failures:
+            if availability.get(key) is False:
+                return code, message
+        if (
+            availability.get("external_retrieval_required") is True
+            and availability.get("external_retrieval_available") is False
+        ):
+            return (
+                "external_retrieval_unavailable",
+                "当前外部检索能力未启用，请先配置检索服务后再重试。",
+            )
+        if (
+            availability.get("generation_required") is True
+            and availability.get("generation_available") is False
+        ):
+            return (
+                "model_generation_required",
+                "当前场景需要已配置的模型整理能力，请先完成配置后再重试。",
+            )
+        return None
 
     async def create_queued(
         self,
@@ -55,8 +117,6 @@ class TaskCreationService:
         teaching_options, _, _ = normalize_teaching_options(request.options)
         request = request.model_copy(update={"options": teaching_options})
         request = self._with_route_context(request, route)
-        intent_plan = self.plan_compiler.compile(request, route)
-        request = self._with_intent_plan(request, intent_plan)
         session = await SessionRepository(self.db).get_for_user(
             request.session_id, request.user_id, for_update=True
         )
@@ -66,46 +126,72 @@ class TaskCreationService:
                 details={"session_id": request.session_id},
             )
         request = SessionContextService(self.settings).apply(session, request)
+        request = self.goal_preparation.attach(request)
         planner_snapshot: PlannerSnapshot | None = None
-        if self.planner.shadow_enabled(self.settings) or self.planner.takeover_allowed(
-            request, self.settings
-        ):
+        planner_mode = self.planner.production_mode(self.settings, request)
+        if planner_mode in {"controlled", "active"}:
             try:
-                planner_output = self.planner.build(
+                goal = GoalContract.model_validate(
+                    request.options.get("_goal_contract", {})
+                )
+                planner_output = self.planner.build_authoritative(
                     request,
+                    goal,
                     route,
                     settings=self.settings,
-                    intent_plan=intent_plan,
-                    mode=(
-                        "takeover"
-                        if self.planner.takeover_allowed(request, self.settings)
-                        else "shadow"
-                    ),
+                    mode=cast(Literal["controlled", "active"], planner_mode),
                 )
                 planner_snapshot = planner_output.snapshot
-                if planner_snapshot.mode == "takeover":
-                    route = self.planner.takeover_route(route)
-                    request = self._with_route_context(request, route)
-                    intent_plan = self.plan_compiler.compile(request, route)
-                    request = self._with_intent_plan(request, intent_plan)
-                    # Rebind the immutable Planner snapshot to the accepted
-                    # route revision; this keeps route/plan lineage aligned
-                    # without invoking a second intelligent router.
-                    planner_snapshot = self.planner.build(
-                        request,
-                        route,
-                        settings=self.settings,
-                        intent_plan=intent_plan,
-                        mode="takeover",
-                    ).snapshot
+                canonical_plan = planner_output.canonical_plan
+                intent_plan = CanonicalPlanAdapter.to_intent_plan(
+                    canonical_plan,
+                    plan_id=f"compat:{canonical_plan.plan_id}",
+                )
+                request = self._with_canonical_plan(request, canonical_plan)
             except Exception as exc:
                 planner_snapshot = self.planner.failed_snapshot(
                     request,
                     route,
                     error_type=type(exc).__name__,
                 )
-            if planner_snapshot is not None:
-                request = self._with_planner_snapshot(request, planner_snapshot)
+                if planner_mode == "active":
+                    raise ValidationAppError(
+                        "权威 Planner 未能生成有效执行计划",
+                        details={
+                            "error_code": "authoritative_planner_failed",
+                            "error_type": type(exc).__name__,
+                        },
+                    ) from exc
+                # Keep the compatibility request contract inspectable while
+                # refusing to claim authoritative Planner success.
+                intent_plan = self.plan_compiler.compile(request, route)
+        else:
+            intent_plan = self.plan_compiler.compile(request, route)
+            if self.planner.shadow_enabled(
+                self.settings
+            ) or self.planner.takeover_allowed(request, self.settings):
+                try:
+                    planner_output = self.planner.build(
+                        request,
+                        route,
+                        settings=self.settings,
+                        intent_plan=intent_plan,
+                        mode=(
+                            "takeover"
+                            if self.planner.takeover_allowed(request, self.settings)
+                            else "shadow"
+                        ),
+                    )
+                    planner_snapshot = planner_output.snapshot
+                except Exception as exc:
+                    planner_snapshot = self.planner.failed_snapshot(
+                        request,
+                        route,
+                        error_type=type(exc).__name__,
+                    )
+        request = self._with_intent_plan(request, intent_plan)
+        if planner_snapshot is not None:
+            request = self._with_planner_snapshot(request, planner_snapshot)
         idempotency_key = str(request.options.get("idempotency_key", "")).strip()
         if idempotency_key:
             if not 8 <= len(idempotency_key) <= 128:
@@ -236,22 +322,36 @@ class TaskCreationService:
                 agent_id=route.agent_id,
                 data={"tools": intent_plan.selected_tools},
             )
-        if route.route_status != RouteStatus.SELECTED:
+        route_failure = self._route_failure(route)
+        if route_failure is not None:
+            failure_code, failure_reason = route_failure
             task.status = TaskStatus.FAILED
-            task.error_message = route.reason
+            task.error_message = failure_reason
+            task.failure_category = failure_code
+            audit = audit_from_task_input(task.input_content)
+            if audit:
+                task.input_content = replace_task_audit(
+                    task.input_content,
+                    audit_for_terminal(audit, TaskStatus.FAILED.value, failure_code),
+                )
             await append_task_event(
                 self.db,
                 task.id,
                 AgentEventType.TASK_FAILED,
                 agent_id=route.agent_id,
-                data={"error_code": "route_unresolved"},
+                data=terminal_event_data(
+                    status=TaskStatus.FAILED.value,
+                    failure_category=failure_code,
+                    error_code=failure_code,
+                    error_message=failure_reason,
+                ),
             )
             failure_message = await ConversationMessageService(
                 self.db
             ).append_terminal_failure(
                 task,
                 status=MessageStatus.FAILED,
-                reason=route.reason,
+                reason=failure_reason,
             )
             task.assistant_message_id = (
                 failure_message.id if failure_message is not None else None
@@ -274,6 +374,39 @@ class TaskCreationService:
         request: AgentRequest, route: RouteDecision
     ) -> AgentRequest:
         options = dict(request.options)
+        scenario_contract = options.get("scenario_contract")
+        if isinstance(scenario_contract, dict) and scenario_contract.get(
+            "course_confirmation_required"
+        ):
+            detected_course = next(
+                (
+                    code.split(":", 1)[1].strip().upper()
+                    for code in route.reason_codes
+                    if code.startswith(("detected_course:", "explicit_course_marker:"))
+                    and code.split(":", 1)[1].strip()
+                ),
+                "",
+            )
+            if detected_course:
+                scenario_contract = dict(scenario_contract)
+                resolution = dict(
+                    scenario_contract.get("course_resolution") or {}
+                )
+                resolution.update(
+                    {
+                        "resolved": detected_course,
+                        "source": "router_detected",
+                        "confirmation_required": False,
+                    }
+                )
+                scenario_contract.update(
+                    {
+                        "course": detected_course,
+                        "course_resolution": resolution,
+                        "course_confirmation_required": False,
+                    }
+                )
+                options["scenario_contract"] = scenario_contract
         options["_routing"] = route.model_dump(mode="json")
         options["task_subtype"] = route.task_subtype
         options["secondary_intents"] = list(route.secondary_intents)
@@ -301,6 +434,11 @@ class TaskCreationService:
                         f"{route.fallback_instruction}\n\n{value.strip()}"
                     )
                     break
+        options["_audit"] = build_task_audit(
+            request.model_copy(update={"options": options}),
+            route,
+            canonical_input=canonical_input,
+        )
         updates: dict[str, object] = {
             "canonical_input": canonical_input,
             "options": options,
@@ -328,6 +466,15 @@ class TaskCreationService:
     ) -> AgentRequest:
         options = dict(request.options)
         options["_planner_snapshot"] = snapshot.model_dump(mode="json")
+        return request.model_copy(update={"options": options})
+
+    @staticmethod
+    def _with_canonical_plan(
+        request: AgentRequest, plan: object
+    ) -> AgentRequest:
+        options = dict(request.options)
+        if hasattr(plan, "model_dump"):
+            options["_canonical_plan"] = plan.model_dump(mode="json")
         return request.model_copy(update={"options": options})
 
     @staticmethod

@@ -12,6 +12,7 @@ from app.models import (
     TaskEventModel,
 )
 from app.runtime import AgentRun, RuntimeNodeStatus
+from app.services.task_audit import audit_from_request_snapshot
 
 
 class RuntimeConcurrencyError(RuntimeError):
@@ -39,6 +40,9 @@ class AgentRunRepository:
         run.run_kind = run_kind
         run.parent_run_id = parent_run_id or ""
         run.parent_node_id = parent_node_id or ""
+        audit = audit_from_request_snapshot(run.request_snapshot)
+        if audit:
+            audit["runtime_run_id"] = run.run_id
         model = AgentRunModel(
             id=run.run_id,
             task_id=run.task_id,
@@ -56,7 +60,7 @@ class AgentRunRepository:
             workflow_version=workflow_version,
             status=run.status.value,
             trace_id=trace_id,
-            metrics_data={},
+            metrics_data={"audit": audit} if audit else {},
             control_request=run.control_request,
             control_data=run.control_data,
             created_at=run.created_at,
@@ -181,7 +185,20 @@ class AgentRunRepository:
         if provider is not None:
             model.provider = provider
         if metrics_data is not None:
-            model.metrics_data = metrics_data
+            stored_metrics = dict(model.metrics_data or {})
+            for key, value in metrics_data.items():
+                if (
+                    key == "audit"
+                    and isinstance(stored_metrics.get(key), dict)
+                    and isinstance(value, dict)
+                ):
+                    stored_metrics[key] = {
+                        **stored_metrics[key],
+                        **value,
+                    }
+                else:
+                    stored_metrics[key] = value
+            model.metrics_data = stored_metrics
         if latency_ms is not None:
             model.latency_ms = latency_ms
         if trace_id is not None:

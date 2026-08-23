@@ -18,7 +18,7 @@ def registry(root: Path | None = None) -> SkillRegistry:
 def test_ct_ae_de_skill_catalogs_load_and_map_stable_ids() -> None:
     skills = registry()
     assert len(skills.list_for_course("CT")) == 10
-    assert len(skills.list_for_course("AE")) == 10
+    assert len(skills.list_for_course("AE")) == 17
     assert len(skills.list_for_course("DE")) == 10
     assert skills.map_skills(
         course_id="CT", problem_type="node_voltage"
@@ -29,8 +29,8 @@ def test_ct_ae_de_skill_catalogs_load_and_map_stable_ids() -> None:
     assert skills.map_skills(
         course_id="DE", problem_type="logic_simplification", terms=["卡诺图"]
     ).skill_ids[0] == "DE.KMAP"
-    assert len(skills.list_for_course("RESEARCH")) == 3
-    assert len(skills.list_for_course("KNOWLEDGE")) == 2
+    assert len(skills.list_for_course("RESEARCH")) == 4
+    assert len(skills.list_for_course("KNOWLEDGE")) == 3
 
 
 def test_registry_filters_versions_and_prerequisites_without_execution() -> None:
@@ -38,7 +38,7 @@ def test_registry_filters_versions_and_prerequisites_without_execution() -> None
 
     assert skills.validate_identity_version("CT.KCL", "1.0") is True
     assert skills.list(status="active", domain="research")[0].skill_id == (
-        "RESEARCH.EVIDENCE_REVIEW"
+        "RESEARCH.EVIDENCE_BRIEF"
     )
     assert skills.validate_prerequisites("CT.NODAL", available_skill_ids=[])[0] is False
     assert skills.validate_prerequisites(

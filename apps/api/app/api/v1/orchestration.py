@@ -31,9 +31,14 @@ from app.models import TaskStatus
 from app.providers.base import AgentProvider
 from app.repositories import FileRepository, SessionRepository, TaskRepository
 from app.services.auth_service import Principal
+from app.services.course_material_manifest import (
+    filter_revoked_material_result,
+    load_revoked_material_ids,
+)
 from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_service import SessionService
 from app.services.task_creation_service import TaskCreationService
+from app.services.unified_request_preparation import UnifiedRequestPreparationService
 
 from .tasks import event_stream
 
@@ -153,12 +158,13 @@ async def _submit(
         attachments=attachment_refs,
         session_context=context,
     )
+    prepared_request = UnifiedRequestPreparationService().attach(prepared.request)
     task = await TaskCreationService(
         db,
         provider.provider_name,
         request.app.state.settings,
         planner=request.app.state.planner,
-    ).create_queued(prepared.request, route=prepared.route)
+    ).create_queued(prepared_request, route=prepared.route)
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)
     submission = ChatSubmission(
@@ -229,7 +235,10 @@ async def get_chat_result(
         raise HTTPException(status_code=404, detail="任务不存在")
     if principal.has_identity and task.user_id != principal.user_id:
         raise HTTPException(status_code=404, detail="任务不存在")
-    result = dict(task.result_content or {})
+    result = filter_revoked_material_result(
+        dict(task.result_content or {}),
+        load_revoked_material_ids(request.app.state.settings.knowledge_index_path),
+    ) or {}
     if task.status == TaskStatus.FAILED:
         execution_status = ExecutionStatus.FAILED
     elif task.status == TaskStatus.COMPLETED:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.runtime.contracts import (
     RuntimeObservation,
     RuntimeRunStatus,
 )
+from app.runtime.error_codes import normalize_runtime_error_code
 from app.runtime.handler_registry import (
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
@@ -29,6 +31,8 @@ RuntimeEventHook = Callable[[str, AgentRun, str], Any]
 RuntimeBatchHook = Callable[[AgentRun, Collection[str]], Any]
 
 _SAFE_REPLAY_BUDGET_RESERVATION = "replay_pending"
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeNodeError(RuntimeError):
@@ -211,6 +215,17 @@ class PlanExecutor:
         self, run: AgentRun, node_id: str, error: BaseException
     ) -> None:
         node = self._node(run, node_id)
+        if not isinstance(error, (RuntimeNodeError, RuntimeNodeSuspended)):
+            logger.error(
+                "runtime_node_handler_unhandled_exception run_id=%s node_id=%s "
+                "attempt=%s error_type=%s error=%s",
+                run.run_id,
+                node_id,
+                run.nodes[node_id].attempt,
+                type(error).__name__,
+                error,
+                exc_info=(type(error), error, error.__traceback__),
+            )
         if isinstance(error, RuntimeNodeSuspended):
             state = run.nodes[node_id]
             state.status = RuntimeNodeStatus.READY
@@ -224,6 +239,7 @@ class PlanExecutor:
             if isinstance(error, RuntimeNodeError)
             else str(getattr(error, "code", "")) or type(error).__name__
         )
+        error_code = normalize_runtime_error_code(error_code)
         state = run.nodes[node_id]
         descriptor = self._descriptor(node.handler_id)
         if (

@@ -18,12 +18,26 @@ function renderBars(target, rows) {
   ])));
 }
 
+function modelRuntimeView(health, rag) {
+  const runtime = health.model_runtime || {};
+  const configured = runtime.real_provider_configured === true;
+  const providers = Array.isArray(runtime.configured_provider_names)
+    ? runtime.configured_provider_names.join("、")
+    : "";
+  return {
+    configured,
+    status: configured ? (runtime.status === "ready" ? "ready" : "degraded") : "planned",
+    label: configured ? "真实模型已配置" : "真实模型未配置",
+    note: configured ? `模型 Provider：${providers || "已配置"}` : `Agent Runtime：${health.active_provider || rag.provider || "未确认"}`,
+  };
+}
+
 function renderHealthChart(health, rag) {
-  const providerReady = Boolean(rag.provider_available || rag.provider_status === "ready");
+  const model = modelRuntimeView(health, rag);
   const ragReady = Boolean(rag.rag_enabled);
   renderBars("#runtime-health-chart", [
     { label: "FastAPI", value: health.status === "ok" ? 100 : 20, status: health.status === "ok" ? "ready" : "failed", statusLabel: health.status === "ok" ? "正常" : "异常", note: health.version || "统一 API 服务" },
-    { label: "模型 Provider", value: providerReady ? 100 : 35, status: providerReady ? "ready" : "planned", statusLabel: providerReady ? "可用" : "待配置", note: rag.provider || "按请求检查" },
+    { label: "真实模型 Provider", value: model.configured ? (model.status === "ready" ? 100 : 55) : 25, status: model.status, statusLabel: model.label, note: model.note },
     { label: "本地 RAG", value: ragReady ? 100 : 25, status: ragReady ? "ready" : "planned", statusLabel: ragReady ? "启用" : "未启用", note: "文本、图片与引用检索" },
   ]);
 }
@@ -53,12 +67,13 @@ async function loadStatus(force = false) {
   const rag = ragResult.status === "fulfilled" ? ragResult.value : {};
   const agents = agentResult.status === "fulfilled" ? agentResult.value : {};
   const registry = agents.agents || [];
+  const model = modelRuntimeView(health, rag);
   const failures = [healthResult, ragResult, agentResult].filter((item) => item.status === "rejected");
   if (failures.length) $("#status-notice").append(el("div", { class: "notice warning", text: `部分状态暂时无法获取（${failures.length}/3），其余区域仍可使用。` }));
 
   $("#service-grid").replaceChildren(
     metric("FastAPI", health.status === "ok" ? "可用" : "无法确认", health.version || "统一任务 API", health.status === "ok" ? "ready" : "failed"),
-    metric("模型 Provider", rag.provider || "按请求检查", rag.provider_available ? "当前可用" : "未配置时保持本地运行", rag.provider_available ? "ready" : "planned"),
+    metric("真实模型 Provider", model.configured ? model.label : "未配置", model.note, model.status),
     metric("本地 RAG", rag.rag_enabled ? "已启用" : "未启用", "知识检索与引用校验", rag.rag_enabled ? "ready" : "planned"),
     metric("Agent 注册", String(registry.length), "配置驱动的工作流注册表", registry.length ? "ready" : "unknown"),
   );

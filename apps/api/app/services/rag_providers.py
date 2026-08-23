@@ -124,6 +124,7 @@ class LocalBGETextEmbeddingProvider:
         self.query_instruction = query_instruction
         self.local_files_only = local_files_only
         self._model: Any = None
+        self._tokenizer: Any = None
         self._dimension: int | None = None
         self._effective_max_length: int | None = None
         self._error: str | None = None
@@ -144,35 +145,39 @@ class LocalBGETextEmbeddingProvider:
         if self._model is not None:
             return
         try:
-            from sentence_transformers import SentenceTransformer
+            from transformers import AutoModel, AutoTokenizer
 
             self.device = resolve_device(self.requested_device)
-            self._model = SentenceTransformer(
+            self._tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
                 revision=self.model_revision,
-                device=self.device,
-                cache_folder=str(self.cache_dir) if self.cache_dir else None,
-                trust_remote_code=self.trust_remote_code,
+                cache_dir=str(self.cache_dir) if self.cache_dir else None,
                 local_files_only=self.local_files_only,
             )
             tokenizer_limit = int(
-                getattr(self._model.tokenizer, "model_max_length", self.max_length)
+                getattr(self._tokenizer, "model_max_length", self.max_length)
             )
-            first_module = self._model._first_module()
-            config = getattr(getattr(first_module, "auto_model", None), "config", None)
+            self._model = AutoModel.from_pretrained(
+                self.model_name,
+                revision=self.model_revision,
+                cache_dir=str(self.cache_dir) if self.cache_dir else None,
+                trust_remote_code=self.trust_remote_code,
+                local_files_only=self.local_files_only,
+            ).to(self.device)
+            self._model.eval()
+            config = getattr(self._model, "config", None)
             position_limit = int(
                 getattr(config, "max_position_embeddings", self.max_length)
             )
             self._effective_max_length = min(
                 self.max_length, tokenizer_limit, position_limit
             )
-            self._model.max_seq_length = self._effective_max_length
-            dimension_getter = getattr(
-                self._model,
-                "get_embedding_dimension",
-                self._model.get_sentence_embedding_dimension,
+            dimension_value: Any = getattr(config, "hidden_size", None) or getattr(
+                config, "d_model", 0
             )
-            self._dimension = int(dimension_getter())
+            self._dimension = int(dimension_value)
+            if self._dimension <= 0:
+                raise RuntimeError("文本模型隐藏维度不可用")
             commit = getattr(config, "_commit_hash", None)
             if commit:
                 self.model_revision = str(commit)
@@ -193,42 +198,46 @@ class LocalBGETextEmbeddingProvider:
         values = self._validate(texts)
         self._ensure_loaded()
         self._validate_model_lengths(values)
-        encode = getattr(self._model, "encode_document", self._model.encode)
-        vectors = encode(
-            values,
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            normalize_embeddings=self.normalize,
-            show_progress_bar=False,
-        )
-        array = np.asarray(vectors, dtype=np.float32)
-        if array.ndim == 1:
-            array = array.reshape(1, -1)
-        if self.normalize:
-            array = _l2_rows(array)
-        return array.astype(np.float32, copy=False).tolist()
+        return self._encode_native(values)
 
     def embed_query(self, text: str) -> list[float]:
         values = self._validate([f"{self.query_instruction}{text}"])
         self._ensure_loaded()
         self._validate_model_lengths(values)
-        encode = getattr(self._model, "encode_query", self._model.encode)
-        vectors = encode(
-            values,
-            batch_size=1,
-            convert_to_numpy=True,
-            normalize_embeddings=self.normalize,
-            show_progress_bar=False,
-        )
-        array = np.asarray(vectors, dtype=np.float32).reshape(1, -1)
+        return self._encode_native(values)[0]
+
+    def _encode_native(self, values: Sequence[str]) -> list[list[float]]:
+        import torch
+
+        if self._model is None or self._tokenizer is None:
+            raise RuntimeError("文本模型尚未加载")
+        rows: list[np.ndarray] = []
+        for start in range(0, len(values), self.batch_size):
+            batch = list(values[start : start + self.batch_size])
+            encoded = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=self._effective_max_length,
+                return_tensors="pt",
+            )
+            encoded = {
+                key: value.to(self.device) for key, value in encoded.items()
+            }
+            with torch.inference_mode():
+                hidden = self._model(**encoded).last_hidden_state
+                # BGE's Sentence-Transformers pipeline uses the CLS token.
+                pooled = hidden[:, 0]
+            rows.append(pooled.detach().cpu().numpy().astype(np.float32))
+        array = np.concatenate(rows, axis=0)
         if self.normalize:
             array = _l2_rows(array)
-        return array[0].tolist()
+        return array.astype(np.float32, copy=False).tolist()
 
     def _validate_model_lengths(self, texts: Sequence[str]) -> None:
         if self._effective_max_length is None:
             raise RuntimeError("文本模型最大长度不可用")
-        encoded = self._model.tokenizer(
+        encoded = self._tokenizer(
             list(texts),
             add_special_tokens=True,
             truncation=False,
@@ -263,6 +272,7 @@ class LocalBGETextEmbeddingProvider:
 
     def close(self) -> None:
         self._model = None
+        self._tokenizer = None
         try:
             import torch
 

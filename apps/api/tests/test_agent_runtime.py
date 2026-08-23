@@ -153,6 +153,37 @@ def test_execution_plan_is_policy_driven_and_does_not_load_models() -> None:
     assert plan.budget.local_total_p95_target_ms == 1000
 
 
+def test_execution_plan_uses_final_route_capability_snapshot() -> None:
+    registry = AgentRegistry()
+    request = _request(intent=Intent.UNKNOWN).model_copy(
+        update={"course_id": "AUTO"}
+    )
+    decision = RouteDecision(
+        agent_id="LEARN_01_KNOWLEDGE_QA_V1",
+        scene="learning",
+        course_id="AUTO",
+        intent=Intent.EXPLAIN_CONCEPT.value,
+        route_status=RouteStatus.SELECTED,
+        reason="route refinement normalized the request",
+        retrieval_required=True,
+        provider_required=True,
+        availability={
+            "course_supported": True,
+            "intent_supported": True,
+            "provider_available": False,
+            "generation_required": True,
+            "generation_available": False,
+        },
+    )
+
+    plan = AgentExecutionPlanner(registry, Settings()).build(decision, request)
+
+    assert plan.availability_checks["course_supported"] is True
+    assert plan.availability_checks["intent_supported"] is True
+    assert plan.availability_checks["provider_available"] is False
+    assert plan.availability_checks["generation_available"] is False
+
+
 def test_circuit_breaker_opens_and_recovers(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = {"value": 10.0}
     monkeypatch.setattr("app.services.agent_runtime.monotonic", lambda: clock["value"])

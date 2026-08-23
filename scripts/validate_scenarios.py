@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402, I001
+
 import json
 import sys
 from pathlib import Path
@@ -11,11 +13,21 @@ from app.agents import AgentRegistry  # noqa: E402
 from app.services.scenario_catalog import ScenarioCatalog  # noqa: E402
 
 
+INPUT_MODE_COMPATIBILITY = {
+    "text": frozenset({"text"}),
+    "image": frozenset({"single_image", "multi_image"}),
+    "mixed": frozenset({"text_and_single_image", "text_and_multi_image"}),
+}
+
+
 def validate() -> dict[str, object]:
     catalog = ScenarioCatalog(ROOT / "config" / "scenarios.yaml")
     registry = AgentRegistry()
     missing_agents: set[str] = set()
-    for item in catalog.list(enabled_only=False):
+    # Disabled catalog entries are retained as future product metadata and do
+    # not need to satisfy the execution registry until they are enabled.
+    enabled_scenarios = catalog.list()
+    for item in enabled_scenarios:
         try:
             definition = registry.get(item.agent_id)
         except KeyError:
@@ -24,9 +36,13 @@ def validate() -> dict[str, object]:
         unsupported_courses = set(item.courses) - set(definition.capabilities.courses)
         unsupported_roles = set(item.roles) - set(definition.capabilities.user_roles)
         unsupported_intents = set(item.intents) - set(definition.capabilities.intents)
-        unsupported_inputs = set(item.input_modes) - set(
-            definition.capabilities.input_modes
-        )
+        unsupported_inputs = {
+            input_mode
+            for input_mode in item.input_modes
+            if not INPUT_MODE_COMPATIBILITY.get(input_mode, frozenset()).intersection(
+                definition.capabilities.input_modes
+            )
+        }
         if (
             unsupported_courses
             or unsupported_roles
@@ -56,8 +72,8 @@ def validate() -> dict[str, object]:
         "catalog_version": catalog.document.version,
         "scenario_count": len(catalog.list(enabled_only=False)),
         "enabled_count": len(catalog.list()),
-        "evidence_policy_count": len(catalog.list()),
-        "agent_ids": sorted({item.agent_id for item in catalog.list()}),
+        "evidence_policy_count": len(enabled_scenarios),
+        "agent_ids": sorted({item.agent_id for item in enabled_scenarios}),
     }
 
 

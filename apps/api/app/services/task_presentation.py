@@ -71,6 +71,29 @@ def _clean_evidence_excerpt(value: str) -> str:
     return cleaned or "该资料片段的公式未完整落在检索片段内，请打开原文查看。"
 
 
+def _model_generation_recorded(
+    result: AgentResult, model_execution: object
+) -> bool:
+    """Detect real generation even when Runtime stores provenance separately."""
+
+    if isinstance(model_execution, dict):
+        if model_execution.get("status") in {"success", "completed"}:
+            return True
+        if model_execution.get("output_status") in {
+            "complete",
+            "completed",
+            "partial",
+        }:
+            return True
+    provider = str(result.structured_result.get("generation_provider") or "").strip()
+    model = str(result.structured_result.get("generation_model") or "").strip()
+    return bool(
+        provider
+        and model
+        and provider not in {"local", "local_agent", "local_graph", "mock"}
+    )
+
+
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
     "GENERAL_MODEL_FALLBACK_V1": "通用模型回答",
@@ -82,6 +105,17 @@ TASK_LABELS = {
     "RESEARCH_01_ACADEMIC_SEARCH_V1": "科研前沿检索与证据简报",
     "RESEARCH_02_ACADEMIC_WRITING_V1": "学术写作",
     "RESEARCH_03_DATA_ANALYSIS_V1": "数据分析",
+}
+
+CAPABILITY_LABELS = {
+    "teaching.lesson_design": "教案设计",
+    "teaching.assignment_review": "作业首错诊断",
+    "learning.first_error_diagnosis": "作业首错诊断",
+    "learning.path_plan": "个性化学习路径",
+    "research.evidence_brief": "科研前沿检索与证据简报",
+    "knowledge.govern": "学院知识库治理",
+    "academic.solve": "学术题目求解",
+    "vision.circuit_parse": "题图结构诊断",
 }
 
 
@@ -186,6 +220,17 @@ def build_task_views(
     is_external_search_result = bool(
         result.structured_result.get("external_search", False)
     )
+    presentation_profile = result.structured_result.get(
+        "presentation_profile", {}
+    )
+    presentation_profile = (
+        presentation_profile if isinstance(presentation_profile, dict) else {}
+    )
+    presentation_capability = str(
+        presentation_profile.get("capability_id")
+        or result.structured_result.get("capability_id")
+        or routing.get("capability_id", "")
+    ).strip()
     scenario_contract = result.structured_result.get("scenario_contract", {})
     scenario_contract = (
         scenario_contract if isinstance(scenario_contract, dict) else {}
@@ -198,7 +243,10 @@ def build_task_views(
         if scenario_contract.get("presentation_label")
         else "学术论文检索"
         if is_external_search_result
-        else TASK_LABELS.get(definition.agent_id, definition.display_name)
+        else CAPABILITY_LABELS.get(
+            presentation_capability,
+            TASK_LABELS.get(definition.agent_id, definition.display_name),
+        )
     )
     fallback = bool(result.fallback_used or routing.get("fallback_used", False))
     mock = bool(result.mock_used or result.provider == "mock")
@@ -316,6 +364,11 @@ def build_task_views(
         isinstance(model_execution, dict)
         and model_execution.get("status") == "failed"
     )
+    generation_skipped_for_evidence = (
+        result.evidence_status in {"insufficient", "none"}
+        and result.provider in {"local", "local_agent"}
+        and not _model_generation_recorded(result, model_execution)
+    )
     quality_gate = result.structured_result.get("quality_gate", {})
     quality_gate_status = (
         str(quality_gate.get("status", "not_checked"))
@@ -353,6 +406,11 @@ def build_task_views(
     elif generation_failed:
         answer_quality_status = "generation_failed"
         answer_quality_message = "专业模型未形成完整答案，当前内容不能视为已核对结论。"
+    elif generation_skipped_for_evidence:
+        answer_quality_status = "needs_review"
+        answer_quality_message = (
+            "课程证据不足，本次未生成模型答案；请补充资料或关键词后重试。"
+        )
     elif generation_incomplete:
         answer_quality_status = "incomplete"
         answer_quality_message = (
@@ -377,6 +435,53 @@ def build_task_views(
     else:
         answer_quality_status = "not_checked"
         answer_quality_message = "本答案尚无独立答案质量判定。"
+    math_quality = result.structured_result.get("math_quality", {})
+    math_quality_status = (
+        str(math_quality.get("status", "passed"))
+        if isinstance(math_quality, dict)
+        else "passed"
+    )
+    formula_contract = result.structured_result.get("formula_output_contract", {})
+    formula_contract_status = (
+        str(formula_contract.get("status", "not_configured"))
+        if isinstance(formula_contract, dict)
+        else "not_configured"
+    )
+    if math_quality_status in {"blocked", "needs_review"} or (
+        formula_contract_status in {"blocked", "needs_review"}
+    ):
+        math_message = (
+            "数学公式存在未安全渲染或未确定解释的内容，当前答案不得直接发布。"
+        )
+        if formula_contract_status == "blocked":
+            math_message = (
+                "公式输出未满足声明的结构化契约，当前答案不得直接发布。"
+            )
+        if answer_quality_status not in {
+            "generation_failed",
+            "incomplete",
+            "needs_review",
+        }:
+            answer_quality_status = "needs_review"
+        answer_quality_message = (
+            f"{answer_quality_message}；{math_message}"
+            if answer_quality_message
+            else math_message
+        )
+    governance_validation = result.structured_result.get("validation", {})
+    validation_issues = (
+        governance_validation.get("validation_issues", [])
+        if isinstance(governance_validation, dict)
+        else []
+    )
+    if isinstance(validation_issues, list) and validation_issues:
+        answer_quality_status = "needs_review"
+        issue_message = "；".join(str(item) for item in validation_issues[:3])
+        answer_quality_message = (
+            f"{answer_quality_message}；结果检查：{issue_message}"
+            if answer_quality_message
+            else f"结果检查：{issue_message}"
+        )
     requires_review = answer_quality_status in {
         "generation_failed",
         "incomplete",
@@ -392,6 +497,8 @@ def build_task_views(
         if governance_model_required
         else "生成失败"
         if generation_failed
+        else "资料不足，待补充"
+        if generation_skipped_for_evidence
         else "回答未完整"
         if generation_incomplete
         else "建议复核"
@@ -429,6 +536,8 @@ def build_task_views(
         "runtime_execution_failed": (
             "这是通用模型回答；Runtime 执行失败，专业 Agent 未完成本次任务。"
         ),
+        "runtime_result_missing": "Runtime 未生成完整结果，请稍后重试。",
+        "provider_runtime_result_missing": "Runtime 未生成完整结果，请稍后重试。",
     }
     generation_failure_messages = {
         "model_timeout": "回答模型响应超时，请稍后重试。",
@@ -476,7 +585,11 @@ def build_task_views(
         answer_quality_status=answer_quality_status,
         answer_quality_message=answer_quality_message,
         requires_review=requires_review,
-        generation_complete=not generation_failed and not generation_incomplete,
+        generation_complete=(
+            not generation_failed
+            and not generation_incomplete
+            and not generation_skipped_for_evidence
+        ),
         execution_steps=steps,
     )
     summary = TaskExecutionSummary(
@@ -666,6 +779,11 @@ def _execution_steps(
         isinstance(model_execution, dict)
         and model_execution.get("output_status") == "partial"
     )
+    generation_skipped_for_evidence = (
+        result.evidence_status in {"insufficient", "none"}
+        and result.provider in {"local", "local_agent"}
+        and not _model_generation_recorded(result, model_execution)
+    )
     quality_gate = result.structured_result.get("quality_gate", {})
     quality_status = (
         str(quality_gate.get("status", "not_checked"))
@@ -681,7 +799,11 @@ def _execution_steps(
                     "failed"
                     if generation_failed or quality_status == "fail"
                     else "partial"
-                    if generation_incomplete or quality_status == "partial"
+                    if (
+                        generation_incomplete
+                        or generation_skipped_for_evidence
+                        or quality_status == "partial"
+                    )
                     else str(
                         result.structured_result.get("validation", {}).get(
                             "validation_status",
@@ -701,7 +823,7 @@ def _execution_steps(
                     "failed"
                     if generation_failed
                     else "partial"
-                    if generation_incomplete
+                    if generation_incomplete or generation_skipped_for_evidence
                     else "completed"
                 ),
             },

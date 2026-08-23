@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents import AgentDefinition, AgentRegistry
 from app.application.tasks import TaskLeaseManager
+from app.application.tasks.progress import TaskProgressReporter
 from app.contracts import (
     AgentEventType,
     AgentExecutionPlan,
@@ -25,6 +26,7 @@ from app.runtime import AgentRun, AgentRunPlan
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.event_service import append_task_event
 from app.services.internal_agent_execution import InternalAgentExecutionService
+from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.runtime_launch_policy import (
     RuntimeLaunchDecision,
@@ -32,8 +34,17 @@ from app.services.runtime_launch_policy import (
     RuntimeLaunchPolicy,
 )
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
+from app.services.task_audit import with_runtime_run_id
 from app.services.task_failure_service import TaskFailureService
-from app.services.task_progress import TaskProgressReporter
+
+
+def _route_progress_detail(metadata: dict[str, object]) -> str:
+    """Keep skipped route refinement distinct from an actual fallback route."""
+
+    status = str(metadata.get("status", "completed"))
+    if status == "fallback" and not isinstance(metadata.get("fallback_router"), dict):
+        return "selected"
+    return status
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,14 +122,8 @@ class TaskRuntimePreparationService:
             internal_available = bool(
                 self.internal_agents and self.internal_agents.available(agent_id)
             )
-            active_provider = (
-                "external_retrieval"
-                if agent_definition.mode == "external_search"
-                else "local"
-                if agent_definition.mode == "retrieval_only"
-                else "local_agent"
-                if internal_available
-                else self.provider.provider_name
+            active_provider = self._active_provider(
+                agent_definition, internal_available
             )
             await self.task_leases.mark_running(
                 db,
@@ -151,7 +156,6 @@ class TaskRuntimePreparationService:
             decision = RouteDecision.model_validate(
                 request.options.get("_routing", {})
             )
-            intent_plan = self._intent_plan_from_request(request)
             route_metadata: dict[str, object] = {
                 "status": "restored" if runtime_resume else "not_configured",
                 "model_calls": 0,
@@ -181,8 +185,20 @@ class TaskRuntimePreparationService:
             )
             request = preparation.request
             decision = preparation.decision
+            # Route refinement may replace the creation-time intent plan;
+            # always read the plan from the final immutable request envelope.
+            intent_plan = self._intent_plan_from_request(request)
             agent_id = preparation.agent_id
             agent_definition = self.agent_registry.get(agent_id)
+            # Overall/fallback routing may change the Agent after the first
+            # route pass. Recompute the durable provider label from the final
+            # definition instead of persisting the stale pre-refinement one.
+            internal_available = bool(
+                self.internal_agents and self.internal_agents.available(agent_id)
+            )
+            active_provider = self._active_provider(
+                agent_definition, internal_available
+            )
             route_metadata = preparation.route_metadata
             compatibility_snapshot = (
                 runtime_snapshot.compatibility_snapshot
@@ -216,7 +232,7 @@ class TaskRuntimePreparationService:
                     label="执行路径已确认",
                     progress=0.12,
                     elapsed_ms=int((perf_counter() - route_stage_started) * 1000),
-                    detail=str(route_metadata.get("status", "completed")),
+                    detail=_route_progress_detail(route_metadata),
                 )
             execution_plan = preparation.execution_plan
             if runtime_resume and runtime_snapshot is not None:
@@ -271,20 +287,38 @@ class TaskRuntimePreparationService:
                     request,
                     launch_decision.mode,
                 )
-            runtime_plan = (
-                runtime_snapshot.plan
-                if runtime_resume and runtime_snapshot is not None
-                else self.runtime_boundary.build_plan(task.agent_id, request)
+            parsed_planner_runtime_plan = self._planner_runtime_plan(request)
+            planner_runtime_plan = (
+                parsed_planner_runtime_plan
+                if RuntimeBusinessRegistry.is_authoritative_canonical_plan(
+                    request
+                )
+                else None
             )
-            planner_runtime_plan = self._planner_runtime_plan(request)
-            if not runtime_resume and planner_runtime_plan is not None:
+            runtime_plan: AgentRunPlan | None
+            if runtime_resume and runtime_snapshot is not None:
+                runtime_plan = runtime_snapshot.plan
+            elif planner_runtime_plan is not None:
                 runtime_plan = planner_runtime_plan
                 route_metadata = {
                     **route_metadata,
                     "canonical_plan_id": planner_runtime_plan.plan_id,
                     "runtime_plan_source": "planner_canonical",
                 }
+            else:
+                runtime_plan = self.runtime_boundary.build_plan(
+                    task.agent_id, request
+                )
             if runtime_plan is None:
+                planner_mode = str(
+                    request.options.get("_planner_snapshot", {}).get("mode", "")
+                    if isinstance(request.options.get("_planner_snapshot"), dict)
+                    else ""
+                )
+                if planner_mode == "active" and parsed_planner_runtime_plan is None:
+                    raise NotConfiguredError(
+                        "active Planner task is missing a validated CanonicalPlan"
+                    )
                 # Keep published legacy agents executable while their
                 # business Runtime adapter is migrated.  The compatibility
                 # plan uses the registered provider handler and remains
@@ -313,6 +347,10 @@ class TaskRuntimePreparationService:
             )
             if runtime_run is None:
                 raise NotConfiguredError("registered Agent Runtime is unavailable")
+            task.input_content = with_runtime_run_id(
+                task.input_content,
+                runtime_run.run_id,
+            )
             await db.commit()
             return PreparedRuntimeTask(
                 request=request,
@@ -346,11 +384,13 @@ class TaskRuntimePreparationService:
         if not isinstance(raw_snapshot, dict):
             return None
         if (
-            raw_snapshot.get("mode") != "takeover"
+            raw_snapshot.get("mode") not in {"controlled", "active", "takeover"}
             or raw_snapshot.get("status") != "completed"
         ):
             return None
-        raw_plan = raw_snapshot.get("canonical_plan")
+        raw_plan = request.options.get("_canonical_plan")
+        if not isinstance(raw_plan, dict):
+            raw_plan = raw_snapshot.get("canonical_plan")
         if not isinstance(raw_plan, dict):
             return None
         try:
@@ -358,6 +398,17 @@ class TaskRuntimePreparationService:
             return CanonicalPlanAdapter.to_runtime_plan(canonical_plan)
         except ValueError:
             return None
+
+    def _active_provider(
+        self, definition: AgentDefinition, internal_available: bool
+    ) -> str:
+        if definition.mode == "external_search":
+            return "external_retrieval"
+        if definition.mode == "retrieval_only":
+            return "local"
+        if internal_available:
+            return "local_agent"
+        return self.provider.provider_name
 
     @staticmethod
     async def _append_initial_plan_events(

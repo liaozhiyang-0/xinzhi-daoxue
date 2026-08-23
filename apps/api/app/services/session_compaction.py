@@ -10,10 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.memory import MemoryCreate, MemoryScope, MemoryType
 from app.core.config import Settings
-from app.models import SessionModel, SessionSummaryModel
+from app.models import SessionModel, SessionSummaryModel, TaskModel
 from app.models.entities import utc_now
 from app.repositories import ConversationRepository, RuntimeContextRepository
 from app.services.context_budget import ContextBudgetManager
+from app.services.course_material_manifest import collect_material_source_refs
 from app.services.memory_service import MemoryService
 from app.services.model_service import ModelService
 from app.services.runtime_safety import (
@@ -69,6 +70,7 @@ class SessionCompactionService:
         *,
         session: SessionModel,
         source_task_id: str,
+        course_id: str | None = None,
     ) -> tuple[SessionSummaryModel | None, float]:
         if (
             not self.settings.conversation_memory_summary_enabled
@@ -79,6 +81,10 @@ class SessionCompactionService:
         started = perf_counter()
         runtime = RuntimeContextRepository(db)
         previous = await runtime.latest_summary(session.id)
+        if course_id:
+            previous = await runtime.latest_summary_for_course(
+                session.id, course_id
+            )
         through = session.message_count
         if through <= 0 or (
             previous is not None and previous.covers_through_sequence >= through
@@ -98,6 +104,7 @@ class SessionCompactionService:
             item
             for item in rows
             if item.status not in {"failed", "cancelled", "superseded"}
+            and self._message_matches_course(item, course_id)
         ]
         if not rows:
             return None, (perf_counter() - started) * 1000
@@ -108,11 +115,32 @@ class SessionCompactionService:
             for item in rows
         )[: self.settings.conversation_memory_summary_max_turn_chars]
         extraction, model_name, generation_method = await self._extract(
-            previous_summary=previous.summary_text if previous else "",
+            previous_summary=(
+                previous.summary_text
+                if previous is not None
+                and self._summary_matches_course(previous, course_id)
+                else ""
+            ),
             transcript=transcript,
             source_task_id=source_task_id,
         )
-        structured = self._structured(extraction)
+        structured = self._structured(extraction, course_id=course_id)
+        source_task = await db.get(TaskModel, source_task_id)
+        material_refs: list[str] = []
+
+        def add_material_refs(value: object) -> None:
+            for ref in collect_material_source_refs(value):
+                if ref not in material_refs and len(material_refs) < 100:
+                    material_refs.append(ref)
+
+        add_material_refs(
+            source_task.result_content if source_task is not None else None
+        )
+        for row in rows:
+            add_material_refs(getattr(row, "metadata_data", None))
+            add_material_refs(getattr(row, "content_data", None))
+        if material_refs:
+            structured["course_material_source_refs"] = material_refs
         summary_text = self._summary_text(extraction)
 
         source_ids = list(
@@ -136,7 +164,9 @@ class SessionCompactionService:
             session_id=session.id,
             version=await runtime.next_summary_version(session.id),
             covers_from_sequence=(
-                previous.covers_from_sequence if previous else from_sequence
+                previous.covers_from_sequence
+                if previous
+                else rows[0].sequence
             ),
             covers_through_sequence=through,
             summary_text=summary_text,
@@ -295,14 +325,37 @@ class SessionCompactionService:
     @staticmethod
     def _structured(
         extraction: ConversationMemoryExtraction,
+        *,
+        course_id: str | None = None,
     ) -> dict[str, object]:
-        return {
+        structured: dict[str, object] = {
             "summary": extraction.summary,
             "current_goal": extraction.current_goal,
             "key_facts": extraction.key_facts,
             "explicit_user_preferences": extraction.explicit_user_preferences,
             "unresolved_items": extraction.unresolved_items,
         }
+        if course_id:
+            structured["course_id"] = course_id.upper()
+        return structured
+
+    @staticmethod
+    def _summary_matches_course(
+        summary: SessionSummaryModel, course_id: str | None
+    ) -> bool:
+        if not course_id:
+            return True
+        structured = summary.structured_state or {}
+        return str(structured.get("course_id", "")).upper() == course_id.upper()
+
+    @staticmethod
+    def _message_matches_course(model: object, course_id: str | None) -> bool:
+        if not course_id:
+            return True
+        metadata = getattr(model, "metadata_data", None)
+        metadata = metadata if isinstance(metadata, dict) else {}
+        message_course = str(metadata.get("course_id", "")).strip()
+        return not message_course or message_course.upper() == course_id.upper()
 
     @staticmethod
     def _summary_text(extraction: ConversationMemoryExtraction) -> str:

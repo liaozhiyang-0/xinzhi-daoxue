@@ -14,6 +14,7 @@ from app.runtime import (
     AgentRun,
     RuntimeNodeError,
     RuntimeRunSuspended,
+    normalize_runtime_error_code,
 )
 from app.services.external_retrieval_gateway import ExternalRetrievalGateway
 from app.services.internal_agent_execution import InternalAgentExecutionService
@@ -71,9 +72,39 @@ def _runtime_failure_message(error_code: str) -> str:
     if error_code in {
         "subagent_child_result_missing",
         "provider_runtime_result_missing",
+        "runtime_result_missing",
         "runtime_node_error",
     }:
         return "任务执行未生成完整结果，请稍后重试。"
+    if error_code == "runtime_result_validation_failed":
+        return "任务结果未通过输出契约校验，请检查任务详情后重试。"
+    if error_code == "model_generation_required":
+        return "当前场景需要已配置的模型整理能力，请先完成配置后再重试。"
+    if error_code in {
+        "agent_input_not_supported",
+        "input_not_supported",
+    }:
+        return "当前 Agent 不支持该输入类型，请改用文字或切换支持该输入的 Agent。"
+    if error_code == "agent_course_not_supported":
+        return "当前 Agent 不支持该课程，请切换课程或执行路径。"
+    if error_code == "agent_intent_not_supported":
+        return "当前 Agent 不支持该任务意图，请重新描述任务。"
+    if error_code == "agent_not_published":
+        return "当前 Agent 尚未发布，暂不能执行该任务。"
+    if error_code == "agent_disabled":
+        return "当前 Agent 已停用，请稍后重试。"
+    if error_code == "cancelled":
+        return "任务已取消。"
+    if error_code in {"configuration_missing", "configuration_error"}:
+        return "当前任务所需能力尚未配置，请完成配置后再重试。"
+    if error_code in {"provider_unavailable", "provider_error"}:
+        return "模型服务暂时不可用，请稍后重试。"
+    if error_code in {
+        "knowledge_evidence_insufficient",
+        "knowledge_citations_missing",
+        "knowledge_verification_failed",
+    }:
+        return "当前回答缺少可核验的课程证据，请补充关键词或课程材料后重试。"
     return "任务执行未完成，请查看任务详情后决定是否重试。"
 
 def utc_now() -> datetime:
@@ -277,11 +308,17 @@ class TaskRuntimeLifecycle:
                 message = exc.message
                 code = exc.code
             elif isinstance(exc, RuntimeNodeError):
-                code = exc.error_code or "runtime_node_error"
+                code = normalize_runtime_error_code(
+                    exc.error_code, default="runtime_node_error"
+                )
                 message = _runtime_failure_message(code)
             else:
-                message = "任务执行失败，请稍后重试。"
-                code = "background_task_error"
+                if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+                    code = "provider_timeout"
+                    message = _runtime_failure_message(code)
+                else:
+                    message = "任务执行失败，请稍后重试。"
+                    code = "runtime_node_error"
             await self.task_failures.fail(
                 task_id,
                 message,

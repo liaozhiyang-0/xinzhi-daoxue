@@ -57,6 +57,14 @@ def _duration_minutes(value: Any) -> int | None:
     text = str(value or "").strip()
     if not text:
         return None
+    interval = re.search(
+        r"(?<!\d)(\d+(?:\.\d+)?)\s*[-~至到]\s*"
+        r"(\d+(?:\.\d+)?)\s*分钟",
+        text,
+    )
+    if interval:
+        total = float(interval.group(2)) - float(interval.group(1))
+        return int(total) if total > 0 else None
     hours = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*小时", text)
     minutes = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*分钟", text)
     if hours:
@@ -202,6 +210,14 @@ class InternalAgentExecutionService:
             if isinstance(materials, dict):
                 formatter_input["_requested_class_duration"] = materials.get(
                     "class_duration", request.canonical_input.get("class_duration")
+                )
+                formatter_input["_requested_preclass_duration"] = materials.get(
+                    "preclass_duration",
+                    request.canonical_input.get("preclass_duration"),
+                )
+                formatter_input["_requested_in_class_duration"] = materials.get(
+                    "in_class_duration",
+                    request.canonical_input.get("in_class_duration"),
                 )
                 formatter_input["_requested_lesson_count"] = materials.get(
                     "lesson_count", request.canonical_input.get("lesson_count")
@@ -1144,6 +1160,8 @@ class InternalAgentExecutionService:
             "topic",
             "student_level",
             "class_duration",
+            "preclass_duration",
+            "in_class_duration",
             "lesson_count",
             "teaching_goals",
             "prerequisites",
@@ -1199,6 +1217,29 @@ class InternalAgentExecutionService:
                 "teacher_review for a requested class plan. Follow requested "
                 "item counts exactly; never invent an S# citation."
             )
+            preclass = request.options.get("_material_extraction", {})
+            materials = (
+                preclass.get("materials", {})
+                if isinstance(preclass, dict)
+                else {}
+            )
+            if isinstance(materials, dict) and (
+                materials.get("preclass_duration")
+                and materials.get("in_class_duration")
+            ):
+                sections.append(
+                    "This is a split-duration flipped classroom: keep the "
+                    f"pre-class block at {materials['preclass_duration']} and "
+                    "the in-class discussion block at "
+                    f"{materials['in_class_duration']}. "
+                    "Every in-class activity must include an explicit minute "
+                    "range or minute duration; the sum of in-class ranges must "
+                    "equal the requested in-class duration. Do not count a "
+                    "30-second report as 30 minutes. The lesson_flow must also "
+                    "include a distinct pre-class activity line labeled "
+                    "课前 with the full requested pre-class duration; do not "
+                    "replace it with a classroom review item or a deadline note."
+                )
         elif request.intent.value == "assignment_review":
             sections.append(
                 "Assignment output contract: preserve correct_parts; identify "
@@ -1267,6 +1308,7 @@ class InternalAgentExecutionService:
         return {
             "agent_id": result.agent_id,
             "task_type": result.task_type,
+            "provider": result.provider,
             "model_route": result.model,
             "elapsed_ms": result.elapsed_ms,
             "usage": {
@@ -1293,8 +1335,28 @@ class InternalAgentExecutionService:
         missing_information = list(value.get("missing_information", []))
         evidence_status = str(value.get("evidence_status", "unknown"))
         requested_duration = _duration_minutes(value.get("_requested_class_duration"))
+        preclass_duration = _duration_minutes(
+            value.get("_requested_preclass_duration")
+        )
+        in_class_duration = _duration_minutes(
+            value.get("_requested_in_class_duration")
+        )
+        requested_components = {
+            key: duration
+            for key, duration in (
+                ("preclass_minutes", preclass_duration),
+                ("in_class_minutes", in_class_duration),
+            )
+            if duration is not None
+        }
+        if preclass_duration is not None and in_class_duration is not None:
+            requested_duration = preclass_duration + in_class_duration
         planned_durations = [
-            minutes for item in flow if (minutes := _duration_minutes(item)) is not None
+            minutes
+            for item in flow
+            if not re.match(r"^\s*(?:总计|合计|共计|累计)", str(item))
+            and not re.search(r"(?:结束前|截止前|前完成|内完成)", str(item))
+            and (minutes := _duration_minutes(item)) is not None
         ]
         planned_duration = sum(planned_durations) if planned_durations else None
         duration_check: dict[str, Any]
@@ -1306,6 +1368,8 @@ class InternalAgentExecutionService:
                 "requested_minutes": requested_duration,
                 "planned_minutes": None,
             }
+            if requested_components:
+                duration_check["requested_components"] = requested_components
             warnings.append("课堂流程未提供可核验的分钟分配")
         elif planned_duration != requested_duration:
             duration_check = {
@@ -1313,6 +1377,8 @@ class InternalAgentExecutionService:
                 "requested_minutes": requested_duration,
                 "planned_minutes": planned_duration,
             }
+            if requested_components:
+                duration_check["requested_components"] = requested_components
             warnings.append(
                 f"课堂流程总时长为 {planned_duration} 分钟，未匹配请求的"
                 f" {requested_duration} 分钟"
@@ -1323,7 +1389,9 @@ class InternalAgentExecutionService:
                 "requested_minutes": requested_duration,
                 "planned_minutes": planned_duration,
             }
-        data = {
+            if requested_components:
+                duration_check["requested_components"] = requested_components
+        data: dict[str, Any] = {
             "title": str(value.get("title", "课程教案草稿")),
             "learning_objectives": objectives,
             "lesson_flow": flow,
@@ -1393,7 +1461,7 @@ class InternalAgentExecutionService:
             review_required = True
         if missing_information and evidence_status == "unknown":
             evidence_status = "partial"
-        data = {
+        data: dict[str, Any] = {
             "correctness": value.get("correctness", "uncertain"),
             "correct_parts": correct,
             "errors": errors,
@@ -1450,6 +1518,10 @@ class InternalAgentExecutionService:
             "revised_text": revised,
             "revision_notes": notes,
             "unsupported_claims": unsupported,
+            # Academic writing remains a draft until citation/fact review is
+            # explicitly cleared; provider output cannot self-authorize it.
+            "publishable": not citation_required and not unsupported,
+            "requires_review": citation_required or bool(unsupported),
             "citation_check": (
                 "需要人工核验引用与事实"
                 if citation_required

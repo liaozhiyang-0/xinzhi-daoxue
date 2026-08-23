@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +33,12 @@ from app.services.evaluation_attachment_cleanup import (
 )
 from app.services.event_service import append_task_event
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
+from app.services.task_audit import (
+    audit_for_terminal,
+    audit_from_task_input,
+    replace_task_audit,
+    terminal_event_data,
+)
 from app.services.task_creation_service import TaskCreationService
 
 RETRYABLE_FAILURES = {
@@ -40,8 +47,11 @@ RETRYABLE_FAILURES = {
     "provider_error",
     "provider_timeout",
     "provider_runtime_result_missing",
+    "runtime_result_missing",
     "runner_shutdown",
 }
+
+logger = logging.getLogger(__name__)
 TERMINAL_STATUSES = {
     TaskStatus.COMPLETED,
     TaskStatus.FAILED,
@@ -138,6 +148,7 @@ class TaskControlService:
                 AgentEventType.CANCEL_REQUESTED,
                 agent_id=task.agent_id,
             )
+        runtime_run_id = ""
         if task.status in {
             TaskStatus.CREATED,
             TaskStatus.QUEUED,
@@ -148,6 +159,7 @@ class TaskControlService:
             runtime_model = await runtime_repository.get_for_task(
                 task.id, for_update=True
             )
+            runtime_run_id = runtime_model.id if runtime_model is not None else ""
             if runtime_model is not None:
                 runtime = await runtime_repository.restore(runtime_model.id)
                 if runtime is not None and runtime.status not in {
@@ -173,12 +185,30 @@ class TaskControlService:
             now = datetime.now(UTC)
             task.completed_at = now
             task.updated_at = now
+            task.heartbeat_at = now
+            task.execution_owner = None
+            task.lease_expires_at = None
+            task.error_message = "任务已取消"
+            task.failure_category = "cancelled"
+            audit = audit_from_task_input(task.input_content)
+            if audit:
+                task.input_content = replace_task_audit(
+                    task.input_content,
+                    audit_for_terminal(audit, TaskStatus.CANCELLED.value, "cancelled"),
+                )
             await append_task_event(
                 self.db,
                 task.id,
                 AgentEventType.TASK_CANCELLED,
                 agent_id=task.agent_id,
-                data={"reason": "queued task cancelled"},
+                data=terminal_event_data(
+                    status=TaskStatus.CANCELLED.value,
+                    failure_category="cancelled",
+                    error_code="cancelled",
+                    error_message="任务已取消",
+                    runtime_run_id=runtime_run_id,
+                    reason="queued task cancelled",
+                ),
             )
             message = await ConversationMessageService(self.db).append_terminal_failure(
                 task,
@@ -186,7 +216,19 @@ class TaskControlService:
                 reason="任务已取消",
             )
             task.assistant_message_id = message.id if message is not None else None
-        await self.provider.cancel(task.id)
+        try:
+            await self.provider.cancel(task.id)
+        except Exception:
+            # Cancellation is a durable task intent.  A provider-side cancel
+            # failure must not roll back the queued terminal transition (or
+            # erase cancellation_requested for a running task); the worker or
+            # recovery loop can reconcile the provider state separately.
+            logger.warning(
+                "task_provider_cancel_failed task_id=%s provider=%s",
+                task.id,
+                self.provider.provider_name,
+                exc_info=True,
+            )
         if task.status in TERMINAL_STATUSES:
             async with self.db.begin_nested():
                 await cleanup_evaluation_attachments(

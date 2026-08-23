@@ -86,6 +86,37 @@ class StorageService:
             raise ValidationAppError("文件超过大小限制")
         return safe
 
+    def infer_binary_image_content_type(
+        self, filename: str, content_type: str, data: bytes
+    ) -> str:
+        """Recover a missing image MIME type without trusting the filename.
+
+        Some multipart clients label local images as application/octet-stream.
+        Only image extensions are eligible, and the decoded image format must
+        match the extension before the canonical MIME is returned.
+        """
+
+        if content_type != "application/octet-stream":
+            return content_type
+        safe = sanitize_filename(filename)
+        expected = {
+            ".png": ("PNG", "image/png"),
+            ".jpg": ("JPEG", "image/jpeg"),
+            ".jpeg": ("JPEG", "image/jpeg"),
+            ".webp": ("WEBP", "image/webp"),
+        }.get(Path(safe).suffix.lower())
+        if expected is None:
+            return content_type
+        try:
+            with Image.open(io.BytesIO(data)) as probe:
+                detected = str(probe.format or "").upper()
+                probe.verify()
+        except (Image.DecompressionBombError, OSError, UnidentifiedImageError) as exc:
+            raise ValidationAppError("图片内容无效或无法安全解码") from exc
+        if detected != expected[0]:
+            raise ValidationAppError("图片文件签名与扩展名不匹配")
+        return expected[1]
+
     def normalize_student_image(
         self, filename: str, content_type: str, data: bytes
     ) -> tuple[str, str, bytes]:

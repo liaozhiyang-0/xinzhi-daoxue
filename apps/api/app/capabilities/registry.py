@@ -45,6 +45,22 @@ def default_capability_registry() -> CapabilityRegistry:
         "hdl_analysis": ("HDL静态分析", ("hdl_static_analyzer",)),
         "unit_validation": ("单位校验", ("unit_checker",)),
         "plotting": ("绘图", ("plotting_tool",)),
+        "teaching.lesson_design": ("教学设计", ()),
+        "teaching.assignment_review": ("作业首错诊断", ()),
+        "learning.first_error_diagnosis": ("首错诊断", ()),
+        "learning.path_plan": ("学习路径规划", ()),
+        "research.evidence_brief": ("科研证据简报", ()),
+        "knowledge.govern": ("知识资产治理", ()),
+        "academic.solve": ("学术问题求解", ()),
+        "vision.circuit_parse": ("电路图像解析", ()),
+        # Legacy recognition labels remain registered as aliases during the
+        # migration window; Planner canonicalizes the six showcase paths.
+        "lesson_design": ("教学设计兼容能力", ()),
+        "answer_review": ("作业诊断兼容能力", ()),
+        "general_answer": ("通用回答兼容能力", ()),
+        "problem_solving": ("问题求解兼容能力", ()),
+        "deterministic_verification": ("确定性验证兼容能力", ()),
+        "course_knowledge": ("课程知识兼容能力", ()),
     }
     for capability_id, (name, tools) in definitions.items():
         registry.register(BaseCapability(capability_id, name, tools))

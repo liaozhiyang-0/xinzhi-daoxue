@@ -6,13 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.tasks.query import TaskQueryService
 from app.core.errors import NotFoundError
 from app.dependencies import get_db, require_admin
 from app.models import AgentCheckpointModel, AgentRunModel, AgentRunNodeModel, TaskModel
 from app.repositories import AgentRunRepository
 from app.runtime import AgentRun, build_runtime_observability
+from app.services.course_material_manifest import (
+    filter_revoked_material_result,
+    load_revoked_material_ids,
+)
 from app.services.learning_loop import LearningLoopService
-from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(
     prefix="/debug/execution",
@@ -28,16 +32,64 @@ SENSITIVE_KEYS = {
     "uid",
     "raw_prompt",
 }
+PRIVATE_PAYLOAD_KEYS = {
+    "text",
+    "question",
+    "problem",
+    "query",
+    "prompt",
+    "raw_text",
+    "uploaded_text",
+    "extracted_text",
+    "student_attempt",
+    "student_answer",
+    "source_text",
+    "content",
+    "content_text",
+    "excerpt",
+    "abstract",
+    # Runtime goals/contracts may be derived directly from the student's
+    # request even when the original request field is no longer nearby.
+    "goal",
+    "objective",
+    "task_description",
+    "user_input",
+    "input_text",
+    "summary",
+    "solution_summary",
+    "problem_summary",
+    "question_summary",
+    "topic_summary",
+    "conversation_summary",
+    "previous_answer_summary",
+    "user_prompt",
+    "raw_input",
+    "detail",
+}
 
 
-def _redact(value: Any) -> Any:
+def _redact(value: Any, *, field_name: str = "") -> Any:
+    normalized_name = field_name.casefold()
+    if normalized_name in PRIVATE_PAYLOAD_KEYS:
+        if isinstance(value, dict):
+            return {
+                key: _redact(item, field_name=key)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_redact(item, field_name=field_name) for item in value]
+        return "[redacted]"
     if isinstance(value, dict):
         return {
-            key: "[redacted]" if key.casefold() in SENSITIVE_KEYS else _redact(item)
+            key: (
+                "[redacted]"
+                if key.casefold() in SENSITIVE_KEYS
+                else _redact(item, field_name=key)
+            )
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [_redact(item) for item in value]
+        return [_redact(item, field_name=field_name) for item in value]
     return value
 
 
@@ -182,8 +234,14 @@ async def get_metrics_summary(
     }
     retrieval_attempts = 0
     retrieval_successes = 0
+    revoked_material_ids = load_revoked_material_ids(
+        request.app.state.settings.knowledge_index_path
+    )
     for task, run in rows:
-        result = task.result_content if isinstance(task.result_content, dict) else {}
+        result = filter_revoked_material_result(
+            task.result_content if isinstance(task.result_content, dict) else {},
+            revoked_material_ids,
+        ) or {}
         structured = result.get("structured_result", {})
         structured = structured if isinstance(structured, dict) else {}
         presentation = structured.get("presentation", {})
@@ -323,7 +381,10 @@ async def get_execution(
     service = TaskQueryService(db)
     task = await service.get(task_id)
     events = await service.list_events(task_id)
-    result = task.result_content or {}
+    result = filter_revoked_material_result(
+        task.result_content if isinstance(task.result_content, dict) else {},
+        load_revoked_material_ids(request.app.state.settings.knowledge_index_path),
+    ) or {}
     structured = result.get("structured_result", {})
     structured = structured if isinstance(structured, dict) else {}
     knowledge = structured.get("knowledge", {})

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.dependencies import require_admin
 from app.observability.metrics import (
     build_observability_snapshot,
     prometheus_text,
@@ -14,7 +15,11 @@ from app.observability.model_tracer import ModelTracer
 from app.observability.tracer import TraceStore
 from app.services.task_queue import TaskQueue
 
-router = APIRouter(prefix="/observability", tags=["observability"])
+router = APIRouter(
+    prefix="/observability",
+    tags=["observability"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _resources(request: Request) -> tuple[Any, Any, Any, Any, Any]:
@@ -44,7 +49,10 @@ async def observability_summary(request: Request) -> JSONResponse:
 
 
 @router.get("/metrics")
-async def observability_metrics(request: Request) -> PlainTextResponse:
+async def observability_metrics(
+    request: Request,
+    _principal: object = Depends(require_admin),
+) -> PlainTextResponse:
     settings, session_factory, trace_store, model_tracer, task_queue = _resources(
         request
     )

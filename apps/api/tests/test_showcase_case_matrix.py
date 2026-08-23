@@ -157,3 +157,12 @@ def test_academic_search_depth_changes_retrieval_budget() -> None:
     assert brief.verify is False
     assert standard.verify is True
     assert deep.verify is True
+
+
+def test_real_knowledge_synthesis_mode_is_not_overwritten_by_agent_mode() -> None:
+    assert RuntimeResultPipeline._project_result_mode(
+        "local_model", "learning_path_model_generation"
+    ) == "learning_path_model_generation"
+    assert RuntimeResultPipeline._project_result_mode(
+        "local_model", "retrieval_only"
+    ) == "local_model"

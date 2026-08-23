@@ -9,6 +9,7 @@ from app.agents.internal import InternalAgentHub
 from app.agents.internal.contracts import LessonPrepDraft
 from app.contracts import ImageInput, ModelResponse, ModelUsage
 from app.core.config import Settings
+from app.core.errors import StructuredOutputError
 from app.services.model_registry import ModelRegistry
 from app.services.model_service import ModelService
 from pydantic import ValidationError
@@ -103,6 +104,36 @@ class FakeModelService:
         )
 
 
+class TruncatedOnceModelService(FakeModelService):
+    def __init__(self) -> None:
+        super().__init__()
+        self._truncate_once = True
+
+    async def generate_json_for_task(
+        self, task_type: str, **kwargs: Any
+    ) -> ModelResponse:
+        if self._truncate_once:
+            self._truncate_once = False
+            self.calls.append({"task_type": task_type, **kwargs})
+            raise StructuredOutputError(
+                "结构化输出未闭合",
+                provider="dashscope",
+                model="qwen3.5-flash",
+                details={
+                    "finish_reason": "length",
+                    "output_chars": 800,
+                    "truncated": True,
+                    "elapsed_ms": 40,
+                    "usage": {
+                        "prompt_tokens": 20,
+                        "completion_tokens": 96,
+                        "total_tokens": 116,
+                    },
+                },
+            )
+        return await super().generate_json_for_task(task_type, **kwargs)
+
+
 def hub() -> tuple[InternalAgentHub, FakeModelService]:
     service = FakeModelService()
     return InternalAgentHub(cast(ModelService, service)), service
@@ -182,6 +213,25 @@ async def test_course_classifier_uses_configured_qwen_route_and_schema() -> None
     system_prompt = service.calls[0]["messages"][0]["content"]
     assert "JSON Schema" in system_prompt
     assert '"course"' in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_structured_truncation_has_one_bounded_recovery_attempt() -> None:
+    service = TruncatedOnceModelService()
+    agent_hub = InternalAgentHub(cast(ModelService, service))
+
+    result = await agent_hub.run_text(
+        "COURSE_CLASSIFIER_LOCAL_V1",
+        input_text="为什么电容电压不能突变？",
+        max_tokens=96,
+    )
+
+    assert result.structured_result["course"] == "CT"
+    assert len(service.calls) == 2
+    assert service.calls[1]["extra_options"]["max_tokens"] == 512
+    assert result.raw_metadata["structured_recovery_attempted"] is True
+    assert result.raw_metadata["initial_finish_reason"] == "length"
+    assert result.total_tokens == 134
 
 
 @pytest.mark.asyncio

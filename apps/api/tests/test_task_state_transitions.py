@@ -1,7 +1,33 @@
-def test_task_state_transition_events(api, client) -> None:
+import asyncio
+
+from app.models import AgentRunModel
+from sqlalchemy import select
+
+
+def test_task_state_transition_events(api, app, client) -> None:
     session = api.create_session()
     task = api.create_task(session["id"])
-    api.wait_for_task(task["id"])
+    completed = api.wait_for_task(task["id"])
+    audit = completed["input_content"]["options"]["_audit"]
+    assert audit["schema_version"] == "task_audit.v1"
+    assert audit["task_id"] == task["id"]
+    assert audit["runtime_run_id"]
+    assert len(audit["input_sha256"]) == 64
+    assert audit["terminal_status"] == "completed"
+
+    async def load_runtime_run() -> AgentRunModel | None:
+        async with app.state.session_factory() as db:
+            return await db.scalar(
+                select(AgentRunModel).where(
+                    AgentRunModel.task_id == task["id"],
+                    AgentRunModel.run_kind == "runtime",
+                )
+            )
+
+    runtime_run = asyncio.run(load_runtime_run())
+    assert runtime_run is not None
+    assert runtime_run.metrics_data["audit"]["runtime_run_id"] == runtime_run.id
+    assert runtime_run.metrics_data["audit"]["task_id"] == task["id"]
     events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
     names = [event["event_type"] for event in events]
     assert names[:2] == ["task.created", "route.selected"]
@@ -26,8 +52,17 @@ def test_provider_failure_marks_task_failed(api, client) -> None:
     failed = api.wait_for_task(task["id"])
     assert failed["status"] == "failed"
     assert failed["error_message"] == "Mock Provider 按请求触发失败"
+    audit = failed["input_content"]["options"]["_audit"]
+    assert audit["terminal_status"] == "failed"
+    assert audit["failure_category"] == "provider_error"
     events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
     assert events[-1]["event_type"] == "task.failed"
+    terminal_data = events[-1]["event_data"]["data"]
+    assert terminal_data["terminal_status"] == "failed"
+    assert terminal_data["failure_category"] == "provider_error"
+    assert terminal_data["error_code"] == "provider_error"
+    assert terminal_data["error_message"] == failed["error_message"]
+    assert terminal_data["runtime_run_id"] == audit["runtime_run_id"]
 
 
 def test_follow_up_transfers_context_without_reusing_course_route(api, client) -> None:

@@ -16,6 +16,7 @@ from app.contracts import (
     AgentExecutionPlan,
     AgentRequest,
     Intent,
+    IntentExecutionPlan,
     RouteDecision,
 )
 from app.contracts.conversation import ConversationContextBundle
@@ -23,6 +24,7 @@ from app.runtime import RuntimeCompatibilitySnapshot
 from app.services.agent_runtime import AgentExecutionPlanner
 from app.services.context_assembly import ContextAssemblyService
 from app.services.fallback_routing import FallbackRoutingService
+from app.services.intent_plan import IntentPlanCompiler
 from app.services.overall_routing import OverallRoutingService
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,14 @@ class RuntimeRequestPreparation:
             execution_plan_route_status=self.execution_plan.route_status,
             execution_plan_input_mode=self.execution_plan.input_mode,
             execution_plan_context_budget=self.execution_plan.context_budget,
+            route_capability_checks={
+                key: value
+                for key, value in self.decision.availability.items()
+                if isinstance(value, bool)
+            },
+            execution_plan_capability_checks=dict(
+                self.execution_plan.availability_checks
+            ),
         )
 
 
@@ -96,11 +106,13 @@ class RuntimeRequestPreparationService:
         overall_router: OverallRoutingService | None,
         context_assembly: ContextAssemblyService | None,
         fallback_router: FallbackRoutingService | None = None,
+        intent_plan_compiler: IntentPlanCompiler | None = None,
     ) -> None:
         self.execution_planner = execution_planner
         self.overall_router = overall_router
         self.context_assembly = context_assembly
         self.fallback_router = fallback_router
+        self.intent_plan_compiler = intent_plan_compiler or IntentPlanCompiler()
 
     async def prepare(
         self,
@@ -148,12 +160,12 @@ class RuntimeRequestPreparationService:
         planner_snapshot = request.options.get("_planner_snapshot", {})
         planner_takeover = (
             isinstance(planner_snapshot, dict)
-            and planner_snapshot.get("mode") == "takeover"
+            and planner_snapshot.get("mode") in {"controlled", "active", "takeover"}
             and planner_snapshot.get("status") == "completed"
         )
         if planner_takeover:
             route_metadata = {
-                "status": "planner_takeover",
+                "status": f"planner_{planner_snapshot.get('mode', 'controlled')}",
                 "model_calls": 0,
                 "planner_version": planner_snapshot.get("planner_version", ""),
             }
@@ -233,6 +245,15 @@ class RuntimeRequestPreparationService:
                 "fallback_router": route_metadata["fallback_router"],
             }
 
+        if not runtime_resume and route_reevaluated is not None:
+            # Task creation persists the first-pass plan.  A later overall or
+            # fallback route can change the target and intent, so refresh the
+            # plan before the immutable Runtime request is handed off.
+            request = self.with_intent_plan(
+                request,
+                self.intent_plan_compiler.compile(request, decision),
+            )
+
         execution_plan = (
             self.execution_plan_from_request(request)
             if runtime_resume
@@ -284,6 +305,14 @@ class RuntimeRequestPreparationService:
     ) -> AgentRequest:
         options = dict(request.options)
         options["_execution_plan"] = plan.model_dump(mode="json")
+        return request.model_copy(update={"options": options})
+
+    @staticmethod
+    def with_intent_plan(
+        request: AgentRequest, plan: IntentExecutionPlan
+    ) -> AgentRequest:
+        options = dict(request.options)
+        options["_intent_plan"] = plan.model_dump(mode="json")
         return request.model_copy(update={"options": options})
 
     @staticmethod

@@ -15,6 +15,7 @@ from app.core.errors import NotFoundError
 from app.models import ConversationMessageModel, SessionModel, TaskModel
 from app.models.entities import utc_now
 from app.repositories import ConversationRepository, SessionRepository
+from app.services.course_material_manifest import collect_material_source_refs
 from app.services.runtime_safety import sanitize_runtime_text
 
 
@@ -128,6 +129,36 @@ class ConversationMessageService:
                 if previous is not None:
                     previous.status = MessageStatus.SUPERSEDED.value
                     revision_of = previous.id
+        content_data = self.assistant_content_data(result)
+        return await self.append(
+            session=session,
+            user_id=task.user_id,
+            role=MessageRole.ASSISTANT,
+            status=MessageStatus.COMPLETED,
+            content_text=result.answer,
+            content_data=content_data,
+            source_task_id=task.id,
+            reply_to_message_id=task.user_message_id,
+            revision_of_message_id=revision_of,
+            metadata={
+                "course_id": task.course_id,
+                "intent": task.intent,
+                "course_material_source_refs": collect_material_source_refs(
+                    result.structured_result or {}
+                ),
+            },
+        )
+
+    @staticmethod
+    def assistant_content_data(result: AgentResult) -> dict[str, Any]:
+        """Persist the public result contract needed by history and recovery.
+
+        The task row retains the complete result, but session messages are a
+        deliberately smaller projection.  Quality and publication state must
+        remain in that projection; otherwise a restored conversation can show
+        a rendered formula without its ``needs_review``/``publishable`` gate.
+        """
+
         structured = result.structured_result or {}
         content_data = {
             key: structured.get(key)
@@ -136,6 +167,9 @@ class ConversationMessageService:
                 "execution_summary",
                 "evidence_view",
                 "math_content",
+                "math_quality",
+                "formula_output_contract",
+                "scenario_contract",
                 "business_view",
                 "teaching",
                 "teaching_loop",
@@ -147,18 +181,11 @@ class ConversationMessageService:
             )
             if structured.get(key) is not None
         }
-        return await self.append(
-            session=session,
-            user_id=task.user_id,
-            role=MessageRole.ASSISTANT,
-            status=MessageStatus.COMPLETED,
-            content_text=result.answer,
-            content_data=content_data,
-            source_task_id=task.id,
-            reply_to_message_id=task.user_message_id,
-            revision_of_message_id=revision_of,
-            metadata={"course_id": task.course_id, "intent": task.intent},
-        )
+        if result.warnings:
+            content_data["warnings"] = list(result.warnings)
+        if result.remaining_risks:
+            content_data["remaining_risks"] = list(result.remaining_risks)
+        return content_data
 
     async def append_terminal_failure(
         self,

@@ -160,10 +160,13 @@ class ExternalResearchRuntimeService:
 
     @staticmethod
     def _requires_review(result: ExternalRetrievalResult) -> bool:
-        return result.status == "partial" or result.review_status in {
-            "failed",
-            "rejected",
-        }
+        if not result.items:
+            return False
+        return (
+            result.status == "partial"
+            or result.review_status in {"not_run", "failed", "rejected"}
+            or result.approved_count != len(result.items)
+        )
 
     @staticmethod
     def _current_node_ids(run: AgentRun) -> tuple[str, str, str, str]:
@@ -219,12 +222,29 @@ class ExternalResearchRuntimeService:
                 return value.strip()
         return "research frontier"
 
-    @staticmethod
+    @classmethod
     def _with_retrieval(
+        cls,
         request: AgentRequest,
         result: ExternalRetrievalResult,
         policy: ExternalRetrievalPolicy,
+        *,
+        evidence_review_approved: bool = False,
     ) -> AgentRequest:
+        evidence_requires_review = cls._requires_review(result)
+        if evidence_requires_review and not evidence_review_approved:
+            # Do not let a degraded provider/model-review path leak candidate
+            # evidence into the answer model before the human gate is passed.
+            result = result.model_copy(
+                update={
+                    "items": [],
+                    "approved_count": 0,
+                    "warnings": [
+                        *result.warnings,
+                        "external evidence withheld pending manual review",
+                    ][:20],
+                }
+            )
         options = dict(request.options)
         options["external_retrieval"] = result.model_dump(mode="json")
         if policy.generation_injection and result.items:
@@ -431,7 +451,12 @@ class ExternalResearchRuntimeService:
                     "research answer requires a retrieval checkpoint",
                 )
             answer_request = self._with_retrieval(
-                request_for_attempt, result, self.policy
+                request_for_attempt,
+                result,
+                self.policy,
+                evidence_review_approved=(
+                    run.control_data.get(self.approval_control_key) is True
+                ),
             )
             answer = await self.research_frontier.run(answer_request)
             result_holder["result"] = answer
@@ -600,6 +625,22 @@ class ExternalResearchRuntimeService:
                     action=DecisionAction.EXECUTE,
                     node_ids=[fetch_id],
                     reason_codes=["external_retrieval_required"],
+                )
+            external = external_holder.get("result") or self._restore_external_result(
+                current
+            )
+            approval_granted = (
+                current.control_data.get(self.approval_control_key) is True
+            )
+            if (
+                external is not None
+                and self._requires_review(external)
+                and not approval_granted
+            ):
+                return RuntimeDecision(
+                    action=DecisionAction.REQUEST_APPROVAL,
+                    approval_scope=self.approval_scope,
+                    reason_codes=["external_evidence_review_required"],
                 )
             if current.nodes[answer_id].status not in {
                 RuntimeNodeStatus.SUCCEEDED,

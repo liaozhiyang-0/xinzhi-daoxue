@@ -43,6 +43,7 @@ class GeneralQuestionService:
         messages = self._messages(request, question)
         direct_fallback = self._direct_fallback_context(request)
         max_tokens = self._max_tokens(request)
+        task_subtype = str(request.options.get("task_subtype", "")).strip()
         model_task_type = (
             self.direct_fallback_task_type if direct_fallback else self.task_type
         )
@@ -124,6 +125,7 @@ class GeneralQuestionService:
             "status": "success",
             "output_status": output_status,
             "model_calls": len(responses),
+            "providers": [item.provider for item in responses],
             "models": [item.model for item in responses],
             "finish_reasons": [item.finish_reason or "" for item in responses],
         }
@@ -138,7 +140,17 @@ class GeneralQuestionService:
             "source_policy": (
                 "method_reference_not_cited"
                 if direct_fallback.get("method_reference")
-                else "no_course_evidence_claimed"
+                else (
+                    "course_standard_required_for_publish"
+                    if task_subtype == "rubric_generation"
+                    else "no_course_evidence_claimed"
+                )
+            ),
+            "task_subtype": task_subtype,
+            "response_contract": (
+                "rubric_generation_v1"
+                if task_subtype == "rubric_generation"
+                else "general_question_v1"
             ),
             "response_depth": policy_for(
                 request.options, "general_question"
@@ -406,6 +418,10 @@ class GeneralQuestionService:
     @staticmethod
     def _messages(request: AgentRequest, question: str) -> list[dict[str, str]]:
         direct_fallback = GeneralQuestionService._direct_fallback_context(request)
+        rubric_generation = (
+            str(request.options.get("task_subtype", "")).strip()
+            == "rubric_generation"
+        )
         if direct_fallback:
             system = (
                 "你是芯智导学的最终直接回答模型。上游专业流程没有形成可展示的"
@@ -421,6 +437,20 @@ class GeneralQuestionService:
                 "若提供“上游部分专业回答”，必须以其中已经识别出的待求量、"
                 "方程和有效推导为基础，修正自相矛盾后压缩成完整最终答案；"
                 "不得擅自改成开路、短路或其他示例问题。"
+                f"{MATH_OUTPUT_INSTRUCTION}"
+            )
+        elif rubric_generation:
+            system = (
+                "你是芯智导学的评分量规设计助手。当前任务是生成评分量规，不是批改"
+                "某个学生的作业；不要输出首错诊断、学生正确率或假设已有学生作答。"
+                "请围绕用户指定的课程、项目和评价维度，输出可直接人工复核的结构化量规："
+                "先写评价范围与假设，再逐维度给出优秀、良好、及格、不及格四级标准，"
+                "每级都要有可观察的评判依据和必要的证据类型；最后列出课程标准、实验板"
+                "规格或资源上限等仍需教师确认的边界。没有课程标准时，仍生成通用模板，"
+                "明确标注“通用建议/待课程确认”，不得编造具体资源百分比、器件阈值、"
+                "实验板要求或官方引用，也不得把通用建议写成课程正式评分结论。"
+                "若用户要求 JSON 或表格，严格保持其格式；否则使用清晰的 Markdown 表格或"
+                "分级条目，保证四个维度和四个等级都可定位。"
                 f"{MATH_OUTPUT_INSTRUCTION}"
             )
         else:

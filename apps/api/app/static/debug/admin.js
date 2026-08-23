@@ -209,7 +209,7 @@ function registerManagementModule(id, loader) {
 function taskStatusLabel(status) {
   return {
     created: "已创建", queued: "排队中", running: "运行中", waiting_user: "等待用户",
-    waiting_review: "等待审核", completed: "已完成", failed: "失败", cancelled: "已取消",
+    waiting_review: "等待审核", completed: "已完成", failed: "失败", cancelled: "已停止",
   }[status] || status || "未知";
 }
 
@@ -426,12 +426,16 @@ async function loadAdminSystem() {
   const failures = results.filter((item) => item.status === "rejected").length;
   if (failures) $("#admin-system-notice").replaceChildren(el("div", { class: "notice warning", text: `部分状态暂时无法读取（${failures}/3）` }));
   const registry = agents.agents || [];
-  $("#admin-system-metrics").replaceChildren(metric("API", health.status === "ok" ? "正常" : "异常", health.status === "ok" ? "ready" : "failed"), metric("数据库", health.database || "未知", health.database === "ok" ? "ready" : "failed"), metric("Provider", rag.provider || health.active_provider || "未知", rag.provider_available ? "ready" : "planned"), metric("RAG", rag.rag_enabled ? "已启用" : "未启用", rag.rag_enabled ? "ready" : "planned"), metric("Agent", String(registry.length), registry.length ? "ready" : "unknown"));
+  const modelRuntime = health.model_runtime || {};
+  const modelConfigured = modelRuntime.real_provider_configured === true;
+  const modelStatus = modelConfigured ? (modelRuntime.status === "ready" ? "ready" : "degraded") : "planned";
+  const modelLabel = modelConfigured ? `真实模型 · ${(modelRuntime.configured_provider_names || []).join("、") || "已配置"}` : "真实模型未配置";
+  $("#admin-system-metrics").replaceChildren(metric("API", health.status === "ok" ? "正常" : "异常", health.status === "ok" ? "ready" : "failed"), metric("数据库", health.database || "未知", health.database === "ok" ? "ready" : "failed"), metric("真实模型", modelLabel, modelStatus), metric("Agent Runtime", health.active_provider || "未知", health.active_provider === "mock" ? "degraded" : "ready"), metric("RAG", rag.rag_enabled ? "已启用" : "未启用", rag.rag_enabled ? "ready" : "planned"), metric("Agent", String(registry.length), registry.length ? "ready" : "unknown"));
   $("#admin-system-services").replaceChildren(
     serviceCard("API 服务", health.version || "当前服务", health.status === "ok" ? "可正常响应管理请求" : "请检查服务日志", health.status === "ok" ? "ready" : "failed"),
     serviceCard("数据库", health.database || "未知", "登录、账号、任务和审计数据依赖", health.database === "ok" ? "ready" : "failed"),
     serviceCard("RAG 检索", rag.rag_enabled ? "已启用" : "未启用", "状态查询不会触发模型预热", rag.rag_enabled ? "ready" : "planned"),
-    serviceCard("模型 Provider", rag.provider || health.active_provider || "按请求检查", rag.provider_available ? "当前可用" : "未配置或不可用", rag.provider_available ? "ready" : "planned"),
+    serviceCard("真实模型 Provider", modelLabel, modelConfigured ? "已配置；运行前仍需按任务做能力预检" : "未配置，不能宣称真实模型可用", modelStatus),
   );
 }
 

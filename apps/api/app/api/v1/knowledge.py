@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,10 @@ from app.services.course_asset_review import (
     validate_error_pool_review_document,
     write_error_pool_review_document,
 )
-from app.services.course_material_manifest import build_course_material_manifest
+from app.services.course_material_manifest import (
+    build_course_material_manifest,
+    update_material_revocation_state,
+)
 from app.services.evaluation_provenance import (
     EVALUATION_REPORT_PATH,
     build_evaluation_provenance,
@@ -80,6 +83,55 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 DOCUMENT_PAGE_CHARS = 24_000
 DOCUMENT_PAGE_MAX_CHARS = 60_000
 DOCUMENT_CHUNK_PAGE_CHARS = 8_000
+
+
+async def _published_material(
+    db: AsyncSession,
+    *,
+    course_id: str,
+    material_id: str,
+) -> FileModel:
+    """Resolve only currently published uploaded material by its source id."""
+
+    item = await db.scalar(
+        select(FileModel).where(
+            FileModel.id == material_id,
+            FileModel.course_id == course_id,
+            FileModel.purpose == "course_material",
+            FileModel.knowledge_status == KnowledgeMaterialStatus.PUBLISHED,
+            FileModel.ingestion_status == FileIngestionStatus.READY,
+            FileModel.material_review_status != CourseMaterialReviewStatus.REJECTED,
+        )
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="课程资料不存在或已撤回")
+    return item
+
+
+async def _published_material_content(
+    db: AsyncSession,
+    *,
+    course_id: str,
+    material_id: str,
+    chunk: str,
+) -> tuple[FileModel, str, str]:
+    item = await _published_material(
+        db, course_id=course_id, material_id=material_id
+    )
+    if not chunk:
+        return item, item.extracted_text or "", ""
+    if not chunk.startswith("chunk-") or not chunk.removeprefix("chunk-").isdigit():
+        raise HTTPException(status_code=400, detail="知识库片段编号无效")
+    ordinal = int(chunk.removeprefix("chunk-"))
+    row = await db.scalar(
+        select(DocumentChunkModel).where(
+            DocumentChunkModel.file_id == item.id,
+            DocumentChunkModel.ordinal == ordinal,
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="知识库片段不存在")
+    return item, row.content, row.content
 
 
 def _material_quality_report(item: FileModel) -> dict[str, Any]:
@@ -720,6 +772,11 @@ async def publish_course_material(
     item.knowledge_index_status = "not_indexed"
     item.knowledge_published_by = principal.user_id or None
     item.knowledge_published_at = datetime.now(UTC)
+    update_material_revocation_state(
+        request.app.state.settings.knowledge_index_path,
+        item.id,
+        revoked=False,
+    )
     record_audit(
         db,
         request,
@@ -760,6 +817,7 @@ async def review_course_material(
             status_code=409,
             detail="only ready material can be approved",
         )
+    was_published = item.knowledge_status == KnowledgeMaterialStatus.PUBLISHED
     review_status = (
         CourseMaterialReviewStatus.APPROVED
         if payload.status == "approved"
@@ -769,6 +827,20 @@ async def review_course_material(
     item.material_reviewed_by = principal.account_id or principal.user_id or None
     item.material_reviewed_at = datetime.now(UTC)
     item.material_review_note = payload.note or None
+    if payload.status == "rejected" and was_published:
+        # A review decision is also a publication authorization decision. A
+        # later rejection must revoke the already-public material immediately;
+        # otherwise the manifest/RAG index can continue exposing it until a
+        # separate withdrawal call happens.
+        item.knowledge_status = KnowledgeMaterialStatus.WITHDRAWN
+        item.knowledge_index_status = "stale"
+        item.knowledge_published_by = principal.user_id or None
+        item.knowledge_published_at = item.material_reviewed_at
+        update_material_revocation_state(
+            request.app.state.settings.knowledge_index_path,
+            item.id,
+            revoked=True,
+        )
     record_audit(
         db,
         request,
@@ -782,6 +854,7 @@ async def review_course_material(
             "material_version": item.material_version,
             "review_status": review_status.value,
             "note_present": bool(payload.note),
+            "publication_revoked": bool(payload.status == "rejected" and was_published),
         },
     )
     await db.commit()
@@ -806,6 +879,11 @@ async def withdraw_course_material(
         item.knowledge_index_status = "stale"
     item.knowledge_published_by = principal.user_id or None
     item.knowledge_published_at = datetime.now(UTC)
+    update_material_revocation_state(
+        request.app.state.settings.knowledge_index_path,
+        item.id,
+        revoked=True,
+    )
     record_audit(
         db,
         request,
@@ -817,6 +895,7 @@ async def withdraw_course_material(
             "course_id": item.course_id,
             "material_key": item.material_key,
             "material_version": item.material_version,
+            "publication_revoked": was_published,
         },
     )
     await db.commit()
@@ -889,11 +968,101 @@ async def rag_health(
     return await asyncio.to_thread(rag.health)
 
 
+@router.get("/materials/{course_id}/{material_id}")
+async def knowledge_material_document(
+    course_id: str,
+    material_id: str,
+    chunk: str = "",
+    normalize_math: bool = False,
+    _principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> PlainTextResponse:
+    _, content, _ = await _published_material_content(
+        db,
+        course_id=course_id,
+        material_id=material_id,
+        chunk=chunk,
+    )
+    if normalize_math:
+        content = await asyncio.to_thread(
+            lambda: MathFormattingService().process_markdown(content).markdown
+        )
+    return PlainTextResponse(
+        content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.get(
+    "/material-pages/{course_id}/{material_id}",
+    response_model=KnowledgeDocumentPage,
+)
+async def knowledge_material_page(
+    course_id: str,
+    material_id: str,
+    response: Response,
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=4000, le=DOCUMENT_PAGE_MAX_CHARS),
+    anchor: str = Query(default="", max_length=2000),
+    chunk: str = Query(default="", max_length=64),
+    normalize_math: bool = True,
+    _principal: Principal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeDocumentPage:
+    item, document, _ = await _published_material_content(
+        db,
+        course_id=course_id,
+        material_id=material_id,
+        chunk="",
+    )
+    chunk_anchor = ""
+    if chunk:
+        _, _, chunk_anchor = await _published_material_content(
+            db,
+            course_id=course_id,
+            material_id=material_id,
+            chunk=chunk,
+        )
+    page_limit = limit or (DOCUMENT_CHUNK_PAGE_CHARS if chunk else DOCUMENT_PAGE_CHARS)
+    requested_anchor = anchor or chunk_anchor
+    start, end, anchor_status = await asyncio.to_thread(
+        _document_window,
+        document,
+        offset=offset,
+        limit=page_limit,
+        anchor=requested_anchor,
+    )
+    content = document[start:end]
+    if normalize_math:
+        content = await asyncio.to_thread(
+            lambda: MathFormattingService().process_markdown(content).markdown
+        )
+    source_ref = f"kb-material://{course_id}/{material_id}"
+    if chunk:
+        source_ref += f"#{chunk}"
+    response.headers["Cache-Control"] = "private, no-store"
+    return KnowledgeDocumentPage(
+        source_ref=source_ref,
+        course_id=course_id,
+        relative_path=f"materials/{material_id}/{item.filename}",
+        requested_chunk=chunk,
+        content=content,
+        total_chars=len(document),
+        start_offset=start,
+        end_offset=end,
+        previous_offset=max(0, start - page_limit - 1000) if start > 0 else None,
+        next_offset=end if end < len(document) else None,
+        anchor_status=anchor_status,
+    )
+
+
 @router.get("/images/{course_id}/{relative_path:path}")
 async def knowledge_image(
     course_id: str,
     relative_path: str,
     request: Request,
+    _principal: Principal = Depends(get_current_principal),
 ) -> FileResponse:
     try:
         target = resolve_course_resource(
@@ -906,7 +1075,13 @@ async def knowledge_image(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return FileResponse(target)
+    return FileResponse(
+        target,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/documents/{course_id}/{relative_path:path}")
@@ -916,6 +1091,7 @@ async def knowledge_document(
     request: Request,
     normalize_math: bool = False,
     chunk: str = "",
+    _principal: Principal = Depends(get_current_principal),
     knowledge_base: KnowledgeBaseService = Depends(get_knowledge_base),
 ) -> PlainTextResponse:
     try:
@@ -945,7 +1121,11 @@ async def knowledge_document(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (FileNotFoundError, UnicodeError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return PlainTextResponse(content, media_type="text/markdown; charset=utf-8")
+    return PlainTextResponse(
+        content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get(
@@ -956,6 +1136,7 @@ async def knowledge_document_page(
     course_id: str,
     relative_path: str,
     request: Request,
+    response: Response,
     offset: int | None = Query(default=None, ge=0),
     limit: int | None = Query(
         default=None,
@@ -965,6 +1146,7 @@ async def knowledge_document_page(
     anchor: str = Query(default="", max_length=2000),
     chunk: str = Query(default="", max_length=64),
     normalize_math: bool = True,
+    _principal: Principal = Depends(get_current_principal),
     knowledge_base: KnowledgeBaseService = Depends(get_knowledge_base),
 ) -> KnowledgeDocumentPage:
     try:
@@ -1020,6 +1202,7 @@ async def knowledge_document_page(
     source_ref = f"kb://{course_id}/{relative_path}"
     if chunk:
         source_ref += f"#{chunk}"
+    response.headers["Cache-Control"] = "private, no-store"
     return KnowledgeDocumentPage(
         source_ref=source_ref,
         course_id=course_id,

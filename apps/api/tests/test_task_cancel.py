@@ -13,6 +13,35 @@ def test_queued_task_can_be_cancelled(api, client, monkeypatch) -> None:
     response = client.post(f"/api/v1/tasks/{task['id']}/cancel")
     assert response.status_code == 200
     assert response.json()["status"] == "cancelled"
+    assert response.json()["failure_category"] == "cancelled"
+    assert response.json()["error_message"] == "任务已取消"
+    events = client.get(f"/api/v1/tasks/{task['id']}/events").json()
+    terminal_data = events[-1]["event_data"]["data"]
+    assert terminal_data["terminal_status"] == "cancelled"
+    assert terminal_data["failure_category"] == "cancelled"
+    assert terminal_data["error_code"] == "cancelled"
+    assert terminal_data["error_message"] == "任务已取消"
+
+
+def test_queued_cancel_persists_when_provider_cancel_fails(
+    api, client, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        client.app.state.task_executor, "submit", AsyncMock(return_value=True)
+    )
+
+    async def fail_provider_cancel(_run_id: str) -> None:
+        raise RuntimeError("provider cancel unavailable")
+
+    monkeypatch.setattr(client.app.state.provider, "cancel", fail_provider_cancel)
+    session = api.create_session()
+    task = api.create_task(session["id"])
+
+    response = client.post(f"/api/v1/tasks/{task['id']}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert response.json()["failure_category"] == "cancelled"
 
 
 def test_queued_evaluation_task_cleans_attachment_on_cancel(

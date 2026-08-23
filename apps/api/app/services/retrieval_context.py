@@ -25,6 +25,16 @@ class EvidenceQualityEvaluator:
         self.sufficient_min_sources = sufficient_min_sources
 
     def evaluate(self, result: RetrievalResult) -> EvidenceQuality:
+        missing_named_topics = RetrievalContextService._missing_named_topics(result)
+        if missing_named_topics:
+            covered_count = len(
+                RetrievalContextService._named_topic_groups(result.query)
+            ) - len(missing_named_topics)
+            status = "partial" if covered_count else "insufficient"
+            return EvidenceQuality(
+                status,
+                "关键主题证据不足：缺少 " + "、".join(missing_named_topics),
+            )
         if not result.hits:
             return EvidenceQuality("insufficient", "没有满足最低分阈值的证据")
         if result.confidence is None:
@@ -43,6 +53,26 @@ class EvidenceQualityEvaluator:
 
 
 class RetrievalContextService:
+    _NAMED_TOPIC_GROUPS = {
+        "BJT/三极管": frozenset(
+            {"bjt", "bipolar", "三极管", "双极型", "共射", "共集", "共基"}
+        ),
+        "MOSFET/场效应管": frozenset(
+            {"mos", "mosfet", "场效应", "共源", "共漏"}
+        ),
+        "Mealy/Moore": frozenset({"mealy", "moore"}),
+        "拉普拉斯/极点/稳定性": frozenset(
+            {
+                "laplace",
+                "拉普拉斯",
+                "极点",
+                "极点分布",
+                "极点位置",
+                "稳定性",
+                "时域响应",
+            }
+        ),
+    }
     _TEACHING_QUERY_STRUCTURE_TOKENS = frozenset(
         {
             "\u8bbe\u8ba1",
@@ -139,6 +169,8 @@ class RetrievalContextService:
         quality = self.evaluator.evaluate(result.model_copy(update={"hits": evidence}))
         if quality.status in {"insufficient", "failed"}:
             warnings.append(quality.reason)
+        elif quality.status == "partial" and "关键主题证据不足" in quality.reason:
+            warnings.append(quality.reason)
         numbered_evidence = [
             hit.model_copy(update={"evidence_id": f"S{index}"})
             for index, hit in enumerate(evidence, start=1)
@@ -199,6 +231,7 @@ class RetrievalContextService:
         }
         if not anchor_tokens:
             return hits
+        named_topic_groups = cls._named_topic_groups(query)
         teaching_intent = intent in {"lesson_prep", "assignment_review"}
         relevant: list[KnowledgeHit] = []
         for hit in hits:
@@ -206,6 +239,11 @@ class RetrievalContextService:
                 " ".join((hit.title, hit.chapter, hit.section))
             )
             content_tokens = cls._topic_tokens(hit.content)
+            if named_topic_groups and not any(
+                terms & (metadata_tokens | content_tokens)
+                for _, terms in named_topic_groups
+            ):
+                continue
             metadata_matches = anchor_tokens & metadata_tokens
             if teaching_intent and len(anchor_tokens) > 1:
                 # A single shared bigram is too weak for lesson evidence. For
@@ -220,6 +258,35 @@ class RetrievalContextService:
             elif not teaching_intent and anchor_tokens & content_tokens:
                 relevant.append(hit)
         return relevant
+
+    @classmethod
+    def _named_topic_groups(
+        cls, query: str
+    ) -> list[tuple[str, frozenset[str]]]:
+        tokens = cls._topic_tokens(query)
+        return [
+            (label, terms)
+            for label, terms in cls._NAMED_TOPIC_GROUPS.items()
+            if terms & tokens
+        ]
+
+    @classmethod
+    def _missing_named_topics(cls, result: RetrievalResult) -> list[str]:
+        groups = cls._named_topic_groups(result.query)
+        if not groups:
+            return []
+        covered = {
+            label
+            for label, terms in groups
+            if any(
+                terms
+                & cls._topic_tokens(
+                    " ".join((hit.title, hit.chapter, hit.section, hit.content))
+                )
+                for hit in result.hits
+            )
+        }
+        return [label for label, _ in groups if label not in covered]
 
     @staticmethod
     def _topic_tokens(value: str) -> set[str]:

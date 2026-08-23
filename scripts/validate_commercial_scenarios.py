@@ -21,6 +21,10 @@ CASE_DOCS = {
     "assessment_diagnosis_v1": "assessment_diagnosis_v1.md",
     "student_learning_path_v1": "student_learning_path_v1.md",
     "research_data_workbench_v1": "research_data_workbench_v1.md",
+    "academic_visual_problem_solver_v1": "academic_visual_problem_solver_v1.md",
+    "academic_visual_spectrum_solver_v1": "academic_visual_spectrum_solver_v1.md",
+    "academic_text_diagnostic_solver_v1": "academic_text_diagnostic_solver_v1.md",
+    "rubric_generation_v1": "rubric_generation_v1.md",
     "department_knowledge_governance_v1": "department_knowledge_governance_v1.md",
 }
 

@@ -1736,6 +1736,11 @@ export type SessionTaskHistoryItem = {
   error_message: string | null;
   fallback_used?: boolean;
   fallback_reason?: string;
+  answer_quality_status?: string;
+  requires_review?: boolean;
+  publishable?: boolean | null;
+  math_quality_status?: string;
+  formula_contract_status?: string;
   created_at: string;
   completed_at: string | null;
   [key: string]: unknown;

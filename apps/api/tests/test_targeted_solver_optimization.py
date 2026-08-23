@@ -335,6 +335,74 @@ def test_review_mode_returns_first_material_error_and_preserves_prior_step() -> 
     assert review.remaining_valid_steps == ["energy"]
 
 
+def test_bandpass_review_rejects_lowpass_minimum() -> None:
+    problem = AcademicProblem(
+        course="SS",
+        task_mode=SolverTaskMode.REVIEW,
+        problem_text=(
+            "正频带为8–10 kHz，允许使用带通采样，求不混叠的理论最小采样频率。"
+        ),
+    )
+    review = AcademicReviewService().review(
+        problem,
+        result("参考解答", course="SS"),
+        {
+            "steps": [
+                {
+                    "step_id": "sampling-rate",
+                    "content": "按最高频率的两倍，带通采样的最小 fs=20 kHz。",
+                }
+            ]
+        },
+    )
+
+    assert review.first_error_step == "sampling-rate"
+    assert review.error_type == "calculation"
+    assert "4 kHz" in review.why_incorrect
+
+
+def test_emitter_bypass_review_returns_first_logic_error() -> None:
+    problem = AcademicProblem(
+        course="AE",
+        task_mode=SolverTaskMode.REVIEW,
+        problem_text=(
+            "共射放大电路加入射极旁路电容会如何影响输入电阻和电压增益？"
+        ),
+    )
+    review = AcademicReviewService().review(
+        problem,
+        result("旁路电容会减小输入电阻，所以电压放大倍数会减小。"),
+        {
+            "steps": [
+                {
+                    "step_id": "claim",
+                    "content": "旁路电容会减小输入电阻，所以电压放大倍数会减小。",
+                }
+            ]
+        },
+    )
+
+    assert review.first_error_step == "claim"
+    assert review.error_type == "concept"
+    assert "提高" in review.why_incorrect
+
+
+def test_emitter_bypass_review_allows_frequency_qualified_decrease() -> None:
+    problem = AcademicProblem(
+        course="AE",
+        task_mode=SolverTaskMode.REVIEW,
+        problem_text="共射放大电路加入射极旁路电容会如何影响输入电阻和电压增益？",
+    )
+    review = AcademicReviewService().review(
+        problem,
+        result("低频时旁路不充分，增益会下降，这是频率响应边界。"),
+        {"steps": [{"step_id": "claim", "content": "低频时旁路不充分，增益会下降。"}]},
+    )
+
+    assert review.student_answer_status == "correct"
+    assert review.error_type == "none"
+
+
 @pytest.mark.parametrize(
     ("course", "message", "expected_reason"),
     [

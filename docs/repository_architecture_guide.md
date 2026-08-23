@@ -8,6 +8,7 @@
 - 不在范围：本机 `.env`、真实密钥、教材原文、Qdrant/知识索引、模型缓存、上传物、数据库、测试临时目录和 Python/Node 缓存。
 - 当前形态：一个 FastAPI 单体应用承载 API、任务生命周期、自动路由、Supervisor、本地多学科 Agent、本地 RAG、模型 Provider 和静态 Web 页面。
 - 核心原则：继续复用唯一的 `POST /api/v1/tasks`、TaskRunner、数据库、SSE、上传和 Provider 链，不建立第二套路由器或任务队列。
+- Phase N v2 控制面：新任务使用 `Unified ingress → GoalContract → Planner → CanonicalPlan → Runtime`；TaskRouter 只做 deterministic preflight，旧 Router/Plan/Runtime 仅保留兼容边界。
 - 学生入口：`/workspace` 和 `/student` 使用一个自然语言输入自动选择能力，不暴露 Provider 和内部 Agent ID。
 - 执行策略：业务任务统一通过本地 Runtime；历史请求中的 `allow_cloud` 仅作为兼容字段接收并丢弃，不会启用远程工作流。
 - 历史策略：有审计价值但退出活动架构的文件进入 `archive_legacy/`，不参与导入、测试发现、Docker 构建或 Agent 注册。
@@ -18,11 +19,15 @@
 flowchart LR
     U["学生或教师"] --> W["Workspace / Student Web"]
     W --> API["FastAPI /api/v1"]
-    API --> TC["TaskCreationService"]
+    API --> GI["Unified Ingress + GoalContract"]
+    GI --> PF["TaskRouter deterministic preflight"]
+    PF --> PL["PlannerService"]
+    PL --> CP["CanonicalPlan"]
+    CP --> TC["TaskCreationService"]
     TC --> DB[("PostgreSQL / SQLite 测试")]
     TC --> TR["非阻塞 TaskRunner"]
-    TR --> RT["TaskRouter + XZD Supervisor"]
-    RT --> GQ["GENERAL_QUESTION_V1"]
+    TR --> RT["RuntimeTaskEngine / PlanExecutor"]
+    RT --> GQ["Capability / business Runtime"]
     RT --> APS["ACADEMIC_PROBLEM_SOLVER"]
     RT --> IA["教学 / 学习 / 研究内部 Agent"]
     RT --> LR["本地 RAG"]

@@ -150,6 +150,11 @@ class MultimodalRAGIndexer:
             and (course_id is None or item.get("course_id") == course_id)
             and (relative_file is None or item.get("relative_path") == relative_file)
         ]
+        full_rebuild = (
+            course_id is None
+            and relative_file is None
+            and relative_image is None
+        )
         images = [
             item
             for item in load_jsonl(self.image_path)
@@ -220,30 +225,81 @@ class MultimodalRAGIndexer:
                     if item["image_id"] not in failed_ids
                 }
             )
-        self.state_path.write_text(
-            json.dumps(
-                {
-                    "generated_at": datetime.now(UTC).isoformat(),
-                    "index_version": version.version_id,
-                    "version": version.to_dict(),
-                    "text_checksums": text_checksums,
-                    "image_checksums": image_checksums,
-                    "material_checksums": material_checksums,
-                    "failed_images": failed_images,
-                    "failed_documents": sorted(
-                        {
-                            str(item.get("parent_document_id", ""))
-                            for item in failed_images
-                            if item.get("parent_document_id")
-                        }
-                    ),
-                    "last_successful_build_at": datetime.now(UTC).isoformat(),
-                    "text_point_count": len(text_checksums),
-                    "image_point_count": len(image_checksums),
-                },
-                ensure_ascii=False,
-                indent=2,
+        prior_revoked_materials = {
+            str(value)
+            for value in prior.get("revoked_material_ids", [])
+            if str(value).strip()
+        }
+        active_material_ids = {
+            str(item["metadata"].get("material_file_id"))
+            for item in chunks
+            if isinstance(item.get("metadata"), dict)
+            and str(item["metadata"].get("material_file_id", "")).strip()
+        }
+        revoked_materials = (
+            prior_revoked_materials - active_material_ids
+            if full_rebuild
+            else prior_revoked_materials
+        )
+        revoked_chunk_ids = {
+            str(value)
+            for value in prior.get("revoked_material_chunk_ids", [])
+            if str(value).strip()
+        }
+        revoked_chunk_ids.update(
+            str(item["chunk_id"])
+            for item in chunks
+            if str(item.get("chunk_id", ""))
+            and isinstance(item.get("metadata"), dict)
+            and str(item["metadata"].get("material_file_id", ""))
+            in revoked_materials
+        )
+        if not revoked_materials:
+            revoked_chunk_ids.clear()
+        prune_result: dict[str, int] = {}
+        if full_rebuild:
+            prune_result = self.vector_store.prune(
+                text_ids=(
+                    {str(item["chunk_id"]) for item in chunks}
+                    if include_text
+                    else None
+                ),
+                image_ids=(
+                    {str(item["image_id"]) for item in images}
+                    if include_images
+                    else None
+                ),
             )
+        state_payload: dict[str, Any] = {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "index_version": version.version_id,
+            "version": version.to_dict(),
+            "text_checksums": text_checksums,
+            "image_checksums": image_checksums,
+            "material_checksums": material_checksums,
+            "failed_images": failed_images,
+            "failed_documents": sorted(
+                {
+                    str(item.get("parent_document_id", ""))
+                    for item in failed_images
+                    if item.get("parent_document_id")
+                }
+            ),
+            "last_successful_build_at": datetime.now(UTC).isoformat(),
+            "text_point_count": len(text_checksums),
+            "image_point_count": len(image_checksums),
+            "prune": prune_result,
+            "revoked_material_ids": sorted(revoked_materials),
+            "revoked_material_chunk_ids": sorted(revoked_chunk_ids),
+            "material_revocation_generation": int(
+                prior.get("material_revocation_generation", 0) or 0
+            ),
+            "material_revocation_version": str(
+                prior.get("material_revocation_version", "")
+            ),
+        }
+        self.state_path.write_text(
+            json.dumps(state_payload, ensure_ascii=False, indent=2)
             + "\n",
             encoding="utf-8",
         )
@@ -371,6 +427,11 @@ class MultimodalRAGIndexer:
             "chunk_index": item["chunk_index"],
             "parent_section": item.get("title", "UNKNOWN"),
             "related_image_ids": item.get("related_images", []),
+            "material_file_id": (
+                item.get("metadata", {}).get("material_file_id")
+                if isinstance(item.get("metadata"), dict)
+                else None
+            ),
             "quality_status": "indexed",
             "index_version": version.version_id,
             "embedding_model": version.text_embedding_model,

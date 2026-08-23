@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
@@ -17,6 +17,7 @@ from app.api.v1.router import api_router
 from app.core.config import PROJECT_ROOT
 from app.core.errors import AppError
 from app.core.logging import reset_request_id, set_request_id
+from app.dependencies import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,13 @@ DEBUG_ROOT = Path(__file__).resolve().parents[1] / "static" / "debug"
 REACT_ROOT = DEBUG_ROOT / "react"
 QUESTION_BANK_IMAGE_ROOT = PROJECT_ROOT / "evaluation" / "cache" / "storage"
 ANALOG_OPAMP_IMAGE_NAME = "模电测试集_图2.1.1_运算放大器电路.jpg"
+CASE6_DEMO_IMAGE = (
+    PROJECT_ROOT
+    / "组员反馈"
+    / "组员一反馈"
+    / "images"
+    / "Q07_analog_instrumentation_amp.png"
+)
 
 
 def error_payload(code: str, message: str, details: Any = None) -> dict[str, Any]:
@@ -46,6 +54,7 @@ def configure_http_app(app: FastAPI) -> None:
     @app.get(
         "/debug-assets/question-bank/analog-opamp.jpg",
         include_in_schema=False,
+        dependencies=[Depends(require_admin)],
     )
     async def analog_opamp_question_image() -> FileResponse:
         matches = tuple(QUESTION_BANK_IMAGE_ROOT.rglob(ANALOG_OPAMP_IMAGE_NAME))
@@ -54,6 +63,21 @@ def configure_http_app(app: FastAPI) -> None:
         return FileResponse(
             matches[0],
             media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @app.get(
+        "/demo-assets/case6-opamp.png",
+        include_in_schema=False,
+    )
+    async def case6_demo_image() -> FileResponse:
+        """Serve the reproducible, non-private image used by the AC-01 demo."""
+
+        if not CASE6_DEMO_IMAGE.is_file():
+            raise HTTPException(status_code=404, detail="AC-01演示图片不存在")
+        return FileResponse(
+            CASE6_DEMO_IMAGE,
+            media_type="image/png",
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
@@ -77,7 +101,12 @@ def _register_page_routes(app: FastAPI) -> None:
     async def root_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "home.html")
 
-    @app.get("/debug", include_in_schema=True, tags=["development"])
+    @app.get(
+        "/debug",
+        include_in_schema=True,
+        tags=["development"],
+        dependencies=[Depends(require_admin)],
+    )
     async def debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
 
@@ -96,11 +125,21 @@ def _register_page_routes(app: FastAPI) -> None:
     async def teacher_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "teacher.html")
 
-    @app.get("/debug/rag", include_in_schema=True, tags=["development"])
+    @app.get(
+        "/debug/rag",
+        include_in_schema=True,
+        tags=["development"],
+        dependencies=[Depends(require_admin)],
+    )
     async def rag_debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "execution.html")
 
-    @app.get("/debug/agents", include_in_schema=True, tags=["development"])
+    @app.get(
+        "/debug/agents",
+        include_in_schema=True,
+        tags=["development"],
+        dependencies=[Depends(require_admin)],
+    )
     async def agent_debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "agents.html")
 
@@ -139,15 +178,30 @@ def _register_page_routes(app: FastAPI) -> None:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
-    @app.get("/debug/execution", include_in_schema=True, tags=["development"])
+    @app.get(
+        "/debug/execution",
+        include_in_schema=True,
+        tags=["development"],
+        dependencies=[Depends(require_admin)],
+    )
     async def execution_debug_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "execution.html")
 
-    @app.get("/system", include_in_schema=True, tags=["system"])
+    @app.get(
+        "/system",
+        include_in_schema=True,
+        tags=["system"],
+        dependencies=[Depends(require_admin)],
+    )
     async def system_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "system.html")
 
-    @app.get("/demo", include_in_schema=True, tags=["development"])
+    @app.get(
+        "/demo",
+        include_in_schema=True,
+        tags=["development"],
+        dependencies=[Depends(require_admin)],
+    )
     async def demo_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
 

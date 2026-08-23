@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from app.agents import AgentRegistry, TaskRouter
 from app.contracts import AgentRequest, Intent, RouteDecision, RouteStatus, Scene
 from app.services.intent_plan import IntentPlanCompiler
@@ -193,6 +194,77 @@ def test_explicit_circuit_calculation_stays_solver_route() -> None:
     result = IntentRecognitionService().recognize(request(text))
 
     assert result.intent == "solve_problem"
+
+
+def test_first_error_student_claim_uses_assignment_review_route() -> None:
+    text = (
+        "学生在简答题中写道：加入射极旁路电容会降低输入电阻，"
+        "所以电压放大倍数会减小。请精准定位这句话中的逻辑首错。"
+    )
+
+    result = IntentRecognitionService().recognize(request(text))
+    decision = TaskRouter(AgentRegistry()).route(request(text))
+
+    assert result.intent == "assignment_review"
+    assert decision.agent_id == "TEACH_02_ASSIGNMENT_REVIEW_V1"
+
+
+def test_learning_path_contract_precedes_circuit_solver_keywords() -> None:
+    text = (
+        "根据学生在受控源等效电阻、卷积、三极管饱和区和时序状态方程上的知识缺口，"
+        "制定不超过5步的个性化补强路径，每步给练习题和掌握标准。"
+    )
+
+    result = IntentRecognitionService().recognize(request(text))
+    decision = TaskRouter(AgentRegistry()).route(
+        request(text).model_copy(update={"course_id": "AUTO"})
+    )
+
+    assert result.intent == "learning_advice"
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+
+
+def test_student_misconception_without_first_error_phrase_uses_review() -> None:
+    text = (
+        "学生认为CMOS逻辑门只要通电，无论输入频率多高，功耗都是固定常数。"
+        "请诊断其对CMOS功耗构成的认知错误，并出一道验证题。"
+    )
+
+    result = IntentRecognitionService().recognize(request(text))
+    decision = TaskRouter(AgentRegistry()).route(
+        request(text).model_copy(update={"course_id": "DE"})
+    )
+
+    assert result.intent == "assignment_review"
+    assert decision.agent_id == "TEACH_02_ASSIGNMENT_REVIEW_V1"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "共射放大电路测得 V_C≈V_CC 且出现顶部削峰，请诊断工作状态并给出验证步骤。",
+        (
+            "反相积分器输入端 vi=0，但输出向负电源轨漂移并饱和，"
+            "请诊断原因并给出加什么元件。"
+        ),
+    ],
+)
+def test_text_only_circuit_diagnosis_stays_solver_route(text: str) -> None:
+    task_request = request(
+        text,
+        options={
+            "previous_agent": "RESEARCH_01_ACADEMIC_SEARCH_V1",
+            "previous_answer_summary": "上一轮是科研前沿检索。",
+        },
+    )
+
+    result = IntentRecognitionService().recognize(task_request)
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert result.intent == "solve_problem"
+    assert decision.agent_id == "ACADEMIC_PROBLEM_SOLVER"
+    assert "domain_contract:circuit_diagnosis" in decision.reason_codes
+    assert "context_boundary:research_not_reused" in decision.reason_codes
 
 
 def test_router_attaches_structured_intent_context() -> None:

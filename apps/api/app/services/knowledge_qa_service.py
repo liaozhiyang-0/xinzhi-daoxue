@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import re
 from dataclasses import dataclass
 
@@ -12,6 +14,7 @@ from app.contracts import (
     RetrievalContextPacket,
     RetrievalResult,
 )
+from app.contracts.learning import LearningPathDraft
 from app.services.evidence_excerpt import display_evidence_excerpt
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
@@ -25,6 +28,48 @@ from app.services.response_depth import (
 from app.services.retrieval_context import RetrievalContextService
 
 DISCLAIMER = "当前答案依据课程知识库证据整理；未知字段和发布决定仍需人工复核。"
+LOGGER = logging.getLogger(__name__)
+
+
+def _requested_plan_days(question: str) -> int | None:
+    """Read an explicit learning-plan horizon without inventing one."""
+
+    match = re.search(r"(\d+)\s*天", question)
+    if match:
+        return int(match.group(1))
+    week_match = re.search(r"(\d+)\s*周", question)
+    if week_match:
+        return int(week_match.group(1)) * 7
+    chinese_weeks = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5}
+    for label, weeks in chinese_weeks.items():
+        if f"{label}周" in question:
+            return weeks * 7
+    return None
+
+
+def _planned_days(staged_plan: list[dict[str, object] | str]) -> int:
+    """Estimate covered days from explicit day/week markers in model output."""
+
+    day_values: list[int] = []
+    week_values: list[int] = []
+    for item in staged_plan:
+        if not isinstance(item, dict):
+            continue
+        for key in ("day", "days", "day_number"):
+            value = item.get(key)
+            if isinstance(value, int) and value > 0:
+                day_values.append(value)
+                break
+        for key in ("week", "week_number"):
+            value = item.get(key)
+            if isinstance(value, int) and value > 0:
+                week_values.append(value)
+                break
+    if day_values:
+        return max(day_values)
+    if week_values:
+        return max(week_values) * 7
+    return len(staged_plan)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,14 +151,26 @@ class KnowledgeQAService:
             )
             task_type = "knowledge_answer"
         elif learning_path:
+            requested_days = _requested_plan_days(self._question(request))
+            horizon_instruction = (
+                f"覆盖至少{requested_days}天"
+                if requested_days is not None
+                else "覆盖用户明确要求的完整时间范围"
+            )
             system_prompt = (
                 "你是学习证据诊断助手。请只根据用户提供的作答记录、分数、"
                 "错误描述和课程检索证据整理学习路径；把观察到的证据、"
                 "合理推测和未知信息分开。一次错误不能直接推出能力定论，"
                 "不得虚构历史成绩、阈值或课程标准。输出应包含：证据摘要、"
-                "最可能的薄弱知识点（带置信度和依据）、先修关系、7天内每天不超过25分钟的"
+                f"最可能的薄弱知识点（带置信度和依据）、先修关系、{horizon_instruction}的"
                 "分阶段计划、至少两道验证任务、完成证据和需要教师介入的节点。"
+                "如果请求指定了周数或天数，staged_plan必须用连续的day或week字段覆盖完整周期，"
+                "不得擅自缩短为7天或另一个默认周期。"
                 "课程证据只能使用真实编号如[S1]，不得编造编号。"
+                "只输出一个 JSON 对象，字段必须是：evidence_summary、"
+                "weak_knowledge_points、prerequisite_path、staged_plan、"
+                "verification_tasks、completion_evidence、"
+                "teacher_intervention_points。不要输出 Markdown。"
             )
             user_prompt = (
                 f"用户原始记录（唯一的学习证据来源）：\n{self._question(request)}\n\n"
@@ -136,13 +193,30 @@ class KnowledgeQAService:
             f"{messages[-1]['content']}\n\n{depth_instruction(policy)}"
         )
         try:
-            generated = await model_service.generate_for_task(
-                task_type,
-                messages=messages,
-                request_id=str(request.options.get("request_id", "")) or None,
-                extra_options={"max_tokens": policy.max_output_tokens},
-            )
+            if learning_path:
+                generated = await model_service.generate_json_for_task(
+                    task_type,
+                    messages=messages,
+                    schema=LearningPathDraft,
+                    request_id=str(request.options.get("request_id", "")) or None,
+                    extra_options={"max_tokens": policy.max_output_tokens},
+                )
+            else:
+                generated = await model_service.generate_for_task(
+                    task_type,
+                    messages=messages,
+                    request_id=str(request.options.get("request_id", "")) or None,
+                    extra_options={"max_tokens": policy.max_output_tokens},
+                )
         except Exception as exc:
+            LOGGER.exception(
+                "knowledge_model_generation_failed provider=%s learning_path=%s "
+                "error_type=%s error=%s",
+                getattr(model_service, "__class__", type(model_service)).__name__,
+                learning_path,
+                type(exc).__name__,
+                str(exc),
+            )
             execution.result.warnings.append(
                 f"model_generation_unavailable:{type(exc).__name__}"
             )
@@ -181,8 +255,18 @@ class KnowledgeQAService:
             execution.result.fallback_reason = "model_generation_empty"
             return execution
 
+        learning_path_draft: LearningPathDraft | None = None
+        if learning_path:
+            learning_path_draft = LearningPathDraft.model_validate_json(
+                generated.content
+            )
+            generated_content = self._render_learning_path_draft(
+                learning_path_draft
+            )
+        else:
+            generated_content = generated.content
         generated_content = re.sub(
-            r"(?<!\[)\b(S\d+)\b(?!\])", r"[\1]", generated.content
+            r"(?<!\[)\b(S\d+)\b(?!\])", r"[\1]", generated_content
         )
         evidence_by_id = {
             item.evidence_id: item.source_ref for item in execution.context.evidence
@@ -210,6 +294,15 @@ class KnowledgeQAService:
         execution.result.provider = generated.provider
         execution.result.answer = generated_content
         execution.result.citations = citations
+        execution.result.metrics.provider_latency_ms = (
+            execution.result.metrics.provider_latency_ms or 0
+        ) + generated.elapsed_ms
+        execution.result.metrics.model_latency_ms = (
+            execution.result.metrics.model_latency_ms or 0
+        ) + generated.elapsed_ms
+        if generated.usage is not None:
+            execution.result.metrics.input_tokens = generated.usage.prompt_tokens
+            execution.result.metrics.output_tokens = generated.usage.completion_tokens
         execution.result.structured_result.update(
             {
                 "mode": (
@@ -237,11 +330,66 @@ class KnowledgeQAService:
                 },
             }
         )
+        if learning_path_draft is not None:
+            draft_data = learning_path_draft.model_dump(mode="json")
+            requested_days = _requested_plan_days(self._question(request))
+            planned_days = _planned_days(learning_path_draft.staged_plan)
+            plan_horizon_check = {
+                "status": (
+                    "passed"
+                    if requested_days is None or planned_days >= requested_days
+                    else "mismatch"
+                ),
+                "requested_days": requested_days,
+                "planned_days": planned_days,
+                "reason": (
+                    "模型计划覆盖请求周期"
+                    if requested_days is None or planned_days >= requested_days
+                    else "模型计划未覆盖请求的完整周期"
+                ),
+            }
+            draft_data["plan_horizon_check"] = plan_horizon_check
+            execution.result.business_data.update(draft_data)
+            execution.result.structured_result["business_data"] = draft_data
+            execution.result.structured_result["learning_path_draft"] = draft_data
         execution.result.metrics.model_calls += 1
         for artifact in execution.result.artifacts:
             artifact.content.update(execution.result.structured_result)
             artifact.source_refs = list(citations)
         return execution
+
+    @staticmethod
+    def _render_learning_path_draft(draft: LearningPathDraft) -> str:
+        """Keep the answer readable while retaining the exact model fields."""
+
+        def display(value: object) -> str:
+            if isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False)
+
+        lines = [
+            "证据摘要",
+            display(draft.evidence_summary),
+            "",
+            "薄弱知识点",
+            *[f"- {display(item)}" for item in draft.weak_knowledge_points],
+            "",
+            "前置知识路径",
+            " → ".join(draft.prerequisite_path),
+            "",
+            "阶段学习计划",
+            *[f"- {display(item)}" for item in draft.staged_plan],
+            "",
+            "验证任务",
+            *[f"- {display(item)}" for item in draft.verification_tasks],
+            "",
+            "完成证据",
+            *[f"- {display(item)}" for item in draft.completion_evidence],
+            "",
+            "教师介入节点",
+            *[f"- {display(item)}" for item in draft.teacher_intervention_points],
+        ]
+        return "\n".join(lines)
 
     @staticmethod
     def _model_synthesis_required(

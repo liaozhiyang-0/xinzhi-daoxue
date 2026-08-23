@@ -110,6 +110,9 @@ async def upload_file(
             upload.filename or "upload", content_type, data
         )
     else:
+        content_type = service.infer_binary_image_content_type(
+            upload.filename or "upload", content_type, data
+        )
         safe_name = service.validate(
             upload.filename or "upload", len(data), content_type
         )

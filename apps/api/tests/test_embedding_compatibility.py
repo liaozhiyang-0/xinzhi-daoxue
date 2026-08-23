@@ -22,31 +22,41 @@ def test_legacy_hash_embedding_is_deterministic_and_normalized() -> None:
 
 
 def test_local_text_model_load_does_not_probe_the_network(monkeypatch) -> None:
-    captured: dict[str, object] = {}
+    tokenizer_kwargs: dict[str, object] = {}
+    model_kwargs: dict[str, object] = {}
 
-    class FakeSentenceTransformer:
-        tokenizer = SimpleNamespace(model_max_length=512)
+    class FakeTokenizer:
+        model_max_length = 512
 
-        def __init__(self, model_name: str, **kwargs: object) -> None:
-            captured["model_name"] = model_name
-            captured.update(kwargs)
+        @classmethod
+        def from_pretrained(cls, model_name: str, **kwargs: object) -> object:
+            tokenizer_kwargs["model_name"] = model_name
+            tokenizer_kwargs.update(kwargs)
+            return cls()
 
-        def _first_module(self) -> object:
-            config = SimpleNamespace(
-                max_position_embeddings=512,
-                _commit_hash="local-revision",
-            )
-            return SimpleNamespace(auto_model=SimpleNamespace(config=config))
+    class FakeModel:
+        config = SimpleNamespace(
+            hidden_size=384,
+            max_position_embeddings=512,
+            _commit_hash="local-revision",
+        )
 
-        def get_embedding_dimension(self) -> int:
-            return 384
+        @classmethod
+        def from_pretrained(cls, model_name: str, **kwargs: object) -> object:
+            model_kwargs["model_name"] = model_name
+            model_kwargs.update(kwargs)
+            return cls()
 
-        get_sentence_embedding_dimension = get_embedding_dimension
+        def to(self, _device: str) -> object:
+            return self
+
+        def eval(self) -> None:
+            return None
 
     monkeypatch.setitem(
         sys.modules,
-        "sentence_transformers",
-        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+        "transformers",
+        SimpleNamespace(AutoModel=FakeModel, AutoTokenizer=FakeTokenizer),
     )
     provider = LocalBGETextEmbeddingProvider(
         model_name="local/text",
@@ -62,7 +72,8 @@ def test_local_text_model_load_does_not_probe_the_network(monkeypatch) -> None:
 
     provider.load()
 
-    assert captured["local_files_only"] is True
+    assert tokenizer_kwargs["local_files_only"] is True
+    assert model_kwargs["local_files_only"] is True
 
 
 def test_local_image_model_load_does_not_probe_the_network(monkeypatch) -> None:

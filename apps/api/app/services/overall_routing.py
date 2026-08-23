@@ -13,6 +13,7 @@ from app.agents.internal.contracts import OverallRouteDecision
 from app.agents.router import TaskRouter
 from app.contracts import AgentRequest, RouteDecision
 from app.core.config import Settings
+from app.observability.architecture_telemetry import architecture_telemetry
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,7 @@ class OverallRoutingService:
             )
             if decision is None:
                 return self._fallback(current, started, "invalid_target")
+            architecture_telemetry.increment("overall_router_rewrite_count")
             return OverallRoutingOutcome(
                 decision=decision,
                 used=True,

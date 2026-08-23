@@ -117,9 +117,14 @@ class ScenarioEvidenceReviewService:
             if policy_source_type in policy.supplemental_source_types:
                 warnings.append(f"supplemental_source_requires_review:{source.source_ref}")
 
-        if policy.citation_required and accepted and cited_count == 0:
+        if policy.citation_required and not accepted:
+            warnings.append("no_accepted_sources")
+            status: Literal["approved", "needs_manual_review", "rejected"] = (
+                "rejected"
+            )
+        elif policy.citation_required and cited_count == 0:
             warnings.append("accepted_sources_without_citations")
-            status: Literal["approved", "needs_manual_review", "rejected"] = "rejected"
+            status = "rejected"
         elif rejected:
             status = "rejected"
         elif policy.manual_review_required:

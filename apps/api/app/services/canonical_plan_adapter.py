@@ -231,6 +231,9 @@ class CanonicalPlanAdapter:
                 skill_bindings if skill_bindings is not None else plan.skill_bindings
             )
         }
+        capability_bindings = {
+            item.capability_id: item for item in plan.capability_bindings
+        }
         goal = RuntimeGoal(
             objective=plan.goal.objective or "runtime task",
             success_criteria=list(plan.success_criteria),
@@ -255,6 +258,7 @@ class CanonicalPlanAdapter:
                 _runtime_node(
                     node,
                     bindings=bindings,
+                    capability_bindings=capability_bindings,
                     handler_prefix=handler_prefix,
                 )
                 for node in plan.nodes
@@ -322,10 +326,24 @@ def _runtime_node(
     node: CanonicalPlanNode,
     *,
     bindings: Mapping[str, SkillExecutionDescriptor],
+    capability_bindings: Mapping[str, Any],
     handler_prefix: str,
 ) -> RuntimeNode:
     binding = bindings.get(node.target_id) if node.node_type == "skill" else None
     if binding is None:
+        capability_binding = capability_bindings.get(node.target_id)
+        if capability_binding is not None:
+            return RuntimeNode(
+                node_id=node.node_id,
+                node_type=node.node_type,
+                handler_id=f"subagent.{capability_binding.handler_id}",
+                target_id=capability_binding.handler_id,
+                depends_on=list(node.depends_on),
+                parallel_group=node.parallel_group,
+                timeout_ms=node.timeout_ms,
+                max_retries=node.max_retries,
+                optional=node.optional,
+            )
         return RuntimeNode(
             node_id=node.node_id,
             node_type=node.node_type,

@@ -40,7 +40,7 @@ const runtimeStatusLabels = { created: "已创建", queued: "排队中", running
 const runtimeEffectLabels = { not_started: "未开始", in_progress: "进行中", completed: "已完成", unknown: "未知" };
 function runtimeStatusKey(status) { return String(status || "").trim().toLowerCase(); }
 function runtimeStatusLabel(status) { const key = runtimeStatusKey(status); return runtimeStatusLabels[key] || (status ? String(status) : "未报告"); }
-function runtimeStatusTone(status) { const key = runtimeStatusKey(status); return ["completed", "succeeded"].includes(key) ? "success" : ["failed", "cancelled", "blocked"].includes(key) ? "failed" : ["running"].includes(key) ? "running" : ["waiting_input", "waiting_approval", "paused", "partial"].includes(key) ? "partial" : ["ready"].includes(key) ? "ready" : "planned"; }
+function runtimeStatusTone(status) { const key = runtimeStatusKey(status); return ["completed", "succeeded"].includes(key) ? "success" : ["failed", "blocked"].includes(key) ? "failed" : ["running"].includes(key) ? "running" : ["waiting_input", "waiting_approval", "paused", "partial", "cancelled"].includes(key) ? "partial" : ["ready"].includes(key) ? "ready" : "planned"; }
 function runtimeStatusBadge(status) { return badge(runtimeStatusTone(status), runtimeStatusLabel(status)); }
 function asRecord(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
 function runtimeSafePrompt(runtime) {

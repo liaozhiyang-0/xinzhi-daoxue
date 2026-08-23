@@ -34,6 +34,40 @@ class RuntimeContextRepository:
         )
         return cast(SessionSummaryModel | None, await self.session.scalar(query))
 
+    async def latest_summary_for_course(
+        self, session_id: str, course_id: str
+    ) -> SessionSummaryModel | None:
+        """Return the newest summary explicitly bound to one course.
+
+        A session can legitimately switch courses, so the globally newest
+        summary is not necessarily safe to use for the current task. The
+        course is stored in JSON structured state; filter after the bounded
+        newest-first query to keep this compatible with SQLite and Postgres.
+        """
+
+        query = (
+            select(SessionSummaryModel)
+            .where(
+                SessionSummaryModel.session_id == session_id,
+                SessionSummaryModel.status == "completed",
+            )
+            .order_by(desc(SessionSummaryModel.version))
+        )
+        rows = list((await self.session.scalars(query)).all())
+        normalized_course = course_id.strip().upper()
+        for item in rows:
+            state = (
+                item.structured_state
+                if isinstance(item.structured_state, dict)
+                else {}
+            )
+            if (
+                str(state.get("course_id", "")).strip().upper()
+                == normalized_course
+            ):
+                return item
+        return None
+
     async def next_summary_version(self, session_id: str) -> int:
         value = await self.session.scalar(
             select(func.max(SessionSummaryModel.version)).where(

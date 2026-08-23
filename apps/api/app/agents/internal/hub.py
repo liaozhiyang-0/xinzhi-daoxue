@@ -24,7 +24,11 @@ from app.agents.internal.contracts import (
 from app.contracts import ImageInput, ModelResponse, ModelUsage
 from app.contracts.reflection import CriticResult, RevisionProposal
 from app.contracts.research import ResearchBriefDraft, ResearchIntentDecision
-from app.core.errors import InvalidModelRequestError, ModelProviderError
+from app.core.errors import (
+    InvalidModelRequestError,
+    ModelProviderError,
+    StructuredOutputError,
+)
 from app.services.model_service import ModelService
 
 
@@ -265,6 +269,8 @@ INTERNAL_AGENT_DEFINITIONS = (
 class InternalAgentHub:
     """Model-backed subordinate agents; it does not replace the workflow registry."""
 
+    _STRUCTURED_RECOVERY_MAX_TOKENS = 2048
+
     def __init__(self, model_service: ModelService) -> None:
         self.model_service = model_service
         self._definitions = {item.agent_id: item for item in INTERNAL_AGENT_DEFINITIONS}
@@ -343,7 +349,7 @@ class InternalAgentHub:
                 extra_options=options,
             )
             return self._result(definition, response)
-        response = await self.model_service.generate_json_for_task(
+        response = await self._generate_json_with_recovery(
             definition.task_type,
             messages=[
                 {
@@ -358,9 +364,115 @@ class InternalAgentHub:
             ],
             schema=definition.output_schema,
             request_id=request_id,
+            max_tokens=max_tokens,
             extra_options=options,
         )
         return self._result(definition, response)
+
+    async def _generate_json_with_recovery(
+        self,
+        task_type: str,
+        *,
+        messages: list[dict[str, Any]],
+        schema: type[BaseModel],
+        request_id: str | None,
+        max_tokens: int | None,
+        extra_options: dict[str, Any],
+    ) -> ModelResponse:
+        try:
+            return await self.model_service.generate_json_for_task(
+                task_type,
+                messages=messages,
+                schema=schema,
+                request_id=request_id,
+                extra_options=extra_options,
+            )
+        except StructuredOutputError as exc:
+            if not bool(exc.details.get("truncated")):
+                raise
+            recovery_limit = self._structured_recovery_limit(
+                max_tokens or self._optional_int(extra_options.get("max_tokens"))
+            )
+            recovery_options = {
+                **extra_options,
+                "max_tokens": recovery_limit,
+            }
+            recovery_messages = [
+                *messages,
+                {
+                    "role": "user",
+                    "content": (
+                        "上一轮结构化输出达到长度上限且未闭合。请重新输出完整JSON对象，"
+                        "压缩长文本字段，不要解释，不要Markdown，不要省略必填字段。"
+                    ),
+                },
+            ]
+            try:
+                recovered = await self.model_service.generate_json_for_task(
+                    task_type,
+                    messages=recovery_messages,
+                    schema=schema,
+                    request_id=request_id,
+                    extra_options=recovery_options,
+                )
+            except ModelProviderError as recovery_error:
+                recovery_error.details.update(
+                    {
+                        "structured_recovery_attempted": True,
+                        "structured_recovery_max_tokens": recovery_limit,
+                        "initial_finish_reason": exc.details.get("finish_reason"),
+                        "initial_output_chars": exc.details.get("output_chars"),
+                        "initial_elapsed_ms": exc.details.get("elapsed_ms", 0),
+                    }
+                )
+                raise
+            initial_usage = self._usage_from_details(exc.details)
+            recovered_usage = recovered.usage or ModelUsage()
+            return recovered.model_copy(
+                update={
+                    "usage": ModelUsage(
+                        prompt_tokens=self._sum_optional(
+                            initial_usage.prompt_tokens,
+                            recovered_usage.prompt_tokens,
+                        ),
+                        completion_tokens=self._sum_optional(
+                            initial_usage.completion_tokens,
+                            recovered_usage.completion_tokens,
+                        ),
+                        total_tokens=self._sum_optional(
+                            initial_usage.total_tokens,
+                            recovered_usage.total_tokens,
+                        ),
+                    ),
+                    "elapsed_ms": int(exc.details.get("elapsed_ms") or 0)
+                    + recovered.elapsed_ms,
+                    "raw_metadata": {
+                        **recovered.raw_metadata,
+                        "structured_recovery_attempted": True,
+                        "structured_recovery_max_tokens": recovery_limit,
+                        "initial_finish_reason": exc.details.get("finish_reason"),
+                        "initial_output_chars": exc.details.get("output_chars"),
+                    },
+                }
+            )
+
+    @classmethod
+    def _structured_recovery_limit(cls, max_tokens: int | None) -> int:
+        baseline = max(512, (max_tokens or 384) * 2)
+        return min(cls._STRUCTURED_RECOVERY_MAX_TOKENS, baseline)
+
+    @staticmethod
+    def _usage_from_details(details: dict[str, Any]) -> ModelUsage:
+        usage = details.get("usage")
+        if not isinstance(usage, dict):
+            return ModelUsage()
+        return ModelUsage(
+            prompt_tokens=InternalAgentHub._optional_int(usage.get("prompt_tokens")),
+            completion_tokens=InternalAgentHub._optional_int(
+                usage.get("completion_tokens")
+            ),
+            total_tokens=InternalAgentHub._optional_int(usage.get("total_tokens")),
+        )
 
     async def _reason_then_structure(
         self,
@@ -392,7 +504,7 @@ class InternalAgentHub:
         )
         normalization_limit = min(max_tokens or 384, 384)
         try:
-            normalized = await self.model_service.generate_json_for_task(
+            normalized = await self._generate_json_with_recovery(
                 "structured_output_normalization",
                 messages=[
                     {
@@ -408,6 +520,7 @@ class InternalAgentHub:
                 ],
                 schema=definition.output_schema,
                 request_id=request_id,
+                max_tokens=normalization_limit,
                 extra_options={
                     **(extra_options or {}),
                     "max_tokens": normalization_limit,
@@ -457,6 +570,7 @@ class InternalAgentHub:
                 "usage": usage,
                 "elapsed_ms": draft.elapsed_ms + normalized.elapsed_ms,
                 "raw_metadata": {
+                    **normalized.raw_metadata,
                     "pipeline": "reason_then_structure",
                     "draft_provider_request_id": draft.provider_request_id,
                     "normalized_provider_request_id": normalized.provider_request_id,
@@ -554,4 +668,5 @@ class InternalAgentHub:
             total_tokens=usage.total_tokens if usage else None,
             elapsed_ms=response.elapsed_ms,
             provider_request_id=response.provider_request_id,
+            raw_metadata=response.raw_metadata,
         )

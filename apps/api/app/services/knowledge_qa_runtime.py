@@ -287,6 +287,25 @@ class KnowledgeQARuntimeService:
                 "evidence_count": evidence_count,
                 "citation_count": citation_count,
             }
+            if mode in {
+                "learning_path_model_required",
+                "governance_model_required",
+            }:
+                return RuntimeObservation(
+                    node_id=_node.node_id,
+                    terminal_status=RuntimeNodeStatus.PARTIAL,
+                    artifact_ids=[
+                        item.artifact_id for item in result.artifacts
+                    ],
+                    facts={
+                        **facts,
+                        "passed": False,
+                        "generation_required": True,
+                        "needs_review": True,
+                        "reason_code": "model_generation_required",
+                    },
+                    warnings=list(result.warnings[:8]),
+                )
             if evidence_status in {"sufficient", "complete"} and not (
                 citation_count or has_artifact
             ):

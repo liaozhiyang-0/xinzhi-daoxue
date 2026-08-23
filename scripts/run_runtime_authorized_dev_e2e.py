@@ -21,6 +21,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 RunMode = Literal["legacy", "runtime"]
 PairOrder = Literal["legacy-first", "runtime-first", "alternate"]
+PAIRED_INPUT_SCHEMA_VERSION = "runtime_paired_input.v1"
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 MAX_AUTO_APPROVALS = 3
 SENSITIVE_KEYS = {
@@ -156,6 +157,50 @@ CASES: tuple[E2ECase, ...] = (
             "p2,A,12\n"
             "p3,B,7\n"
             "p4,B,8\n"
+        ),
+    ),
+    E2ECase(
+        case_id="research_data_analysis_executable_runtime",
+        agent_id="RESEARCH_03_DATA_ANALYSIS_V1",
+        runtime_option_key="research_analysis_v2",
+        course_id="CT",
+        intent="data_analysis",
+        question="Compare two synthetic groups and report the estimated effect.",
+        runtime_request={
+            "research_question": (
+                "Compare two synthetic groups and report the estimated effect."
+            ),
+            "analysis_goal": "estimate_effect",
+            "design": "experimental_comparison",
+            "estimand": "group A minus group B mean outcome",
+            "unit_of_analysis": "one row per participant",
+            "variables": [
+                {
+                    "name": "participant",
+                    "role": "identifier",
+                    "dtype": "string",
+                },
+                {
+                    "name": "group",
+                    "role": "treatment",
+                    "dtype": "string",
+                    "allowed_values": ["A", "B"],
+                },
+                {
+                    "name": "outcome",
+                    "role": "outcome",
+                    "dtype": "numeric",
+                },
+            ],
+            "exploratory": True,
+        },
+        dataset_csv=(
+            "participant,group,outcome\n"
+            + "".join(
+                f"a{index},A,{10 + (index % 5)}\n"
+                f"b{index},B,{7 + (index % 5)}\n"
+                for index in range(1, 13)
+            )
         ),
     ),
 )
@@ -744,13 +789,61 @@ def upload_case_dataset(
         "version": "v1",
         "format": "csv",
         "checksum_sha256": file_payload["checksum_sha256"],
-        "row_count": 4,
-        "column_count": 3,
+        "row_count": max(0, len(case.dataset_csv.splitlines()) - 1),
+        "column_count": len(case.dataset_csv.splitlines()[0].split(",")),
         "authorized": True,
         "contains_sensitive_data": False,
         "source_ref": f"attachment:{file_payload['id']}",
     }
     return [attachment], manifest
+
+
+def paired_input_payload(
+    case: E2ECase,
+    *,
+    attachments: list[dict[str, Any]],
+    runtime_request: dict[str, Any] | None,
+    canonical_input: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a stable semantic input snapshot for Legacy/Runtime pairing.
+
+    API task payloads contain mode switches, session IDs, and per-upload file
+    IDs.  Those values are execution metadata, not the user input being
+    compared.  Keep the content-bearing attachment fields and normalize the
+    dataset source reference so repeated uploads hash to the same pair input.
+    """
+
+    stable_attachments = [
+        {
+            key: attachment.get(key)
+            for key in (
+                "filename",
+                "content_type",
+                "size_bytes",
+                "checksum_sha256",
+            )
+            if key in attachment
+        }
+        for attachment in attachments
+    ]
+    stable_runtime_request = dict(runtime_request or {})
+    manifest = stable_runtime_request.get("data_manifest")
+    if isinstance(manifest, dict):
+        stable_manifest = dict(manifest)
+        dataset_id = str(stable_manifest.get("dataset_id", "")).strip()
+        if dataset_id:
+            stable_manifest["source_ref"] = f"dataset:{dataset_id}"
+        else:
+            stable_manifest.pop("source_ref", None)
+        stable_runtime_request["data_manifest"] = stable_manifest
+    return {
+        "schema_version": PAIRED_INPUT_SCHEMA_VERSION,
+        "course_id": case.course_id,
+        "intent": case.intent,
+        "canonical_input": canonical_input or {"question": case.question},
+        "attachments": stable_attachments,
+        "runtime_request": stable_runtime_request,
+    }
 
 
 def run_one(
@@ -823,7 +916,22 @@ def run_one(
     artifact_dir = (
         output / "artifacts" / case.agent_id / case.case_id / sample_id / mode
     )
-    write_json(artifact_dir / "input.json", {"question": case.question})
+    task_input = terminal.get("input_content")
+    task_canonical_input = (
+        task_input.get("canonical_input")
+        if isinstance(task_input, dict)
+        and isinstance(task_input.get("canonical_input"), dict)
+        else None
+    )
+    write_json(
+        artifact_dir / "input.json",
+        paired_input_payload(
+            case,
+            attachments=attachments,
+            runtime_request=runtime_request,
+            canonical_input=task_canonical_input,
+        ),
+    )
     write_json(artifact_dir / "task.json", terminal)
     write_json(artifact_dir / "events.json", events)
     write_json(artifact_dir / "execution.json", execution)

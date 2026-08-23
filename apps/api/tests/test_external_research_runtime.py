@@ -108,6 +108,8 @@ def _external_result(
             )
         ],
         provider_status={"fake": "completed"},
+        review_status="approved",
+        approved_count=1,
         retrieval_trace_id=retrieval_trace_id,
     )
 
@@ -168,6 +170,67 @@ def _electronics_scope_result(query: str) -> ExternalRetrievalResult:
         provider_status={"fake": "completed"},
         approved_count=2,
     )
+
+
+def test_external_retrieval_payload_withholds_unreviewed_candidates() -> None:
+    request = _runtime_request("external-review-boundary-task")
+    degraded = _degraded_external_result("latest agent planning papers")
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+        generation_injection=True,
+    )
+
+    guarded = ExternalResearchRuntimeService._with_retrieval(
+        request,
+        degraded,
+        policy,
+    )
+    guarded_payload = guarded.options["external_retrieval"]
+    assert isinstance(guarded_payload, dict)
+    assert guarded_payload["items"] == []
+    assert "retrieved_context" not in guarded.options
+
+    approved = ExternalResearchRuntimeService._with_retrieval(
+        request,
+        degraded,
+        policy,
+        evidence_review_approved=True,
+    )
+    approved_payload = approved.options["external_retrieval"]
+    assert isinstance(approved_payload, dict)
+    assert approved_payload["items"][0]["evidence_id"] == "paper-001"
+    assert approved.options["external_retrieval_untrusted"] is True
+
+
+@pytest.mark.parametrize(
+    ("review_status", "approved_count"),
+    [("not_run", 1), ("approved", 0)],
+)
+def test_external_retrieval_review_metadata_mismatch_is_gated(
+    review_status: str, approved_count: int
+) -> None:
+    request = _runtime_request("external-review-metadata-task")
+    result = _external_result("latest agent planning papers").model_copy(
+        update={
+            "review_status": review_status,
+            "approved_count": approved_count,
+        }
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+    )
+
+    guarded = ExternalResearchRuntimeService._with_retrieval(
+        request,
+        result,
+        policy,
+    )
+
+    payload = guarded.options["external_retrieval"]
+    assert isinstance(payload, dict)
+    assert payload["items"] == []
 
 
 @pytest.mark.asyncio
@@ -357,7 +420,9 @@ async def test_external_research_runtime_review_waits_for_approval_and_resumes(
     assert run.last_decision is not None
     assert run.last_decision.approval_scope == service.approval_scope
     assert run.nodes["research.fetch"].status == RuntimeNodeStatus.SUCCEEDED
-    assert run.nodes["research.verify"].status == RuntimeNodeStatus.PARTIAL
+    assert run.nodes["research.answer"].status == RuntimeNodeStatus.READY
+    assert run.nodes["research.verify"].status == RuntimeNodeStatus.PENDING
+    assert frontier.calls == 0
     assert fetch_calls == 1
 
     run.control_data["approved"] = True

@@ -5,8 +5,10 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from app.runtime import AgentRun, AgentRunPlan, RuntimeLaunchSnapshot, RuntimeNode
 from app.runtime.semantic_evidence import payload_sha256
+from app.services.task_audit import runtime_request_sha256
 
 from scripts.package_runtime_e2e_evidence import package_e2e_evidence
 
@@ -99,22 +101,69 @@ def _create_pair_artifacts(
     legacy_latency_ms: int = 0,
     runtime_latency_ms: int = 0,
     sample_id: str | None = None,
+    runtime_request: dict[str, object] | None = None,
 ) -> None:
     base = root / "artifacts" / "GENERAL_QUESTION_V1" / "general-case"
     if sample_id:
         base /= sample_id
-    input_payload = {"question": "controlled private input"}
+    input_payload = {
+        "schema_version": "runtime_paired_input.v1",
+        "course_id": "UNKNOWN",
+        "intent": "general_qa",
+        "canonical_input": {"question": "controlled private input"},
+        "attachments": [],
+        "runtime_request": runtime_request or {},
+    }
     for mode in ("legacy", "runtime"):
+        task_id_for_mode = task_id if mode == "runtime" else "legacy-task"
+        options: dict[str, object] = {
+            "_audit": {},
+        }
+        if mode == "runtime" and runtime_request:
+            options["research_analysis_v2"] = {
+                "execute": True,
+                "request": runtime_request,
+            }
+        audit = {
+            "schema_version": "task_audit.v1",
+            "task_id": task_id_for_mode,
+            "agent_id": "GENERAL_QUESTION_V1",
+            "input_sha256": payload_sha256(
+                {"question": "controlled private input"}
+            ),
+            "attachment_sha256": payload_sha256([]),
+            "runtime_request_sha256": runtime_request_sha256(options),
+            "runtime_run_id": "runtime-e2e-run" if mode == "runtime" else "",
+            "terminal_status": "completed",
+            "failure_category": "",
+        }
+        input_content = {
+            "course_id": "UNKNOWN",
+            "intent": "general_qa",
+            "canonical_input": {"question": "controlled private input"},
+            "attachments": [],
+            "options": {**options, "_audit": audit},
+        }
         _write_json(base / mode / "input.json", input_payload)
         _write_json(
             base / mode / "task.json",
             {
-                "id": task_id if mode == "runtime" else "legacy-task",
+                "id": task_id_for_mode,
                 "agent_id": "GENERAL_QUESTION_V1",
                 "status": "completed",
                 "provider": "mock",
+                "failure_category": None,
+                "input_content": input_content,
                 "result_content": {
                     "answer": "controlled answer",
+                    "structured_result": {
+                        "presentation": {
+                            "title": "Controlled result",
+                            "status_label": "completed",
+                            "provider_label": "local",
+                            "evidence_message": "no external citation",
+                        }
+                    },
                     "metrics": {
                         "latency_ms": (
                             legacy_latency_ms
@@ -167,22 +216,48 @@ def test_packager_exports_unchanged_trace_and_builds_structural_suite(
             encoding="utf-8"
         )
     )
-    assert semantic_inputs == {"general-case": {"question": "controlled private input"}}
+    input_snapshot = json.loads(
+        (
+            output_root
+            / "artifacts"
+            / "GENERAL_QUESTION_V1"
+            / "general-case"
+            / "runtime"
+            / "input.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert semantic_inputs == {"general-case": input_snapshot}
     review_packet = json.loads(
         (output_root / agent["semantic_review_packet"]).read_text(encoding="utf-8")
     )
     assert review_packet["review_boundary"].startswith("Paired output excerpts")
     case = review_packet["cases"][0]
     assert case["case_id"] == "general-case"
-    assert case["redacted_input"] == {"question": "controlled private input"}
+    assert case["redacted_input"] == input_snapshot
     assert case["legacy_output"] == {
         "status": "completed",
         "answer": "controlled answer",
+        "presentation": {
+            "title": "Controlled result",
+            "status_label": "completed",
+            "provider_label": "local",
+            "evidence_message": "no external citation",
+        },
     }
     assert case["runtime_output"] == {
         "status": "completed",
         "answer": "controlled answer",
+        "presentation": {
+            "title": "Controlled result",
+            "status_label": "completed",
+            "provider_label": "local",
+            "evidence_message": "no external citation",
+        },
     }
+    assert case["runtime_audit"]["runtime_run_id"] == "runtime-e2e-run"
+    assert case["runtime_audit"]["input_sha256"] == payload_sha256(
+        {"question": "controlled private input"}
+    )
     assert case["input_sha256"] == suite["pairs"][0]["input_sha256"]
     assert case["legacy_payload_sha256"] == payload_sha256(
         suite["pairs"][0]["legacy_payload"]
@@ -198,6 +273,36 @@ def test_packager_exports_unchanged_trace_and_builds_structural_suite(
         judgement_template["general-case"]["reviewer_ref"]
         == "TO_BE_COMPLETED_BY_INDEPENDENT_REVIEWER"
     )
+
+
+def test_packager_binds_nonempty_runtime_request_hash(tmp_path: Path) -> None:
+    output_root = tmp_path / "e2e"
+    database = tmp_path / "isolated.db"
+    runtime_request = {
+        "research_question": "Compare synthetic groups",
+        "data_manifest": {
+            "dataset_id": "synthetic-v1",
+            "checksum_sha256": "0" * 64,
+            "source_ref": "dataset:synthetic-v1",
+        },
+    }
+    _create_pair_artifacts(output_root, runtime_request=runtime_request)
+    _create_runtime_run(database, task_id="runtime-task")
+
+    report = package_e2e_evidence(
+        output_root=output_root,
+        sqlite_database=database,
+        authorization_ref="authorized-dev-test-2026-08-10",
+    )
+
+    assert report["agents"][0]["structural_release_eligible"] is True
+    packet = json.loads(
+        (
+            output_root
+            / report["agents"][0]["semantic_review_packet"]
+        ).read_text(encoding="utf-8")
+    )
+    assert packet["cases"][0]["runtime_audit"]["runtime_request_sha256"]
 
 
 def test_packager_rejects_sensitive_checkpoint_state(tmp_path: Path) -> None:
@@ -268,6 +373,31 @@ def test_packager_rejects_sensitive_paired_output(tmp_path: Path) -> None:
     assert agent["structural_release_eligible"] is False
     assert "result_content contains sensitive keys" in agent["blocking_reasons"][0]
     assert not (output_root / "semantic_review_packets").exists()
+
+
+def test_packager_rejects_task_audit_input_hash_mismatch(tmp_path: Path) -> None:
+    output_root = tmp_path / "e2e"
+    database = tmp_path / "isolated.db"
+    _create_pair_artifacts(output_root)
+    runtime_task = (
+        output_root
+        / "artifacts"
+        / "GENERAL_QUESTION_V1"
+        / "general-case"
+        / "runtime"
+        / "task.json"
+    )
+    task_payload = json.loads(runtime_task.read_text(encoding="utf-8"))
+    task_payload["input_content"]["options"]["_audit"]["input_sha256"] = "0" * 64
+    _write_json(runtime_task, task_payload)
+    _create_runtime_run(database, task_id="runtime-task")
+
+    with pytest.raises(ValueError, match="task_audit input hash mismatch"):
+        package_e2e_evidence(
+            output_root=output_root,
+            sqlite_database=database,
+            authorization_ref="authorized-dev-test-2026-08-10",
+        )
 
 
 def test_packager_records_a_structural_gate_failure_without_faking_a_suite(

@@ -89,8 +89,8 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     courseId: "AE",
     caseId: "AC-01",
     runtimeScenarioId: null,
-    imageSrc: "/debug-assets/question-bank/analog-opamp.jpg",
-    imageName: "模电测试集_图2.1.1_运算放大器电路.jpg",
+    imageSrc: "/demo-assets/case6-opamp.png",
+    imageName: "AC-01_运放结构演示图.png",
   },
 ];
 

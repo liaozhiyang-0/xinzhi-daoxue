@@ -42,7 +42,7 @@ def test_task_persists_message_history_and_isolates_users(api) -> None:
     assert denied.status_code == 404
 
 
-def test_shadow_runtime_wraps_legacy_task_without_second_provider_call(
+def test_active_runtime_wraps_task_without_second_provider_call(
     api, app
 ) -> None:
     app.state.task_engine.runtime_lifecycle.enabled = True
@@ -57,7 +57,7 @@ def test_shadow_runtime_wraps_legacy_task_without_second_provider_call(
     assert runtime["run_kind"] == "runtime"
     assert runtime["status"] == "completed"
     assert runtime["goal_contract"]["objective"]
-    assert runtime["goal_contract"]["source"] == "request"
+    assert runtime["goal_contract"]["source"] == "canonical_plan"
     assert runtime["nodes"]
     assert all("legacy" not in node["handler_id"] for node in runtime["nodes"])
     assert all(node["status"] == "succeeded" for node in runtime["nodes"])

@@ -60,6 +60,19 @@ def test_unknown_or_uncited_sources_are_rejected() -> None:
     assert "accepted_sources_without_citations" in result.warnings
 
 
+def test_citation_required_empty_evidence_is_rejected() -> None:
+    catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
+    scenario = catalog.get("research_frontier_radar_v1")
+
+    result = ScenarioEvidenceReviewService().review(
+        scenario,
+        ScenarioEvidenceReviewRequest(sources=[]),
+    )
+
+    assert result.status == "rejected"
+    assert "no_accepted_sources" in result.warnings
+
+
 def test_external_result_adapter_preserves_citations_and_provenance() -> None:
     catalog = ScenarioCatalog(PROJECT_ROOT / "config" / "scenarios.yaml")
     scenario = catalog.get("research_frontier_radar_v1")

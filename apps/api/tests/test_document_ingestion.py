@@ -6,6 +6,11 @@ import zipfile
 
 from app.core.errors import ValidationAppError
 from app.models import FileIngestionStatus
+from app.services.course_material_manifest import (
+    filter_revoked_material_result,
+    load_material_revocation_version,
+    update_material_revocation_state,
+)
 from app.services.document_ingestion import extract_document
 from PIL import Image
 from pypdf import PdfWriter
@@ -26,6 +31,21 @@ def _docx_bytes(*paragraphs: str) -> bytes:
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("word/document.xml", document)
     return output.getvalue()
+
+
+def test_material_revocation_version_changes_after_republish(tmp_path) -> None:
+    state_path = tmp_path / "rag_index_state.json"
+    state_path.write_text(
+        json.dumps({"revoked_material_ids": []}),
+        encoding="utf-8",
+    )
+
+    update_material_revocation_state(tmp_path, "material-1", revoked=True)
+    withdrawn_version = load_material_revocation_version(tmp_path)
+    update_material_revocation_state(tmp_path, "material-1", revoked=False)
+    republished_version = load_material_revocation_version(tmp_path)
+
+    assert withdrawn_version != republished_version
 
 
 def test_text_ingestion_detects_gb18030_and_creates_chunks(settings) -> None:
@@ -234,6 +254,25 @@ def test_image_attachment_flows_through_task_creation(client, api) -> None:
     assert "path" not in attachment
 
 
+def test_binary_mime_image_is_identified_before_task_attachment(client) -> None:
+    output = io.BytesIO()
+    Image.new("RGB", (8, 6), "white").save(output, format="PNG")
+
+    response = client.post(
+        "/api/v1/files",
+        files={
+            "upload": (
+                "diagram.png",
+                output.getvalue(),
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["content_type"] == "image/png"
+
+
 def test_course_material_requires_identity_and_supports_publish_versions(
     client,
     app,
@@ -305,6 +344,30 @@ def test_course_material_requires_identity_and_supports_publish_versions(
     manifest_row = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest_row["document_id"] == file_data["id"]
 
+    material_document = client.get(
+        f"/api/v1/knowledge/materials/CT/{file_data['id']}",
+        params={"chunk": "chunk-0"},
+    )
+    assert material_document.status_code == 200, material_document.text
+    assert material_document.text == "KCL lesson"
+    assert material_document.headers["cache-control"] == "private, no-store"
+    material_page = client.get(
+        f"/api/v1/knowledge/material-pages/CT/{file_data['id']}",
+        params={"chunk": "chunk-0"},
+    )
+    assert material_page.status_code == 200, material_page.text
+    assert material_page.json()["source_ref"] == (
+        f"kb-material://CT/{file_data['id']}#chunk-0"
+    )
+    assert "KCL lesson" in material_page.json()["content"]
+    assert material_page.headers["cache-control"] == "private, no-store"
+    published_state = json.loads(
+        (
+            app.state.settings.knowledge_index_path / "rag_index_state.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert file_data["id"] not in published_state.get("revoked_material_ids", [])
+
     state_path = (
         app.state.settings.knowledge_index_path / "rag_index_state.json"
     )
@@ -316,6 +379,42 @@ def test_course_material_requires_identity_and_supports_publish_versions(
     )
     indexed = client.get("/api/v1/knowledge/materials", params={"course_id": "CT"})
     assert indexed.json()[0]["knowledge_index_status"] == "indexed"
+
+    rejected_after_publication = client.post(
+        f"/api/v1/knowledge/materials/{file_data['id']}/review",
+        json={"status": "rejected", "note": "撤回测试"},
+    )
+    assert rejected_after_publication.status_code == 200
+    assert rejected_after_publication.json()["material_review_status"] == "rejected"
+    assert rejected_after_publication.json()["knowledge_status"] == "withdrawn"
+    assert rejected_after_publication.json()["knowledge_index_status"] == "stale"
+
+    revoked_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert file_data["id"] in revoked_state["revoked_material_ids"]
+    material_cache = (
+        app.state.settings.knowledge_index_path
+        / "cache"
+        / "course_material_chunks.jsonl"
+    )
+    material_rows = [
+        json.loads(line)
+        for line in material_cache.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert material_rows and all(not row["is_active"] for row in material_rows)
+
+    assert client.get(
+        f"/api/v1/knowledge/materials/CT/{file_data['id']}"
+    ).status_code == 404
+    assert client.get(
+        f"/api/v1/knowledge/material-pages/CT/{file_data['id']}"
+    ).status_code == 404
+
+    revoked_manifest = client.post(
+        "/api/v1/knowledge/materials/manifest", params={"course_id": "CT"}
+    )
+    assert revoked_manifest.status_code == 200
+    assert revoked_manifest.json()["material_count"] == 0
 
     withdrawn = client.post(
         f"/api/v1/knowledge/materials/{file_data['id']}/withdraw"
@@ -367,3 +466,45 @@ def test_quality_flagged_course_material_enters_review_queue(
         json={"status": "approved"},
     )
     assert approved.status_code == 409
+
+
+def test_revoked_material_is_removed_from_persisted_evidence_projection() -> None:
+    result = {
+        "answer": "历史回答",
+        "citations": [
+            "kb-material://CT/file-withdrawn#chunk-0",
+            "kb://CT/current.md#chunk-1",
+        ],
+        "structured_result": {
+            "knowledge": {
+                "hits": [
+                    {
+                        "source_ref": "kb-material://CT/file-withdrawn#chunk-0",
+                        "excerpt": "撤回资料",
+                    },
+                    {"source_ref": "kb://CT/current.md#chunk-1"},
+                ]
+            },
+            "evidence_view": [
+                {"source_ref": "kb-material://CT/file-withdrawn#chunk-0"},
+                {"source_ref": "kb://CT/current.md#chunk-1"},
+            ],
+            "evidence_packet": {
+                "sources": [
+                    {"source_ref": "kb-material://CT/file-withdrawn#chunk-0"},
+                    {"source_ref": "kb://CT/current.md#chunk-1"},
+                ]
+            },
+        },
+    }
+
+    filtered = filter_revoked_material_result(result, {"file-withdrawn"})
+
+    assert filtered is not None
+    assert filtered["citations"] == ["kb://CT/current.md#chunk-1"]
+    structured = filtered["structured_result"]
+    assert len(structured["knowledge"]["hits"]) == 1
+    assert len(structured["evidence_view"]) == 1
+    assert len(structured["evidence_packet"]["sources"]) == 1
+    assert structured["revocation_notice"]["status"] == "needs_review"
+    assert "撤回资料" not in str(structured["knowledge"]["hits"])

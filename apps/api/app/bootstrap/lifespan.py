@@ -102,6 +102,7 @@ def build_app_lifespan(
             if close_provider is not None:
                 await close_provider()
             await resources.model_service.aclose()
+            resources.rag_retrieval.close()
             await resources.engine.dispose()
 
     return lifespan

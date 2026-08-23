@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Iterable
 
 import pytest
@@ -95,7 +94,7 @@ def test_academic_writing_result_contract_is_fail_closed() -> None:
     )
 
 
-def test_uncertain_citation_waits_for_approval_and_recovery_reuses_checkpoint() -> None:
+async def test_uncertain_citation_recovery_uses_checkpoint() -> None:
     fake = FakeWritingAgents([make_result(citation_check="需要人工核验引用与事实")])
     service = AcademicWritingRuntimeService(fake, enabled=True)  # type: ignore[arg-type]
     request = make_request()
@@ -106,7 +105,7 @@ def test_uncertain_citation_waits_for_approval_and_recovery_reuses_checkpoint() 
         checkpoints.append(current.model_copy(deep=True))
 
     with pytest.raises(RuntimeRunSuspended):
-        asyncio.run(service.run(request, run, checkpoint_hook=checkpoint))
+        await service.run(request, run, checkpoint_hook=checkpoint)
 
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
     assert run.last_decision is not None
@@ -123,7 +122,7 @@ def test_uncertain_citation_waits_for_approval_and_recovery_reuses_checkpoint() 
     )
 
     run.control_data["approved"] = True
-    result = asyncio.run(service.run(request, run, checkpoint_hook=checkpoint))
+    result = await service.run(request, run, checkpoint_hook=checkpoint)
 
     assert result.status == AgentResultStatus.COMPLETED
     assert result.business_data["citation_check"] == "需要人工核验引用与事实"
@@ -133,7 +132,7 @@ def test_uncertain_citation_waits_for_approval_and_recovery_reuses_checkpoint() 
     assert run.nodes["writing.verify"].status.value == RuntimeNodeStatus.SUCCEEDED.value
 
 
-def test_citation_quality_gate_does_not_create_a_replan_proposal() -> None:
+async def test_citation_quality_gate_does_not_create_a_replan_proposal() -> None:
     fake = FakeWritingAgents(
         [make_result(citation_check="需要人工核验引用与事实")]
     )
@@ -145,12 +144,10 @@ def test_citation_quality_gate_does_not_create_a_replan_proposal() -> None:
         raise AssertionError("citation approval must not create a plan proposal")
 
     with pytest.raises(RuntimeRunSuspended):
-        asyncio.run(
-            service.run(
-                request,
-                run,
-                plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
-            )
+        await service.run(
+            request,
+            run,
+            plan_proposal_provider=unexpected_proposal,  # type: ignore[arg-type]
         )
 
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
@@ -159,7 +156,7 @@ def test_citation_quality_gate_does_not_create_a_replan_proposal() -> None:
     assert fake.calls == 1
 
 
-def test_unsupported_claims_wait_for_approval_even_when_citation_check_passes() -> None:
+async def test_unsupported_claims_require_approval() -> None:
     fake = FakeWritingAgents(
         [make_result(citation_check="passed", unsupported_claims=["claim"])]
     )
@@ -168,13 +165,13 @@ def test_unsupported_claims_wait_for_approval_even_when_citation_check_passes() 
     run = make_run(service, request)
 
     with pytest.raises(RuntimeRunSuspended):
-        asyncio.run(service.run(request, run))
+        await service.run(request, run)
 
     assert run.status == RuntimeRunStatus.WAITING_APPROVAL
     assert fake.calls == 1
 
 
-def test_failed_answer_replans_within_iteration_budget() -> None:
+async def test_failed_answer_replans_within_iteration_budget() -> None:
     fake = FakeWritingAgents(
         [
             make_result(status=AgentResultStatus.FAILED),
@@ -187,7 +184,7 @@ def test_failed_answer_replans_within_iteration_budget() -> None:
     run = make_run(service, request)
     run.budget.max_iterations = 2
 
-    result = asyncio.run(service.run(request, run))
+    result = await service.run(request, run)
 
     assert result.status == AgentResultStatus.FAILED
     assert run.status == RuntimeRunStatus.FAILED

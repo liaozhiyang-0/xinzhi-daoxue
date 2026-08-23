@@ -18,7 +18,7 @@ def _route() -> RouteDecision:
 
 
 def test_tasks_persist_provider_free_planner_shadow(api, app, client) -> None:
-    app.state.settings.planner_shadow_enabled = True
+    app.state.settings.planner_mode = "shadow"
     session = api.create_session()
     task = api.create_task(session["id"])
 
@@ -43,7 +43,7 @@ def test_tasks_persist_provider_free_planner_shadow(api, app, client) -> None:
 
 
 def test_chat_persists_the_same_planner_shadow_contract(api, app, client) -> None:
-    app.state.settings.planner_shadow_enabled = True
+    app.state.settings.planner_mode = "shadow"
     session = api.create_session()
     response = client.post(
         "/api/v1/chat",

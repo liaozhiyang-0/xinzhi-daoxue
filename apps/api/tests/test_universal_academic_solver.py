@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from app.agents import AgentRegistry, TaskRouter
@@ -66,6 +67,21 @@ def test_visual_solver_requires_structured_topology_before_calculation() -> None
     assert not policy.evaluate(complete).intercepted
 
 
+def test_visual_route_preflight_accepts_available_fallback_model() -> None:
+    class ModelServiceWithFallback:
+        @staticmethod
+        def preflight(task_type: str, *, modality: str) -> SimpleNamespace:
+            assert task_type == "circuit_image_extraction"
+            assert modality == "image"
+            return SimpleNamespace(available=True)
+
+    service = AcademicProblemSolverService(
+        graph(), ModelServiceWithFallback()  # type: ignore[arg-type]
+    )
+
+    assert service._model_route_available("circuit_image_extraction") is True
+
+
 def test_visual_json_extraction_builds_a_verified_topology() -> None:
     problem = AcademicProblem(
         course="CT",
@@ -80,6 +96,7 @@ def test_visual_json_extraction_builds_a_verified_topology() -> None:
             '"components":['
             '{"component_type":"resistor","label":"R1",'
             '"value":"1kΩ","connections":["V1","GND"],'
+            '"terminal_map":{"left":"V1","right":"GND"},'
             '"certainty":"certain"}],'
             '"uncertain_info":[],"confidence":0.92}'
         ),
@@ -91,6 +108,199 @@ def test_visual_json_extraction_builds_a_verified_topology() -> None:
     assert merged.entities[0]["label"] == "R1"
     assert merged.relations[0]["node"] == "V1"
     assert not SolverBoundaryPolicy().evaluate(merged).intercepted
+
+
+def test_unstructured_visual_extraction_cannot_continue_to_reasoning() -> None:
+    problem = AcademicProblem(
+        course="CT",
+        problem_text="请分析图片中的电路",
+        figures_given=[{"file_id": "image-1"}],
+    )
+
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        "视觉模型只返回了自然语言摘要，未能输出结构化拓扑。",
+    )
+
+    assert metadata["structured_extraction"] is False
+    assert metadata["visual_structure_status"] == "unstructured"
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_extraction_unstructured" in metadata["visual_topology_issues"]
+    assert merged.can_continue is False
+    assert SolverBoundaryPolicy().evaluate(merged).reason == (
+        "visual_topology_not_structured"
+    )
+
+
+def test_real_provider_signal_aliases_are_normalized_without_circuit_topology() -> None:
+    problem = AcademicProblem(
+        course="SS",
+        problem_text="请分析图片中的两个信号",
+        figures_given=[{"file_id": "image-1"}],
+    )
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        (
+            '{"recognized_text":["Q01"],'
+            '"diagram_description":"两个矩形脉冲信号",'
+            '"components":['
+            '{"type":"signal_plot","label":"x(t)","shape":"rectangular_pulse",'
+            '"amplitude":1,"start_time":0,"end_time":1},'
+            '{"type":"signal_plot","label":"h(t)","shape":"rectangular_pulse",'
+            '"amplitude":0.5,"start_time":0,"end_time":4}],'
+            '"uncertain_info":[],"confidence":0.95}'
+        ),
+    )
+
+    assert metadata["structured_extraction"] is True
+    assert metadata["visual_structure_status"] == "complete"
+    assert "x(t)" in merged.problem_text
+    assert "support [0,1]" in merged.problem_text
+    assert "support [0,4]" in merged.problem_text
+    assert merged.can_continue is True
+
+
+def test_explicit_signal_prompt_survives_uncertain_empty_visual_structure() -> None:
+    problem = AcademicProblem(
+        course="CT",
+        problem_text=(
+            "连续时间信号 x(t) 在 0≤t≤1 时幅值为1，h(t) 在 0≤t≤4 时幅值为0.5；"
+            "求卷积 y(t)=x(t)*h(t)。"
+        ),
+        figures_given=[{"file_id": "image-1"}],
+    )
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        (
+            '{"diagram_description":"无法确认图中拓扑", "components":[], '
+            '"uncertain_info":["端点和节点连接不确定"], "confidence":1.0}'
+        ),
+    )
+
+    assert metadata["visual_text_fallback"] is True
+    assert metadata["visual_structure_status"] == "partial"
+    assert metadata["visual_topology_validated"] is False
+    assert merged.can_continue is True
+
+
+def test_visual_extraction_requires_terminal_map_for_connected_components() -> None:
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        AcademicProblem(
+            course="CT",
+            problem_text="请分析图片中的电路",
+            figures_given=[{"file_id": "image-1"}],
+        ),
+        (
+            '{"diagram_description":"R1连接V1和GND",'
+            '"components":[{"component_type":"resistor","label":"R1",'
+            '"connections":["V1","GND"],"certainty":"certain"}],'
+            '"confidence":0.95}'
+        ),
+    )
+
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_component_missing_terminal_map" in (
+        metadata["visual_topology_issues"]
+    )
+    assert merged.can_continue is False
+
+
+def test_visual_extraction_requires_orientation_for_source_components() -> None:
+    _, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        AcademicProblem(
+            course="CT",
+            problem_text="请分析图片中的电路",
+            figures_given=[{"file_id": "image-1"}],
+        ),
+        (
+            '{"diagram_description":"电压源连接V1和GND",'
+            '"components":[{"component_type":"voltage source","label":"V1",'
+            '"connections":["V1","GND"],'
+            '"terminal_map":{"positive":"V1","negative":"GND"},'
+            '"certainty":"certain"}],'
+            '"confidence":0.95}'
+        ),
+    )
+
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_component_missing_polarity_or_reference_direction" in (
+        metadata["visual_topology_issues"]
+    )
+
+
+def test_visual_extraction_low_confidence_cannot_continue_to_solver() -> None:
+    problem = AcademicProblem(
+        course="CT",
+        problem_text="请分析图片中的电路",
+        figures_given=[{"file_id": "image-1"}],
+    )
+
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        (
+            '{"diagram_description":"R1连接V1和GND",'
+            '"components":[{"component_type":"resistor","label":"R1",'
+            '"connections":["V1","GND"],"certainty":"certain"}],'
+            '"confidence":0.74}'
+        ),
+    )
+
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_topology_low_confidence" in metadata["visual_topology_issues"]
+    assert merged.can_continue is False
+    assert SolverBoundaryPolicy().evaluate(merged).reason == (
+        "visual_topology_not_structured"
+    )
+
+
+def test_visual_extraction_rejects_disconnected_multi_component_graph() -> None:
+    problem = AcademicProblem(
+        course="CT",
+        problem_text="请分析图片中的电路",
+        figures_given=[{"file_id": "image-1"}],
+    )
+
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        (
+            '{"diagram_description":"两组器件",'
+            '"components":['
+            '{"component_type":"resistor","label":"R1",'
+            '"connections":["V1","N1"],"certainty":"certain"},'
+            '{"component_type":"resistor","label":"R2",'
+            '"connections":["V2","N2"],"certainty":"certain"}],'
+            '"confidence":0.95}'
+        ),
+    )
+
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_topology_disconnected_components" in (
+        metadata["visual_topology_issues"]
+    )
+    assert merged.can_continue is False
+
+
+def test_visual_extraction_rejects_unknown_connection_labels() -> None:
+    extraction = (
+        '{"diagram_description":"R1连接未知节点",'
+        '"components":[{"component_type":"resistor","label":"R1",'
+        '"connections":["unknown","GND"],"certainty":"certain"}],'
+        '"confidence":0.95}'
+    )
+
+    _, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        AcademicProblem(
+            course="CT",
+            problem_text="请分析图片中的电路",
+            figures_given=[{"file_id": "image-1"}],
+        ),
+        extraction,
+    )
+
+    assert metadata["visual_topology_validated"] is False
+    assert "visual_component_has_uncertain_connection" in (
+        metadata["visual_topology_issues"]
+    )
 
 
 def test_academic_reasoning_routes_by_problem_complexity() -> None:

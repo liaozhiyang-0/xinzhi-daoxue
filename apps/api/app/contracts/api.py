@@ -56,6 +56,11 @@ class SessionTaskHistoryItem(BaseModel):
     error_message: str | None
     fallback_used: bool = False
     fallback_reason: str = ""
+    answer_quality_status: str = "not_available"
+    requires_review: bool = False
+    publishable: bool | None = None
+    math_quality_status: str = "not_available"
+    formula_contract_status: str = "not_available"
     created_at: datetime
     completed_at: datetime | None
 
@@ -213,5 +218,9 @@ class HealthRead(BaseModel):
     active_provider: str
     provider_mode: str
     version: str
+    runtime_identity: dict[str, Any] = Field(default_factory=dict)
+    configuration_status: str = "unknown"
+    configuration_warnings: list[str] = Field(default_factory=list)
+    model_runtime: dict[str, Any] = Field(default_factory=dict)
     external_retrieval: dict[str, Any] = Field(default_factory=dict)
     task_queue: dict[str, Any] = Field(default_factory=dict)

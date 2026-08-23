@@ -22,6 +22,7 @@ from app.contracts import (
     RouteDecision,
 )
 from app.core.errors import NotConfiguredError
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository
 from app.runtime import (
@@ -265,6 +266,43 @@ class RuntimeExecutionBoundary:
             raise RuntimeResumeInvariantError(
                 "runtime route revision differs from compatibility snapshot"
             )
+        RuntimeExecutionBoundary._validate_capability_checks(
+            "route",
+            snapshot.route_capability_checks,
+            raw_routing.get("availability"),
+        )
+        raw_execution_plan = request.options.get("_execution_plan")
+        RuntimeExecutionBoundary._validate_capability_checks(
+            "execution plan",
+            snapshot.execution_plan_capability_checks,
+            raw_execution_plan.get("availability_checks")
+            if isinstance(raw_execution_plan, dict)
+            else None,
+        )
+
+    @staticmethod
+    def _validate_capability_checks(
+        label: str,
+        expected: dict[str, bool],
+        actual: Any,
+    ) -> None:
+        """Reject resumed envelopes whose capability contract was altered."""
+
+        if not expected:
+            return
+        if not isinstance(actual, dict):
+            raise RuntimeResumeInvariantError(
+                f"runtime resume is missing {label} capability checks"
+            )
+        normalized = {
+            key: value
+            for key, value in actual.items()
+            if isinstance(key, str) and isinstance(value, bool)
+        }
+        if normalized != expected:
+            raise RuntimeResumeInvariantError(
+                f"runtime {label} capabilities differ from compatibility snapshot"
+            )
 
     async def prepare_request(
         self,
@@ -368,6 +406,7 @@ class RuntimeExecutionBoundary:
                 self.legacy_provider is not None
                 and run.plan.plan_id.startswith("legacy-runtime:")
             ):
+                architecture_telemetry.increment("legacy_runtime_invocation_count")
                 result = await self.legacy_provider.run(
                     agent_id,
                     request,

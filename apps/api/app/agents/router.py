@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.agents.registry import AgentRegistry, RoutingRule
+from app.agents.registry import AgentDefinition, AgentRegistry, RoutingRule
 from app.contracts.agent import AgentRequest, Intent
 from app.contracts.intent import IntentRecognition
 from app.contracts.routing import RouteCandidate, RouteDecision, RouteStatus
 from app.core.config import Settings
 from app.core.errors import AgentInputNotSupportedError
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.services.external_research_answer import (
     is_academic_search_follow_up,
     is_academic_search_request,
@@ -129,10 +131,14 @@ class TaskRouter:
     """Fast deterministic routes with bounded local fallback hooks."""
 
     def __init__(
-        self, registry: AgentRegistry, settings: Settings | None = None
+        self,
+        registry: AgentRegistry,
+        settings: Settings | None = None,
+        model_preflight: Callable[..., Any] | None = None,
     ) -> None:
         self.registry = registry
         self.settings = settings or Settings()
+        self.model_preflight = model_preflight
         self.material_extractor = RequestMaterialExtractor()
         self.intent_recognizer = IntentRecognitionService()
 
@@ -142,7 +148,12 @@ class TaskRouter:
         # route compatibility, while structured recognition is available to
         # planning and later model refinement.
         decision = self._route_legacy(request, recognition)
-        return self._attach_intent_context(decision, recognition)
+        final = self._attach_intent_context(decision, recognition)
+        if request.options.get("_planner_preflight") is not True:
+            architecture_telemetry.increment("taskrouter_final_route_count")
+            if final.route_source not in {"scenario_catalog", "admin_debug_override"}:
+                architecture_telemetry.increment("fixed_agent_route_count")
+        return final
 
     def _route_legacy(
         self, request: AgentRequest, recognition: IntentRecognition
@@ -249,11 +260,25 @@ class TaskRouter:
             previous_query=str(request.options.get("previous_external_query", "")),
         )
         explicit_search_request = is_academic_search_request(material.raw_text)
+        circuit_diagnosis_request = (
+            self.intent_recognizer.is_circuit_diagnosis_request(material.raw_text)
+        )
+        context_boundary_codes = (
+            ["context_boundary:research_not_reused"]
+            if circuit_diagnosis_request
+            and previous_agent
+            in {
+                "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                "RESEARCH_02_ACADEMIC_WRITING_V1",
+                "RESEARCH_03_DATA_ANALYSIS_V1",
+            }
+            else []
+        )
         if (
             recognition.intent == Intent.ACADEMIC_SEARCH.value
             or explicit_search_request
             or is_search_follow_up
-        ):
+        ) and not circuit_diagnosis_request:
             decision = self._decision_for_target(
                 "RESEARCH_01_ACADEMIC_SEARCH_V1",
                 request,
@@ -358,6 +383,7 @@ class TaskRouter:
                         dict.fromkeys(
                             course_reasons
                             + scored.reasons.get("ACADEMIC_PROBLEM_SOLVER", [])
+                            + context_boundary_codes
                             + ["professional_solver_contract"]
                         )
                     ),
@@ -610,7 +636,11 @@ class TaskRouter:
                     ),
                     "local_confidence": confidence,
                     "availability": self._availability(
-                        best.agent_id, course_id, input_type, intent
+                        best.agent_id,
+                        course_id,
+                        input_type,
+                        intent,
+                        request=request,
                     ),
                     "material_extraction": material.model_dump(mode="json"),
                     "inferred_user_role": AGENT_ROLE.get(
@@ -789,6 +819,7 @@ class TaskRouter:
                     course_id,
                     input_type,
                     Intent.GENERAL_QA.value,
+                    request=request,
                 ),
                 "material_extraction": material_extraction,
                 "inferred_user_role": request.user_role.value,
@@ -1076,10 +1107,16 @@ class TaskRouter:
         )
 
     def _availability(
-        self, agent_id: str, course_id: str, input_type: str, intent: str
+        self,
+        agent_id: str,
+        course_id: str,
+        input_type: str,
+        intent: str,
+        *,
+        request: AgentRequest | None = None,
     ) -> dict[str, bool]:
         definition = self.registry.get(agent_id)
-        return {
+        availability: dict[str, bool] = {
             "enabled": definition.enabled,
             "published": self.registry.is_execution_eligible(agent_id),
             "local_ready": (
@@ -1090,11 +1127,73 @@ class TaskRouter:
                 agent_id, self.settings
             ),
             "input_mode_supported": input_type in definition.supports,
-            "course_supported": course_id in definition.course_ids,
+            "course_supported": (
+                course_id.upper() in {"AUTO", "UNKNOWN"}
+                or course_id.upper() in definition.course_ids
+            ),
             "intent_supported": (
                 not definition.capabilities.intents
                 or intent in definition.capabilities.intents
             ),
+            "external_retrieval_required": (
+                definition.external_retrieval.enabled
+                and self._external_retrieval_required(agent_id, intent)
+            ),
+            "external_retrieval_available": (
+                not definition.external_retrieval.enabled
+                or self.settings.external_retrieval_enabled
+            ),
+        }
+        if request is not None:
+            generation_required = self._model_generation_required(
+                request, agent_id
+            )
+            # A required generation capability is not available merely
+            # because the router was constructed without a preflight hook.
+            # Treat an unverified capability as unavailable so standalone
+            # callers cannot enqueue a task that will fail later in Runtime.
+            generation_available = not generation_required
+            if generation_required:
+                if request.options.get("allow_cloud") is False:
+                    generation_available = False
+                elif self.model_preflight is not None:
+                    preflight = self.model_preflight(
+                        "knowledge_answer",
+                        modality=(
+                            "image" if "image" in input_type else "text"
+                        ),
+                    )
+                    generation_available = bool(
+                        getattr(preflight, "available", False)
+                    )
+            availability.update(
+                {
+                    "generation_required": generation_required,
+                    "generation_available": generation_available,
+                }
+            )
+        return availability
+
+    @staticmethod
+    def _external_retrieval_required(agent_id: str, intent: str) -> bool:
+        """Separate an optional retrieval fallback from a hard dependency."""
+
+        return agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1" or intent == (
+            Intent.ACADEMIC_SEARCH.value
+        )
+
+    @staticmethod
+    def _model_generation_required(
+        request: AgentRequest, agent_id: str
+    ) -> bool:
+        if agent_id not in {
+            "LEARN_01_KNOWLEDGE_QA_V1",
+            "LEARN_01_LOCAL_RETRIEVAL_V1",
+        }:
+            return False
+        return str(request.options.get("scenario_id", "")).strip() in {
+            "student_learning_path_v1",
+            "department_knowledge_governance_v1",
         }
 
     @staticmethod
@@ -1107,11 +1206,20 @@ class TaskRouter:
         # Research workflows are not course-grounded tasks.  Do not let a
         # durable learning-session course (for example CT) leak into an
         # academic-search request submitted from the research capability card.
+        research_request_markers = (
+            "检索",
+            "查找论文",
+            "文献",
+            "科研",
+            "学术前沿",
+        )
         if request.intent in {
             Intent.ACADEMIC_SEARCH,
             Intent.ACADEMIC_WRITING,
             Intent.DATA_ANALYSIS,
-        } or is_academic_search_request(text):
+        } or is_academic_search_request(text) or any(
+            marker in text for marker in research_request_markers
+        ):
             return "UNKNOWN", ["research_workflow_neutral_course"]
         if explicit in {
             "CT",
@@ -1127,6 +1235,46 @@ class TaskRouter:
             "IC",
         }:
             return explicit, ["explicit_course_hint"]
+        # A named course is stronger than incidental vocabulary.  For
+        # example, a lesson plan may contain “时序流程” without being a
+        # digital-electronics task, while “《信号与系统》” is authoritative.
+        for course, markers in (
+            ("SS", ("信号与系统", "信号和系统", "卷积")),
+            ("DSP", ("数字信号处理",)),
+            (
+                "DE",
+                (
+                    "数字电子技术",
+                    "数字电路",
+                    "R-2R",
+                    "DAC",
+                    "数模转换器",
+                    "FPGA",
+                    "数字钟",
+                    "CMOS",
+                ),
+            ),
+            (
+                "AE",
+                (
+                    "模拟电子技术",
+                    "模拟电路",
+                    "运算放大器",
+                    "集成运放",
+                    "共射放大",
+                    "仪表放大器",
+                    "三运放",
+                    "BJT",
+                    "静态工作点",
+                    "Buck",
+                    "Boost",
+                ),
+            ),
+            ("CT", ("电路理论", "拉普拉斯", "极点分布")),
+            ("COMM", ("通信原理", "通信系统")),
+        ):
+            if any(marker in text for marker in markers):
+                return course, [f"explicit_course_marker:{course}"]
         non_course_topic_markers = (
             "人工智能",
             "机器学习",
@@ -1216,7 +1364,7 @@ class TaskRouter:
                 token in text for token in ("数字信号处理", "DFT", "FFT", "数字滤波器")
             ),
             "COMM": sum(
-                token in text for token in ("通信原理", "调制", "解调", "信道")
+                token in text for token in ("通信原理", "调制", "解调", "信道编码")
             ),
             "RF": sum(token in text for token in ("高频电子", "混频", "谐振放大")),
             "EM": sum(token in text for token in ("电磁场", "电磁波", "麦克斯韦")),
@@ -1620,6 +1768,21 @@ class TaskRouter:
                 for token in ("已知", "给定", "条件", "参数", "参考方向", "初始值")
             )
         )
+        if self.intent_recognizer.is_circuit_diagnosis_request(text):
+            add(
+                "ACADEMIC_PROBLEM_SOLVER",
+                0.94,
+                "domain_contract:circuit_diagnosis",
+            )
+            for research_agent in (
+                "RESEARCH_01_ACADEMIC_SEARCH_V1",
+                "RESEARCH_02_ACADEMIC_WRITING_V1",
+                "RESEARCH_03_DATA_ANALYSIS_V1",
+            ):
+                scores[research_agent] = 0.0
+                reasons[research_agent].append(
+                    "negative_rule:circuit_diagnosis_is_not_research"
+                )
         is_assignment_review = bool(
             materials.get("student_answer")
             or materials.get("rubric")
@@ -1912,12 +2075,19 @@ class TaskRouter:
         )
         primary_eligible = self.registry.is_execution_eligible(primary.agent_id)
         input_supported = input_type in primary.supports
-        if not primary_eligible or not runtime_available or not input_supported:
+        context_supported = self._supports_route_context(primary, course_id, intent)
+        if (
+            not primary_eligible
+            or not runtime_available
+            or not input_supported
+            or not context_supported
+        ):
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback is not None and self.registry.is_execution_eligible(
                 fallback.agent_id
             ) and (
                 input_type in fallback.supports
+                and self._supports_route_context(fallback, course_id, intent)
                 and (
                     self.registry.is_runtime_available(
                         fallback.agent_id, self.settings
@@ -1931,13 +2101,19 @@ class TaskRouter:
             elif (
                 primary_eligible
                 and input_supported
+                and context_supported
                 and self.registry.allows_unconfigured_route(
                     primary.agent_id
                 )
             ):
                 source = "local_degraded"
             else:
-                input_error = not input_supported
+                unsupported_code, unsupported_reason = self._route_support_failure(
+                    primary,
+                    course_id=course_id,
+                    intent=intent,
+                    input_type=input_type,
+                )
                 generic_fallback = self._generic_model_fallback_decision(
                     request=request,
                     course_id=course_id,
@@ -1945,18 +2121,12 @@ class TaskRouter:
                     original_agent_id=primary.agent_id,
                     confidence=0.0,
                     reason=(
-                        (
-                            "目标 Agent 不支持当前输入类型，已进入一次性通用模型兜底: "
-                            if input_error
-                            else "目标 Agent 不可用，已进入一次性通用模型兜底: "
-                        )
+                        f"{unsupported_reason}，已进入一次性通用模型兜底: "
+                        if unsupported_code != "target_agent_unavailable"
+                        else "目标 Agent 不可用，已进入一次性通用模型兜底: "
                         + primary.agent_id
                     ),
-                    reason_codes=[
-                        "target_input_unsupported"
-                        if input_error
-                        else "target_agent_unavailable"
-                    ],
+                    reason_codes=[unsupported_code],
                 )
                 if generic_fallback is not None:
                     return generic_fallback
@@ -1967,9 +2137,8 @@ class TaskRouter:
                     intent=intent,
                     route_status=RouteStatus.UNRESOLVED,
                     reason=(
-                        f"configured agent does not support input type {input_type}: "
-                        f"{primary.agent_id}"
-                        if input_error
+                        f"{unsupported_reason}: {primary.agent_id}"
+                        if unsupported_code != "target_agent_unavailable"
                         else f"configured agent unavailable: {primary.agent_id}"
                     ),
                     retrieval_required=False,
@@ -1977,13 +2146,18 @@ class TaskRouter:
                     route_source="local_degraded",
                     route_confidence=0.0,
                     original_agent_id=primary.agent_id,
-                    reason_codes=[
-                        "target_input_unsupported"
-                        if input_error
-                        else "target_agent_unavailable"
-                    ],
+                    reason_codes=[unsupported_code],
                 )
         self._ensure_supported(selected.agent_id, input_type)
+        if not self._supports_route_context(selected, course_id, intent):
+            raise AgentInputNotSupportedError(
+                "目标 Agent 不支持当前课程或意图",
+                details={
+                    "agent_id": selected.agent_id,
+                    "course_id": course_id,
+                    "intent": intent,
+                },
+            )
         return RouteDecision(
             agent_id=selected.agent_id,
             scene=primary.scene,
@@ -2004,6 +2178,13 @@ class TaskRouter:
             fallback_instruction=(
                 primary.fallback.instruction_prefix if fallback_used else ""
             ),
+            availability=self._availability(
+                selected.agent_id,
+                course_id,
+                input_type,
+                intent,
+                request=request,
+            ),
         )
 
     def _ensure_supported(self, agent_id: str, input_type: str) -> None:
@@ -2012,6 +2193,45 @@ class TaskRouter:
                 "目标 Agent 不支持当前输入类型",
                 details={"agent_id": agent_id, "input_type": input_type},
             )
+
+    @staticmethod
+    def _supports_route_context(
+        definition: AgentDefinition, course_id: str, intent: str
+    ) -> bool:
+        course_supported = course_id.upper() in {"AUTO", "UNKNOWN"} or (
+            course_id.upper() in definition.course_ids
+        )
+        intent_supported = (
+            not definition.capabilities.intents
+            or intent in definition.capabilities.intents
+        )
+        return course_supported and intent_supported
+
+    @classmethod
+    def _route_support_failure(
+        cls,
+        definition: AgentDefinition,
+        *,
+        course_id: str,
+        intent: str,
+        input_type: str,
+    ) -> tuple[str, str]:
+        if input_type not in definition.supports:
+            return "target_input_unsupported", (
+                f"目标 Agent 不支持当前输入类型 {input_type}"
+            )
+        if course_id.upper() not in definition.course_ids:
+            return "target_course_unsupported", (
+                f"目标 Agent 不支持课程 {course_id.upper()}"
+            )
+        if (
+            definition.capabilities.intents
+            and intent not in definition.capabilities.intents
+        ):
+            return "target_intent_unsupported", (
+                f"目标 Agent 不支持意图 {intent}"
+            )
+        return "target_agent_unavailable", "目标 Agent 不可用"
 
     def _decision_for_rule(
         self, rule: RoutingRule, request: AgentRequest
@@ -2028,8 +2248,15 @@ class TaskRouter:
         ):
             fallback = self.registry.resolve_fallback(primary.agent_id)
             if fallback and self.registry.is_execution_eligible(fallback.agent_id) and (
-                self.registry.allows_unconfigured_route(fallback.agent_id)
-                or self.registry.is_runtime_available(fallback.agent_id, self.settings)
+                self._supports_route_context(
+                    fallback, request.course_id.upper(), request.intent.value
+                )
+                and (
+                    self.registry.allows_unconfigured_route(fallback.agent_id)
+                    or self.registry.is_runtime_available(
+                        fallback.agent_id, self.settings
+                    )
+                )
             ):
                 selected = fallback
                 fallback_used = True
@@ -2084,6 +2311,26 @@ class TaskRouter:
                 original_agent_id=primary.agent_id,
                 reason_codes=["target_input_unsupported"],
             )
+        if not self._supports_route_context(
+            selected, request.course_id.upper(), request.intent.value
+        ):
+            return RouteDecision(
+                agent_id="UNRESOLVED",
+                scene=rule.scene,
+                course_id=request.course_id.upper(),
+                intent=request.intent.value,
+                route_status=RouteStatus.UNRESOLVED,
+                reason=(
+                    f"configured agent does not support course or intent: "
+                    f"{selected.agent_id}"
+                ),
+                retrieval_required=False,
+                provider_required=False,
+                route_source="local_degraded",
+                route_confidence=0.0,
+                original_agent_id=primary.agent_id,
+                reason_codes=["target_context_unsupported"],
+            )
 
         return RouteDecision(
             agent_id=selected.agent_id,
@@ -2108,5 +2355,12 @@ class TaskRouter:
             original_agent_id=primary.agent_id if fallback_used else None,
             fallback_instruction=(
                 primary.fallback.instruction_prefix if fallback_used else ""
+            ),
+            availability=self._availability(
+                selected.agent_id,
+                request.course_id.upper(),
+                input_type,
+                request.intent.value,
+                request=request,
             ),
         )

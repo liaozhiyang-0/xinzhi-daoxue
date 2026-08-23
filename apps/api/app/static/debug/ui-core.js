@@ -5,7 +5,7 @@
   const statusLabels = {
     ready: "正常", running: "运行中", success: "成功", completed: "完成",
     partial: "部分完成", degraded: "降级运行", planned: "开发中", mock: "开发模拟",
-    failed: "失败", disabled: "已停用", locked: "已锁定", active: "启用", not_configured: "未配置", unknown: "未知",
+    failed: "失败", cancelled: "已停止", disabled: "已停用", locked: "已锁定", active: "启用", not_configured: "未配置", unknown: "未知",
     ok: "正常", healthy: "正常", configured: "已配置", published: "已发布",
   };
   const nav = [
@@ -35,11 +35,33 @@
     return node;
   };
 
-  async function api(path, options = {}, ttlMs = 0) {
+  let refreshPromise = null;
+
+  async function refreshAccessSession() {
+    if (!refreshPromise) {
+      refreshPromise = fetch("/api/v1/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }).finally(() => { refreshPromise = null; });
+    }
+    const response = await refreshPromise;
+    return response.ok;
+  }
+
+  async function api(path, options = {}, ttlMs = 0, allowRefresh = true) {
     const key = `${options.method || "GET"}:${path}`;
     const cached = cache.get(key);
     if (ttlMs && cached && Date.now() - cached.at < ttlMs) return cached.data;
     const response = await fetch(path, options);
+    if (
+      response.status === 401
+      && allowRefresh
+      && !path.startsWith("/api/v1/auth/")
+      && await refreshAccessSession()
+    ) {
+      return api(path, options, ttlMs, false);
+    }
     const text = await response.text();
     let data = {};
     try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
@@ -55,7 +77,7 @@
   function normalizeStatus(value) {
     const raw = String(value || "unknown").toLowerCase();
     if (["available", "enabled", "passed", "valid"].includes(raw)) return "ready";
-    if (["error", "unavailable", "invalid", "cancelled"].includes(raw)) return "failed";
+    if (["error", "unavailable", "invalid"].includes(raw)) return "failed";
     return statusLabels[raw] ? raw : "unknown";
   }
 

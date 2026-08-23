@@ -93,6 +93,14 @@ class SkillExecutionDescriptor(SkillBinding):
     max_timeout_ms: int = Field(default=900_000, ge=100, le=900_000)
 
 
+class CapabilityBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability_id: str = Field(min_length=1, max_length=160)
+    handler_id: str = Field(min_length=1, max_length=160)
+    skill_ids: list[str] = Field(default_factory=list, max_length=32)
+
+
 class CanonicalPlan(BaseModel):
     """The single future plan vocabulary between planning and Runtime adapters."""
 
@@ -103,6 +111,9 @@ class CanonicalPlan(BaseModel):
     goal: CanonicalGoal
     nodes: list[CanonicalPlanNode] = Field(min_length=1, max_length=100)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
+    capability_bindings: list[CapabilityBinding] = Field(
+        default_factory=list, max_length=32
+    )
     selected_agents: list[str] = Field(default_factory=list, max_length=32)
     selected_skills: list[str] = Field(default_factory=list, max_length=32)
     skill_selection: list[PlannerSkillSelection] = Field(
@@ -152,7 +163,7 @@ class PlannerSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     planner_version: str = "planner-v1"
-    mode: Literal["shadow", "takeover", "failed"] = "shadow"
+    mode: Literal["shadow", "controlled", "active", "takeover", "failed"] = "shadow"
     status: Literal["completed", "failed", "disabled"] = "completed"
     goal: str = Field(default="", max_length=8_000)
     objective: str = Field(default="", max_length=8_000)

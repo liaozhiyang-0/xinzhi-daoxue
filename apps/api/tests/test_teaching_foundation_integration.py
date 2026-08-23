@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from app.contracts import AgentRequest, AgentResult, AgentResultStatus, RunMetrics
 from app.services.session_working_state import SessionWorkingStateService
 
 
@@ -100,3 +101,32 @@ def test_guided_mode_is_available_and_review_remains_foundation_only(api) -> Non
     review_teaching = review["result_content"]["structured_result"]["teaching"]
     assert review_teaching["mode_status"] == "foundation_only"
     assert "后续阶段" in review_teaching["warning"]
+
+
+def test_teaching_enrichment_preserves_upstream_review_gate(api, app) -> None:
+    del api
+    request = AgentRequest(
+        task_id="task-upstream-review-gate",
+        session_id="session-upstream-review-gate",
+        user_id="user-test",
+        course_id="CT",
+    )
+    result = AgentResult(
+        status=AgentResultStatus.COMPLETED,
+        agent_id="RESEARCH_03_DATA_ANALYSIS_V1",
+        provider="model_analysis:dashscope",
+        answer="analysis draft",
+        metrics=RunMetrics(manual_review_required=True),
+    )
+
+    enriched = app.state.teaching_foundation.enrich(
+        result,
+        request,
+        None,
+        query="analysis draft",
+    )
+
+    assert enriched.metrics.manual_review_required is True
+    assert (
+        enriched.structured_result["teaching"]["requires_manual_review"] is True
+    )

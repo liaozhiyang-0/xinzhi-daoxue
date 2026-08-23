@@ -14,6 +14,27 @@ os.environ["APP_ENV"] = "test"
 os.environ["DEFAULT_AGENT_PROVIDER"] = "mock"
 os.environ["ALLOW_MOCK_FALLBACK"] = "true"
 os.environ["RAG_ENABLED"] = "false"
+# Test processes must not inherit developer credentials from the compose
+# container.  A configured optional provider can otherwise win a route race,
+# make local Runtime tests call the network, and turn a terminal-state test
+# into a 30-second polling timeout. Provider-specific tests inject credentials
+# explicitly when they need to exercise configuration behavior.
+for _external_secret in (
+    "SPARK_API_KEY",
+    "IFLYTEK_SPARK_API_KEY",
+    "DASHSCOPE_API_KEY",
+    "EXTERNAL_OPENALEX_API_KEY",
+    "EXTERNAL_SEMANTIC_SCHOLAR_API_KEY",
+    "EXTERNAL_CNKI_API_KEY",
+    "EXTERNAL_WEB_SEARCH_API_KEY",
+    "EXTERNAL_TAVILY_API_KEY",
+    "EXTERNAL_BRAVE_API_KEY",
+    "EXTERNAL_SERPAPI_API_KEY",
+    "EXTERNAL_SEARXNG_API_KEY",
+    "EXTERNAL_ALIYUN_IQS_API_KEY",
+    "EXTERNAL_BOCHA_API_KEY",
+):
+    os.environ.pop(_external_secret, None)
 # Tests must never reach the network for model weights: without this,
 # a missing/partial HuggingFace cache triggers 10s connect-timeouts that
 # block the app event loop and make unrelated tests flaky. Offline mode

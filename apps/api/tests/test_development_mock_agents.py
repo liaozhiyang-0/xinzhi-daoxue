@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gc
+import warnings
 from time import perf_counter
 
 import pytest
@@ -136,17 +138,24 @@ def test_agent_debug_api_is_redacted_and_runs_contracts(settings: Settings) -> N
 
 
 def test_production_debug_actions_are_disabled(settings: Settings) -> None:
-    app = create_app(
-        settings.model_copy(update={"app_env": "production", "allow_agent_mocks": True})
-    )
-    with TestClient(app) as client:
-        listing = client.get("/api/v1/agents").json()
-        assert listing["mock_actions_enabled"] is False
-        response = client.post(
-            "/api/v1/debug/agents/TEACH_01_LESSON_PREP_V1/mock",
-            json={"question": "不会执行", "allow_mock": True},
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        app = create_app(
+            settings.model_copy(
+                update={"app_env": "production", "allow_agent_mocks": True}
+            )
         )
-        assert response.status_code == 403
+        with TestClient(app) as client:
+            listing = client.get("/api/v1/agents").json()
+            assert listing["mock_actions_enabled"] is False
+            response = client.post(
+                "/api/v1/debug/agents/TEACH_01_LESSON_PREP_V1/mock",
+                json={"question": "不会执行", "allow_mock": True},
+            )
+            assert response.status_code == 403
+        gc.collect()
+
+    assert not any("aiosqlite.core.Connection" in str(item.message) for item in caught)
 
 
 def test_all_active_workflow_fixture_sets_pass(settings: Settings) -> None:

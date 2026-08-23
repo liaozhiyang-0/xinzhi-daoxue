@@ -16,6 +16,7 @@ from app.models import AgentRunModel, ArtifactModel, TaskModel
 from app.runtime import AgentRun, RuntimeRunStatus
 from app.services.event_service import append_task_event
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
+from app.services.task_audit import audit_for_result, replace_task_audit
 
 
 class TaskTerminalCommitError(ConflictError):
@@ -116,6 +117,16 @@ class TaskResultCommitService:
                 data={"artifact_id": artifact.artifact_id},
             )
 
+        metrics_data = result.metrics.model_dump(mode="json")
+        audit = audit_for_result(
+            request,
+            result,
+            runtime_run_id=runtime_run.run_id if runtime_run is not None else "",
+            runtime_run=runtime_run,
+        )
+        if audit:
+            metrics_data["audit"] = audit
+            task.input_content = replace_task_audit(task.input_content, audit)
         if runtime_run is not None:
             await self.runtime_boundary.finalize(
                 db,
@@ -124,7 +135,7 @@ class TaskResultCommitService:
                 provider=result.provider,
                 latency_ms=total_latency_ms,
                 trace_id=result.trace_id or result.request_id or None,
-                metrics_data=result.metrics.model_dump(mode="json"),
+                metrics_data=metrics_data,
                 artifact_ids=(artifact.artifact_id for artifact in result.artifacts),
                 run=runtime_run,
             )
@@ -140,7 +151,7 @@ class TaskResultCommitService:
                     tool_calls=result.metrics.tool_calls,
                     retrieval_calls=result.metrics.retrieval_calls,
                     trace_id=result.trace_id or result.request_id or None,
-                    metrics_data=result.metrics.model_dump(mode="json"),
+                    metrics_data=metrics_data,
                     started_at=started_at,
                     completed_at=completed_at,
                 )

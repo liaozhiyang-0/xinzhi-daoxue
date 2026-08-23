@@ -108,7 +108,10 @@ class TeachingFoundationService:
             "mode_status": mode_status,
             "warning": mode_warning,
             "student_attempt_present": attempt is not None,
-            "requires_manual_review": False,
+            # Business agents may already require review (for example,
+            # research analysis or academic writing).  Teaching enrichment is
+            # a presentation layer and must not clear that upstream gate.
+            "requires_manual_review": result.metrics.manual_review_required,
             "diagnostic_scope": DIAGNOSTIC_SCOPE_WARNING,
         }
         error_lookup_ms = 0.0
@@ -138,8 +141,9 @@ class TeachingFoundationService:
                     reference_steps=list(structured.get("solution_steps") or []),
                 )
                 structured["student_attempt_review"] = review.model_dump(mode="json")
-                teaching["requires_manual_review"] = (
-                    verification.manual_review_required
+                teaching["requires_manual_review"] = bool(
+                    teaching["requires_manual_review"]
+                    or verification.manual_review_required
                 )
                 repair_key = next(
                     (
@@ -237,7 +241,8 @@ class TeachingFoundationService:
                 "student_verification_executed": verification is not None,
                 "verification_method": self._verification_method(verification),
                 "manual_review_required": bool(
-                    verification and verification.manual_review_required
+                    filtered.metrics.manual_review_required
+                    or (verification and verification.manual_review_required)
                 ),
                 "first_confirmed_error_found": bool(
                     verification and verification.first_confirmed_error_step

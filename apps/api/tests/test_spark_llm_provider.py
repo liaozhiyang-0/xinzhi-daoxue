@@ -26,14 +26,18 @@ class FakeClient:
         self.chat = SimpleNamespace(completions=self.completions)
 
 
-def completion(content: str = "回答", reasoning: str | None = None) -> Any:
+def completion(
+    content: str = "回答",
+    reasoning: str | None = None,
+    finish_reason: str = "stop",
+) -> Any:
     message = SimpleNamespace(
         content=content,
         reasoning_content=reasoning,
         model_extra={},
     )
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=message, finish_reason="stop")],
+        choices=[SimpleNamespace(message=message, finish_reason=finish_reason)],
         usage=SimpleNamespace(
             prompt_tokens=2,
             completion_tokens=1,
@@ -92,6 +96,25 @@ async def test_spark_json_uses_local_validation() -> None:
     assert result.content == '{"answer": 42}'
     assert client.completions.calls[0]["messages"][0]["role"] == "system"
     assert client.completions.calls[0]["max_tokens"] == 128
+
+
+@pytest.mark.asyncio
+async def test_spark_structured_error_reports_truncation_metadata() -> None:
+    client = FakeClient(completion("{\"answer\":", finish_reason="length"))
+    provider = IflytekSparkProvider(
+        Settings(iflytek_spark_api_key="key", _env_file=None),
+        client=client,
+    )
+
+    with pytest.raises(StructuredOutputError) as captured:
+        await provider.generate_json(
+            messages=[{"role": "user", "content": "json"}],
+            model="spark-x",
+        )
+
+    assert captured.value.details["finish_reason"] == "length"
+    assert captured.value.details["truncated"] is True
+    assert captured.value.details["output_chars"] == len('{"answer":')
 
 
 @pytest.mark.asyncio

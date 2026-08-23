@@ -59,6 +59,8 @@ class RuntimeCompatibilitySnapshot(BaseModel):
     execution_plan_route_status: str = Field(default="", max_length=32)
     execution_plan_input_mode: str = Field(default="", max_length=32)
     execution_plan_context_budget: int = Field(default=0, ge=0)
+    route_capability_checks: dict[str, bool] = Field(default_factory=dict)
+    execution_plan_capability_checks: dict[str, bool] = Field(default_factory=dict)
     prepared_at: datetime = Field(default_factory=utc_now)
 
 

@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, cast
 
 from app.contracts import AgentRequest, AgentResult
+from app.core.internal_workflows import LOCAL_AGENT_IMPLEMENTATIONS
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -39,12 +40,33 @@ class RuntimeBusinessService(Protocol):
 class RuntimeBusinessRegistry:
     """Resolve Runtime business capabilities by registered Agent ID."""
 
+    _CANONICAL_INTERNAL_HANDLERS = frozenset(
+        {
+            *LOCAL_AGENT_IMPLEMENTATIONS,
+        }
+    )
+
     def __init__(self, services: Iterable[RuntimeBusinessService]) -> None:
         self._services = tuple(services)
 
     def resolve(
         self, agent_id: str, request: AgentRequest
     ) -> RuntimeBusinessService | None:
+        # A completed CanonicalPlan is already the authoritative Runtime
+        # envelope.  Route it through the generic handler executor instead of
+        # letting a legacy business adapter reinterpret its node shape.
+        if self._has_authoritative_canonical_plan(request):
+            generic = next(
+                (
+                    service
+                    for service in self._services
+                    if getattr(service, "agent_id", "") == "*"
+                    and service.supports(agent_id, request)
+                ),
+                None,
+            )
+            if generic is not None:
+                return generic
         # An explicitly declared Goal Runtime is a request-level override. It
         # must win over the routed business adapter for the same Agent; the
         # wildcard service is the only implementation allowed to interpret
@@ -70,6 +92,46 @@ class RuntimeBusinessRegistry:
             ),
             None,
         )
+
+    @staticmethod
+    def is_authoritative_canonical_plan(request: AgentRequest) -> bool:
+        snapshot = request.options.get("_planner_snapshot")
+        canonical_plan = RuntimeBusinessRegistry._canonical_plan_data(request)
+        if not (
+            request.options.get("_scenario_catalog_bound") is not True
+            and isinstance(snapshot, dict)
+            and snapshot.get("mode") in {"controlled", "active", "takeover"}
+            and snapshot.get("status") == "completed"
+            and isinstance(canonical_plan, dict)
+        ):
+            return False
+        bindings = canonical_plan.get("capability_bindings", [])
+        if not isinstance(bindings, list):
+            return False
+        handler_ids = {
+            item.get("handler_id")
+            for item in bindings
+            if isinstance(item, dict) and isinstance(item.get("handler_id"), str)
+        }
+        return bool(handler_ids) and handler_ids.issubset(
+            RuntimeBusinessRegistry._CANONICAL_INTERNAL_HANDLERS
+        )
+
+    @staticmethod
+    def _canonical_plan_data(request: AgentRequest) -> dict[str, Any] | None:
+        direct = request.options.get("_canonical_plan")
+        if isinstance(direct, dict):
+            return direct
+        snapshot = request.options.get("_planner_snapshot")
+        if isinstance(snapshot, dict):
+            nested = snapshot.get("canonical_plan")
+            if isinstance(nested, dict):
+                return nested
+        return None
+
+    @staticmethod
+    def _has_authoritative_canonical_plan(request: AgentRequest) -> bool:
+        return RuntimeBusinessRegistry.is_authoritative_canonical_plan(request)
 
     def services(self) -> tuple[RuntimeBusinessService, ...]:
         """Return the registered services for read-only capability inspection."""
@@ -132,7 +194,17 @@ class RuntimeBusinessRegistry:
             update={
                 "context": context,
                 "required_capabilities": required_capabilities,
-                "source": goal.source or "runtime_business",
+                "source": (
+                    "canonical_plan"
+                    if RuntimeBusinessRegistry._canonical_plan_data(request)
+                    is not None
+                    and isinstance(request.options.get("_planner_snapshot"), dict)
+                    and request.options["_planner_snapshot"].get("mode")
+                    in {"controlled", "active", "takeover"}
+                    and request.options["_planner_snapshot"].get("status")
+                    == "completed"
+                    else goal.source or "runtime_business"
+                ),
             }
         )
         return plan.model_copy(update={"goal_contract": bound_goal})

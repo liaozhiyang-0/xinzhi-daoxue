@@ -65,6 +65,12 @@ class TaskCompletionService:
             task = await TaskRepository(db).get(task_id, for_update=True)
             if task is None:
                 return
+            if task.status in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            }:
+                return
             if task.cancellation_requested:
                 await self.task_failures.mark_cancelled(
                     db,
@@ -182,6 +188,7 @@ class TaskCompletionService:
         task.completed_at = completed_at
         task.updated_at = completed_at
         task.heartbeat_at = completed_at
+        task.execution_owner = None
         task.lease_expires_at = None
         context_usage = await self.session_commit.commit(
             db,

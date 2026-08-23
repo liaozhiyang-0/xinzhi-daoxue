@@ -1,10 +1,11 @@
 import { createMaterialManager } from "./ts/materials.js";
 import { createTaskTransport } from "./ts/task-transport.js";
-import { buildStudentTaskPayload } from "./ts/workspace-contracts.js";
+import { buildStudentTaskPayload } from "./ts/workspace-contracts.js?v=20260822-case-selection-v1";
 
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
 const scenarioId = params.get("scenario_id") || "";
+const scenarioCaseId = params.get("scenario_case_id") || "";
 const courseLabels = {
   AUTO: "自动识别",
   UNKNOWN: "待定课程",
@@ -85,6 +86,7 @@ const state = {
   liveProcessSteps: new Map(),
   intentOverride: params.get("intent") || "",
   activeScenarioId: scenarioId,
+  activeScenarioCaseId: scenarioCaseId,
   activeScenarioPrompt: "",
   userRole: "student",
 };
@@ -127,11 +129,17 @@ const showcaseScenarioByCapability = {
 function inferCoursePreview(question = "", hasMaterials = false) {
   const normalized = String(question || "").toLowerCase();
   if (!normalized.trim() && !hasMaterials) return "等待提问";
-  if (/科研|论文|doi|arxiv|前沿|学术|research|paper/i.test(normalized)) return "科研任务";
+  if (/科研|论文|doi|arxiv|前沿|学术|检索|文献|research|paper/i.test(normalized)) return "科研任务";
+  if (/信号与系统|信号和系统|卷积/i.test(normalized)) return courseLabels.SS;
+  if (/数字信号处理/i.test(normalized)) return courseLabels.DSP;
+  if (/数字电子技术|数字电路|R-2R|DAC|数模转换器|FPGA|数字钟|CMOS/i.test(normalized)) return courseLabels.DE;
+  if (/模拟电子技术|模拟电路|运算放大器|集成运放|共射放大|仪表放大器|三运放|BJT|静态工作点|Buck|Boost/i.test(normalized)) return courseLabels.AE;
+  if (/电路理论|拉普拉斯|极点分布/i.test(normalized)) return courseLabels.CT;
+  if (/通信原理|通信系统/i.test(normalized)) return courseLabels.COMM;
   if (/模拟电子|运算放大器|晶体管|负反馈|滤波器/i.test(normalized)) return courseLabels.AE;
   if (/数字电子|逻辑门|触发器|锁存器|时序/i.test(normalized)) return courseLabels.DE;
   if (/信号与系统|傅里叶|采样|连续时间/i.test(normalized)) return courseLabels.SS;
-  if (/通信|调制|信道|讯号/i.test(normalized)) return courseLabels.COMM;
+  if (/通信|调制|讯号/i.test(normalized)) return courseLabels.COMM;
   if (/电路|电阻|电容|电感|节点电压|kcl|kvl|电流/i.test(normalized)) return courseLabels.CT;
   return hasMaterials ? "根据附件识别" : "等待系统识别";
 }
@@ -387,6 +395,7 @@ function resetConversation() {
   state.currentTask = null; state.archivedTaskIds.clear(); state.liveProcessSteps.clear();
   runtimeLearningRunId = "";
   runtimeLearningTaskId = "";
+  runtimeTaskControlsRequest += 1;
   runtimeTaskControls = null;
   state.lastQuestion = ""; state.lastAnswer = "";
   state.activeCourse = "AUTO";
@@ -588,7 +597,6 @@ function presentationFor(task, result) {
     runtime_execution_failed: "这是通用模型回答；Runtime 执行失败，专业 Agent 未完成本次任务。",
     provider_opt_out: "已按本地 Runtime 策略处理。",
     provider_response_parse_error: "本地 Runtime 结果格式校验未通过，本次已保留安全后备结果。",
-    provider_timeout: "云端响应超时，本次已切换到本地安全后备结果。",
     provider_timeout: "本地 Runtime 响应超时，本次已保留安全后备结果。",
     not_configured: "该云端能力尚未配置，本次已切换到本地安全后备结果。",
     academic_generation_direct_model: "专业求解链路未形成完整回答，已由通用模型直接完成本次回答。",
@@ -711,21 +719,28 @@ function rewriteKnowledgeDocumentImages(markdown, page) {
 
 function knowledgeDocumentUrl(sourceRef) {
   const value = String(sourceRef || "");
-  if (!value.startsWith("kb://")) return "";
-  const [withoutFragment, fragment = ""] = value.slice(5).split("#", 2);
+  const material = value.startsWith("kb-material://");
+  const prefixLength = material ? 14 : 5;
+  if (!material && !value.startsWith("kb://")) return "";
+  const [withoutFragment, fragment = ""] = value.slice(prefixLength).split("#", 2);
   const slash = withoutFragment.indexOf("/");
   if (slash < 1 || slash === withoutFragment.length - 1) return "";
   const course = withoutFragment.slice(0, slash);
   const path = withoutFragment.slice(slash + 1);
   const query = new URLSearchParams({ normalize_math: "true" });
   if (fragment) query.set("chunk", fragment);
+  if (material) {
+    return `/api/v1/knowledge/materials/${encodeURIComponent(course)}/${encodeURIComponent(path)}?${query}`;
+  }
   return `/api/v1/knowledge/documents/${encodeURIComponent(course)}/${path.split("/").map(encodeURIComponent).join("/")}?${query}`;
 }
 
 function knowledgeDocumentPageUrl(sourceRef, { offset = null, anchor = "" } = {}) {
   const value = String(sourceRef || "");
-  if (!value.startsWith("kb://")) return "";
-  const [withoutFragment, fragment = ""] = value.slice(5).split("#", 2);
+  const material = value.startsWith("kb-material://");
+  const prefixLength = material ? 14 : 5;
+  if (!material && !value.startsWith("kb://")) return "";
+  const [withoutFragment, fragment = ""] = value.slice(prefixLength).split("#", 2);
   const slash = withoutFragment.indexOf("/");
   if (slash < 1 || slash === withoutFragment.length - 1) return "";
   const course = withoutFragment.slice(0, slash);
@@ -734,6 +749,9 @@ function knowledgeDocumentPageUrl(sourceRef, { offset = null, anchor = "" } = {}
   if (fragment) query.set("chunk", fragment);
   if (offset != null) query.set("offset", String(offset));
   else if (anchor) query.set("anchor", anchor.slice(0, 1200));
+  if (material) {
+    return `/api/v1/knowledge/material-pages/${encodeURIComponent(course)}/${encodeURIComponent(path)}?${query}`;
+  }
   return `/api/v1/knowledge/document-pages/${encodeURIComponent(course)}/${path.split("/").map(encodeURIComponent).join("/")}?${query}`;
 }
 
@@ -1031,7 +1049,7 @@ function evidenceCard(item) {
   const card = el("article", { class: "evidence-card", "data-evidence-id": item.evidence_id, role: "button", tabindex: "0", "aria-label": `打开资料：${item.title || item.chapter || "课程资料"}` });
   const summary = el("div", { class: "evidence-summary" });
     renderMarkdown(summary, evidenceDisplayExcerpt(item.summary) || "本条资料没有可展示摘要。", { preserveRaw: true });
-  const isLocalKnowledge = String(item.source_ref || "").startsWith("kb://");
+  const isLocalKnowledge = /^(?:kb|kb-material):\/\//i.test(String(item.source_ref || ""));
   const externalUrl = isLocalKnowledge ? "" : evidenceExternalUrl(item);
   const sourceLabel = isLocalKnowledge
     ? "本地只读资料"
@@ -1430,9 +1448,19 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
   const collaboration = result.structured_result?.answer_mode === "generic_model"
     ? "通用模型回答"
     : result.provider === "local_agent" ? "内部 Agent 协作" : result.provider === "local" ? "本地知识增强" : result.provider === "mock" ? "开发演示" : "智能协作";
+  const generationProvider = result.structured_result?.generation_provider || "";
+  const generationModel = result.structured_result?.generation_model || "未记录";
+  const provider = generationProvider || result.provider || "未记录";
+  const runtimeChannel = result.provider && generationProvider && result.provider !== generationProvider
+    ? result.provider
+    : "";
   const rows = [
     ["实际提问", taskQuestion(task).slice(0, 800)],
     ["完成能力", presentation.title || summary.agent_label || "智能任务"],
+    ["Agent 路由", task.agent_id || summary.agent_id || "未记录"],
+    ["实际 Provider", provider],
+    ...(runtimeChannel ? [["Runtime 通道", runtimeChannel]] : []),
+    ["生成模型", generationModel],
     ["协作方式", collaboration],
     ["自动识别课程", courseLabels[task.course_id] || task.course_id || "自动识别"],
     ["任务类型", intentLabels[task.intent] || "自动识别"],
@@ -2396,18 +2424,37 @@ function markAnswerPending() {
 function renderLongWaitNotice(elapsedMs) {
   const elapsedSeconds = Math.floor(elapsedMs / 1000);
   if (elapsedSeconds < 15 || !$("#answer-panel") || $("#answer-panel").hidden) return;
-  const waitingLabel = elapsedSeconds >= 60
-    ? "模型响应较慢，仍会自动完成"
-    : "正在等待模型响应";
-  const waitingMessage = elapsedSeconds >= 60
-    ? `已等待 ${elapsedSeconds} 秒；任务仍在后台运行，页面会自动接收结果。`
-    : "任务已提交，模型正在生成结果，请不要重复提交。";
+  const runtimeStatus = String(
+    runtimeTaskControls?.status || state.currentTask?.status || "",
+  ).toLowerCase();
+  const waitingForApproval = ["waiting_review", "waiting_approval"].includes(runtimeStatus);
+  const waitingForInput = ["waiting_user", "waiting_input"].includes(runtimeStatus);
+  const waitingLabel = waitingForApproval
+    ? "等待人工审批"
+    : waitingForInput
+      ? "等待补充信息"
+      : elapsedSeconds >= 60
+        ? "模型响应较慢，仍会自动完成"
+        : "正在等待模型响应";
+  const waitingMessage = waitingForApproval
+    ? "任务已暂停在人工审批 checkpoint，审批通过后会从当前进度继续。"
+    : waitingForInput
+      ? "任务需要补充信息后才能继续，请查看 Runtime 控制区。"
+      : elapsedSeconds >= 60
+        ? `已等待 ${elapsedSeconds} 秒；任务仍在后台运行，页面会自动接收结果。`
+        : "任务已提交，模型正在生成结果，请不要重复提交。";
+  if (waitingForApproval || waitingForInput) {
+    $("#answer-status").textContent = runtimeTaskStatusLabels[
+      waitingForApproval ? "waiting_approval" : "waiting_input"
+    ];
+  }
   $("#answer-title").textContent = waitingLabel;
   $("#answer-source-chip").textContent = waitingMessage;
   const runningStep = [...state.liveProcessSteps.values()].find(
     (step) => step.status === "running" || step.status === "started",
   );
   if (runningStep) {
+    if (waitingForApproval || waitingForInput) runningStep.status = "waiting";
     runningStep.label = waitingLabel;
     runningStep.detail = waitingMessage;
     renderProcess([...state.liveProcessSteps.values()]);
@@ -2467,14 +2514,15 @@ async function submit(event) {
   if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
   updateAutoDetection(question, studentAttempt);
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
-  markAnswerPending();
-  renderProcess([{ label: "正在理解你的需求", status: "running" }]);
-  $("#context-usage").replaceChildren(el("div", { class: "context-empty" }, [
-    el("strong", { text: "正在组装本次上下文" }),
-    el("p", { text: "任务完成后会展示实际使用的消息、记忆和预算。" }),
-  ]));
   try {
-    await ensureSession(); state.activeCourse = "AUTO"; localStorage.removeItem("xinzhi_student_course"); archiveCurrentAnswer(); if (question) addMessage(question, "user", "", selectedFiles); else addMessage(`已上传 ${selectedFiles.length} 个材料`, "user", "", selectedFiles);
+    await ensureSession(); state.activeCourse = "AUTO"; localStorage.removeItem("xinzhi_student_course"); archiveCurrentAnswer();
+    markAnswerPending();
+    renderProcess([{ label: "正在理解你的需求", status: "running" }]);
+    $("#context-usage").replaceChildren(el("div", { class: "context-empty" }, [
+      el("strong", { text: "正在组装本次上下文" }),
+      el("p", { text: "任务完成后会展示实际使用的消息、记忆和预算。" }),
+    ]));
+    if (question) addMessage(question, "user", "", selectedFiles); else addMessage(`已上传 ${selectedFiles.length} 个材料`, "user", "", selectedFiles);
     const materials = await uploadMaterials();
     const canonical = { text: question };
     const uploadedText = materials.map((item) => item.extractedText).filter(Boolean).join("\n\n");
@@ -2494,6 +2542,7 @@ async function submit(event) {
       courseId: requestedCourse,
       intent: requestedIntent,
       scenarioId: state.activeScenarioId || null,
+      scenarioCaseId: state.activeScenarioCaseId || "",
       canonicalInput: canonical,
       materials,
       responseDepth: $("#depth-select").value,
@@ -2756,6 +2805,9 @@ window.addEventListener("DOMContentLoaded", () => {
     state.activeTaskWait?.cancel();
     state.activeTaskWait = null;
     state.taskId = "";
+    runtimeTaskControlsRequest += 1;
+    runtimeTaskControls = null;
+    renderRuntimeTaskControls();
     setBusy(false);
     markAnswerCancelled();
     $("#form-error").textContent = "已立即停止当前等待，正在后台提交取消请求…";

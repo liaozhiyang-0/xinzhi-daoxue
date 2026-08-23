@@ -4153,6 +4153,193 @@
         }
       }
     },
+    "/api/v1/knowledge/materials/{course_id}/{material_id}": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Knowledge Material Document",
+        "operationId": "knowledge_material_document_api_v1_knowledge_materials__course_id___material_id__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "chunk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Chunk"
+            }
+          },
+          {
+            "name": "normalize_math",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Normalize Math"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/material-pages/{course_id}/{material_id}": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Knowledge Material Page",
+        "operationId": "knowledge_material_page_api_v1_knowledge_material_pages__course_id___material_id__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "material_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 60000,
+                  "minimum": 4000
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "anchor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2000,
+              "default": "",
+              "title": "Anchor"
+            }
+          },
+          {
+            "name": "chunk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "default": "",
+              "title": "Chunk"
+            }
+          },
+          {
+            "name": "normalize_math",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Normalize Math"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/knowledge/images/{course_id}/{relative_path}": {
       "get": {
         "tags": [
@@ -11254,6 +11441,28 @@
             "type": "string",
             "title": "Version"
           },
+          "runtime_identity": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Runtime Identity"
+          },
+          "configuration_status": {
+            "type": "string",
+            "title": "Configuration Status",
+            "default": "unknown"
+          },
+          "configuration_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Configuration Warnings"
+          },
+          "model_runtime": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Model Runtime"
+          },
           "external_retrieval": {
             "additionalProperties": true,
             "type": "object",
@@ -15556,6 +15765,30 @@
             "maxItems": 16,
             "minItems": 1,
             "title": "Acceptance Conditions"
+          },
+          "formula_output_contract": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formula Output Contract"
+          },
+          "visual_acceptance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Acceptance"
           }
         },
         "additionalProperties": false,
@@ -16094,6 +16327,37 @@
             "type": "string",
             "title": "Fallback Reason",
             "default": ""
+          },
+          "answer_quality_status": {
+            "type": "string",
+            "title": "Answer Quality Status",
+            "default": "not_available"
+          },
+          "requires_review": {
+            "type": "boolean",
+            "title": "Requires Review",
+            "default": false
+          },
+          "publishable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishable"
+          },
+          "math_quality_status": {
+            "type": "string",
+            "title": "Math Quality Status",
+            "default": "not_available"
+          },
+          "formula_contract_status": {
+            "type": "string",
+            "title": "Formula Contract Status",
+            "default": "not_available"
           },
           "created_at": {
             "type": "string",

@@ -179,3 +179,52 @@ def test_runtime_boundary_rejects_checkpoint_route_drift() -> None:
             request=request,
             execution_plan=None,
         )
+
+
+def test_runtime_boundary_rejects_checkpoint_capability_drift() -> None:
+    plan = AgentRunPlan(
+        plan_id="capability-plan",
+        version="1",
+        goal="resume safely",
+        nodes=[
+            RuntimeNode(
+                node_id="execute",
+                node_type="workflow",
+                handler_id="test.execute",
+            )
+        ],
+    )
+    run = AgentRun(
+        run_id="capability-run",
+        task_id="capability-task",
+        goal="resume safely",
+        plan=plan,
+        compatibility_snapshot=RuntimeCompatibilitySnapshot(
+            preparation_status="prepared",
+            agent_id="GENERAL_QUESTION_V1",
+            route_capability_checks={"provider_available": True},
+            execution_plan_capability_checks={"published": True},
+        ),
+    )
+    request = AgentRequest(
+        task_id="capability-task",
+        session_id="capability-session",
+        user_id="capability-user",
+        options={
+            "_routing": {
+                "agent_id": "GENERAL_QUESTION_V1",
+                "availability": {"provider_available": False},
+            },
+            "_execution_plan": {
+                "availability_checks": {"published": True},
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeResumeInvariantError, match="route capabilities"):
+        RuntimeExecutionBoundary.validate_resume_invariants(
+            run,
+            task_agent_id="GENERAL_QUESTION_V1",
+            request=request,
+            execution_plan=None,
+        )

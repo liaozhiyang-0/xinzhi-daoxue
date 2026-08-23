@@ -180,3 +180,77 @@ def test_topic_filter_ignores_chapter_numbers_and_generic_structure_words() -> N
 
     assert packet.evidence_status == "insufficient"
     assert packet.evidence == []
+
+
+def test_teaching_evidence_requires_named_machine_topic_anchor() -> None:
+    unrelated = hit(
+        "CT", "asm", "算法状态机用于描述数字系统控制单元的工作流程。"
+    ).model_copy(update={"title": "算法状态机"})
+    matching = hit(
+        "CT", "mealy-moore", "Mealy 与 Moore 状态机的输出定义和时序比较。"
+    ).model_copy(update={"title": "Mealy/Moore 状态机"})
+    result = RetrievalResult(
+        query="数字电子技术",
+        normalized_query="数字电子技术",
+        course_ids=["CT"],
+        hits=[unrelated, matching],
+        confidence=0.8,
+        latency_ms=0,
+    )
+
+    packet = RetrievalContextService(1000).build(
+        result,
+        course_id="CT",
+        intent="lesson_prep",
+        query_override="请设计 Mealy/Moore 状态机翻转课堂。",
+    )
+
+    assert [item.chunk_id for item in packet.evidence] == ["mealy-moore"]
+
+
+def test_context_packet_blocks_static_point_evidence_without_bjt_anchor() -> None:
+    mos = hit(
+        "AE",
+        "mos-static-point",
+        "共源放大电路的静态工作点计算和动态指标分析。",
+    ).model_copy(update={"course_name": "模拟电子技术"})
+    result = RetrievalResult(
+        query="根据BJT静态工作点设置和动态参数测试的实验失误制定复习计划",
+        normalized_query="BJT静态工作点动态参数测试",
+        course_ids=["AE"],
+        hits=[mos],
+        confidence=0.9,
+        latency_ms=0,
+    )
+
+    packet = RetrievalContextService(1000).build(
+        result, course_id="AE", intent="learning_advice"
+    )
+
+    assert packet.evidence_status == "insufficient"
+    assert packet.evidence == []
+    assert any("BJT/三极管" in warning for warning in packet.warnings)
+
+
+def test_context_packet_blocks_generic_evidence_without_laplace_anchor() -> None:
+    generic = hit(
+        "CT",
+        "generic-circuit",
+        "电路课程强调从基础到拓展的逻辑主线与参数响应分析。",
+    )
+    result = RetrievalResult(
+        query="拉普拉斯变换极点分布与时域响应稳定性复习路径",
+        normalized_query="拉普拉斯 极点分布 时域响应 稳定性",
+        course_ids=["CT"],
+        hits=[generic],
+        confidence=0.9,
+        latency_ms=0,
+    )
+
+    packet = RetrievalContextService(1000).build(
+        result, course_id="CT", intent="learning_advice"
+    )
+
+    assert packet.evidence_status == "insufficient"
+    assert packet.evidence == []
+    assert any("拉普拉斯/极点/稳定性" in warning for warning in packet.warnings)

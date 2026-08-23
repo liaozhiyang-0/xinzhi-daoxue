@@ -1,6 +1,6 @@
 # 芯智导学代码级开发手册
 
-> 快照日期：2026-07-22
+> 快照日期：2026-08-23
 > 适用仓库：`xinzhi-daoxue` 当前 FastAPI 多智能体平台
 > 目标读者：需要在现有架构上继续微调、排错、增加课程或 Agent 的开发者
 
@@ -20,6 +20,7 @@
 
 - 基础结构：[目录地图](#3-仓库目录地图)、[应用装配](#4-应用创建与依赖装配)、[合同与数据库](#5-合同数据库模型与序列化边界)
 - 核心执行：[任务调用链](#6-任务从提交到显示的完整调用链)、[Agent 与路由](#7-agent-注册路由和-supervisor)
+- 控制面收口：[Phase N 控制面](#6a-phase-n-v2-控制面)
 - 能力模块：[专业求解](#8-多学科专业求解链)、[知识与 RAG](#9-本地知识库与-rag)、[模型与 Provider](#10-模型内部-agent-与本地-provider)、[学习闭环](#11-学习闭环)
 - 开发工具：[API](#12-api-地图)、[前端](#13-静态前端)、[评测](#15-评测框架)、[测试](#17-测试地图)、[常见微调入口](#19-常见微调任务从哪里开始)、[排错](#21-常见排错路径)
 
@@ -75,6 +76,26 @@ flowchart LR
 - 本地 RAG 是证据、上下文和解释性层，不是另一套问答系统。
 - `SOLVER_CT_V1` 是冻结的历史基线与只读审计资产，不参与当前 Runtime 路由。
 - 业务任务统一走本地 Runtime；历史 `allow_cloud` 字段在入口被丢弃，不能启用远程路径。
+
+### 6a. Phase N v2 控制面
+
+新任务的唯一生产控制链是：
+
+```text
+Unified ingress
+  → GoalContract
+  → deterministic preflight
+  → PlannerService
+  → CapabilityBindingRegistry + SkillRegistry/Policy
+  → CanonicalPlan
+  → RuntimeTaskEngine / PlanExecutor
+  → verification / governance / result commit
+```
+
+`TaskRouter` 是预检和兼容映射，不是 active 最终 route owner；`OverallRoutingService` 和
+`FallbackRoutingService` 在 active 模式不注入 Runtime preparation；`IntentPlanCompiler`
+只作为 shadow/旧 checkpoint adapter。active 任务没有有效 CanonicalPlan 时失败关闭。
+完整矩阵见 [Phase N closeout](architecture/phase_n_control_plane_closeout.md)。
 
 ## 3. 仓库目录地图
 

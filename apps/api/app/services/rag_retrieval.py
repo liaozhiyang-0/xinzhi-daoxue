@@ -16,6 +16,10 @@ from app.contracts import KnowledgeHit, RelatedImage, RetrievalResult
 from app.contracts.knowledge import KnowledgeCourseId
 from app.core.config import Settings
 from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+from app.services.course_material_manifest import (
+    REVOCATION_STATE_UNAVAILABLE,
+    material_id_from_source_ref,
+)
 from app.services.knowledge_base import KnowledgeBaseService, tokenize
 from app.services.query_rewrite import rewrite_retrieval_query
 from app.services.rag_providers import (
@@ -117,6 +121,7 @@ def policy_for(
 class _Candidate:
     hit: KnowledgeHit
     ranks: dict[str, int]
+    material_file_id: str | None = None
     fusion_score: float = 0.0
     topic_bonus: float = 0.0
     rerank_score: float | None = None
@@ -359,8 +364,11 @@ class RAGRetrievalService:
 
         dense_hits: list[VectorSearchHit] = []
         try:
-            health = self.vector_store.health()
-            vector_ok = bool(health.get("connected"))
+            health = self.vector_store.health(
+                expected_text_dimension=self.text_provider.health().dimension,
+                expected_image_dimension=self.image_provider.health().dimension,
+            )
+            vector_ok = bool(health.get("connected") and health.get("compatible", True))
             if not vector_ok:
                 raise RuntimeError(str(health.get("reason") or "Qdrant unavailable"))
             if normalized:
@@ -451,6 +459,34 @@ class RAGRetrievalService:
             trace["bm25"] = [self._hit_summary(hit) for hit in sparse_hits[:10]]
 
         self._rrf(candidates, normalized)
+        revoked_chunk_ids, revoked_material_ids = self._revoked_material_state()
+        if revoked_chunk_ids or revoked_material_ids:
+            before_count = len(candidates)
+            candidates = {
+                chunk_id: candidate
+                for chunk_id, candidate in candidates.items()
+                if not self._candidate_is_revoked(
+                    chunk_id,
+                    candidate,
+                    revoked_chunk_ids=revoked_chunk_ids,
+                    revoked_material_ids=revoked_material_ids,
+                )
+            }
+            image_channels = {
+                image_id: record
+                for image_id, record in image_channels.items()
+                if not self._image_is_revoked(
+                    record,
+                    revoked_chunk_ids=revoked_chunk_ids,
+                    revoked_material_ids=revoked_material_ids,
+                )
+            }
+            removed_count = before_count - len(candidates)
+            if removed_count:
+                warnings.append(
+                    f"revoked_course_material_filtered:{removed_count}"
+                )
+            trace["revoked_material_candidates"] = removed_count
         trace["fusion_candidates"] = len(candidates)
         ordered = sorted(candidates.values(), key=lambda item: -item.fusion_score)
         trace["fusion"] = [self._candidate_summary(item) for item in ordered[:10]]
@@ -581,10 +617,13 @@ class RAGRetrievalService:
                 "degraded_reasons": ["rag_disabled"],
                 "metrics": dict(self._metrics),
             }
-        vector = self.vector_store.health()
         text = self.text_provider.health().to_dict()
         image = self.image_provider.health().to_dict()
         reranker = self.reranker.health().to_dict()
+        vector = self.vector_store.health(
+            expected_text_dimension=text.get("dimension"),
+            expected_image_dimension=image.get("dimension"),
+        )
         reasons = [
             str(item.get("reason"))
             for item in (vector, text, image, reranker)
@@ -611,7 +650,9 @@ class RAGRetrievalService:
         return {
             "rag_status": (
                 "ready"
-                if vector.get("connected") and all(required_models.values())
+                if vector.get("connected")
+                and vector.get("compatible", True)
+                and all(required_models.values())
                 else "degraded"
             ),
             "text_model_loaded": text["loaded"],
@@ -628,6 +669,9 @@ class RAGRetrievalService:
             "reranker_model": reranker["model_name"],
             "reranker_load_latency_ms": reranker["load_latency_ms"],
             "vector_store_connected": vector.get("connected", False),
+            "vector_store_compatible": vector.get("compatible", True),
+            "vector_collection_dimensions": vector.get("collection_dimensions", {}),
+            "vector_dimension_mismatches": vector.get("dimension_mismatches", []),
             "vector_store_backend": vector.get("backend"),
             "vector_store_metrics": vector.get("metrics", {}),
             "text_vector_count": vector.get("text_vector_count", 0),
@@ -662,10 +706,87 @@ class RAGRetrievalService:
         except (OSError, ValueError):
             return ""
         version = str(payload.get("index_version", ""))
+        revocation_version = str(
+            payload.get("material_revocation_version", "")
+        ).strip()
+        if revocation_version:
+            version = f"{version}:material-revocation:{revocation_version}"
         with self._cache_lock:
             self._index_version_cache = (*fingerprint, version)
             self._metrics["rag_index_version_read_total"] += 1
         return version
+
+    def _revoked_material_state(self) -> tuple[set[str], set[str]]:
+        state = self.settings.knowledge_index_path / "rag_index_state.json"
+        try:
+            payload = __import__("json").loads(state.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set(), {REVOCATION_STATE_UNAVAILABLE}
+        if not isinstance(payload, dict):
+            return set(), {REVOCATION_STATE_UNAVAILABLE}
+        chunk_values = payload.get("revoked_material_chunk_ids", [])
+        material_values = payload.get("revoked_material_ids", [])
+        if not isinstance(chunk_values, list):
+            return set(), {REVOCATION_STATE_UNAVAILABLE}
+        if not isinstance(material_values, list):
+            return set(), {REVOCATION_STATE_UNAVAILABLE}
+        return (
+            {
+                str(value)
+                for value in chunk_values
+                if str(value).strip()
+            },
+            {
+                str(value)
+                for value in material_values
+                if str(value).strip()
+            },
+        )
+
+    @staticmethod
+    def _candidate_is_revoked(
+        chunk_id: str,
+        candidate: _Candidate,
+        *,
+        revoked_chunk_ids: set[str],
+        revoked_material_ids: set[str],
+    ) -> bool:
+        material_id = candidate.material_file_id or material_id_from_source_ref(
+            candidate.hit.source_ref
+        )
+        return (
+            chunk_id in revoked_chunk_ids
+            or material_id in revoked_material_ids
+            or (
+                REVOCATION_STATE_UNAVAILABLE in revoked_material_ids
+                and material_id is not None
+            )
+        )
+
+    @staticmethod
+    def _image_is_revoked(
+        record: dict[str, Any],
+        *,
+        revoked_chunk_ids: set[str],
+        revoked_material_ids: set[str],
+    ) -> bool:
+        payload = record.get("payload", {})
+        if not isinstance(payload, dict):
+            return True
+        parent_chunk_id = str(payload.get("parent_chunk_id", ""))
+        material_id = str(payload.get("material_file_id", "")).strip() or None
+        if material_id is None:
+            material_id = material_id_from_source_ref(
+                str(payload.get("resource_uri", ""))
+            )
+        return (
+            parent_chunk_id in revoked_chunk_ids
+            or material_id in revoked_material_ids
+            or (
+                REVOCATION_STATE_UNAVAILABLE in revoked_material_ids
+                and material_id is not None
+            )
+        )
 
     def _cache_get(self, key: tuple[str, ...]) -> list[float] | None:
         with self._cache_lock:
@@ -875,7 +996,22 @@ class RAGRetrievalService:
             if not item.payload:
                 continue
             hit = cls._payload_hit(item.payload, item.score)
-            candidate = candidates.setdefault(hit.chunk_id, _Candidate(hit, {}))
+            candidate = candidates.setdefault(
+                hit.chunk_id,
+                _Candidate(
+                    hit,
+                    {},
+                    material_file_id=(
+                        str(item.payload.get("material_file_id"))
+                        if item.payload.get("material_file_id")
+                        else None
+                    ),
+                ),
+            )
+            if candidate.material_file_id is None and item.payload.get(
+                "material_file_id"
+            ):
+                candidate.material_file_id = str(item.payload["material_file_id"])
             candidate.ranks[channel] = rank
 
     @staticmethod

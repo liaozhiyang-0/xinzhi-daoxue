@@ -817,7 +817,7 @@ def test_plan_executor_emits_ordered_events_and_enforces_timeout() -> None:
         "node_started:slow",
         "node_failed:slow",
     ]
-    assert run.nodes["slow"].error_code == "TimeoutError"
+    assert run.nodes["slow"].error_code == "provider_timeout"
     assert run.status == RuntimeRunStatus.FAILED
 
 

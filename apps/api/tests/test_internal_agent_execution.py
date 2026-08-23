@@ -17,6 +17,7 @@ from app.contracts import (
     UserRole,
 )
 from app.services.internal_agent_execution import InternalAgentExecutionService
+from app.services.request_materials import RequestMaterialExtractor
 
 
 class FakeHub:
@@ -194,6 +195,96 @@ async def test_lesson_runtime_preserves_material_duration_constraint() -> None:
         "planned_minutes": None,
     }
     assert "课堂流程未提供可核验的分钟分配" in result.warnings
+
+
+@pytest.mark.asyncio
+async def test_lesson_duration_supports_preclass_and_in_class_parts() -> None:
+    runtime_request = request(Intent.LESSON_PREP).model_copy(
+        update={
+            "canonical_input": {
+                "text": "课前20分钟，课堂讨论30分钟。",
+            }
+        }
+    )
+    extraction = RequestMaterialExtractor().extract(runtime_request)
+
+    assert extraction.materials["preclass_duration"] == "20分钟"
+    assert extraction.materials["in_class_duration"] == "30分钟"
+    assert extraction.materials["class_duration"] == "50分钟"
+
+    executor, hub = service()
+    runtime_request = runtime_request.model_copy(
+        update={
+            "options": {
+                "_material_extraction": {
+                    "materials": {
+                        "class_duration": "20分钟",
+                        "preclass_duration": "20分钟",
+                        "in_class_duration": "30分钟",
+                    }
+                }
+            }
+        }
+    )
+    result = await executor.run(
+        "TEACH_01_LESSON_PREP_V1", runtime_request, context()
+    )
+
+    assert "pre-class block at 20分钟" in hub.input_text
+    assert "in-class discussion block at 30分钟" in hub.input_text
+    assert "distinct pre-class activity line labeled 课前" in hub.input_text
+    assert result.business_data["duration_check"]["requested_minutes"] == 50
+
+
+def test_lesson_duration_ignores_model_total_summary_line() -> None:
+    value = {
+        "learning_objectives": ["区分两种状态机"],
+        "lesson_flow": [
+            "课前任务（20分钟）",
+            "课堂导入（5分钟）",
+            "分组讨论（10分钟）",
+            "教师纠错（10分钟）",
+            "出口条（5分钟）",
+            "总计：30分钟",
+        ],
+        "formative_assessment": ["出口条"],
+        "_requested_preclass_duration": "20分钟",
+        "_requested_in_class_duration": "30分钟",
+    }
+
+    _, business_data, warnings, _ = InternalAgentExecutionService._lesson(value)
+
+    assert business_data["duration_check"] == {
+        "status": "pass",
+        "requested_minutes": 50,
+        "planned_minutes": 50,
+        "requested_components": {
+            "preclass_minutes": 20,
+            "in_class_minutes": 30,
+        },
+    }
+    assert not any("未匹配请求" in warning for warning in warnings)
+
+
+def test_lesson_duration_ignores_deadline_repetition() -> None:
+    value = {
+        "learning_objectives": ["区分两种状态机"],
+        "lesson_flow": [
+            "课前20分钟：完成输出时序练习",
+            "课前20分钟结束前：提交练习结果",
+            "课堂0-5分钟：导入",
+            "课堂5-15分钟：分组讨论",
+            "课堂15-25分钟：教师纠错",
+            "课堂25-30分钟：出口条",
+        ],
+        "formative_assessment": ["出口条"],
+        "_requested_preclass_duration": "20分钟",
+        "_requested_in_class_duration": "30分钟",
+    }
+
+    _, business_data, _, _ = InternalAgentExecutionService._lesson(value)
+
+    assert business_data["duration_check"]["status"] == "pass"
 
 
 @pytest.mark.asyncio

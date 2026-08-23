@@ -241,6 +241,8 @@ class AEValidator:
             if gain_conflict is not None:
                 conflicts.append(gain_conflict)
 
+        conflicts.extend(self._textual_circuit_conflicts(problem, result))
+
         if mode == "small_signal_amplifier":
             prerequisite = self._condition_text(
                 problem.known_conditions,
@@ -293,6 +295,157 @@ class AEValidator:
             suggested_corrections=list(dict.fromkeys(corrections)),
             requires_regeneration=False,
         )
+
+    @classmethod
+    def _textual_circuit_conflicts(
+        cls,
+        problem: AcademicProblem,
+        result: AcademicSolutionResult,
+    ) -> list[ProfessionalConflict]:
+        """Check a small set of high-value text-only circuit misconceptions."""
+
+        problem_text = problem.problem_text.casefold()
+        answer = result.final_answer.casefold()
+        conflicts: list[ProfessionalConflict] = []
+
+        bypass_problem = any(
+            marker in problem_text for marker in ("旁路电容", "射极旁路")
+        ) and "增益" in problem_text
+        says_gain_decreases = any(
+            marker in answer
+            for marker in ("增益会减小", "增益减小", "增益下降", "放大倍数会减小")
+        )
+        says_gain_increases = any(
+            marker in answer
+            for marker in ("增益增大", "增益提高", "增益上升", "放大倍数增大")
+        )
+        frequency_qualified_decrease = any(
+            marker in answer
+            for marker in (
+                "低频",
+                "截止频率以下",
+                "旁路不充分",
+                "未完全旁路",
+                "部分旁路",
+                "low frequency",
+                "incomplete bypass",
+                "partial bypass",
+            )
+        )
+        if (
+            bypass_problem
+            and says_gain_decreases
+            and not says_gain_increases
+            and not frequency_qualified_decrease
+        ):
+            conflicts.append(
+                cls._conflict(
+                    "emitter_bypass_gain",
+                    "射极旁路电容降低交流发射极阻抗并削弱射极负反馈，典型中频电压增益应提高而不是降低。",
+                    "先说明旁路条件和频率范围，再分别核对输入电阻变化、负反馈变化与电压增益变化。",
+                )
+            )
+
+        cmos_power_problem = "cmos" in problem_text and "功耗" in problem_text
+        claims_frequency_independent = any(
+            marker in answer
+            for marker in ("固定的常数", "固定常数", "与频率无关", "不随频率变化")
+        )
+        explains_dynamic_power = (
+            "动态功耗" in answer
+            and "频率" in answer
+            and any(marker in answer for marker in ("正比", "增加", "变化"))
+        )
+        if (
+            cmos_power_problem
+            and claims_frequency_independent
+            and not explains_dynamic_power
+        ):
+            conflicts.append(
+                cls._conflict(
+                    "cmos_power_frequency",
+                    (
+                        "CMOS 总功耗不能一概视为与频率无关，应区分静态漏电功耗"
+                        "和随翻转频率变化的动态功耗。"
+                    ),
+                    (
+                        "写出 P_total=P_static+P_dynamic，并用输入翻转频率、"
+                        "负载电容和电源电压设计区分静态/动态功耗的验证题。"
+                    ),
+                )
+            )
+
+        bjt_clipping_problem = "顶部削峰" in problem_text and (
+            "共射" in problem_text or "bjt" in problem_text
+        )
+        says_active_or_saturated = any(
+            marker in answer
+            for marker in ("放大区", "有源区", "饱和区", "active", "saturation")
+        )
+        says_cutoff = any(
+            marker in answer for marker in ("截止", "cutoff")
+        ) and not any(
+            marker in answer
+            for marker in ("不需要检查截止", "无需检查截止", "不是截止")
+        )
+        if bjt_clipping_problem and says_active_or_saturated and not says_cutoff:
+            conflicts.append(
+                cls._conflict(
+                    "bjt_top_clipping_region",
+                    (
+                        "NPN 共射输出顶部接近 V_CC 且顶部削峰时，优先检查正向峰值"
+                        "进入截止/截止侧削顶，而不是直接判为饱和。"
+                    ),
+                    (
+                        "核对静态 V_C、基极偏置和输入幅度，再用示波器或逐点测量"
+                        "验证截止、饱和与偏置不足的可能性。"
+                    ),
+                )
+            )
+
+        integrator_drift_problem = "积分" in problem_text and "负电源" in problem_text
+        claims_ideal_zero = any(
+            marker in answer
+            for marker in ("不会漂移", "保持为0", "保持 0", "输出应为0", "输出应为 0")
+        )
+        mentions_nonideality = any(
+            marker in answer
+            for marker in (
+                "失调",
+                "偏置电流",
+                "漏电",
+                "非理想",
+                "offset",
+                "bias current",
+                "leakage",
+            )
+        )
+        mentions_bleed_resistor = any(
+            marker in answer
+            for marker in ("泄放电阻", "并联电阻", "反馈电阻", "电阻", "resistor")
+        )
+        if integrator_drift_problem and claims_ideal_zero and not mentions_nonideality:
+            conflicts.append(
+                cls._conflict(
+                    "integrator_nonideality",
+                    "输入为零并不能消除通用运放的输入失调、偏置电流和漏电等积分误差，理想积分器结论无法解释实际漂移。",
+                    "先列出主导非理想源，再说明其积分累积路径和输出饱和风险。",
+                )
+            )
+        if (
+            integrator_drift_problem
+            and mentions_nonideality
+            and not mentions_bleed_resistor
+        ):
+            conflicts.append(
+                cls._conflict(
+                    "integrator_drift_containment",
+                    "仅指出非理想来源还不能把积分器控制在安全边界内。",
+                    "在反馈电容两端并联合适的泄放/反馈电阻形成实用积分器，并给出时间常数、初始条件和饱和验证步骤。",
+                )
+            )
+
+        return conflicts
 
     @staticmethod
     def analysis_mode(problem: AcademicProblem) -> str:

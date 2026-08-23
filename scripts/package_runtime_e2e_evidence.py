@@ -20,6 +20,7 @@ import re
 import sqlite3
 import sys
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,6 +49,13 @@ SENSITIVE_KEYS = frozenset(
         "uid",
     }
 )
+PAIRED_INPUT_SCHEMA_VERSION = "runtime_paired_input.v1"
+ATTACHMENT_FIELDS = (
+    "filename",
+    "content_type",
+    "size_bytes",
+    "checksum_sha256",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +67,14 @@ class PairArtifact:
     runtime_input: Path
     runtime_task: Path
     runtime_task_id: str
+    legacy_audit: dict[str, Any]
+    runtime_audit: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeTrace:
     records: list[dict[str, Any]]
+    run_id: str
     agent_version: str
     plan_version: str
     captured_at: datetime
@@ -77,6 +88,193 @@ def _read_json_object(path: Path, label: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{label} must be a JSON object: {path}")
     return payload
+
+
+def _stable_attachments(value: object, *, label: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{label}.attachments must be a list")
+    result: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{label}.attachments[{index}] must be an object")
+        result.append(
+            {
+                key: item.get(key)
+                for key in ATTACHMENT_FIELDS
+                if key in item
+            }
+        )
+    return result
+
+
+def _runtime_request_from_task_input(
+    input_content: Mapping[str, Any], *, label: str
+) -> dict[str, Any]:
+    options = input_content.get("options")
+    if not isinstance(options, Mapping):
+        return {}
+    requests = [
+        value.get("request")
+        for value in options.values()
+        if isinstance(value, Mapping) and isinstance(value.get("request"), Mapping)
+    ]
+    if len(requests) > 1:
+        raise ValueError(f"{label}: multiple Runtime request payloads found")
+    request = requests[0] if requests else None
+    return dict(request) if isinstance(request, Mapping) else {}
+
+
+def _stable_input_from_task(
+    task: Mapping[str, Any],
+    *,
+    label: str,
+    runtime_request_override: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    input_content = task.get("input_content")
+    if not isinstance(input_content, Mapping):
+        raise ValueError(f"{label}: input_content is missing")
+    canonical_input = input_content.get("canonical_input")
+    if not isinstance(canonical_input, Mapping):
+        raise ValueError(f"{label}: canonical_input is missing")
+    runtime_request = _runtime_request_from_task_input(input_content, label=label)
+    if runtime_request_override is not None:
+        runtime_request = dict(runtime_request_override)
+    return {
+        "schema_version": PAIRED_INPUT_SCHEMA_VERSION,
+        "course_id": str(input_content.get("course_id", "")),
+        "intent": str(input_content.get("intent", "")),
+        "canonical_input": dict(canonical_input),
+        "attachments": _stable_attachments(
+            input_content.get("attachments", []), label=label
+        ),
+        "runtime_request": runtime_request,
+    }
+
+
+def _validate_task_audit(
+    task: Mapping[str, Any],
+    *,
+    label: str,
+    runtime_request: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    input_content = task.get("input_content")
+    if not isinstance(input_content, Mapping):
+        raise ValueError(f"{label}: input_content is missing")
+    options = input_content.get("options")
+    audit = options.get("_audit") if isinstance(options, Mapping) else None
+    if not isinstance(audit, Mapping):
+        raise ValueError(f"{label}: task_audit.v1 is missing")
+    if audit.get("schema_version") != "task_audit.v1":
+        raise ValueError(f"{label}: task_audit schema version is invalid")
+    if "runtime_request_sha256" not in audit:
+        raise ValueError(f"{label}: task_audit Runtime request hash is missing")
+    if str(audit.get("task_id", "")) != str(task.get("id", "")):
+        raise ValueError(f"{label}: task_audit task identity mismatch")
+    if str(audit.get("agent_id", "")) != str(task.get("agent_id", "")):
+        raise ValueError(f"{label}: task_audit Agent identity mismatch")
+    if audit.get("input_sha256") != payload_sha256(
+        dict(input_content["canonical_input"])
+    ):
+        raise ValueError(f"{label}: task_audit input hash mismatch")
+    raw_attachments = input_content.get("attachments", [])
+    _stable_attachments(raw_attachments, label=label)
+    if not str(audit.get("attachment_sha256", "")):
+        raise ValueError(f"{label}: task_audit attachment hash is missing")
+    if str(audit.get("terminal_status", "")) != str(task.get("status", "")):
+        raise ValueError(f"{label}: task_audit terminal status mismatch")
+    failure_category = str(task.get("failure_category") or "")
+    if str(audit.get("failure_category", "")) != failure_category:
+        raise ValueError(f"{label}: task_audit failure category mismatch")
+    if not isinstance(raw_attachments, list):
+        raise ValueError(f"{label}: attachments must be a list")
+    audit_attachments = [
+        {
+            "file_id": item.get("file_id"),
+            "checksum_sha256": item.get("checksum_sha256") or "",
+            "content_type": item.get("content_type"),
+            "size_bytes": item.get("size_bytes"),
+        }
+        for item in raw_attachments
+        if isinstance(item, Mapping)
+    ]
+    if audit.get("attachment_sha256") != payload_sha256(audit_attachments):
+        raise ValueError(f"{label}: task_audit attachment hash mismatch")
+    runtime_request_hash = str(audit.get("runtime_request_sha256", ""))
+    if runtime_request_hash:
+        if runtime_request is None:
+            raise ValueError(f"{label}: Runtime request payload is missing")
+        if runtime_request_hash != payload_sha256(dict(runtime_request)):
+            raise ValueError(f"{label}: task_audit Runtime request hash mismatch")
+    return dict(audit)
+
+
+def _structural_task_payload(task: Mapping[str, Any], *, label: str) -> dict[str, Any]:
+    """Keep canary parity fields while excluding the original task input."""
+
+    payload = {
+        key: task[key]
+        for key in (
+            "id",
+            "agent_id",
+            "status",
+            "provider",
+            "failure_category",
+            "result_content",
+        )
+        if key in task
+    }
+    result_content = payload.get("result_content")
+    if not isinstance(result_content, Mapping):
+        raise ValueError(f"{label}: result_content must be an object")
+    sensitive_paths = _sensitive_key_paths(result_content)
+    if sensitive_paths:
+        raise ValueError(
+            f"{label}: result_content contains sensitive keys: "
+            + ",".join(sorted(sensitive_paths))
+        )
+    return payload
+
+
+def _validate_final_output(
+    task: Mapping[str, Any],
+    audit: Mapping[str, Any],
+    *,
+    label: str,
+) -> None:
+    """Require a terminal result to carry the same user-facing display contract."""
+
+    if str(task.get("status", "")) != "completed":
+        return
+    result_content = task.get("result_content")
+    if not isinstance(result_content, Mapping):
+        raise ValueError(f"{label}: completed task result_content is missing")
+    structured = result_content.get("structured_result")
+    if not isinstance(structured, Mapping):
+        raise ValueError(f"{label}: completed task structured_result is missing")
+    presentation = structured.get("presentation")
+    if not isinstance(presentation, Mapping):
+        raise ValueError(f"{label}: final presentation is missing")
+    required_presentation_fields = (
+        "title",
+        "status_label",
+        "provider_label",
+        "evidence_message",
+    )
+    if any(
+        not str(presentation.get(field, "")).strip()
+        for field in required_presentation_fields
+    ):
+        raise ValueError(f"{label}: final presentation is incomplete")
+    scenario_id = str(audit.get("scenario_id", "")).strip()
+    if not scenario_id:
+        return
+    if audit.get("output_contract_version") != "scenario_output_contract.v1":
+        raise ValueError(f"{label}: scenario output contract version is missing")
+    contract = structured.get("scenario_contract")
+    if not isinstance(contract, Mapping):
+        raise ValueError(f"{label}: scenario output contract is missing")
+    if str(contract.get("scenario_id", "")) != scenario_id:
+        raise ValueError(f"{label}: scenario output contract identity mismatch")
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -144,10 +342,43 @@ def _artifact_pairs(output_root: Path) -> list[PairArtifact]:
         task_id = runtime_payload.get("id")
         if not isinstance(task_id, str) or not task_id:
             raise ValueError(f"{case_id}: runtime task id is missing")
-        if _read_json_object(runtime_input, "runtime input") != _read_json_object(
-            legacy_input, "legacy input"
-        ):
+        runtime_input_payload = _read_json_object(runtime_input, "runtime input")
+        legacy_input_payload = _read_json_object(legacy_input, "legacy input")
+        if runtime_input_payload != legacy_input_payload:
             raise ValueError(f"{case_id}: Legacy and Runtime input payloads differ")
+        paired_runtime_request = runtime_input_payload.get("runtime_request")
+        if not isinstance(paired_runtime_request, Mapping):
+            raise ValueError(f"{case_id}: paired Runtime request is invalid")
+        expected_runtime_input = _stable_input_from_task(
+            runtime_payload,
+            label=f"{case_id}: Runtime task",
+            runtime_request_override=paired_runtime_request,
+        )
+        expected_legacy_input = _stable_input_from_task(
+            legacy_payload,
+            label=f"{case_id}: Legacy task",
+            runtime_request_override=paired_runtime_request,
+        )
+        if runtime_input_payload != expected_runtime_input:
+            raise ValueError(f"{case_id}: Runtime input snapshot does not match task")
+        if legacy_input_payload != expected_legacy_input:
+            raise ValueError(f"{case_id}: Legacy input snapshot does not match task")
+        legacy_audit = _validate_task_audit(
+            legacy_payload,
+            label=f"{case_id}: Legacy task",
+            runtime_request=paired_runtime_request,
+        )
+        runtime_audit = _validate_task_audit(
+            runtime_payload,
+            label=f"{case_id}: Runtime task",
+            runtime_request=paired_runtime_request,
+        )
+        _validate_final_output(
+            legacy_payload, legacy_audit, label=f"{case_id}: Legacy task"
+        )
+        _validate_final_output(
+            runtime_payload, runtime_audit, label=f"{case_id}: Runtime task"
+        )
         pairs.append(
             PairArtifact(
                 agent_id=agent_id,
@@ -157,6 +388,8 @@ def _artifact_pairs(output_root: Path) -> list[PairArtifact]:
                 runtime_input=runtime_input,
                 runtime_task=runtime_task,
                 runtime_task_id=task_id,
+                legacy_audit=legacy_audit,
+                runtime_audit=runtime_audit,
             )
         )
     if not pairs:
@@ -315,6 +548,7 @@ def _runtime_trace_from_sqlite(
         raise ValueError(f"{expected_agent_id}:{task_id}: checkpoint trace is empty")
     return RuntimeTrace(
         records=records,
+        run_id=str(run["id"]),
         agent_version=agent_version,
         plan_version=plan_version,
         captured_at=captured_at,
@@ -400,6 +634,8 @@ def _write_semantic_review_material(
                 "redacted_input": input_payload,
                 "legacy_output": legacy_output,
                 "runtime_output": runtime_output,
+                "legacy_audit": _reviewable_audit(pair.legacy_audit),
+                "runtime_audit": _reviewable_audit(pair.runtime_audit),
                 "input_sha256": suite_pair.input_sha256,
                 "legacy_payload_sha256": payload_sha256(suite_pair.legacy_payload),
                 "runtime_payload_sha256": payload_sha256(suite_pair.runtime_payload),
@@ -452,7 +688,36 @@ def _reviewable_output(path: Path, *, label: str) -> dict[str, Any]:
     for field in ("citations", "warnings"):
         if field in result_content:
             output[field] = result_content[field]
+    structured = result_content.get("structured_result")
+    if isinstance(structured, Mapping):
+        for field in ("presentation", "scenario_contract", "math_content"):
+            value = structured.get(field)
+            if isinstance(value, Mapping):
+                output[field] = dict(value)
     return output
+
+
+def _reviewable_audit(audit: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose only the redacted identity fields needed for reviewer binding."""
+
+    return {
+        key: audit.get(key)
+        for key in (
+            "schema_version",
+            "task_id",
+            "scenario_id",
+            "run_batch_id",
+            "input_sha256",
+            "attachment_sha256",
+            "runtime_request_sha256",
+            "runtime_run_id",
+            "evidence_ids",
+            "artifact_ids",
+            "output_contract_version",
+            "terminal_status",
+            "failure_category",
+        )
+    }
 
 
 def package_e2e_evidence(
@@ -490,15 +755,47 @@ def package_e2e_evidence(
         }
         try:
             traces: dict[str, RuntimeTrace] = {}
+            structural_paths: dict[str, tuple[Path, Path]] = {}
             for pair in pairs:
                 trace = _runtime_trace_from_sqlite(
                     sqlite_database,
                     task_id=pair.runtime_task_id,
                     expected_agent_id=agent_id,
                 )
+                if pair.runtime_audit.get("runtime_run_id") != trace.run_id:
+                    raise ValueError(
+                        f"{agent_id}:{pair.case_id}: task_audit Runtime run "
+                        "identity mismatch"
+                    )
                 checkpoint_path = pair.runtime_task.parent / "checkpoints.json"
                 _write_json(checkpoint_path, {"checkpoints": trace.records})
                 traces[pair.case_id] = trace
+                structural_root = (
+                    root
+                    / "structural_payloads"
+                    / _slug(agent_id)
+                    / _slug(pair.case_id)
+                )
+                legacy_structural_path = structural_root / "legacy.json"
+                runtime_structural_path = structural_root / "runtime.json"
+                _write_json(
+                    legacy_structural_path,
+                    _structural_task_payload(
+                        _read_json_object(pair.legacy_task, "legacy task"),
+                        label=f"{agent_id}:{pair.case_id}: Legacy task",
+                    ),
+                )
+                _write_json(
+                    runtime_structural_path,
+                    _structural_task_payload(
+                        _read_json_object(pair.runtime_task, "runtime task"),
+                        label=f"{agent_id}:{pair.case_id}: Runtime task",
+                    ),
+                )
+                structural_paths[pair.case_id] = (
+                    legacy_structural_path,
+                    runtime_structural_path,
+                )
 
             agent_versions = {trace.agent_version for trace in traces.values()}
             plan_versions = {trace.plan_version for trace in traces.values()}
@@ -520,8 +817,12 @@ def package_e2e_evidence(
                     {
                         "case_id": pair.case_id,
                         "input": _relative(root, pair.runtime_input),
-                        "legacy": _relative(root, pair.legacy_task),
-                        "runtime": _relative(root, pair.runtime_task),
+                        "legacy": _relative(
+                            root, structural_paths[pair.case_id][0]
+                        ),
+                        "runtime": _relative(
+                            root, structural_paths[pair.case_id][1]
+                        ),
                         "checkpoints": _relative(
                             root, pair.runtime_task.parent / "checkpoints.json"
                         ),

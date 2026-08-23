@@ -74,6 +74,10 @@ class SkillBindingService:
         "ResearchAnalysisReviewService": "RESEARCH_FRONTIER_BRIEF_LOCAL_V1",
         "ResearchAnalysisRuntimeService": "RESEARCH_03_DATA_ANALYSIS_V1",
         "ResearchKnowledgeService": "RESEARCH_FRONTIER_KNOWLEDGE_LOCAL_V1",
+        "LessonPrepRuntimeService": "TEACH_01_LESSON_PREP_V1",
+        "AssignmentReviewRuntimeService": "TEACH_02_ASSIGNMENT_REVIEW_V1",
+        "LearningPathRuntimeService": "LEARN_01_LOCAL_RETRIEVAL_V1",
+        "AcademicProblemSolver": "ACADEMIC_PROBLEM_SOLVER",
     }
 
     def __init__(
@@ -94,7 +98,21 @@ class SkillBindingService:
                 }
             )
         )
+        if not self.available_workers:
+            self.available_workers = tuple(
+                sorted(
+                    worker
+                    for worker, target in self._WORKER_TARGETS.items()
+                    if self._handler_enabled(f"subagent.{target}")
+                )
+            )
         self.policy = SkillPolicy(skill_registry)
+
+    def _handler_enabled(self, handler_id: str) -> bool:
+        try:
+            return self.runtime_handlers.descriptor(handler_id).enabled
+        except RuntimeHandlerRegistryError:
+            return False
 
     def resolve_plan(self, plan: CanonicalPlan) -> SkillBindingResult:
         """Resolve every selected Skill or return explicit fail-closed reasons."""
@@ -256,8 +274,11 @@ class SkillBindingService:
         candidates: list[str] = []
         candidates.extend(f"tool.{item}" for item in skill.eligible_tools)
         for worker in skill.eligible_workers:
+            target = self._WORKER_TARGETS.get(worker)
             if worker in self.available_workers:
                 candidates.append("agent.internal")
+            if target:
+                candidates.append(f"subagent.{target}")
         for capability in skill.capability_ids:
             candidates.extend(
                 f"tool.{tool_id}"

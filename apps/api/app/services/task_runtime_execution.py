@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from time import perf_counter
 
+from app.application.tasks.progress import TaskProgressReporter
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -11,14 +12,17 @@ from app.contracts import (
     ExternalRetrievalResult,
 )
 from app.core.errors import NotConfiguredError, ProviderCancelledError
-from app.runtime import RuntimeNodeError, RuntimeRunStatus
+from app.runtime import (
+    RuntimeNodeError,
+    RuntimeRunStatus,
+    normalize_runtime_error_code,
+)
 from app.services.reflection_service import ReflectionService
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.runtime_persistence_hooks import RuntimePersistenceHooks
 from app.services.runtime_result_pipeline import RuntimeResultPipeline
 from app.services.task_post_processing import TaskPostProcessingService
-from app.services.task_progress import TaskProgressReporter
 from app.services.task_runtime_preparation import PreparedRuntimeTask
 
 logger = logging.getLogger(__name__)
@@ -90,14 +94,13 @@ class TaskRuntimeExecutionService:
             or prepared.runtime_run.status != RuntimeRunStatus.COMPLETED
         ):
             error_code = self._runtime_failure_code(prepared.runtime_run)
+            if error_code == "cancelled":
+                raise ProviderCancelledError("任务已取消")
             raise RuntimeNodeError(
                 error_code,
                 "registered Agent Runtime did not complete "
                 f"(status={prepared.runtime_run.status.value})",
             )
-        if prepared.agent_id == ResearchFrontierService.agent_id:
-            self._schedule_research_ingest(request, result)
-
         validation_started = perf_counter()
         await self.progress.append(
             request.task_id,
@@ -144,6 +147,17 @@ class TaskRuntimeExecutionService:
             elapsed_ms=int((perf_counter() - validation_started) * 1000),
             detail=governed.validation.result_status,
         )
+        if not governed.validation.response_usable:
+            # A completed Runtime is not enough to publish an answer: the
+            # cross-Agent contract must also accept the result.  Fail before
+            # post-processing or terminal Task commit so invalid output cannot
+            # leak into session memory or appear as a successful turn.
+            raise RuntimeNodeError(
+                "runtime_result_validation_failed",
+                "Runtime result did not pass the output contract",
+            )
+        if prepared.agent_id == ResearchFrontierService.agent_id:
+            self._schedule_research_ingest(request, result)
         provider_latency_ms = (
             governed.result.metrics.provider_latency_ms
             or governed.result.metrics.model_latency_ms
@@ -168,10 +182,19 @@ class TaskRuntimeExecutionService:
                     continue
                 error_code = str(getattr(state, "error_code", "")).strip()
                 if error_code:
-                    return error_code
+                    return normalize_runtime_error_code(error_code)
+            for state in nodes.values():
+                if getattr(state, "status", None) != "partial":
+                    continue
+                observation = getattr(state, "observation", None)
+                facts = getattr(observation, "facts", {})
+                if isinstance(facts, dict):
+                    reason_code = str(facts.get("reason_code", "")).strip()
+                    if reason_code:
+                        return normalize_runtime_error_code(reason_code)
         if getattr(runtime_run, "status", None) == RuntimeRunStatus.FAILED:
             return "runtime_execution_failed"
-        return "provider_runtime_result_missing"
+        return "runtime_result_missing"
 
     def _schedule_research_ingest(
         self,

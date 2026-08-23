@@ -392,7 +392,21 @@ class OpenAICompatibleProvider:
             "usage": usage,
             "elapsed_ms": response.elapsed_ms,
             "provider_request_id": response.provider_request_id,
+            "finish_reason": response.finish_reason,
+            "output_chars": len(response.content),
+            "truncated": OpenAICompatibleProvider._is_truncated(response),
+            "response_transport": response.raw_metadata.get("response_transport"),
         }
+
+    @staticmethod
+    def _is_truncated(response: ModelResponse) -> bool:
+        finish_reason = (response.finish_reason or "").casefold()
+        return finish_reason in {
+            "length",
+            "max_tokens",
+            "max_token",
+            "token_limit",
+        } or "length" in finish_reason or "max_token" in finish_reason
 
     async def aclose(self) -> None:
         if self._owns_client and self._client is not None:

@@ -5,8 +5,8 @@ def test_enabled_commercial_scenarios_are_synthetic_and_review_gated() -> None:
     report = validate()
 
     assert report["valid"] is True
-    assert report["catalog_case_count"] == 6
-    assert report["case_count"] == 5
+    assert report["catalog_case_count"] == 10
+    assert report["case_count"] == 9
     assert report["skipped_disabled_scenarios"] == [
         "research_data_workbench_v1"
     ]

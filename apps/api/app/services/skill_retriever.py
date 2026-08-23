@@ -49,7 +49,16 @@ class SkillRetriever:
         course = request.normalized_course
         if not course:
             return []
-        candidates = self.registry.list(course_id=course)
+        candidates = [
+            *self.registry.list(course_id=course),
+            *self.registry.list(scope="domain"),
+        ]
+        candidates = list(
+            {
+                item.skill_id: item
+                for item in candidates
+            }.values()
+        )
         requested = set(request.requested_skill_ids)
         text = " ".join(
             [

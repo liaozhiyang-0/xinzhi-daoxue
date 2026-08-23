@@ -147,7 +147,7 @@ def test_structured_fields_are_processed_before_answer_text(
     assert r"\sum_{k=0}^{n}a_k" in latex
 
 
-def test_invalid_latex_is_reported_and_preserved_for_safe_fallback(
+def test_invalid_latex_is_reported_and_protected_from_math_rendering(
     formatter: MathFormattingService,
 ) -> None:
     dangerous = formatter.normalize_latex(r"\input{student.tex}")
@@ -157,8 +157,55 @@ def test_invalid_latex_is_reported_and_preserved_for_safe_fallback(
     assert dangerous.validation_status == "invalid"
     assert "dangerous_command:input" in dangerous.warnings
     assert unbalanced.validation_status == "invalid"
-    assert r"$\input{student.tex}$" in content.markdown
+    assert r"`\input{student.tex}`" in content.markdown
+    assert MathSegmentType.INLINE_MATH not in {
+        item.segment_type for item in content.segments
+    }
     assert content.warnings
+    assert MathFormattingService.quality_summary(content)["status"] == "blocked"
+
+
+def test_math_quality_distinguishes_warnings_from_blocking_formulas(
+    formatter: MathFormattingService,
+) -> None:
+    warning = formatter.process_markdown("参数 alpha1 保留原文。")
+    valid = formatter.process_markdown("公式 $x^2$。")
+
+    assert formatter.quality_summary(warning)["status"] == "needs_review"
+    assert formatter.quality_summary(valid)["status"] == "passed"
+
+
+def test_common_set_membership_and_implication_commands_are_renderable(
+    formatter: MathFormattingService,
+) -> None:
+    expression = formatter.normalize_latex(
+        r"t\in[0,1] \Rightarrow y(t)=0 \implies y(t)\geq 0 \cap A",
+        block_type=MathBlockType.DISPLAY,
+    )
+
+    assert expression.validation_status == "valid"
+    assert expression.warnings == []
+
+
+def test_sim_command_is_renderable(formatter: MathFormattingService) -> None:
+    expression = formatter.normalize_latex(r"20\,ms \sim 50\,ms")
+
+    assert expression.validation_status == "valid"
+    assert expression.warnings == []
+
+
+def test_structured_formula_not_rendered_is_visible_in_quality_contract(
+    formatter: MathFormattingService,
+) -> None:
+    content = formatter.build_from_structured_result(
+        {"answer_text": "只展示文字结论。", "key_equations": ["x=y"]}
+    )
+    quality = formatter.quality_summary(content)
+
+    assert "structured_formula_not_rendered" in content.warnings
+    assert quality["rendered_expression_count"] == 0
+    assert quality["structured_only_expression_count"] == 1
+    assert quality["status"] == "needs_review"
 
 
 def test_matrix_mismatch_and_debug_summary_do_not_expose_formula_text(

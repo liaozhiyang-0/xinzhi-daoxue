@@ -295,7 +295,9 @@ class SolverBoundaryPolicy:
     def _has_structured_visual_problem(problem: AcademicProblem) -> bool:
         status = problem.structure_status.strip().casefold()
         if status in {"complete", "verified", "structured"}:
-            return True
+            return problem.can_continue
+        if not problem.can_continue:
+            return False
         if not problem.entities or not (problem.relations or problem.equations_given):
             return False
         return all(

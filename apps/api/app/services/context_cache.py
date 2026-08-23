@@ -69,11 +69,12 @@ class ContextAssemblyCache:
         marker = f":{session_id}:"
         for key in [item for item in self._memory if marker in item]:
             self._memory.pop(key, None)
-        if self._redis_available:
+        if self._redis_available is not False:
             try:
                 pattern = f"xzd:context:{session_id}:*"
                 async for key in self._redis.scan_iter(match=pattern):
                     await self._redis.delete(key)
+                self._redis_available = True
             except Exception:
                 self._redis_available = False
 

@@ -27,6 +27,7 @@ class SkillDefinition(BaseModel):
     name: str = Field(default="", max_length=200)
     description: str = Field(default="", max_length=2_000)
     course_id: str = Field(min_length=2, max_length=16)
+    scope: Literal["course", "domain"] = "course"
     domain: str = Field(default="", max_length=128)
     chapter: str = Field(min_length=1, max_length=128)
     prerequisites: list[str] = Field(default_factory=list)
@@ -140,6 +141,7 @@ class SkillRegistry:
         self,
         *,
         course_id: str | None = None,
+        scope: Literal["course", "domain"] | None = None,
         status: str | None = None,
         domain: str | None = None,
     ) -> list[SkillDefinition]:
@@ -152,6 +154,8 @@ class SkillRegistry:
                 for item in items
                 if item.course_id.upper() == course_id.upper()
             ]
+        if scope is not None:
+            items = [item for item in items if item.scope == scope]
         if status is not None:
             items = [item for item in items if item.status == status]
         if domain is not None:

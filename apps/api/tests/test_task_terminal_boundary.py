@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
+import app.services.task_completion as task_completion_module
+import app.services.task_failure_service as task_failure_service_module
 import app.services.task_result_commit as task_result_commit_module
 import pytest
 from app.agents import AgentDefinition
@@ -22,6 +24,7 @@ from app.runtime import (
 )
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.task_completion import TaskCompletionService
+from app.services.task_failure_service import TaskFailureService
 from app.services.task_result_commit import (
     TaskResultCommitService,
     TaskTerminalCommitError,
@@ -134,11 +137,16 @@ async def test_successful_runtime_preserves_terminal_success_contract() -> None:
         result=make_result(), runtime_run=make_run(RuntimeRunStatus.COMPLETED)
     )
     task = kwargs["task"]
+    task.execution_owner = "worker.test"
+    task.lease_expires_at = datetime.now(UTC)
 
     result = await service._commit_terminal(**kwargs)
 
     assert result.status == AgentResultStatus.COMPLETED
     assert task.status == TaskStatus.COMPLETED
+    assert task.execution_owner is None
+    assert task.lease_expires_at is None
+    assert task.heartbeat_at is not None
     presentation.apply.assert_called_once()
     session_commit.assert_awaited_once()
     result_commit.assert_awaited_once()
@@ -292,3 +300,225 @@ async def test_result_commit_rejects_non_success_before_any_write(
     assert events == []
     runtime_boundary.finalize.assert_not_awaited()
     db_mock.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_failure_service_is_idempotent_after_task_is_already_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = make_task()
+    task.status = TaskStatus.FAILED
+    repository = Mock()
+    repository.get = AsyncMock(return_value=task)
+
+    class SessionContext:
+        async def __aenter__(self) -> Mock:
+            return Mock()
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    session_factory = Mock(return_value=SessionContext())
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "TaskRepository",
+        Mock(return_value=repository),
+    )
+    service = TaskFailureService(
+        session_factory,
+        cast(Any, Mock()),
+        cast(Any, Mock()),
+        provider_name="mock",
+    )
+
+    await service.fail("task.test", "duplicate failure", "provider_error")
+
+    repository.get.assert_awaited_once_with("task.test", for_update=True)
+
+
+@pytest.mark.asyncio
+async def test_failure_service_cancel_clears_worker_lease_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = make_task()
+    task.execution_owner = "worker.test"
+    task.lease_expires_at = datetime.now(UTC)
+    task.heartbeat_at = None
+    repository = Mock()
+    repository.get = AsyncMock(return_value=task)
+    db = Mock()
+    db.commit = AsyncMock()
+    runtime_boundary = Mock()
+    runtime_boundary.finalize = AsyncMock(return_value=object())
+    message_service = Mock()
+    message_service.append_terminal_failure = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "TaskRepository",
+        Mock(return_value=repository),
+    )
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "append_task_event",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "ConversationMessageService",
+        Mock(return_value=message_service),
+    )
+    service = TaskFailureService(
+        Mock(),
+        cast(Any, Mock()),
+        runtime_boundary,
+        provider_name="mock",
+    )
+    service.cleanup_evaluation_attachments = AsyncMock()
+
+    await service.mark_cancelled(db, task.id, "provider cancelled")
+
+    assert task.status == TaskStatus.CANCELLED
+    assert task.execution_owner is None
+    assert task.lease_expires_at is None
+    assert task.heartbeat_at is not None
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_failure_service_fail_clears_worker_lease_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = make_task()
+    task.execution_owner = "worker.test"
+    task.lease_expires_at = datetime.now(UTC)
+    repository = Mock()
+    repository.get = AsyncMock(return_value=task)
+    db = Mock()
+    db.commit = AsyncMock()
+    runtime_boundary = Mock()
+    runtime_boundary.finalize = AsyncMock(return_value=object())
+    message_service = Mock()
+    message_service.append_terminal_failure = AsyncMock(return_value=None)
+
+    class SessionContext:
+        async def __aenter__(self) -> Mock:
+            return db
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "TaskRepository",
+        Mock(return_value=repository),
+    )
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "append_task_event",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "ConversationMessageService",
+        Mock(return_value=message_service),
+    )
+    service = TaskFailureService(
+        Mock(return_value=SessionContext()),
+        cast(Any, Mock()),
+        runtime_boundary,
+        provider_name="mock",
+    )
+    service.cleanup_evaluation_attachments = AsyncMock()
+
+    await service.fail(task.id, "provider failed", "provider_error")
+
+    assert task.status == TaskStatus.FAILED
+    assert task.execution_owner is None
+    assert task.lease_expires_at is None
+    assert task.heartbeat_at is not None
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal_status",
+    [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED],
+)
+async def test_mark_cancelled_does_not_overwrite_terminal_task(
+    terminal_status: TaskStatus,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = make_task()
+    task.status = terminal_status
+    repository = Mock()
+    repository.get = AsyncMock(return_value=task)
+    db = cast(AsyncSession, Mock())
+
+    monkeypatch.setattr(
+        task_failure_service_module,
+        "TaskRepository",
+        Mock(return_value=repository),
+    )
+    runtime_boundary = Mock()
+    runtime_boundary.finalize = AsyncMock()
+    service = TaskFailureService(
+        Mock(),
+        cast(Any, Mock()),
+        runtime_boundary,
+        provider_name="mock",
+    )
+
+    await service.mark_cancelled(db, task.id, "late cancellation")
+
+    assert task.status == terminal_status
+    runtime_boundary.finalize.assert_not_awaited()
+    db.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal_status",
+    [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED],
+)
+async def test_completion_service_does_not_overwrite_terminal_task(
+    terminal_status: TaskStatus,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, presentation, session_commit, result_commit = make_completion_service()
+    session_factory = Mock()
+    db = Mock()
+
+    class SessionContext:
+        async def __aenter__(self) -> Mock:
+            return db
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    session_factory.return_value = SessionContext()
+    service.session_factory = session_factory
+
+    task = make_task()
+    task.status = terminal_status
+    repository = Mock()
+    repository.get = AsyncMock(return_value=task)
+
+    # Keep the guard test independent from SQLAlchemy while exercising the
+    # same locked-repository boundary used in production.
+    monkeypatch.setattr(
+        task_completion_module,
+        "TaskRepository",
+        Mock(return_value=repository),
+    )
+    await service.commit(
+        task.id,
+        cast(Any, Mock()),
+        cast(Any, Mock()),
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+    )
+
+    presentation.apply.assert_not_called()
+    session_commit.assert_not_awaited()
+    result_commit.assert_not_awaited()

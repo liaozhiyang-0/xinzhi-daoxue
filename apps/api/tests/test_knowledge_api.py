@@ -234,6 +234,7 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
         image = client.get("/api/v1/knowledge/images/CT/diagram.png")
         assert image.status_code == 200
         assert image.headers["content-type"] == "image/png"
+        assert image.headers["cache-control"] == "private, no-store"
 
         document = client.get(
             "/api/v1/knowledge/documents/CT/chapter.md",
@@ -241,6 +242,7 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
         )
         assert document.status_code == 200
         assert r"$I=\frac{10}{5}=2A$" in document.text
+        assert document.headers["cache-control"] == "private, no-store"
         document = client.get("/api/v1/knowledge/documents/CT/chapter.md")
         assert document.status_code == 200
         assert "text/markdown" in document.headers["content-type"]
@@ -249,6 +251,7 @@ def test_rag_health_search_and_safe_resource_api(tmp_path: Path) -> None:
             params={"chunk": "chunk-1", "limit": 4000},
         )
         assert chunk_page.status_code == 200
+        assert chunk_page.headers["cache-control"] == "private, no-store"
         assert chunk_page.json()["anchor_status"] == "matched"
         assert r"$I=\frac{10}{5}=2A$" in chunk_page.json()["content"]
         traversal = client.get("/api/v1/knowledge/documents/CT/../.env")

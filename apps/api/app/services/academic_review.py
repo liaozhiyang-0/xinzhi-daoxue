@@ -17,6 +17,15 @@ UNIT_RE = re.compile(
     r"(?![A-Za-z])",
     re.IGNORECASE,
 )
+FREQUENCY_RANGE_RE = re.compile(
+    r"(?P<low>\d+(?:\.\d+)?)\s*(?:-|~|至|到|–|—)\s*"
+    r"(?P<high>\d+(?:\.\d+)?)\s*(?P<unit>kHz|MHz|Hz)\b",
+    re.IGNORECASE,
+)
+FREQUENCY_VALUE_RE = re.compile(
+    r"(?<![\w.])(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>kHz|MHz|Hz)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +186,109 @@ class AcademicReviewService:
                 "固定电阻负载下功耗与电压平方成正比，而不是与电压成正比。",
                 "使用 P=V²/R 比较新旧功耗。",
             )
+        if (
+            any(marker in problem.problem_text for marker in ("旁路电容", "射极旁路"))
+            and "增益" in problem.problem_text
+            and any(
+                marker in content
+                for marker in ("增益会减小", "增益减小", "增益下降", "放大倍数会减小")
+            )
+            and not any(
+                marker in content
+                for marker in ("增益增大", "增益提高", "增益上升", "放大倍数增大")
+            )
+            and not any(
+                marker in content.casefold()
+                for marker in (
+                    "低频",
+                    "截止频率以下",
+                    "旁路不充分",
+                    "未完全旁路",
+                    "部分旁路",
+                    "low frequency",
+                    "incomplete bypass",
+                    "partial bypass",
+                )
+            )
+        ):
+            return ReviewRule(
+                "concept",
+                "射极旁路电容在相应频段减小交流发射极阻抗、削弱射极负反馈；典型中频电压增益应提高而不是降低。",
+                "先限定旁路电容有效的频率范围，再分别说明输入电阻降低、负反馈减弱和电压增益提高的因果链。",
+            )
+        if (
+            "CMOS" in problem.problem_text
+            and "功耗" in problem.problem_text
+            and any(
+                marker in content
+                for marker in ("固定的常数", "固定常数", "与频率无关", "不随频率变化")
+            )
+            and not ("动态功耗" in content and "频率" in content)
+        ):
+            return ReviewRule(
+                "concept",
+                (
+                    "CMOS 总功耗应区分静态漏电功耗和随输入翻转频率变化的"
+                    "动态功耗，不能一概视为固定常数。"
+                ),
+                (
+                    "写出 P_total=P_static+P_dynamic，并用改变翻转频率的验证题"
+                    "区分两类功耗。"
+                ),
+            )
+        if (
+            "顶部削峰" in problem.problem_text
+            and any(marker in problem.problem_text for marker in ("共射", "BJT"))
+            and any(marker in content for marker in ("放大区", "有源区", "饱和区"))
+            and not any(marker in content for marker in ("截止", "cutoff"))
+        ):
+            return ReviewRule(
+                "concept",
+                (
+                    "NPN 共射输出顶部接近 V_CC 且顶部削峰时，应优先检查截止侧削顶，"
+                    "不能仅凭现象判为放大区或饱和区。"
+                ),
+                (
+                    "核对静态 V_C、基极偏置和输入幅度，并通过逐点测量/波形验证"
+                    "截止、饱和与偏置不足的可能性。"
+                ),
+            )
+        if (
+            "积分" in problem.problem_text
+            and "负电源" in problem.problem_text
+            and any(
+                marker in content
+                for marker in (
+                    "不会漂移",
+                    "保持为0",
+                    "保持 0",
+                    "输出应为0",
+                    "输出应为 0",
+                )
+            )
+            and not any(
+                marker in content
+                for marker in (
+                    "失调",
+                    "偏置电流",
+                    "漏电",
+                    "非理想",
+                    "offset",
+                    "bias current",
+                    "leakage",
+                )
+            )
+        ):
+            return ReviewRule(
+                "concept",
+                "输入端接地的理想积分器结论不能解释实际输出漂移；输入失调、偏置电流或漏电会被电容积分并推动输出饱和。",
+                "先列出主导非理想源，再在反馈电容两端并联泄放/反馈电阻，给出时间常数和安全边界验证。",
+            )
+        bandpass_rule = AcademicReviewService._bandpass_sampling_rule(
+            problem, content
+        )
+        if bandpass_rule is not None:
+            return bandpass_rule
         if re.search(
             r"E\s*\[\s*Y\s*\].*E\s*\[\s*V\s*\].*(?:\^?2|²)",
             content,
@@ -255,6 +367,70 @@ class AcademicReviewService:
                 "根据输入相同或不同的条件重写真值表。",
             )
         return None
+
+    @staticmethod
+    def _bandpass_sampling_rule(
+        problem: AcademicProblem,
+        content: str,
+    ) -> ReviewRule | None:
+        if "带通采样" not in problem.problem_text:
+            return None
+        match = FREQUENCY_RANGE_RE.search(problem.problem_text)
+        if match is None:
+            return None
+        low = float(match.group("low"))
+        high = float(match.group("high"))
+        bandwidth = high - low
+        if bandwidth <= 0:
+            return None
+        scale = AcademicReviewService._frequency_scale(match.group("unit"))
+        high_hz = high * scale
+        band_index = int(high / bandwidth + 1e-9)
+        if band_index < 1:
+            return None
+        minimum_hz = 2 * high_hz / band_index
+        student_values = [
+            float(item.group("value"))
+            * AcademicReviewService._frequency_scale(item.group("unit"))
+            for item in FREQUENCY_VALUE_RE.finditer(content)
+        ]
+        tolerance = max(minimum_hz * 0.01, 1e-9)
+        if any(abs(value - minimum_hz) <= tolerance for value in student_values):
+            return None
+        compact = re.sub(r"\s+", "", content).casefold()
+        conventional_minimum = 2 * high_hz
+        used_lowpass_rule = any(
+            marker in compact
+            for marker in ("fmax", "最高频率的两倍", "fs>=2", "fs≥2")
+        )
+        claimed_conventional = any(
+            abs(value - conventional_minimum) <= max(conventional_minimum * 0.01, 1e-9)
+            for value in student_values
+        )
+        if not (used_lowpass_rule or claimed_conventional):
+            return None
+        return ReviewRule(
+            "calculation",
+            (
+                f"该题正频带为 {low:g}–{high:g} {match.group('unit')}，"
+                f"带宽为 {bandwidth:g} {match.group('unit')}；带通采样的理论下界"
+                f"约为 {minimum_hz / scale:g} {match.group('unit')}，不能把普通低通"
+                "奈奎斯特条件当作最小采样频率。"
+            ),
+            (
+                f"令 n=floor(f_H/B)={band_index}，检查"
+                " 2f_H/n≤f_s≤2f_L/(n−1)，再说明实际工程需要保护带。"
+            ),
+        )
+
+    @staticmethod
+    def _frequency_scale(unit: str) -> float:
+        normalized = unit.casefold()
+        if normalized == "mhz":
+            return 1_000_000.0
+        if normalized == "khz":
+            return 1_000.0
+        return 1.0
 
     @staticmethod
     def _numeric_or_unit_rule(

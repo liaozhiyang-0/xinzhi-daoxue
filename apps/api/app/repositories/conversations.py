@@ -23,6 +23,23 @@ class ConversationRepository:
             await self.session.get(ConversationMessageModel, message_id),
         )
 
+    async def list_by_ids(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        message_ids: list[str],
+    ) -> list[ConversationMessageModel]:
+        bounded_ids = list(dict.fromkeys(str(item) for item in message_ids))[:100]
+        if not bounded_ids:
+            return []
+        query = select(ConversationMessageModel).where(
+            ConversationMessageModel.session_id == session_id,
+            ConversationMessageModel.user_id == user_id,
+            ConversationMessageModel.id.in_(bounded_ids),
+        )
+        return list((await self.session.scalars(query)).all())
+
     async def get_for_task_role(
         self, task_id: str, role: str
     ) -> ConversationMessageModel | None:

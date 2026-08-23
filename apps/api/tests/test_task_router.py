@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from app.agents import AgentRegistry, TaskRouter
@@ -31,6 +32,154 @@ def test_learning_routes_to_local_knowledge_agent(course_id: str, intent: str) -
     assert decision.route_source == "local_fast"
     assert decision.original_agent_id is None
     assert decision.fallback_used is False
+
+
+def test_learning_path_route_reports_generation_capability_preflight() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def unavailable_model(task_type: str, *, modality: str) -> SimpleNamespace:
+        calls.append((task_type, modality))
+        return SimpleNamespace(available=False)
+
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-generation-preflight",
+            "user_id": "user-generation-preflight",
+            "scene": "learning",
+            "course_id": "AE",
+            "intent": "learning_advice",
+            "canonical_input": {"text": "请生成两周专项复习计划"},
+            "options": {
+                "scenario_id": "student_learning_path_v1",
+                "scenario_agent_id": "LEARN_01_LOCAL_RETRIEVAL_V1",
+                "_scenario_catalog_bound": True,
+            },
+        }
+    )
+
+    decision = TaskRouter(
+        AgentRegistry(),
+        Settings(_env_file=None),
+        model_preflight=unavailable_model,
+    ).route(task_request)
+
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
+    assert decision.availability["generation_required"] is True
+    assert decision.availability["generation_available"] is False
+    assert calls == [("knowledge_answer", "text")]
+
+
+def test_scenario_target_rejects_agent_intent_mismatch_before_runtime() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-capability-mismatch",
+            "user_id": "user-capability-mismatch",
+            "course_id": "CT",
+            "intent": "data_analysis",
+            "canonical_input": {"text": "请分析这组实验数据"},
+            "options": {
+                "scenario_agent_id": "RESEARCH_02_ACADEMIC_WRITING_V1",
+                "_scenario_catalog_bound": True,
+            },
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.agent_id != "RESEARCH_02_ACADEMIC_WRITING_V1"
+
+
+def test_neutral_research_course_is_not_treated_as_capability_gap() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-neutral-course",
+            "user_id": "user-neutral-course",
+            "course_id": "AUTO",
+            "intent": "academic_search",
+            "canonical_input": {"text": "请检索近期相关论文"},
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
+    assert decision.availability["course_supported"] is True
+
+
+def test_external_retrieval_gap_is_reported_without_failing_route() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-external-gap",
+            "user_id": "user-external-gap",
+            "course_id": "AUTO",
+            "intent": "academic_search",
+            "canonical_input": {"text": "请检索近期相关论文"},
+        }
+    )
+    settings = Settings(_env_file=None, external_retrieval_enabled=False)
+
+    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
+
+    assert decision.route_status == RouteStatus.SELECTED
+    assert decision.availability["external_retrieval_required"] is True
+    assert decision.availability["external_retrieval_available"] is False
+
+
+def test_normal_learning_question_does_not_require_model_generation() -> None:
+    decision = TaskRouter(
+        AgentRegistry(),
+        Settings(_env_file=None),
+        model_preflight=lambda *_args, **_kwargs: SimpleNamespace(available=False),
+    ).route(request("CT", "explain_concept"))
+
+    assert decision.availability["generation_required"] is False
+    assert decision.availability["generation_available"] is True
+
+
+def test_normal_learning_question_treats_external_retrieval_as_optional() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-learning-external-optional",
+            "user_id": "user-learning-external-optional",
+            "course_id": "DE",
+            "intent": "explain_concept",
+            "canonical_input": {"text": "请解释同步计数器的建立时间"},
+        }
+    )
+    settings = Settings(_env_file=None, external_retrieval_enabled=False)
+
+    decision = TaskRouter(AgentRegistry(), settings).route(task_request)
+
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+    assert decision.availability["external_retrieval_required"] is False
+    assert decision.availability["external_retrieval_available"] is False
+
+
+def test_required_generation_is_unavailable_without_preflight_hook() -> None:
+    task_request = AgentRequest.model_validate(
+        {
+            "session_id": "session-generation-unverified",
+            "user_id": "user-generation-unverified",
+            "scene": "learning",
+            "course_id": "AE",
+            "intent": "learning_advice",
+            "canonical_input": {"text": "请生成两周专项复习计划"},
+            "options": {
+                "scenario_id": "student_learning_path_v1",
+                "scenario_agent_id": "LEARN_01_LOCAL_RETRIEVAL_V1",
+                "_scenario_catalog_bound": True,
+            },
+        }
+    )
+
+    decision = TaskRouter(AgentRegistry(), Settings(_env_file=None)).route(
+        task_request
+    )
+
+    assert decision.availability["generation_required"] is True
+    assert decision.availability["generation_available"] is False
 
 
 def test_ct_solve_routes_to_solver() -> None:
@@ -480,6 +629,86 @@ def test_cross_domain_topic_overrides_stale_explicit_course_hint() -> None:
     assert decision.agent_id == "RESEARCH_01_ACADEMIC_SEARCH_V1"
     assert decision.course_id == "UNKNOWN"
     assert "course_hint_overridden" in decision.reason_codes
+
+
+@pytest.mark.parametrize(
+    ("text", "course_id"),
+    [
+        (
+            "以矩形脉冲卷积为例，为本科《信号与系统》80分钟课程按时序流程设计教案。",
+            "SS",
+        ),
+        ("定位学生卷积答案中的首个知识错误。", "SS"),
+        (
+            "围绕《数字电路》的Mealy型与Moore型状态机开展翻转课堂。",
+            "DE",
+        ),
+        ("设计集成运放同相比例放大电路并分析闭环带宽。", "AE"),
+        ("分析三运放仪表放大器的增益和共模抑制比。", "AE"),
+        ("分析BJT静态工作点设置和动态参数测试中的实验失误。", "AE"),
+        ("计算4位R-2R DAC的输出电压和位权。", "DE"),
+        ("为FPGA数字钟项目设计评分量规，检查CMOS逻辑功耗。", "DE"),
+        ("解释拉普拉斯变换的极点分布与系统响应。", "CT"),
+        ("检索RISC-V架构下防范侧信道攻击的硬件级防御机制。", "UNKNOWN"),
+    ],
+)
+def test_named_course_marker_beats_incidental_keyword(
+    text: str, course_id: str
+) -> None:
+    task_request = AgentRequest(
+        session_id="session-named-course-marker",
+        user_id="user-named-course-marker",
+        course_id="AUTO",
+        intent="unknown",
+        canonical_input={"text": text},
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.course_id == course_id
+    if course_id == "UNKNOWN":
+        assert "research_workflow_neutral_course" in decision.reason_codes
+    else:
+        assert f"explicit_course_marker:{course_id}" in decision.reason_codes
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_agent", "expected_intent"),
+    [
+        (
+            "以矩形脉冲卷积为例，为本科《信号与系统》80分钟课程按时序流程设计教案。",
+            "TEACH_01_LESSON_PREP_V1",
+            "lesson_prep",
+        ),
+        (
+            "批改《信号与系统》学生答案：卷积就是把两个函数相乘，请定位首个错误并给出诊断题。",
+            "TEACH_02_ASSIGNMENT_REVIEW_V1",
+            "assignment_review",
+        ),
+        (
+            "针对《信号与系统》的连续时间傅里叶变换性质生成备课大纲，并设计课堂互动。",
+            "TEACH_01_LESSON_PREP_V1",
+            "lesson_prep",
+        ),
+    ],
+)
+def test_teacher_intent_keeps_specialized_agent_after_named_course_detection(
+    text: str, expected_agent: str, expected_intent: str
+) -> None:
+    task_request = AgentRequest(
+        session_id="session-teacher-course-capability",
+        user_id="user-teacher-course-capability",
+        course_id="AUTO",
+        intent="unknown",
+        canonical_input={"text": text},
+    )
+
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert decision.agent_id == expected_agent
+    assert decision.intent == expected_intent
+    assert decision.course_id == "SS"
+    assert decision.fallback_used is False
 
 
 def test_search_request_with_requested_abstract_is_not_writing() -> None:

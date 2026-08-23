@@ -5,6 +5,7 @@ skills:
     version: "1.0"
     title: "知识查询改写"
     course_id: "KNOWLEDGE"
+    scope: "domain"
     chapter: "query_rewrite"
     domain: "knowledge"
     problem_types: ["knowledge_qa"]
@@ -12,10 +13,12 @@ skills:
     required_evidence: ["query_text"]
     verification_requirements: ["query_intent_present"]
     keywords: ["查询改写", "问题改写", "query rewrite"]
+    capability_ids: ["knowledge.govern"]
   - skill_id: "KNOWLEDGE.GROUNDED_EXPLANATION"
     version: "1.0"
     title: "有依据知识解释"
     course_id: "KNOWLEDGE"
+    scope: "domain"
     chapter: "grounded_explanation"
     domain: "knowledge"
     problem_types: ["knowledge_qa"]
@@ -24,3 +27,16 @@ skills:
     required_evidence: ["retrieval_refs"]
     verification_requirements: ["answer_grounded"]
     keywords: ["知识解释", "有依据回答", "grounded explanation"]
+    capability_ids: ["knowledge.govern"]
+  - skill_id: "KNOWLEDGE.ASSET_REVIEW"
+    title: "知识资产审查"
+    course_id: "KNOWLEDGE"
+    scope: "domain"
+    chapter: "asset_review"
+    domain: "knowledge"
+    prerequisites: ["KNOWLEDGE.QUERY_REWRITE"]
+    capability_ids: ["knowledge.govern"]
+    eligible_workers: ["KnowledgeQAService"]
+    required_evidence: ["asset_version", "provenance", "review_status"]
+    verification_requirements: ["publish_gate_present"]
+    keywords: ["知识资产", "版本治理", "来源审查", "发布审核"]

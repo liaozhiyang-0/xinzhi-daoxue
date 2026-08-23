@@ -23,4 +23,5 @@ async def health(
         request.app.state.provider,
         request.app.state.external_search,
         task_queue=getattr(request.app.state, "task_queue", None),
+        model_service=getattr(request.app.state, "model_service", None),
     )

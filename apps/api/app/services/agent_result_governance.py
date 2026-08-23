@@ -18,6 +18,25 @@ Validator = Callable[
     tuple[list[str], list[str], bool],
 ]
 
+_UNAVAILABLE_FIELD_STATUSES = frozenset(
+    {
+        "not_available",
+        "unknown",
+        "not_determinable",
+        "possible_conflict_needs_review",
+    }
+)
+
+
+def _has_contract_value(value: object) -> bool:
+    if value in (None, "", [], {}):
+        return False
+    return not (
+        isinstance(value, dict)
+        and str(value.get("status", "")).casefold()
+        in _UNAVAILABLE_FIELD_STATUSES
+    )
+
 
 class AgentResultValidatorRegistry:
     """Agent-specific deterministic safety and contract checks."""
@@ -99,15 +118,63 @@ class AgentResultValidatorRegistry:
         returned_course = str(
             result.structured_result.get("course_id", request.course_id)
         )
-        if returned_course and returned_course not in {request.course_id, "UNKNOWN"}:
+        if returned_course.upper() not in {request.course_id.upper(), "UNKNOWN"}:
             issues.append("工作流返回课程与路由课程不一致")
         declared = result.structured_result.get("source_references", [])
-        valid_ids = set(bundle.workflow_evidence_ids if bundle else [])
-        if isinstance(declared, list) and any(
-            str(item) not in valid_ids for item in declared
-        ):
+        if declared is not None and not isinstance(declared, list):
+            issues.append("source_references 必须是列表")
+            return issues, [], False
+        valid_ids: set[str] = set(bundle.workflow_evidence_ids if bundle else [])
+        valid_refs: set[str] = set()
+        if bundle:
+            valid_ids.update(item.evidence_id for item in bundle.evidence_items)
+            valid_refs.update(item.source_ref for item in bundle.evidence_items)
+        valid_ids.update(
+            str(item)
+            for item in result.structured_result.get("verified_evidence_ids", [])
+            if str(item).strip()
+        )
+        for container_key in ("sources", "core_retrieval_summary"):
+            container = result.structured_result.get(container_key, [])
+            if isinstance(container, list):
+                for item in container:
+                    if not isinstance(item, dict):
+                        continue
+                    for key in ("evidence_id", "source_id"):
+                        value = str(item.get(key, "")).strip()
+                        if value:
+                            valid_ids.add(value)
+                    source_ref = str(item.get("source_ref", "")).strip()
+                    if source_ref:
+                        valid_refs.add(source_ref)
+        knowledge = result.structured_result.get("knowledge", {})
+        if isinstance(knowledge, dict):
+            hits = knowledge.get("hits", [])
+            if isinstance(hits, list):
+                for item in hits:
+                    if not isinstance(item, dict):
+                        continue
+                    evidence_id = str(item.get("evidence_id", "")).strip()
+                    source_ref = str(item.get("source_ref", "")).strip()
+                    if evidence_id:
+                        valid_ids.add(evidence_id)
+                    if source_ref:
+                        valid_refs.add(source_ref)
+        declared_values = {str(item).strip() for item in (declared or [])}
+        invalid = declared_values - valid_ids - valid_refs
+        if invalid:
             issues.append("存在不属于当前证据包的引用")
-        return issues, [], bool(result.answer.strip())
+        missing_citations = (
+            result.evidence_status in {"sufficient", "complete"}
+            and not result.citations
+        )
+        if missing_citations:
+            issues.append("证据状态为充分但未提供可核验引用")
+        return (
+            issues,
+            [],
+            bool(result.answer.strip()) and not invalid and not missing_citations,
+        )
 
     @staticmethod
     def _solver(
@@ -133,7 +200,11 @@ class AgentResultValidatorRegistry:
         return (
             issues,
             ["citations"] if issues and result.citations else [],
-            bool(result.answer.strip()),
+            bool(result.answer.strip())
+            and not any(
+                issue in {"未提供独立的最终答案字段", "图片题识别未成功"}
+                for issue in issues
+            ),
         )
 
     @staticmethod
@@ -151,9 +222,24 @@ class AgentResultValidatorRegistry:
             ("activities", "课堂活动"),
             ("formative_assessment", "形成性评价"),
         ):
-            if not data.get(field):
+            value = data.get(field)
+            if isinstance(value, (list, tuple)) and not value:
+                issues.append(f"{label}结构为空")
+            elif not _has_contract_value(value):
                 issues.append(f"缺少{label}结构")
-        return issues, [], bool(result.answer.strip())
+        duration_check = data.get("duration_check")
+        if isinstance(duration_check, dict) and duration_check.get("status") in {
+            "missing",
+            "mismatch",
+        }:
+            issues.append("课堂流程未满足请求的总时长约束")
+        blocking_issues = [
+            issue
+            for issue in issues
+            if issue != "课堂流程未满足请求的总时长约束"
+            and not issue.endswith("结构为空")
+        ]
+        return issues, [], bool(result.answer.strip()) and not blocking_issues
 
     @staticmethod
     def _assignment(
@@ -188,7 +274,74 @@ class AgentResultValidatorRegistry:
             issues.append("满分或建议得分不是有效数字")
         if re.search(r"(?:确定|认定).{0,4}作弊", result.answer):
             issues.append("回答包含无依据的作弊定性")
-        return issues, corrected, bool(result.answer.strip())
+        errors = data.get("errors")
+        first_error = data.get("first_error")
+        preliminary = str(data.get("evidence_status", "")).casefold() in {
+            "partial",
+            "insufficient",
+        }
+        if _has_contract_value(errors) and not _has_contract_value(first_error):
+            issues.append("缺少首个错误定位")
+            data["review_required"] = True
+            missing_information = data.get("missing_information")
+            if not isinstance(missing_information, list):
+                missing_information = []
+                data["missing_information"] = missing_information
+            if "首个错误定位" not in missing_information:
+                missing_information.append("首个错误定位")
+        semantic_issues = AgentResultValidatorRegistry._assignment_semantic_issues(
+            data, request
+        )
+        if semantic_issues:
+            data["semantic_consistency"] = {
+                "status": "needs_review",
+                "issues": semantic_issues,
+            }
+            data["review_required"] = True
+            issues.extend(semantic_issues)
+        blocking = any(
+            marker in issue
+            for issue in issues
+            for marker in ("缺少首个错误定位", "无依据的作弊")
+        )
+        return issues, corrected, bool(result.answer.strip()) and (
+            not blocking or preliminary
+        )
+
+    @staticmethod
+    def _assignment_semantic_issues(
+        data: dict[str, Any], request: AgentRequest
+    ) -> list[str]:
+        """Catch contradictory structured claims before they reach a teacher."""
+
+        if request.course_id != "AE":
+            return []
+        question = str(
+            request.canonical_input.get("text")
+            or request.canonical_input.get("question")
+            or ""
+        )
+        if not any(marker in question for marker in ("旁路电容", "射极旁路")):
+            return []
+        errors = " ".join(str(item) for item in data.get("errors", []))
+        supporting = " ".join(
+            str(item)
+            for item in (
+                data.get("teacher_feedback", ""),
+                data.get("correct_parts", []),
+            )
+        )
+        direction_terms = ("降低", "减小", "下降", "reduce", "decrease")
+        if (
+            "输入电阻" in errors
+            and any(term in errors.casefold() for term in direction_terms)
+            and "输入电阻" in supporting
+            and any(term in supporting.casefold() for term in direction_terms)
+        ):
+            return [
+                "输出语义自相矛盾：输入电阻降低同时被列为错误和正确，需教师复核后才能使用"
+            ]
+        return []
 
     @staticmethod
     def _writing(
@@ -212,6 +365,31 @@ class AgentResultValidatorRegistry:
             for token in ("实验结果", "研究结果", "provided_results")
         ):
             issues.append("可能把计划表述为已完成实验")
+        citation_check = result.business_data.get("citation_check")
+        citation_text = (
+            str(citation_check.get("status", citation_check.get("result", "")))
+            if isinstance(citation_check, dict)
+            else str(citation_check or "")
+        )
+        citation_normalized = " ".join(citation_text.casefold().split())
+        citation_passed = citation_normalized in {
+            "pass",
+            "passed",
+            "verified",
+            "clear",
+            "not_required",
+            "not required",
+            "无需核验",
+            "未提出引用要求",
+            "已核验",
+            "通过",
+        }
+        if not citation_passed:
+            issues.append("引用和事实仍需人工核验")
+        if result.business_data.get("publishable") is True and not citation_passed:
+            result.business_data["publishable"] = False
+            result.business_data["requires_review"] = True
+            issues.append("证据/引用未核验时不得标记为可发布")
         return (
             issues,
             [],
@@ -286,6 +464,7 @@ class BusinessResultRendererRegistry:
             ("rollback_checklist", "回滚后检查清单"),
             ("research_scope", "检索范围"),
             ("evidence_table", "证据表"),
+            ("research_evidence_quality", "科研证据质量"),
             ("doi_or_arxiv", "DOI 或 arXiv"),
             ("open_questions", "开放问题"),
             ("limitations", "限制"),
@@ -345,6 +524,8 @@ class BusinessResultRendererRegistry:
             ("revision_notes", "修改说明"),
             ("citation_check", "引用检查"),
             ("unsupported_claims", "无依据声明"),
+            ("publishable", "可发布"),
+            ("requires_review", "需要复核"),
         ),
         "data_analysis": (
             ("status", "分析状态"),

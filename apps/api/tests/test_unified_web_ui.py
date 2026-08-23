@@ -47,6 +47,16 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
     assert '[data-theme="dark"]' in tokens
 
 
+def test_ui_api_retries_after_access_token_expiry(client) -> None:
+    script = client.get("/debug-assets/ui-core.js").text
+
+    assert "refreshAccessSession" in script
+    assert 'fetch("/api/v1/auth/refresh"' in script
+    assert "response.status === 401" in script
+    assert "allowRefresh" in script
+    assert "!path.startsWith(\"/api/v1/auth/\")" in script
+
+
 def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     script = client.get("/debug-assets/ui-core.js").text
     student = "\n".join(
@@ -73,7 +83,7 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     assert "function evidenceExternalUrl(item)" in student
     assert '"外部来源 · 请打开原文核验"' in student
     assert 'text: "打开原文"' in student
-    assert 'String(item.source_ref || "").startsWith("kb://")' in student
+    assert "kb-material://" in student
     assert ".replace(/-{3,}/gu, \" \")" in student
     assert "renderRecoveredMathBlock" in script
     assert "markdownInsideMath" in script
@@ -97,7 +107,15 @@ def test_demo_scenarios_and_presentation_mode_are_explicit(client) -> None:
     assert page.status_code == 200
     assert scenarios.status_code == 200
     payload = scenarios.json()
-    assert len(payload) == 5
+    expected_showcase_ids = {
+        "faculty_course_copilot_v1",
+        "assessment_diagnosis_v1",
+        "student_learning_path_v1",
+        "research_frontier_radar_v1",
+        "department_knowledge_governance_v1",
+        "academic_visual_problem_solver_v1",
+    }
+    assert expected_showcase_ids.issubset({item["id"] for item in payload})
     assert "research_data_workbench_v1" not in {item["id"] for item in payload}
     assert 'api("/api/v1/scenarios"' in script
     assert 'api("/api/v1/scenarios/readiness"' in script
@@ -142,6 +160,9 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
     assert "模电测试集_图2.1.1_运算放大器电路.jpg" in page.text
     assert 'class="prompt-example-image"' not in page.text
 
+    materials = client.get("/debug-assets/ts/materials.js").text
+    assert "jpg|jpeg|png|webp" in materials
+
     script = "\n".join(
         (
             client.get("/debug-assets/workspace.js").text,
@@ -159,6 +180,16 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
         'function inferLearningMode(question = "", studentAttempt = "")' in script
     )
     assert "function updateAutoDetection(" in script
+    assert "信号与系统|信号和系统|卷积" in script
+    assert "数字电子技术|数字电路" in script
+    assert "集成运放|共射放大" in script
+    assert "仪表放大器|三运放" in script
+    assert "BJT|静态工作点" in script
+    assert "R-2R|DAC|数模转换器" in script
+    assert "FPGA|数字钟|CMOS" in script
+    assert "拉普拉斯|极点分布" in script
+    assert "通信|调制|讯号" in script
+    assert "科研|论文|doi|arxiv|前沿|学术|检索|文献" in script
     assert "function setTaskQuestionDisplay(taskOrQuestion, task = null)" not in script
     assert 'const requestedCourse = learningFollowUp?.course_id || "AUTO";' in script
     assert 'const requestedIntent = learningFollowUp?.intent || "unknown";' in script
@@ -171,6 +202,14 @@ def test_local_analog_question_image_is_served_from_the_question_bank(client) ->
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
+    assert len(response.content) > 1_000
+
+
+def test_case6_demo_image_is_available_to_the_workspace(client) -> None:
+    response = client.get("/demo-assets/case6-opamp.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
     assert len(response.content) > 1_000
 
 
@@ -304,7 +343,8 @@ def test_workspace_distinguishes_local_and_external_evidence_actions() -> None:
     card_start = script.index("function evidenceCard(item)")
     card_end = script.index("function focusEvidence", card_start)
     card = script[card_start:card_end]
-    assert 'String(item.source_ref || "").startsWith("kb://")' in card
+    assert "kb-material://" in script
+    assert "/api/v1/knowledge/material-pages/" in script
     assert '"本地只读资料"' in card
     assert '"外部来源 · 请打开原文核验"' in card
     assert 'text: "无法打开原文"' in card
@@ -337,6 +377,53 @@ def test_workspace_cancelled_task_is_not_presented_as_completed() -> None:
     assert 'status_label: "已停止"' in script
     assert 'answer_quality_status: "cancelled"' in script
     assert "不会把空结果当作有效答案" in script
+
+
+def test_shared_status_badge_keeps_cancelled_separate_from_failed() -> None:
+    root = Path(__file__).resolve().parents[3]
+    ui_core = (root / "apps/api/app/static/debug/ui-core.js").read_text(
+        encoding="utf-8"
+    )
+    components = (root / "apps/api/app/static/debug/components.css").read_text(
+        encoding="utf-8"
+    )
+    execution = (root / "apps/api/app/static/debug/execution.js").read_text(
+        encoding="utf-8"
+    )
+    student = (root / "apps/api/app/static/debug/student.js").read_text(
+        encoding="utf-8"
+    )
+    admin = (root / "apps/api/app/static/debug/admin.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'cancelled: "已停止"' in ui_core
+    assert '["error", "unavailable", "invalid"].includes(raw)' in ui_core
+    assert "status-badge.cancelled" in components
+    assert '"partial", "cancelled"' in execution
+    assert 'taskStatus === "cancelled" ? "已停止"' in student
+    assert 'cancelled: "已停止"' in admin
+
+
+def test_system_and_admin_pages_do_not_equate_mock_runtime_with_real_model() -> None:
+    root = Path(__file__).resolve().parents[3]
+    system = (root / "apps/api/app/static/debug/system.js").read_text(
+        encoding="utf-8"
+    )
+    admin = (root / "apps/api/app/static/debug/admin.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "health.model_runtime" in system
+    assert '真实模型未配置' in system
+    assert 'health.model_runtime' in admin
+    assert '真实模型未配置' in admin
+    assert 'Agent Runtime' in admin
+
+    page = (root / "apps/api/app/static/debug/system.html").read_text(
+        encoding="utf-8"
+    )
+    assert "system.js?v=20260822-real-model-status-v1" in page
 
 
 def test_workspace_history_restore_shows_pending_state_for_running_task() -> None:
@@ -385,6 +472,19 @@ def test_workspace_does_not_present_completed_empty_answers_as_success() -> None
     assert "结果需要复核" in script
 
 
+def test_workspace_uses_one_stable_provider_timeout_fallback_message() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert script.count("provider_timeout:") == 1
+    assert (
+        'provider_timeout: "本地 Runtime 响应超时，本次已保留安全后备结果。"'
+        in script
+    )
+
+
 def test_workspace_restores_runtime_controls_after_checkpoint_reload() -> None:
     root = Path(__file__).resolve().parents[3]
     script = (root / "apps/api/app/static/debug/workspace.js").read_text(
@@ -398,3 +498,71 @@ def test_workspace_restores_runtime_controls_after_checkpoint_reload() -> None:
     assert 'if (["resume", "approve", "input"].includes(action))' in script
     assert "function decodeHtmlEntities(value)" in script
     assert "decodeHtmlEntities(item.abstract" in script
+
+
+def test_workspace_does_not_label_runtime_checkpoints_as_slow_model_response() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    wait_notice = script[script.index("function renderLongWaitNotice"):]
+
+    assert "runtimeTaskControls?.status" in wait_notice
+    assert (
+        '["waiting_review", "waiting_approval"].includes(runtimeStatus)'
+        in wait_notice
+    )
+    assert '"等待人工审批"' in wait_notice
+    assert '"等待补充信息"' in wait_notice
+
+
+def test_workspace_archives_previous_answer_before_initializing_pending_task() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    submit = script[
+        script.index("async function submit(event)") : script.index(
+            "function revokeMaterialPreviews"
+        )
+    ]
+
+    assert submit.index("archiveCurrentAnswer();") < submit.index(
+        "markAnswerPending();"
+    )
+    assert submit.count("markAnswerPending();") == 1
+
+
+def test_workspace_clears_runtime_controls_when_stop_is_requested() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    stop_handler = script[
+        script.index('$("#stop-button")') : script.index('$("#new-session")')
+    ]
+
+    assert "runtimeTaskControlsRequest += 1;" in stop_handler
+    assert "runtimeTaskControls = null;" in stop_handler
+    assert "renderRuntimeTaskControls();" in stop_handler
+    assert stop_handler.index("renderRuntimeTaskControls();") < stop_handler.index(
+        "markAnswerCancelled();"
+    )
+
+
+def test_workspace_session_reset_invalidates_old_runtime_control_requests() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    reset = script[
+        script.index("function resetConversation") : script.index(
+            "async function newSession"
+        )
+    ]
+
+    assert "state.activeTaskWait?.cancel();" in reset
+    assert "runtimeTaskControlsRequest += 1;" in reset
+    assert reset.index("runtimeTaskControlsRequest += 1;") < reset.index(
+        "runtimeTaskControls = null;"
+    )

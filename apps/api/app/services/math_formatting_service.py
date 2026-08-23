@@ -207,10 +207,15 @@ class MathFormattingService:
                 expression = self.normalize_latex(
                     raw_body, block_type=MathBlockType.DISPLAY
                 )
-                delimiter = f"$$\n{expression.latex}\n$$"
-                if trailing_newline:
-                    delimiter += "\n"
-                chunks.append(self._math_chunk(delimiter, expression, display=True))
+                if expression.validation_status == "invalid":
+                    chunks.append(self._invalid_math_chunk(expression, display=True))
+                else:
+                    delimiter = f"$$\n{expression.latex}\n$$"
+                    if trailing_newline:
+                        delimiter += "\n"
+                    chunks.append(
+                        self._math_chunk(delimiter, expression, display=True)
+                    )
                 index += consumed
                 continue
             if self._is_markdown_table_line(line):
@@ -269,6 +274,18 @@ class MathFormattingService:
                 content.math_expressions.append(expression)
                 seen.add(expression.latex)
             content.warnings.extend(expression.warnings)
+        rendered_ids = {
+            segment.math.expression_id
+            for segment in content.segments
+            if segment.math is not None
+            and segment.segment_type
+            in {MathSegmentType.INLINE_MATH, MathSegmentType.DISPLAY_MATH}
+        }
+        if any(
+            expression.expression_id not in rendered_ids
+            for expression in content.math_expressions
+        ):
+            content.warnings.append("structured_formula_not_rendered")
         content.warnings = list(dict.fromkeys(content.warnings))
         return content
 
@@ -330,6 +347,54 @@ class MathFormattingService:
             ),
             "math_warnings": content.warnings,
             "latex_validation_failures": invalid,
+        }
+
+    @staticmethod
+    def quality_summary(content: MathRichContent) -> dict[str, Any]:
+        """Return the publishability contract for rendered mathematics.
+
+        A warning means the renderer preserved an ambiguous or incomplete
+        interpretation.  An invalid expression is stronger: it is displayed
+        as protected code and must not be treated as executable/renderable
+        mathematics by a consumer.
+        """
+
+        expressions = content.math_expressions
+        invalid = [
+            expression
+            for expression in expressions
+            if expression.validation_status == "invalid"
+        ]
+        rendered_ids = {
+            segment.math.expression_id
+            for segment in content.segments
+            if segment.math is not None
+            and segment.segment_type
+            in {MathSegmentType.INLINE_MATH, MathSegmentType.DISPLAY_MATH}
+        }
+        rendered_valid = [
+            expression
+            for expression in expressions
+            if expression.expression_id in rendered_ids
+            and expression.validation_status != "invalid"
+        ]
+        structured_only_count = sum(
+            expression.expression_id not in rendered_ids for expression in expressions
+        )
+        warnings = list(dict.fromkeys(content.warnings))
+        status = "blocked" if invalid else "needs_review" if warnings else "passed"
+        return {
+            "contract_version": "math_quality.v1",
+            "status": status,
+            "publishable": status == "passed",
+            "rendered_expression_count": len(rendered_valid),
+            "structured_only_expression_count": structured_only_count,
+            "invalid_expression_count": len(invalid),
+            "warning_count": len(warnings),
+            "warnings": warnings,
+            "invalid_expression_ids": [
+                expression.expression_id for expression in invalid
+            ],
         }
 
     def _normalize_math_text(self, source: str) -> tuple[str, list[str]]:
@@ -507,12 +572,17 @@ class MathFormattingService:
                     if display
                     else MathBlockType.INLINE,
                 )
-                rendered = (
-                    f"$$\n{expression.latex}\n$$"
-                    if display
-                    else f"${expression.latex}$"
-                )
-                chunks.append(self._math_chunk(rendered, expression, display=display))
+                if expression.validation_status == "invalid":
+                    chunks.append(self._invalid_math_chunk(expression, display=display))
+                else:
+                    rendered = (
+                        f"$$\n{expression.latex}\n$$"
+                        if display
+                        else f"${expression.latex}$"
+                    )
+                    chunks.append(
+                        self._math_chunk(rendered, expression, display=display)
+                    )
             index = end + len(closer)
             plain_start = index
         if not chunks:
@@ -539,6 +609,16 @@ class MathFormattingService:
                     [
                         self._protected_chunk(leading, MathSegmentType.TEXT),
                         math,
+                        self._protected_chunk(trailing, MathSegmentType.TEXT),
+                    ]
+                )
+            if expression.validation_status == "invalid":
+                leading = text[: len(text) - len(text.lstrip())]
+                trailing = text[len(text.rstrip()) :]
+                return self._combine_chunks(
+                    [
+                        self._protected_chunk(leading, MathSegmentType.TEXT),
+                        self._invalid_math_chunk(expression, display=False),
                         self._protected_chunk(trailing, MathSegmentType.TEXT),
                     ]
                 )
@@ -576,7 +656,11 @@ class MathFormattingService:
                 match.group(0), block_type=MathBlockType.INLINE
             )
             chunks.append(
-                self._math_chunk(f"${expression.latex}$", expression, display=False)
+                self._invalid_math_chunk(expression, display=False)
+                if expression.validation_status == "invalid"
+                else self._math_chunk(
+                    f"${expression.latex}$", expression, display=False
+                )
             )
             cursor = match.end()
         chunks.append(self._protected_chunk(text[cursor:], MathSegmentType.TEXT))
@@ -813,6 +897,35 @@ class MathFormattingService:
                     math=expression,
                 )
             ],
+            expressions=[expression],
+            warnings=list(expression.warnings),
+        )
+
+    @staticmethod
+    def _invalid_math_chunk(
+        expression: MathExpression, *, display: bool
+    ) -> _ProcessedChunk:
+        """Keep invalid source visible without sending it to a math renderer."""
+
+        source = expression.source_text or expression.latex
+        if display or "\n" in source:
+            fence_length = max(
+                3,
+                max(
+                    (len(run) for run in re.findall(r"`+", source)),
+                    default=0,
+                )
+                + 1,
+            )
+            fence = "`" * fence_length
+            markdown = f"{fence}text\n{source}\n{fence}"
+        else:
+            escaped_source = source.replace("`", "\\`")
+            markdown = f"`{escaped_source}`"
+        return _ProcessedChunk(
+            markdown=markdown,
+            plain_text=source,
+            segments=[RichTextSegment(segment_type=MathSegmentType.CODE, text=source)],
             expressions=[expression],
             warnings=list(expression.warnings),
         )

@@ -14,7 +14,9 @@ def test_course_asset_audit_is_read_only_and_excludes_demo_cases() -> None:
     assert report["read_only"] is True
     assert set(report["courses"]) == {"CT", "AE"}
     assert report["courses"]["CT"]["skill_count"] == 10
-    assert report["courses"]["AE"]["skill_count"] == 10
+    # AE now includes the domain-scoped Planner/Skill entries used by the
+    # six-case pilot; the audit must include them while remaining read-only.
+    assert report["courses"]["AE"]["skill_count"] == 17
     assert report["contest_support_boundary"]["demo_cases_included"] is False
     assert report["contest_support_boundary"]["package_scaffold_present"] is True
     assert report["contest_support_boundary"]["real_provider_calls"] is False

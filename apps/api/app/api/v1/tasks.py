@@ -51,6 +51,10 @@ from app.repositories.sessions import SessionRepository
 from app.runtime import RuntimePlanProposal
 from app.services.answer_disclosure import public_teaching_result
 from app.services.auth_service import Principal
+from app.services.course_material_manifest import (
+    filter_revoked_material_result,
+    load_revoked_material_ids,
+)
 from app.services.event_service import append_task_event
 from app.services.intent_recognition import IntentRecognitionService
 from app.services.research_analysis_review import ResearchAnalysisReviewService
@@ -60,6 +64,7 @@ from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import RETRYABLE_FAILURES, TaskControlService
 from app.services.task_creation_service import TaskCreationService
+from app.services.unified_request_preparation import UnifiedRequestPreparationService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 TERMINAL_STATUSES = {
@@ -118,6 +123,7 @@ def task_read(
     task: TaskModel,
     *,
     requester_user_id: str | None = None,
+    revoked_material_ids: set[str] | None = None,
 ) -> TaskRead:
     if requester_user_id is not None and task.user_id != requester_user_id:
         raise NotFoundError("任务不存在")
@@ -146,6 +152,10 @@ def task_read(
         model.result_content,
         include_private_teaching=requester_user_id == task.user_id,
     )
+    model.result_content = filter_revoked_material_result(
+        model.result_content,
+        revoked_material_ids or set(),
+    )
     model.retryable = bool(
         task.status == TaskStatus.FAILED
         and task.failure_category in RETRYABLE_FAILURES
@@ -154,6 +164,21 @@ def task_read(
     artifacts = task.__dict__.get("artifacts")
     model.artifact_ids = [artifact.id for artifact in artifacts or []]
     return model
+
+
+def _public_task_read(
+    task: TaskModel,
+    request: Request,
+    *,
+    requester_user_id: str | None = None,
+) -> TaskRead:
+    return task_read(
+        task,
+        requester_user_id=requester_user_id,
+        revoked_material_ids=load_revoked_material_ids(
+            request.app.state.settings.knowledge_index_path
+        ),
+    )
 
 
 @router.post(
@@ -176,6 +201,10 @@ async def create_task(
         except ValueError:
             updates["user_role"] = UserRole.STUDENT
     data = data.model_copy(update=updates)
+    if request.app.state.settings.planner_mode != "shadow":
+        data = data.model_copy(
+            update={"options": {**data.options, "_planner_preflight": True}}
+        )
     data = _bind_auto_scenario(data)
     if (
         data.intent.value == "data_analysis"
@@ -213,6 +242,7 @@ async def create_task(
             agent_id="router",
         )
         data = _with_conversation_context(data, bundle)
+    data = UnifiedRequestPreparationService().attach(data)
     decision = request.app.state.task_router.route(data)
     if (
         decision.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
@@ -230,7 +260,7 @@ async def create_task(
     ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)
-    return task_read(task, requester_user_id=data.user_id)
+    return _public_task_read(task, request, requester_user_id=data.user_id)
 
 
 async def _hydrate_document_attachments(
@@ -322,12 +352,14 @@ def _with_conversation_context(
 @router.get("/{task_id}", response_model=TaskRead)
 async def get_task(
     task_id: str,
+    request: Request,
     principal: Principal = Depends(get_current_principal),
     user_id: str | None = Query(default=None, min_length=1, max_length=128),
     db: AsyncSession = Depends(get_db),
 ) -> TaskRead:
-    return task_read(
+    return _public_task_read(
         await TaskQueryService(db).get(task_id),
+        request,
         requester_user_id=effective_user_id(principal, user_id) or None,
     )
 
@@ -484,7 +516,7 @@ async def retry_task(
         task_id
     )
     await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 @router.post("/{task_id}/cancel", response_model=TaskRead)
@@ -496,10 +528,11 @@ async def cancel_task(
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     await _get_owned_task(db, task_id, principal)
-    return task_read(
+    return _public_task_read(
         await TaskControlService(db, provider, request.app.state.settings).cancel(
             task_id
-        )
+        ),
+        request,
     )
 
 
@@ -513,11 +546,12 @@ async def pause_task(
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     await _get_owned_task(db, task_id, principal)
-    return task_read(
+    return _public_task_read(
         await TaskControlService(db, provider, request.app.state.settings).pause(
             task_id,
             runtime_run_id=runtime_run_id,
-        )
+        ),
+        request,
     )
 
 
@@ -535,7 +569,7 @@ async def resume_task(
         db, provider, request.app.state.settings
     ).resume(task_id, runtime_run_id=runtime_run_id)
     await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 @router.post("/{task_id}/approve", response_model=TaskRead)
@@ -570,7 +604,7 @@ async def approve_task(
     )
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 @router.post("/{task_id}/input", response_model=TaskRead)
@@ -587,7 +621,7 @@ async def submit_runtime_input(
         db, provider, request.app.state.settings
     ).submit_input(task_id, submission)
     await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 @router.post("/{task_id}/reconcile", response_model=TaskRead)
@@ -604,7 +638,7 @@ async def reconcile_runtime_node(
         db, provider, request.app.state.settings
     ).reconcile(task_id, submission)
     await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 @router.get(
@@ -671,7 +705,7 @@ async def decide_runtime_plan_proposal(
     )
     await db.commit()
     await request.app.state.task_executor.submit(task.id)
-    return task_read(task)
+    return _public_task_read(task, request)
 
 
 def _project_task_runtime_controls(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from uuid import uuid4
 
@@ -27,6 +28,28 @@ from app.services.model_registry import ModelDefinition, ModelRegistry
 T = TypeVar("T", bound=ModelResponse)
 
 
+@dataclass(frozen=True, slots=True)
+class ModelPreflight:
+    """Provider-free availability result for one model task route."""
+
+    task_type: str
+    modality: str
+    available: bool
+    usable_aliases: tuple[str, ...]
+    attempted_aliases: tuple[str, ...]
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_type": self.task_type,
+            "modality": self.modality,
+            "available": self.available,
+            "usable_aliases": list(self.usable_aliases),
+            "attempted_aliases": list(self.attempted_aliases),
+            "reason": self.reason,
+        }
+
+
 class ModelService:
     """Task-aware model gateway with bounded retries, fallback and safe tracing."""
 
@@ -48,6 +71,104 @@ class ModelService:
         }
         self._circuits: dict[str, ProviderCircuitBreaker] = {}
         self._vision = asyncio.Semaphore(settings.vision_max_concurrency)
+
+    def preflight(
+        self, task_type: str, *, modality: str = "text"
+    ) -> ModelPreflight:
+        """Check model route configuration without making a network call."""
+
+        try:
+            route = self.registry.get_route(task_type)
+        except KeyError:
+            return ModelPreflight(
+                task_type=task_type,
+                modality=modality,
+                available=False,
+                usable_aliases=(),
+                attempted_aliases=(),
+                reason="model_route_missing",
+            )
+
+        aliases = tuple(
+            alias for alias in (route.primary, route.fallback) if alias is not None
+        )
+        usable: list[str] = []
+        reasons: list[str] = []
+        for alias in aliases:
+            definition = self.registry.get_model(alias)
+            if modality not in definition.modalities:
+                reasons.append(f"model_modality_unsupported:{alias}")
+                continue
+            if not self.registry.enabled(definition):
+                reasons.append(f"model_disabled:{alias}")
+                continue
+            provider = self.providers.get(definition.provider)
+            if provider is None:
+                reasons.append(f"model_provider_missing:{alias}")
+                continue
+            if not provider.configured:
+                reasons.append(f"model_provider_unconfigured:{alias}")
+                continue
+            usable.append(alias)
+
+        return ModelPreflight(
+            task_type=task_type,
+            modality=modality,
+            available=bool(usable),
+            usable_aliases=tuple(usable),
+            attempted_aliases=aliases,
+            reason=(
+                "model_route_available"
+                if usable
+                else (reasons[0] if reasons else "model_unavailable")
+            ),
+        )
+
+    def configuration_snapshot(self) -> dict[str, Any]:
+        """Return a redacted, provider-free model readiness snapshot.
+
+        Health and release checks must distinguish the Agent execution
+        boundary from the actual text/image model providers. This snapshot
+        performs no network call and never exposes credentials.
+        """
+
+        providers = {
+            name: {
+                "configured": bool(provider.configured),
+                "default_model": provider.default_model,
+            }
+            for name, provider in self.providers.items()
+        }
+        routes: dict[str, dict[str, Any]] = {}
+        unavailable_routes: list[str] = []
+        for task_type, route in self.registry.routes.items():
+            preflight = self.preflight(task_type)
+            routes[task_type] = {
+                "primary": route.primary,
+                "fallback": route.fallback,
+                "available": preflight.available,
+                "usable_aliases": list(preflight.usable_aliases),
+                "reason": preflight.reason,
+            }
+            if not preflight.available:
+                unavailable_routes.append(task_type)
+        configured_provider_names = sorted(
+            name for name, item in providers.items() if item["configured"]
+        )
+        return {
+            "status": (
+                "ready"
+                if not self.registry.errors and not unavailable_routes
+                else "degraded"
+            ),
+            "configured_provider_names": configured_provider_names,
+            "real_provider_configured": bool(configured_provider_names),
+            "providers": providers,
+            "route_count": len(routes),
+            "unavailable_route_count": len(unavailable_routes),
+            "unavailable_routes": unavailable_routes,
+            "registry_errors": list(self.registry.errors),
+        }
 
     async def generate_for_task(
         self,

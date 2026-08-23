@@ -34,6 +34,14 @@ class GovernedRuntimeResult:
 class RuntimeResultPipeline:
     """Apply cross-Agent result policy after Runtime has completed."""
 
+    _KNOWLEDGE_RESULT_MODES = frozenset(
+        {
+            "local_rag_model_generation",
+            "learning_path_model_generation",
+            "governance_model_generation",
+        }
+    )
+
     def __init__(
         self,
         registry: AgentRegistry,
@@ -91,12 +99,17 @@ class RuntimeResultPipeline:
             "_material_extraction",
             {},
         )
+        current_mode = str(result.structured_result.get("mode", "")).strip()
         knowledge = result.structured_result.get("knowledge", {})
         hits = knowledge.get("hits", []) if isinstance(knowledge, dict) else []
         result.structured_result.update(
             {
                 "scene": definition.scene,
-                "mode": definition.mode,
+                # Keep the business execution mode produced by KnowledgeQA
+                # when a real synthesis occurred.  The Agent definition mode
+                # remains available separately and must not overwrite it.
+                "mode": self._project_result_mode(definition.mode, current_mode),
+                "agent_mode": definition.mode,
                 "course": request.course_id,
                 "intent": request.intent.value,
                 "route_source": routing.get("route_source", "local_fast"),
@@ -158,6 +171,14 @@ class RuntimeResultPipeline:
             validation,
             {},
         )
+
+    @classmethod
+    def _project_result_mode(cls, agent_mode: str, result_mode: str) -> str:
+        """Avoid reporting a real model synthesis as retrieval-only/local."""
+
+        if result_mode in cls._KNOWLEDGE_RESULT_MODES:
+            return result_mode
+        return agent_mode
 
     @staticmethod
     def _ensure_response_depth_metadata(

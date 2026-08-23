@@ -30,6 +30,7 @@ class ScenarioCatalog:
             "scenario_retrieval_profile",
             "scenario_evidence_policy",
             "scenario_contract",
+            "scenario_case_id",
             "_scenario_catalog_bound",
         }
     )
@@ -106,6 +107,36 @@ class ScenarioCatalog:
             raise ScenarioCatalogError(f"场景不存在或未启用: {scenario_id}")
         return item
 
+    @staticmethod
+    def _contract_course(course: str | None, demo_course: str) -> str:
+        """Bind the contract to the active course, not the demo's course."""
+
+        normalized = str(course or "").strip().upper()
+        return (
+            normalized
+            if normalized not in {"", "AUTO", "UNKNOWN"}
+            else demo_course.upper()
+        )
+
+    @staticmethod
+    def _course_resolution(
+        course: str | None, demo_course: str
+    ) -> dict[str, Any]:
+        requested = str(course or "").strip().upper()
+        if requested not in {"", "AUTO", "UNKNOWN"}:
+            return {
+                "requested": requested,
+                "resolved": requested,
+                "source": "explicit_request",
+                "confirmation_required": False,
+            }
+        return {
+            "requested": requested or "UNKNOWN",
+            "resolved": demo_course.upper(),
+            "source": "demo_case_fallback",
+            "confirmation_required": True,
+        }
+
     def enrich_request(self, payload: AgentRequestV2) -> AgentRequestV2:
         if payload.scenario_id is None:
             metadata = {
@@ -125,7 +156,11 @@ class ScenarioCatalog:
                 f"场景 {scenario.id} 不支持输入类型 {payload.input_type.value}"
             )
         metadata = dict(payload.metadata)
-        demo_case = scenario.demo_cases[0]
+        demo_case = self._select_demo_case(
+            scenario, payload.metadata.get("scenario_case_id")
+        )
+        contract_course = self._contract_course(course, demo_case.course)
+        course_resolution = self._course_resolution(course, demo_case.course)
         metadata.update(
             {
                 "scenario_id": scenario.id,
@@ -139,23 +174,55 @@ class ScenarioCatalog:
                 "scenario_contract": {
                     "demo_case_id": demo_case.id,
                     "role": demo_case.role,
-                    "course": demo_case.course.upper(),
+                    "course": contract_course,
+                    "course_resolution": course_resolution,
+                    "course_confirmation_required": course_resolution[
+                        "confirmation_required"
+                    ],
                     "expected_agent": demo_case.expected_agent,
                     "expected_output": list(demo_case.expected_output),
                     "business_context": demo_case.business_context,
                     "evidence_requirements": list(demo_case.evidence_requirements),
                     "review_boundary": demo_case.review_boundary,
                     "acceptance_conditions": list(demo_case.acceptance_conditions),
+                    **(
+                        {"formula_output_contract": demo_case.formula_output_contract}
+                        if demo_case.formula_output_contract is not None
+                        else {}
+                    ),
+                    **(
+                        {"visual_acceptance": demo_case.visual_acceptance}
+                        if demo_case.visual_acceptance is not None
+                        else {}
+                    ),
                 },
                 "_scenario_catalog_bound": True,
             }
         )
+        if demo_case.visual_acceptance is not None:
+            metadata["visual_acceptance"] = demo_case.visual_acceptance
         default_intent = OrchestrationIntent(scenario.intents[0])
         return payload.model_copy(
             update={
                 "metadata": metadata,
                 "intent_hint": payload.intent_hint or default_intent,
             }
+        )
+
+    @staticmethod
+    def _select_demo_case(
+        scenario: ScenarioDefinition, requested_case_id: Any
+    ) -> Any:
+        """Select an explicit case while preserving the first-case default."""
+
+        normalized = str(requested_case_id or "").strip()
+        if not normalized:
+            return scenario.demo_cases[0]
+        for demo_case in scenario.demo_cases:
+            if demo_case.id == normalized:
+                return demo_case
+        raise ScenarioCatalogError(
+            f"场景 {scenario.id} 不支持演示案例 {normalized}"
         )
 
     def enrich_legacy_request(self, payload: AgentRequest) -> AgentRequest:
@@ -175,7 +242,7 @@ class ScenarioCatalog:
         course = payload.course_id.upper()
         if course not in {"", "AUTO", "UNKNOWN"} and course not in scenario.courses:
             raise ScenarioCatalogError(
-                f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽绋?{course}"
+                f"场景 {scenario.id} 不支持课程 {course}"
             )
         input_type = str(payload.options.get("input_type", ""))
         if not input_type:
@@ -196,13 +263,19 @@ class ScenarioCatalog:
                 input_type = "mixed"
         if input_type not in scenario.input_modes:
             raise ScenarioCatalogError(
-                f"鍦烘櫙 {scenario.id} 涓嶆敮鎸佽緭鍏ョ被鍨?{input_type}"
+                f"场景 {scenario.id} 不支持输入类型 {input_type}"
             )
         # Scenario roles describe the intended example audience only.  They do
         # not restrict authenticated users: the product now exposes one
         # unified question workspace for teaching, learning, and research.
         options = dict(payload.options)
-        demo_case = scenario.demo_cases[0]
+        demo_case = self._select_demo_case(
+            scenario, payload.options.get("scenario_case_id")
+        )
+        contract_course = self._contract_course(payload.course_id, demo_case.course)
+        course_resolution = self._course_resolution(
+            payload.course_id, demo_case.course
+        )
         options.update(
             {
                 "scenario_id": scenario.id,
@@ -216,17 +289,33 @@ class ScenarioCatalog:
                 "scenario_contract": {
                     "demo_case_id": demo_case.id,
                     "role": demo_case.role,
-                    "course": demo_case.course.upper(),
+                    "course": contract_course,
+                    "course_resolution": course_resolution,
+                    "course_confirmation_required": course_resolution[
+                        "confirmation_required"
+                    ],
                     "expected_agent": demo_case.expected_agent,
                     "expected_output": list(demo_case.expected_output),
                     "business_context": demo_case.business_context,
                     "evidence_requirements": list(demo_case.evidence_requirements),
                     "review_boundary": demo_case.review_boundary,
                     "acceptance_conditions": list(demo_case.acceptance_conditions),
+                    **(
+                        {"formula_output_contract": demo_case.formula_output_contract}
+                        if demo_case.formula_output_contract is not None
+                        else {}
+                    ),
+                    **(
+                        {"visual_acceptance": demo_case.visual_acceptance}
+                        if demo_case.visual_acceptance is not None
+                        else {}
+                    ),
                 },
                 "_scenario_catalog_bound": True,
             }
         )
+        if demo_case.visual_acceptance is not None:
+            options["visual_acceptance"] = demo_case.visual_acceptance
         return payload.model_copy(
             update={
                 "options": options,
