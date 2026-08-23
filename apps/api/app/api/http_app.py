@@ -111,7 +111,7 @@ def _register_page_routes(app: FastAPI) -> None:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
-    @app.get("/workspace-legacy", include_in_schema=True, tags=["student"])
+    @app.get("/workspace-legacy", include_in_schema=False, tags=["student"])
     async def legacy_workspace_page() -> FileResponse:
         return FileResponse(
             DEBUG_ROOT / "workspace.html",
@@ -127,7 +127,7 @@ def _register_page_routes(app: FastAPI) -> None:
             )
         return await legacy_workspace_page()
 
-    @app.get("/workspace-react", include_in_schema=True, tags=["student"])
+    @app.get("/workspace-react", include_in_schema=False, tags=["student"])
     async def react_workspace_page() -> FileResponse:
         if not (REACT_ROOT / "index.html").exists():
             raise HTTPException(
