@@ -21,6 +21,7 @@ from app.core.logging import reset_request_id, set_request_id
 logger = logging.getLogger(__name__)
 
 DEBUG_ROOT = Path(__file__).resolve().parents[1] / "static" / "debug"
+REACT_ROOT = DEBUG_ROOT / "react"
 QUESTION_BANK_IMAGE_ROOT = PROJECT_ROOT / "evaluation" / "cache" / "storage"
 ANALOG_OPAMP_IMAGE_NAME = "模电测试集_图2.1.1_运算放大器电路.jpg"
 
@@ -60,6 +61,11 @@ def configure_http_app(app: FastAPI) -> None:
         "/debug-assets",
         StaticFiles(directory=DEBUG_ROOT),
         name="debug-assets",
+    )
+    app.mount(
+        "/react-assets",
+        StaticFiles(directory=REACT_ROOT, check_dir=False),
+        name="react-assets",
     )
     _register_page_routes(app)
     _register_request_middleware(app)
@@ -105,10 +111,31 @@ def _register_page_routes(app: FastAPI) -> None:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
-    @app.get("/workspace", include_in_schema=True, tags=["student"])
-    async def workspace_page() -> FileResponse:
+    @app.get("/workspace-legacy", include_in_schema=True, tags=["student"])
+    async def legacy_workspace_page() -> FileResponse:
         return FileResponse(
             DEBUG_ROOT / "workspace.html",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @app.get("/workspace", include_in_schema=True, tags=["student"])
+    async def workspace_page() -> FileResponse:
+        if (REACT_ROOT / "index.html").exists():
+            return FileResponse(
+                REACT_ROOT / "index.html",
+                headers={"Cache-Control": "no-store, max-age=0"},
+            )
+        return await legacy_workspace_page()
+
+    @app.get("/workspace-react", include_in_schema=True, tags=["student"])
+    async def react_workspace_page() -> FileResponse:
+        if not (REACT_ROOT / "index.html").exists():
+            raise HTTPException(
+                status_code=503,
+                detail="React Workspace build is not available",
+            )
+        return FileResponse(
+            REACT_ROOT / "index.html",
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 

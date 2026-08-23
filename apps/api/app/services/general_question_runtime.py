@@ -11,6 +11,7 @@ from app.contracts import (
     AgentResultStatus,
     KnowledgeHit,
 )
+from app.infrastructure import register_subagent_handlers
 from app.runtime import (
     AgentRun,
     AgentRunPlan,
@@ -30,7 +31,6 @@ from app.runtime import (
     RuntimeSubagentDefinition,
     RuntimeSubagentRegistry,
     RuntimeSubagentRegistryError,
-    register_subagent_handlers,
 )
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.rag_retrieval import RAGRetrievalService

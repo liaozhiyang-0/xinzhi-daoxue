@@ -1,4 +1,4 @@
-"""Deprecated compatibility facade for infrastructure runtime adapters."""
+"""Infrastructure adapters and external integration composition points."""
 
 from app.infrastructure.runtime_adapters import (
     build_runtime_handler_registry,

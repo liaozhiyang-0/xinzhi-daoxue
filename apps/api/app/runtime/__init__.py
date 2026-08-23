@@ -4,13 +4,6 @@ This package deliberately has no database, HTTP, Provider, or model imports.
 It defines the contracts used by the durable production executor.
 """
 
-from app.runtime.adapters import (
-    build_runtime_handler_registry,
-    register_internal_agent_handler,
-    register_provider_handler,
-    register_subagent_handlers,
-    register_tool_handlers,
-)
 from app.runtime.contracts import (
     AgentRun,
     AgentRunPlan,
@@ -105,6 +98,27 @@ from app.runtime.subagents import (
     RuntimeSubagentRegistry,
     RuntimeSubagentRegistryError,
 )
+
+
+def __getattr__(name: str):
+    """Load composition adapters lazily for old imports.
+
+    Runtime core import remains free of concrete Provider/Tool dependencies;
+    callers that still import the historical adapter names get the
+    infrastructure implementation on demand.
+    """
+
+    if name in {
+        "build_runtime_handler_registry",
+        "register_tool_handlers",
+        "register_provider_handler",
+        "register_internal_agent_handler",
+        "register_subagent_handlers",
+    }:
+        from app.infrastructure import runtime_adapters
+
+        return getattr(runtime_adapters, name)
+    raise AttributeError(name)
 
 __all__ = [
     "AgentRun",

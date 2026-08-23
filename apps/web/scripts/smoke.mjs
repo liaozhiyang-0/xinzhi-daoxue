@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const webRoot = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(webRoot, "../../api/app/static/debug");
 const generatedRoot = resolve(staticRoot, "ts");
+const reactRoot = resolve(staticRoot, "react");
 const workspaceSource = readFileSync(resolve(staticRoot, "workspace.js"), "utf8");
 
 assert.match(workspaceSource, /\.\/ts\/materials\.js/);
@@ -16,6 +17,9 @@ for (const file of ["materials.js", "task-transport.js"]) {
   assert.ok(existsSync(resolve(generatedRoot, file)), `缺少构建产物：${file}`);
 }
 assert.ok(existsSync(resolve(generatedRoot, "workspace-contracts.js")));
+const reactIndex = readFileSync(resolve(reactRoot, "index.html"), "utf8");
+assert.match(reactIndex, /\/react-assets\//);
+assert.match(reactIndex, /assets\//);
 
 const materials = await import(pathToFileURL(resolve(generatedRoot, "materials.js")));
 const transport = await import(pathToFileURL(resolve(generatedRoot, "task-transport.js")));

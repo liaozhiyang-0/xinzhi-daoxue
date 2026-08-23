@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.tasks.query import TaskQueryService
 from app.contracts import (
     AgentEventType,
     AgentRequest,
@@ -59,7 +60,6 @@ from app.services.scenario_catalog import ScenarioCatalogError
 from app.services.session_context import SessionContextService
 from app.services.task_control_service import RETRYABLE_FAILURES, TaskControlService
 from app.services.task_creation_service import TaskCreationService
-from app.services.task_query_service import TaskQueryService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 TERMINAL_STATUSES = {

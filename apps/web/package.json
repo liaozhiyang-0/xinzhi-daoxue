@@ -3,12 +3,21 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "build": "tsc",
+    "build": "tsc && vite build",
     "smoke": "node scripts/smoke.mjs",
     "gen:api-types": "python ../scripts/generate_openapi_types.py"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   }
 }
