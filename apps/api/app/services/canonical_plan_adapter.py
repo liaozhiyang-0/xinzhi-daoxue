@@ -53,6 +53,7 @@ class CanonicalPlanAdapter:
                     timeout_ms=node.timeout_ms,
                     max_retries=node.max_retries,
                     optional=node.optional,
+                    failure_policy=getattr(node, "failure_policy", "fatal"),
                 )
                 for node in plan.nodes
             ],
@@ -150,6 +151,7 @@ class CanonicalPlanAdapter:
                     timeout_ms=node.timeout_ms,
                     max_retries=node.max_retries,
                     optional=node.optional,
+                    failure_policy=node.failure_policy,
                 )
                 for node in plan.nodes
             ],
@@ -333,16 +335,27 @@ def _runtime_node(
     if binding is None:
         capability_binding = capability_bindings.get(node.target_id)
         if capability_binding is not None:
+            handler_id = str(capability_binding.handler_id)
+            is_tool_binding = handler_id.startswith("tool.")
             return RuntimeNode(
                 node_id=node.node_id,
                 node_type=node.node_type,
-                handler_id=f"subagent.{capability_binding.handler_id}",
-                target_id=capability_binding.handler_id,
+                handler_id=(
+                    handler_id
+                    if is_tool_binding
+                    else f"subagent.{handler_id}"
+                ),
+                target_id=(
+                    handler_id.removeprefix("tool.")
+                    if is_tool_binding
+                    else handler_id
+                ),
                 depends_on=list(node.depends_on),
                 parallel_group=node.parallel_group,
                 timeout_ms=node.timeout_ms,
                 max_retries=node.max_retries,
                 optional=node.optional,
+                failure_policy=node.failure_policy,
             )
         return RuntimeNode(
             node_id=node.node_id,
@@ -354,6 +367,7 @@ def _runtime_node(
             timeout_ms=node.timeout_ms,
             max_retries=node.max_retries,
             optional=node.optional,
+            failure_policy=node.failure_policy,
         )
     return RuntimeNode(
         node_id=node.node_id,
@@ -365,6 +379,7 @@ def _runtime_node(
         timeout_ms=min(node.timeout_ms, binding.max_timeout_ms),
         max_retries=node.max_retries,
         optional=node.optional,
+        failure_policy=node.failure_policy,
         skill_id=binding.skill_id,
         skill_version=binding.version,
         skill_binding_id=binding.binding_id,

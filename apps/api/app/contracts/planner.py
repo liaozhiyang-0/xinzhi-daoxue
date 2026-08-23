@@ -54,6 +54,7 @@ class CanonicalPlanNode(BaseModel):
     timeout_ms: int = Field(default=30_000, ge=100, le=900_000)
     max_retries: int = Field(default=0, ge=0, le=5)
     optional: bool = False
+    failure_policy: Literal["fatal", "nonfatal"] = "fatal"
 
 
 class PlannerSkillSelection(BaseModel):
@@ -130,6 +131,7 @@ class CanonicalPlan(BaseModel):
     budget: PlannerBudget = Field(default_factory=PlannerBudget)
     confidence: float = Field(default=0.0, ge=0, le=1)
     source: str = Field(default="planner", max_length=64)
+    circuit_visualization: Any | None = None
 
 
 class PlannerRouteProjection(BaseModel):
@@ -213,3 +215,4 @@ class PlannerSnapshot(BaseModel):
     estimated_cost: float = Field(default=0.0, ge=0)
     error_type: str = ""
     fallback_reason: str = ""
+    circuit_visualization: Any | None = None

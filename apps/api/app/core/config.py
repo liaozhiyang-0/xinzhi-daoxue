@@ -526,6 +526,7 @@ class Settings(BaseSettings):
     # Phase N Planner control plane. One mode is authoritative; the two older
     # booleans remain read-compatible for historical tests and adapters only.
     planner_mode: Literal["shadow", "controlled", "active"] = "active"
+    circuit_visualization_mode: Literal["off", "shadow", "controlled"] = "off"
     # Deprecated Phase B compatibility switches; production code must use
     # planner_mode instead.
     planner_shadow_enabled: bool = False

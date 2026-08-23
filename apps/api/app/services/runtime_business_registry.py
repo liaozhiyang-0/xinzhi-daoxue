@@ -108,13 +108,17 @@ class RuntimeBusinessRegistry:
         bindings = canonical_plan.get("capability_bindings", [])
         if not isinstance(bindings, list):
             return False
-        handler_ids = {
-            item.get("handler_id")
-            for item in bindings
-            if isinstance(item, dict) and isinstance(item.get("handler_id"), str)
-        }
-        return bool(handler_ids) and handler_ids.issubset(
-            RuntimeBusinessRegistry._CANONICAL_INTERNAL_HANDLERS
+        handler_ids: set[str] = set()
+        for item in bindings:
+            if not isinstance(item, dict):
+                continue
+            handler_id = item.get("handler_id")
+            if isinstance(handler_id, str):
+                handler_ids.add(handler_id)
+        return bool(handler_ids) and all(
+            handler_id in RuntimeBusinessRegistry._CANONICAL_INTERNAL_HANDLERS
+            or handler_id.startswith("tool.")
+            for handler_id in handler_ids
         )
 
     @staticmethod

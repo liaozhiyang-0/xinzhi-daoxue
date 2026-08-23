@@ -179,7 +179,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         teaching_interactions,
         enabled=True,
     )
-    tool_registry = default_tool_registry()
+    tool_registry = default_tool_registry(
+        circuit_render_enabled=app_settings.circuit_visualization_mode != "off"
+    )
     graph_checkpointer = _create_graph_checkpointer(app_settings)
     graph_factory = GraphFactory(
         courses=course_registry,

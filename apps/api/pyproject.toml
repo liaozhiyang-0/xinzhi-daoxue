@@ -31,7 +31,7 @@ dependencies = [
   "sqlalchemy>=2.0,<3",
   "sympy>=1.13,<2",
   "sentence-transformers>=3.4,<6",
-  "schemdraw>=0.21,<1",
+  "schemdraw==0.21",
   "torch>=2.7,<3",
   "transformers>=4.49,<5",
   "typing-extensions>=4.12,<5",

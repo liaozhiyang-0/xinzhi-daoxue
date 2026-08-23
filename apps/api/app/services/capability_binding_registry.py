@@ -83,5 +83,9 @@ def default_capability_binding_registry() -> CapabilityBindingRegistry:
                 aliases=("deterministic_verification",),
                 skill_ids=("AE.CIRCUIT_IMAGE_PARSE",),
             ),
+            CapabilityBinding(
+                "circuit.visualize",
+                "tool.circuit.render",
+            ),
         )
     )

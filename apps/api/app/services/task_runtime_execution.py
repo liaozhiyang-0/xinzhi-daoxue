@@ -17,6 +17,7 @@ from app.runtime import (
     RuntimeRunStatus,
     normalize_runtime_error_code,
 )
+from app.services.circuit_visualization import project_circuit_artifact
 from app.services.reflection_service import ReflectionService
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
@@ -101,6 +102,13 @@ class TaskRuntimeExecutionService:
                 "registered Agent Runtime did not complete "
                 f"(status={prepared.runtime_run.status.value})",
             )
+        result = result.model_copy(
+            update={
+                "task_id": request.task_id,
+                "course_id": request.course_id,
+            }
+        )
+        result = project_circuit_artifact(result, prepared.runtime_run)
         validation_started = perf_counter()
         await self.progress.append(
             request.task_id,

@@ -32,6 +32,10 @@ from app.services.capability_binding_registry import (
     CapabilityBindingRegistry,
     default_capability_binding_registry,
 )
+from app.services.circuit_visualization import (
+    CircuitVisualizationDecision,
+    decide_circuit_visualization,
+)
 from app.services.experience_memory import ExperiencePlannerPrior
 from app.services.intent_plan import IntentPlanCompiler
 from app.services.skill_binding import SkillBindingService
@@ -276,7 +280,10 @@ class PlannerService:
                             )
                         ]
                     }
-                )
+                    )
+        canonical, circuit_decision = self._append_circuit_visualization(
+            request, route, settings, canonical
+        )
         shape = self._canonical_plan_shape(canonical)
         projection = self._route_projection(route)
         lineage = PlannerLineage(
@@ -332,6 +339,7 @@ class PlannerService:
             planner_confidence=route.route_confidence,
             planner_reason_codes=["goal_contract_authority"],
             latency_ms=max(0, int((perf_counter() - started) * 1000)),
+            circuit_visualization=circuit_decision.model_dump(mode="json"),
         )
         architecture_telemetry.increment(f"planner_{mode}_count")
         return PlannerOutput(snapshot=snapshot, route=route, canonical_plan=canonical)
@@ -539,6 +547,9 @@ class PlannerService:
         canonical_plan, skill_selection, skill_status, skill_rejections = (
             self._select_skills(request, route, plan, canonical_plan, objective)
         )
+        canonical_plan, circuit_decision = self._append_circuit_visualization(
+            request, route, settings, canonical_plan
+        )
         current_route = self._route_projection(route)
         planner_route = current_route.model_copy()
         current_shape = self._intent_plan_shape(plan)
@@ -609,11 +620,69 @@ class PlannerService:
             planner_confidence=route.route_confidence,
             planner_reason_codes=["deterministic_route_reused"],
             latency_ms=max(0, int((perf_counter() - started) * 1000)),
+            circuit_visualization=circuit_decision.model_dump(mode="json"),
         )
         return PlannerOutput(
             snapshot=snapshot,
             route=route,
             canonical_plan=canonical_plan,
+        )
+
+    @staticmethod
+    def _append_circuit_visualization(
+        request: AgentRequest,
+        route: RouteDecision,
+        settings: Settings,
+        canonical: CanonicalPlan,
+    ) -> tuple[CanonicalPlan, CircuitVisualizationDecision]:
+        decision = decide_circuit_visualization(
+            request,
+            feature_mode=settings.circuit_visualization_mode,
+            course_id=route.course_id,
+        )
+        updated = canonical.model_copy(
+            update={"circuit_visualization": decision.model_dump(mode="json")}
+        )
+        if not decision.should_schedule:
+            return updated, decision
+        if any(node.node_id == "circuit.visualize" for node in updated.nodes):
+            return updated, decision
+        bindings = list(updated.capability_bindings)
+        if not any(
+            item.capability_id == "circuit.visualize" for item in bindings
+        ):
+            bindings.append(
+                CapabilityBinding(
+                    capability_id="circuit.visualize",
+                    handler_id="tool.circuit.render",
+                )
+            )
+        nodes = [*updated.nodes]
+        nodes.append(
+            CanonicalPlanNode(
+                node_id="circuit.visualize",
+                node_type="tool",
+                target_id="circuit.visualize",
+                depends_on=[node.node_id for node in updated.nodes],
+                timeout_ms=10_000,
+                optional=True,
+                failure_policy="nonfatal",
+            )
+        )
+        return (
+            updated.model_copy(
+                update={
+                    "nodes": nodes,
+                    "capabilities": list(
+                        dict.fromkeys([*updated.capabilities, "circuit.visualize"])
+                    ),
+                    "capability_bindings": bindings,
+                    "selected_tools": list(
+                        dict.fromkeys([*updated.selected_tools, "circuit.render"])
+                    ),
+                }
+            ),
+            decision,
         )
 
     async def build_shadow_with_experience(

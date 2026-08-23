@@ -53,6 +53,7 @@ def default_capability_registry() -> CapabilityRegistry:
         "knowledge.govern": ("知识资产治理", ()),
         "academic.solve": ("学术问题求解", ()),
         "vision.circuit_parse": ("电路图像解析", ()),
+        "circuit.visualize": ("电路可视化", ("circuit.render",)),
         # Legacy recognition labels remain registered as aliases during the
         # migration window; Planner canonicalizes the six showcase paths.
         "lesson_design": ("教学设计兼容能力", ()),

@@ -280,6 +280,7 @@ class RuntimeNode(BaseModel):
     timeout_ms: int = Field(default=30_000, ge=100, le=900_000)
     max_retries: int = Field(default=0, ge=0, le=5)
     optional: bool = False
+    failure_policy: str = Field(default="fatal", pattern="^(fatal|nonfatal)$")
     input_artifact_ids: list[str] = Field(default_factory=list, max_length=100)
     skill_id: str = Field(default="", max_length=128)
     skill_version: str = Field(default="", max_length=32)

@@ -108,6 +108,7 @@ class ArtifactType(StrEnum):
     REPORT = "report"
     FILE = "file"
     STRUCTURED_RESULT = "structured_result"
+    CIRCUIT_SVG = "circuit_svg"
 
 
 class AttachmentRef(BaseModel):

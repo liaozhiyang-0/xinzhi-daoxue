@@ -147,3 +147,27 @@ class CircuitRenderResult(BaseModel):
     validation: ValidationReport
     render_latency_ms: float = 0.0
     renderer: str = "fallback_svg"
+
+
+class CircuitRenderObservation(BaseModel):
+    """Stable Runtime projection for circuit rendering.
+
+    ``CircuitRenderResult`` remains the renderer-facing compatibility
+    contract.  This smaller projection is the only circuit shape that the
+    Planner/Runtime boundary needs to understand.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: RenderStatus
+    validation_state: Literal[
+        "validated", "partially_validated", "needs_review", "invalid"
+    ]
+    renderer: Literal["schemdraw", "deterministic_fallback", "none"]
+    warnings: list[str] = Field(default_factory=list, max_length=32)
+    svg: str | None = None
+    artifact_ref: str | None = None
+    render_latency_ms: float = Field(default=0.0, ge=0)
+    circuit_ir_version: Literal["circuit_ir.v1"] = "circuit_ir.v1"
+    critical_uncertainty_count: int = Field(default=0, ge=0)
+    recoverable: bool = True

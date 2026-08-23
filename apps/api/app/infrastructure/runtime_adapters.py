@@ -33,6 +33,7 @@ from app.runtime.subagents import (
     RuntimeSubagentDefinition,
     RuntimeSubagentRegistry,
 )
+from app.services.circuit_visualization import runtime_observation_from_tool
 from app.tools.registry import ToolRegistry
 
 
@@ -41,6 +42,21 @@ def _node_input(run: AgentRun, node: RuntimeNode) -> dict[str, Any]:
     if not isinstance(raw_inputs, Mapping):
         raise RuntimeNodeError("node_inputs_invalid")
     payload = raw_inputs.get(node.node_id, {})
+    if (
+        not payload
+        and node.target_id == "circuit.render"
+        and isinstance(
+            run.control_data.get("request", run.request_snapshot), Mapping
+        )
+    ):
+        request = run.control_data.get("request", run.request_snapshot)
+        canonical_input = request.get("canonical_input", {})
+        options = request.get("options", {})
+        for container in (canonical_input, options):
+            if isinstance(container, Mapping):
+                circuit_ir = container.get("circuit_ir")
+                if isinstance(circuit_ir, Mapping):
+                    return {"circuit": dict(circuit_ir)}
     if not isinstance(payload, Mapping):
         raise RuntimeNodeError("node_input_invalid")
     return dict(payload)
@@ -163,8 +179,47 @@ def register_tool_handlers(
             try:
                 runtime_registry.validate_input(_handler_id, payload)
             except RuntimeHandlerRegistryError as exc:
+                if _tool_id == "circuit.render":
+                    return runtime_observation_from_tool(
+                        node_id=node.node_id,
+                        execution_key=run.nodes[node.node_id].execution_key,
+                        circuit_payload=(
+                            payload.get("circuit")
+                            if isinstance(payload.get("circuit"), Mapping)
+                            else None
+                        ),
+                        result=None,
+                        error=exc.error_code,
+                    )
                 raise RuntimeNodeError(exc.error_code, str(exc)) from exc
-            result = await _invoke(_handler, payload)
+            try:
+                result = await _invoke(_handler, payload)
+            except Exception as exc:
+                if _tool_id == "circuit.render":
+                    return runtime_observation_from_tool(
+                        node_id=node.node_id,
+                        execution_key=run.nodes[node.node_id].execution_key,
+                        circuit_payload=(
+                            payload.get("circuit")
+                            if isinstance(payload.get("circuit"), Mapping)
+                            else None
+                        ),
+                        result=None,
+                        error=type(exc).__name__,
+                    )
+                raise
+            if _tool_id == "circuit.render":
+                safe_result = _safe_value(result)
+                return runtime_observation_from_tool(
+                    node_id=node.node_id,
+                    execution_key=run.nodes[node.node_id].execution_key,
+                    circuit_payload=(
+                        payload.get("circuit")
+                        if isinstance(payload.get("circuit"), Mapping)
+                        else None
+                    ),
+                    result=safe_result if isinstance(safe_result, Mapping) else None,
+                )
             return RuntimeObservation(
                 node_id=node.node_id,
                 facts={
