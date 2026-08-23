@@ -9,9 +9,8 @@ import pytest
     ("route", "title"),
     [
         ("/", "欢迎使用芯智导学"),
-        ("/student", "把目标交给学科智能体"),
         ("/workspace", "把目标交给学科智能体"),
-        ("/debug/rag", "统一执行调试"),
+        ("/debug/rag", "多模态 RAG 调试"),
         ("/debug/execution", "统一执行调试"),
         ("/debug/agents", "Agent 管理"),
         ("/system", "系统状态"),
@@ -38,9 +37,9 @@ def test_theme_status_and_navigation_are_centralized(client) -> None:
     assert "开发模拟" in script
     assert "降级运行" in script
     assert 'href: "/workspace"' in script
-    assert 'href: "/debug/execution"' not in script
-    assert 'href: "/debug/agents"' not in script
-    assert 'href: "/system"' not in script
+    assert 'href: "/debug/execution"' in script
+    assert 'href: "/debug/agents"' in script
+    assert 'href: "/system"' in script
     assert 'href: "/admin"' in script
     assert 'href: "/demo"' in script
     assert "--bg-primary" in tokens
@@ -54,7 +53,7 @@ def test_ui_api_retries_after_access_token_expiry(client) -> None:
     assert 'fetch("/api/v1/auth/refresh"' in script
     assert "response.status === 401" in script
     assert "allowRefresh" in script
-    assert "!path.startsWith(\"/api/v1/auth/\")" in script
+    assert '!path.startsWith("/api/v1/auth/")' in script
 
 
 def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
@@ -77,14 +76,14 @@ def test_markdown_renderer_uses_text_nodes_not_untrusted_html(client) -> None:
     assert "cleanRawLatexFragments" in student
     assert (
         '$("#source-summary").textContent = `参考课程资料 '
-        '${state.evidence.length}`' in student
+        "${state.evidence.length}`" in student
     )
     assert "evidenceRelatedImages" in student
     assert "function evidenceExternalUrl(item)" in student
     assert '"外部来源 · 请打开原文核验"' in student
     assert 'text: "打开原文"' in student
     assert "kb-material://" in student
-    assert ".replace(/-{3,}/gu, \" \")" in student
+    assert '.replace(/-{3,}/gu, " ")' in student
     assert "renderRecoveredMathBlock" in script
     assert "markdownInsideMath" in script
     assert 'text.startsWith("**", index)' in script
@@ -134,7 +133,7 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
     page = client.get("/workspace")
 
     assert page.status_code == 200
-    assert page.text.count('data-capability=') == 6
+    assert page.text.count("data-capability=") == 6
     assert 'aria-label="项目展示案例"' in page.text
     assert 'class="composer-agent-track"' not in page.text
     assert 'id="detected-course"' in page.text
@@ -144,7 +143,7 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
     assert 'id="answer-query"' not in page.text
     assert '<select id="course-select"' not in page.text
     assert '<select id="teaching-mode"' not in page.text
-    assert 'data-scenario-id=' not in page.text
+    assert "data-scenario-id=" not in page.text
     assert 'data-capability="data_analysis"' not in page.text
     assert "为什么电容电压不能突变？" not in page.text
     for title in (
@@ -169,16 +168,14 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
             client.get("/debug-assets/ts/workspace-contracts.js").text,
         )
     )
-    assert "activeScenarioId = \"\"" in script
+    assert 'activeScenarioId = ""' in script
     assert "scenarioId: state.activeScenarioId || null" in script
     assert "scenario_id: scenarioId" in script
     assert (
         "const attachExampleImage = (button) => materialManager.attachExample(button);"
         in script
     )
-    assert (
-        'function inferLearningMode(question = "", studentAttempt = "")' in script
-    )
+    assert 'function inferLearningMode(question = "", studentAttempt = "")' in script
     assert "function updateAutoDetection(" in script
     assert "信号与系统|信号和系统|卷积" in script
     assert "数字电子技术|数字电路" in script
@@ -193,7 +190,7 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
     assert "function setTaskQuestionDisplay(taskOrQuestion, task = null)" not in script
     assert 'const requestedCourse = learningFollowUp?.course_id || "AUTO";' in script
     assert 'const requestedIntent = learningFollowUp?.intent || "unknown";' in script
-    assert 'function taskQuestion(task)' in script
+    assert "function taskQuestion(task)" in script
     assert '["实际提问", taskQuestion(task).slice(0, 800)]' in script
 
 
@@ -309,8 +306,9 @@ def test_workspace_new_session_clears_draft_question_and_course() -> None:
     assert 'courseSelect.value = "AUTO";' in reset
 
 
-def test_workspace_external_evidence_normalizes_runtime_items_and_deduplicates(
-) -> None:
+def test_workspace_external_evidence_normalizes_runtime_items_and_deduplicates() -> (
+    None
+):
     root = Path(__file__).resolve().parents[3]
     script = (root / "apps/api/app/static/debug/workspace.js").read_text(
         encoding="utf-8"
@@ -361,8 +359,7 @@ def test_workspace_reports_external_evidence_count_in_answer_info() -> None:
 
     assert (
         "externalEvidenceCount = externalItemsForDisplay("
-        "result.structured_result).length"
-        in script
+        "result.structured_result).length" in script
     )
     assert 'externalEvidenceCount ? "外部证据" : "资料使用"' in script
 
@@ -393,9 +390,7 @@ def test_shared_status_badge_keeps_cancelled_separate_from_failed() -> None:
     student = (root / "apps/api/app/static/debug/student.js").read_text(
         encoding="utf-8"
     )
-    admin = (root / "apps/api/app/static/debug/admin.js").read_text(
-        encoding="utf-8"
-    )
+    admin = (root / "apps/api/app/static/debug/admin.js").read_text(encoding="utf-8")
 
     assert 'cancelled: "已停止"' in ui_core
     assert '["error", "unavailable", "invalid"].includes(raw)' in ui_core
@@ -407,22 +402,16 @@ def test_shared_status_badge_keeps_cancelled_separate_from_failed() -> None:
 
 def test_system_and_admin_pages_do_not_equate_mock_runtime_with_real_model() -> None:
     root = Path(__file__).resolve().parents[3]
-    system = (root / "apps/api/app/static/debug/system.js").read_text(
-        encoding="utf-8"
-    )
-    admin = (root / "apps/api/app/static/debug/admin.js").read_text(
-        encoding="utf-8"
-    )
+    system = (root / "apps/api/app/static/debug/system.js").read_text(encoding="utf-8")
+    admin = (root / "apps/api/app/static/debug/admin.js").read_text(encoding="utf-8")
 
     assert "health.model_runtime" in system
-    assert '真实模型未配置' in system
-    assert 'health.model_runtime' in admin
-    assert '真实模型未配置' in admin
-    assert 'Agent Runtime' in admin
+    assert "真实模型未配置" in system
+    assert "health.model_runtime" in admin
+    assert "真实模型未配置" in admin
+    assert "Agent Runtime" in admin
 
-    page = (root / "apps/api/app/static/debug/system.html").read_text(
-        encoding="utf-8"
-    )
+    page = (root / "apps/api/app/static/debug/system.html").read_text(encoding="utf-8")
     assert "system.js?v=20260822-real-model-status-v1" in page
 
 
@@ -480,8 +469,7 @@ def test_workspace_uses_one_stable_provider_timeout_fallback_message() -> None:
 
     assert script.count("provider_timeout:") == 1
     assert (
-        'provider_timeout: "本地 Runtime 响应超时，本次已保留安全后备结果。"'
-        in script
+        'provider_timeout: "本地 Runtime 响应超时，本次已保留安全后备结果。"' in script
     )
 
 
@@ -505,12 +493,11 @@ def test_workspace_does_not_label_runtime_checkpoints_as_slow_model_response() -
     script = (root / "apps/api/app/static/debug/workspace.js").read_text(
         encoding="utf-8"
     )
-    wait_notice = script[script.index("function renderLongWaitNotice"):]
+    wait_notice = script[script.index("function renderLongWaitNotice") :]
 
     assert "runtimeTaskControls?.status" in wait_notice
     assert (
-        '["waiting_review", "waiting_approval"].includes(runtimeStatus)'
-        in wait_notice
+        '["waiting_review", "waiting_approval"].includes(runtimeStatus)' in wait_notice
     )
     assert '"等待人工审批"' in wait_notice
     assert '"等待补充信息"' in wait_notice

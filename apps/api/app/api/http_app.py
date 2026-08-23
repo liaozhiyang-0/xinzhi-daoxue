@@ -8,7 +8,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import health as health_endpoint
@@ -132,7 +132,7 @@ def _register_page_routes(app: FastAPI) -> None:
         dependencies=[Depends(require_admin)],
     )
     async def rag_debug_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "execution.html")
+        return FileResponse(DEBUG_ROOT / "rag.html")
 
     @app.get(
         "/debug/agents",
@@ -144,18 +144,12 @@ def _register_page_routes(app: FastAPI) -> None:
         return FileResponse(DEBUG_ROOT / "agents.html")
 
     @app.get("/student", include_in_schema=True, tags=["student"])
-    async def student_page() -> FileResponse:
-        return FileResponse(
-            DEBUG_ROOT / "workspace.html",
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
+    async def student_page(request: Request) -> RedirectResponse:
+        return _workspace_redirect(request)
 
     @app.get("/workspace-legacy", include_in_schema=False, tags=["student"])
-    async def legacy_workspace_page() -> FileResponse:
-        return FileResponse(
-            DEBUG_ROOT / "workspace.html",
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
+    async def legacy_workspace_page(request: Request) -> RedirectResponse:
+        return _workspace_redirect(request)
 
     @app.get("/workspace", include_in_schema=True, tags=["student"])
     async def workspace_page() -> FileResponse:
@@ -164,19 +158,19 @@ def _register_page_routes(app: FastAPI) -> None:
                 REACT_ROOT / "index.html",
                 headers={"Cache-Control": "no-store, max-age=0"},
             )
-        return await legacy_workspace_page()
+        raise HTTPException(
+            status_code=503,
+            detail="React Workspace build is not available",
+        )
 
     @app.get("/workspace-react", include_in_schema=False, tags=["student"])
-    async def react_workspace_page() -> FileResponse:
+    async def react_workspace_page(request: Request) -> RedirectResponse:
         if not (REACT_ROOT / "index.html").exists():
             raise HTTPException(
                 status_code=503,
                 detail="React Workspace build is not available",
             )
-        return FileResponse(
-            REACT_ROOT / "index.html",
-            headers={"Cache-Control": "no-store, max-age=0"},
-        )
+        return _workspace_redirect(request)
 
     @app.get(
         "/debug/execution",
@@ -204,6 +198,11 @@ def _register_page_routes(app: FastAPI) -> None:
     )
     async def demo_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
+
+
+def _workspace_redirect(request: Request) -> RedirectResponse:
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"/workspace{query}", status_code=307)
 
 
 def _register_request_middleware(app: FastAPI) -> None:

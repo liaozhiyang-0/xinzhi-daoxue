@@ -8,6 +8,50 @@ export interface TaskRecord {
   [key: string]: unknown;
 }
 
+export interface TaskStreamEvent {
+  type: string;
+  sequence: number;
+  data: ProgressData;
+}
+
+const taskEventTypes = [
+  "task.created", "task.queued", "task.running", "route.selected", "route.reevaluated",
+  "intent.recognized", "plan.created", "plan.node_started", "plan.node_completed", "skill.selected",
+  "tool.selected", "knowledge.retrieved", "knowledge.context_built", "agent.started", "agent.progress",
+  "agent.input_required", "agent.output", "artifact.created", "cancel.requested", "task.cancelled",
+  "task.retry_created", "task.completed", "task.failed",
+] as const;
+
+export function subscribeTaskStream(
+  taskId: string,
+  onEvent: (event: TaskStreamEvent) => void,
+  onState: (state: { connected: boolean; error: string | null }) => void,
+): () => void {
+  const source = new EventSource(`/api/v1/tasks/${encodeURIComponent(taskId)}/stream`);
+  const listeners = taskEventTypes.map((type) => {
+    const listener = (event: Event) => {
+      const message = event as MessageEvent<string>;
+      let data: ProgressData = {};
+      try {
+        const parsed = JSON.parse(message.data || "{}");
+        if (parsed && typeof parsed === "object") data = parsed as ProgressData;
+      } catch {
+        data = { raw: message.data };
+      }
+      onEvent({ type, sequence: Number(message.lastEventId || 0), data });
+    };
+    source.addEventListener(type, listener);
+    return [type, listener] as const;
+  });
+  source.onopen = () => onState({ connected: true, error: null });
+  source.onerror = () => onState({ connected: false, error: "SSE 连接暂时不可用，浏览器将按既有语义自动重连" });
+  return () => {
+    listeners.forEach(([type, listener]) => source.removeEventListener(type, listener));
+    source.close();
+    onState({ connected: false, error: null });
+  };
+}
+
 export interface ActiveTaskWait {
   runSequence: number;
   cancel: () => void;

@@ -54,6 +54,13 @@
 .distribution-track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--bg-secondary); }
 .distribution-fill { height: 100%; border-radius: inherit; background: var(--accent); }
 .distribution-row strong { color: var(--text-primary); text-align: right; font-size: 15px; }
+.analytics-definitions { display: grid; gap: 8px; }
+.analytics-definitions p { margin: 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--bg-secondary); }
+.analytics-definitions strong { color: var(--text-primary); }
+.analytics-breakdown { display: grid; gap: 8px; margin-bottom: 18px; }
+.analytics-breakdown > strong { color: var(--text-primary); }
+.analytics-breakdown .distribution-row { grid-template-columns: minmax(80px, 1fr) 60px; }
+.analytics-breakdown .distribution-row strong { text-align: right; }
 .admin-tabs { display: flex; gap: 8px; }
 .admin-tabs .active { border-color: var(--accent); color: var(--accent); }
 .admin-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); gap: 48px; align-items: center; max-width: 880px; margin: 10vh auto 0; padding: clamp(24px, 5vw, 56px); }

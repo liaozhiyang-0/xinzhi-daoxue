@@ -488,6 +488,143 @@ async function loadAdminFeatureSettings() {
   renderFeatureSettings(items || []);
 }
 
+let analyticsKind = "overview";
+
+const analyticsLabels = {
+  active_users: "活跃用户",
+  active_users_daily: "DAU",
+  active_users_weekly: "WAU",
+  active_users_monthly: "MAU",
+  active_students: "活跃学生",
+  sessions_created: "新建会话",
+  session_return_rate: "会话回访率",
+  session_duration_p50: "会话时长 P50",
+  session_duration_p95: "会话时长 P95",
+  messages: "消息数",
+  questions: "问题数",
+  tasks_created: "创建任务",
+  tasks_completed: "完成任务",
+  completion_rate: "完成率",
+  failure_rate: "失败率",
+  feedback_count: "反馈数",
+  feedback_coverage: "反馈覆盖率",
+  resolved_rate: "已解决率",
+  satisfaction_rate: "满意度",
+  review_required_count: "需要复核",
+  evidence_coverage: "证据覆盖率",
+  citation_coverage: "引用覆盖率",
+  planner_plan_count: "计划数",
+  capability_task_count: "能力任务数",
+  skill_usage: "技能调用",
+  tool_usage: "工具调用",
+  tool_success_rate: "工具成功率",
+  rag_usage: "RAG 调用",
+  rag_empty_rate: "RAG 空结果率",
+  verification_usage: "验证调用",
+  reflection_usage: "反思调用",
+  replan_rate: "重规划率",
+  fallback_rate: "Fallback 率",
+  retry_rate: "重试率",
+  task_latency_p50: "任务延迟 P50",
+  task_latency_p95: "任务延迟 P95",
+  task_latency_p99: "任务延迟 P99",
+  queue_latency_p50: "排队延迟 P50",
+  queue_latency_p95: "排队延迟 P95",
+  queue_latency_p99: "排队延迟 P99",
+  agent_run_latency_p50: "Agent 延迟 P50",
+  agent_run_latency_p95: "Agent 延迟 P95",
+  agent_run_latency_p99: "Agent 延迟 P99",
+};
+
+function analyticsValue(key, value) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "number" && (key.includes("rate") || key.includes("coverage"))) return `${(value * 100).toFixed(1)}%`;
+  if (typeof value === "number" && key.includes("latency")) return `${Math.round(value)} ms`;
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  return String(value);
+}
+
+function renderAnalyticsMetrics(metrics) {
+  const entries = Object.entries(metrics || {})
+    .filter(([key]) => key !== "users_by_role")
+    .slice(0, 16);
+  $("#admin-analytics-metrics").replaceChildren(...(entries.length
+    ? entries.map(([key, value]) => metric(analyticsLabels[key] || key.replaceAll("_", " "), analyticsValue(key, value), value === null ? "planned" : "ready"))
+    : [el("p", { class: "empty-state", text: "当前窗口暂无可用指标" })]));
+}
+
+function renderAnalyticsTrend(rows) {
+  if (!Array.isArray(rows) || !rows.length) {
+    $("#admin-analytics-trend").replaceChildren(el("p", { class: "empty-state", text: "当前窗口暂无趋势数据" }));
+    return;
+  }
+  const keys = ["date", "users", "sessions", "messages", "tasks", "completed_tasks"];
+  const table = el("table", { class: "admin-table" }, [el("thead", {}, el("tr", {}, keys.map((key) => el("th", { text: key === "date" ? "日期" : analyticsLabels[key] || key.replaceAll("_", " ") }))))]);
+  const body = el("tbody");
+  rows.slice(-31).forEach((row) => body.append(el("tr", {}, keys.map((key) => el("td", { text: String(row[key] ?? 0) })))));
+  table.append(body);
+  $("#admin-analytics-trend").replaceChildren(table);
+}
+
+function renderAnalyticsBreakdowns(breakdowns) {
+  const entries = Object.entries(breakdowns || {}).filter(([key, value]) => key !== "daily" && value && typeof value === "object");
+  if (!entries.length) {
+    $("#admin-analytics-breakdowns").replaceChildren(el("p", { class: "empty-state", text: "当前窗口暂无分布数据" }));
+    return;
+  }
+  const blocks = [];
+  entries.slice(0, 8).forEach(([name, values]) => {
+    const rows = Array.isArray(values) ? values : Object.entries(values).map(([key, value]) => ({ key, value }));
+    blocks.push(el("div", { class: "analytics-breakdown" }, [
+      el("strong", { text: name.replaceAll("_", " ") }),
+      ...rows.slice(0, 8).map((row) => el("div", { class: "distribution-row" }, [el("span", { text: row.key || row.date || "—" }), el("strong", { text: analyticsValue(name, row.value ?? row.tasks ?? 0) })])),
+    ]));
+  });
+  $("#admin-analytics-breakdowns").replaceChildren(...blocks);
+}
+
+function renderAnalyticsDefinitions(definitions, warnings) {
+  const root = $("#admin-analytics-definitions");
+  const items = Object.entries(definitions || {}).map(([key, value]) => el("p", {}, [el("strong", { text: `${key.replaceAll("_", " ")}：` }), el("span", { text: value })]));
+  if (warnings?.length) items.push(el("p", { class: "notice warning", text: `数据提示：${warnings.join("、")}` }));
+  root.replaceChildren(...(items.length ? items : [el("p", { class: "empty-state", text: "暂无指标定义" })]));
+}
+
+function analyticsQueryString() {
+  const form = new FormData($("#admin-analytics-filters"));
+  const params = new URLSearchParams({ timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" });
+  ["from", "to", "course", "role", "intent", "capability", "scenario", "provider", "model", "pilot_batch", "task_id"].forEach((key) => {
+    const value = form.get(key);
+    if (value) params.set(key, key === "from" ? `${value}T00:00:00Z` : key === "to" ? `${value}T23:59:59Z` : value);
+  });
+  return params.toString();
+}
+
+async function loadAdminAnalytics() {
+  const target = $("#admin-analytics-trend");
+  target.replaceChildren(el("p", { class: "loading-state", text: "正在读取分析数据…" }));
+  const report = await api(`/api/v1/analytics/${analyticsKind}?${analyticsQueryString()}`);
+  renderAnalyticsMetrics(report.metrics);
+  renderAnalyticsTrend(report.breakdowns?.daily);
+  renderAnalyticsBreakdowns(report.breakdowns);
+  renderAnalyticsDefinitions(report.definitions, report.data_quality_warnings);
+}
+
+function initAnalyticsModule() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const dateValue = (value) => value.toISOString().slice(0, 10);
+  $("#admin-analytics-filters [name=from]").value = dateValue(start);
+  $("#admin-analytics-filters [name=to]").value = dateValue(end);
+  $("#admin-analytics-filters").addEventListener("submit", (event) => { event.preventDefault(); loadAdminAnalytics().catch((error) => toast(error.message, "failed")); });
+  $("#admin-analytics-refresh").addEventListener("click", () => loadAdminAnalytics().catch((error) => toast(error.message, "failed")));
+  all("[data-analytics-kind]").forEach((button) => button.addEventListener("click", () => {
+    analyticsKind = button.dataset.analyticsKind;
+    all("[data-analytics-kind]").forEach((item) => item.classList.toggle("active", item === button));
+    loadAdminAnalytics().catch((error) => toast(error.message, "failed"));
+  }));
+}
+
 function selectManagementModule(id) {
   const target = managementModules.has(id) ? id : "overview";
   all("[data-admin-module]").forEach((section) => { section.hidden = section.dataset.adminModule !== target; });
@@ -501,6 +638,8 @@ function selectManagementModule(id) {
 
 function initManagementModules() {
   registerManagementModule("overview", async () => {});
+  initAnalyticsModule();
+  registerManagementModule("analytics", loadAdminAnalytics);
   registerManagementModule("tasks", loadAdminTasks);
   registerManagementModule("files", loadAdminFiles);
   registerManagementModule("agents", loadAdminAgents);

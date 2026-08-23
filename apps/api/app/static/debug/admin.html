@@ -43,6 +43,7 @@
 
       <nav id="admin-module-nav" class="admin-module-nav" aria-label="管理模块">
         <button class="active" type="button" data-admin-module-target="overview">总览与账号</button>
+        <button type="button" data-admin-module-target="analytics">产品分析</button>
         <button type="button" data-admin-module-target="tasks">任务中心</button>
         <button type="button" data-admin-module-target="files">文件中心</button>
         <button type="button" data-admin-module-target="agents">Agent 中心</button>
@@ -88,6 +89,43 @@
         <div data-tab-panel="sessions" id="session-table" class="table-wrap admin-table-wrap"></div>
         <div data-tab-panel="audit" id="audit-table" class="table-wrap admin-table-wrap" hidden></div>
       </section>
+      </section>
+
+      <section data-admin-module="analytics" hidden>
+        <header class="module-header">
+          <div><p class="eyebrow">PRODUCT ANALYTICS</p><h2>产品分析</h2><p>基于任务、会话、反馈和运行事件的只读聚合；每个指标同时展示口径与当前窗口。</p></div>
+          <button id="admin-analytics-refresh" class="button secondary" type="button">刷新分析</button>
+        </header>
+        <form id="admin-analytics-filters" class="filter-row">
+          <label>开始时间<input name="from" type="date"></label>
+          <label>结束时间<input name="to" type="date"></label>
+          <select name="course" aria-label="按课程筛选"><option value="">全部课程</option><option value="CT">CT · 电路理论</option><option value="AE">AE · 模拟电子技术</option><option value="DE">DE · 数字电子技术</option><option value="SS">SS · 信号与系统</option><option value="DSP">DSP · 数字信号处理</option><option value="COMM">COMM · 通信原理</option></select>
+          <select name="role" aria-label="按角色筛选"><option value="">全部角色</option><option value="student">学生</option><option value="teacher">教师</option><option value="researcher">研究者</option><option value="admin">管理员</option></select>
+          <input name="intent" placeholder="意图，如 solve_problem" aria-label="按意图筛选">
+          <input name="capability" placeholder="能力，如 academic_solver" aria-label="按能力筛选">
+          <input name="scenario" placeholder="场景 ID" aria-label="按场景筛选">
+          <input name="provider" placeholder="Provider" aria-label="按 Provider 筛选">
+          <input name="model" placeholder="模型" aria-label="按模型筛选">
+          <input name="pilot_batch" placeholder="Pilot 批次" aria-label="按 Pilot 批次筛选">
+          <input name="task_id" placeholder="任务 ID（可选）" aria-label="按任务 ID 筛选">
+          <button class="button primary" type="submit">应用筛选</button>
+        </form>
+        <nav id="admin-analytics-tabs" class="admin-tabs" aria-label="分析维度">
+          <button class="button secondary active" type="button" data-analytics-kind="overview">总览</button>
+          <button class="button secondary" type="button" data-analytics-kind="users">用户</button>
+          <button class="button secondary" type="button" data-analytics-kind="sessions">会话</button>
+          <button class="button secondary" type="button" data-analytics-kind="tasks">任务</button>
+          <button class="button secondary" type="button" data-analytics-kind="answers">回答质量</button>
+          <button class="button secondary" type="button" data-analytics-kind="agentic">Agentic</button>
+          <button class="button secondary" type="button" data-analytics-kind="performance">性能</button>
+          <button class="button secondary" type="button" data-analytics-kind="courses">课程</button>
+        </nav>
+        <section id="admin-analytics-metrics" class="admin-metric-grid" aria-live="polite"></section>
+        <section class="admin-dashboard-grid">
+          <article class="card admin-panel admin-panel-wide"><div class="section-heading"><div><h3>趋势</h3><p>窗口内按日聚合，空数据时保留口径说明。</p></div></div><div id="admin-analytics-trend" class="table-wrap admin-table-wrap"></div></article>
+          <article class="card admin-panel"><div class="section-heading"><div><h3>分布</h3><p>课程、意图、能力与反馈分布。</p></div></div><div id="admin-analytics-breakdowns" class="distribution-list"></div></article>
+        </section>
+        <section class="card admin-panel"><div class="section-heading"><div><h3>指标口径</h3><p>指标定义与当前数据质量提示。</p></div></div><div id="admin-analytics-definitions" class="analytics-definitions"></div></section>
       </section>
 
       <section data-admin-module="tasks" hidden>

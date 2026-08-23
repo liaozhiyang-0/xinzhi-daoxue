@@ -18,11 +18,10 @@ export function ScenarioPicker({
       <div className="scenario-picker-heading">
         <div>
           <span className="eyebrow">示范场景</span>
-          <h2>选择一个真实任务</h2>
+          <h2>选择示范任务</h2>
         </div>
         {demoMode && <span className="demo-badge">演示模式</span>}
       </div>
-      <p className="scenario-picker-note">每个场景都会调用现有任务链并展示执行依据。</p>
       <div className="scenario-card-list">
         {scenarios.map((scenario) => (
           <button

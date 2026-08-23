@@ -27,6 +27,17 @@ export function resumeTask(taskId, runtimeRunId) {
     const query = runtimeRunId ? `?runtime_run_id=${encodeURIComponent(runtimeRunId)}` : "";
     return apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/resume${query}`, { method: "POST" });
 }
+export function approveTask(taskId, runtimeRunId) {
+    const query = runtimeRunId ? `?runtime_run_id=${encodeURIComponent(runtimeRunId)}` : "";
+    return apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/approve${query}`, { method: "POST" });
+}
+export function submitRuntimeInput(taskId, input, runtimeRunId) {
+    const query = runtimeRunId ? `?runtime_run_id=${encodeURIComponent(runtimeRunId)}` : "";
+    return apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/input${query}`, {
+        method: "POST",
+        body: jsonBody({ input }),
+    });
+}
 export function getTaskRuntimeControls(taskId) {
     return apiRequest(`/api/v1/tasks/${encodeURIComponent(taskId)}/runtime-controls`);
 }

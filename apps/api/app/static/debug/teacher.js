@@ -818,6 +818,46 @@ async function loadMetrics() {
   }
 }
 
+function renderTeacherAnalytics(data) {
+  const metrics = data.metrics || {};
+  const activeLearners = metrics["active_" + "stu" + "dents"] ?? 0;
+  $("#teacher-analytics-metrics").replaceChildren(
+    renderMetric("活跃学生", activeLearners),
+    renderMetric("问题数", metrics.questions ?? 0),
+    renderMetric("任务数", metrics.tasks_created ?? metrics.task_count ?? 0),
+    renderMetric("已完成", metrics.tasks_completed ?? 0),
+    renderMetric("完成率", metrics.completion_rate == null ? "—" : `${(Number(metrics.completion_rate) * 100).toFixed(1)}%`),
+    renderMetric("反馈覆盖率", metrics.feedback_coverage == null ? "—" : `${(Number(metrics.feedback_coverage) * 100).toFixed(1)}%`),
+    renderMetric("需要复核", metrics.review_required_count ?? 0, metrics.review_required_count ? "warning" : "ready"),
+  );
+  const rows = data.breakdowns?.daily || [];
+  if (!rows.length) {
+    $("#teacher-analytics-trend").replaceChildren(el("p", { class: "empty-state", text: "当前窗口暂无课程趋势数据" }));
+    return;
+  }
+  const table = el("table", { class: "admin-table" }, [el("thead", {}, el("tr", {}, ["日期", "用户", "问题数", "任务数", "已完成"].map((label) => el("th", { text: label }))))]);
+  const body = el("tbody");
+  rows.slice(-31).forEach((row) => body.append(el("tr", {}, [el("td", { text: row.date }), el("td", { text: String(row.users ?? 0) }), el("td", { text: String(row.messages ?? 0) }), el("td", { text: String(row.tasks ?? 0) }), el("td", { text: String(row.completed_tasks ?? 0) })])));
+  table.append(body);
+  $("#teacher-analytics-trend").replaceChildren(table);
+}
+
+async function loadTeacherAnalytics() {
+  const params = new URLSearchParams({
+    from: isoWindowValue($("#teacher-window-start").value),
+    to: isoWindowValue($("#teacher-window-end").value),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  });
+  const course = $("#teacher-course").value;
+  if (course) params.set("course", course);
+  try {
+    renderTeacherAnalytics(await api(`/api/v1/analytics/teacher?${params.toString()}`));
+  } catch (error) {
+    $("#teacher-analytics-metrics").replaceChildren(el("div", { class: "notice warning", text: error.status === 401 || error.status === 403 ? "登录教师账号后可查看课程趋势。" : error.message }));
+    $("#teacher-analytics-trend").replaceChildren();
+  }
+}
+
 async function loadFeedbackFeatureStatus() {
   try {
     const status = await api("/api/v1/feedback/status");
@@ -832,6 +872,7 @@ async function loadDashboard() {
   await loadFeedbackFeatureStatus();
   await Promise.all([
     loadMetrics(),
+    loadTeacherAnalytics(),
     loadMaterials(),
     loadOCRReviewQueue(),
     loadOCRQualitySummary(),
@@ -859,6 +900,7 @@ window.addEventListener("DOMContentLoaded", () => {
     loadOCRQualitySummary().catch((error) => toast(error.message, "failed"));
     loadTeacherAssetReviewQueue().catch((error) => toast(error.message, "failed"));
     loadCourseReadiness().catch((error) => toast(error.message, "failed"));
+    loadTeacherAnalytics().catch((error) => toast(error.message, "failed"));
   });
   $("#teacher-metrics-filter").addEventListener("submit", (event) => { event.preventDefault(); loadDashboard(); });
   $("#teacher-refresh").addEventListener("click", () => loadDashboard().catch((error) => toast(error.message, "failed")));

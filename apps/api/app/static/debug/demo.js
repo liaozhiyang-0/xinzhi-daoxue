@@ -132,7 +132,7 @@ async function loadLastTrace() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  initShell({ page: "demo", title: "演示中心", description: "五个商业化场景与结构化演示路径" });
+  initShell({ page: "demo", title: "演示中心", description: "六个商业化场景与结构化演示路径" });
   if (presentation) $("#presentation-link").hidden = true;
   $("#check-last-trace").addEventListener("click", loadLastTrace);
   loadScenarios();

@@ -46,6 +46,19 @@ export function resumeTask(taskId: string, runtimeRunId?: string): Promise<TaskR
   );
 }
 
+export function approveTask(taskId: string, runtimeRunId?: string): Promise<TaskRead> {
+  const query = runtimeRunId ? `?runtime_run_id=${encodeURIComponent(runtimeRunId)}` : "";
+  return apiRequest<TaskRead>(`/api/v1/tasks/${encodeURIComponent(taskId)}/approve${query}`, { method: "POST" });
+}
+
+export function submitRuntimeInput(taskId: string, input: string, runtimeRunId?: string): Promise<TaskRead> {
+  const query = runtimeRunId ? `?runtime_run_id=${encodeURIComponent(runtimeRunId)}` : "";
+  return apiRequest<TaskRead>(`/api/v1/tasks/${encodeURIComponent(taskId)}/input${query}`, {
+    method: "POST",
+    body: jsonBody({ input }),
+  });
+}
+
 export function getTaskRuntimeControls(
   taskId: string,
 ): Promise<TaskRuntimeControlProjectionRead> {

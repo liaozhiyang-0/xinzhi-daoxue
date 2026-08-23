@@ -24,7 +24,8 @@ def test_browser_acceptance_uses_an_isolated_test_database() -> None:
 
 
 def test_student_page_uses_unified_task_and_event_apis(client) -> None:
-    page = client.get("/student")
+    alias = client.get("/student", follow_redirects=False)
+    page = client.get("/debug-assets/workspace.html")
     script = client.get("/debug-assets/workspace.js")
     materials = client.get("/debug-assets/workspace-materials.js")
     transport = client.get("/debug-assets/workspace-task-transport.js")
@@ -43,9 +44,10 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
         )
     )
 
+    assert alias.status_code == 307
+    assert alias.headers["location"] == "/workspace"
     assert page.status_code == 200
-    assert page.headers["cache-control"] == "no-store, max-age=0"
-    assert "id=\"mode-control\"" not in page.text
+    assert 'id="mode-control"' not in page.text
     for capability in (
         "lesson_prep",
         "assignment_review",
@@ -56,9 +58,9 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     ):
         assert f'data-capability="{capability}"' in page.text
     assert page.text.count("data-capability=") == 6
-    assert "data-capability=\"course_qa\"" not in page.text
-    assert "data-capability=\"academic_problem_solving\"" not in page.text
-    assert "data-capability=\"data_analysis\"" not in page.text
+    assert 'data-capability="course_qa"' not in page.text
+    assert 'data-capability="academic_problem_solving"' not in page.text
+    assert 'data-capability="data_analysis"' not in page.text
     assert 'class="composer-agent-track"' not in page.text
     assert 'id="detected-course"' in page.text
     assert 'id="detected-learning-mode"' in page.text
@@ -66,7 +68,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert '<select id="teaching-mode"' not in page.text
     assert 'id="image-input" type="file" multiple' in page.text
     assert 'type="module"' in page.text
-    assert "api(\"/api/v1/tasks\"" in script_text
+    assert 'api("/api/v1/tasks"' in script_text
     assert "new EventSource" in script_text
     assert "task.error_message" in script_text
     assert "prefer_internal_agents: true" in script_text
@@ -75,7 +77,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "createTaskTransport" in script_text
     assert "./ts/workspace-contracts.js" in script.text
     assert "buildStudentTaskPayload" in contracts.text
-    assert "id=\"preview-images\"" in page.text
+    assert 'id="preview-images"' in page.text
     assert "20260815-subject-agents-v1" in page.text
     assert "function openEvidenceDocument(item)" in script.text
     assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
@@ -97,6 +99,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "workspace-answer" in styles.text
     assert ".workspace-composer > #question-input" in styles.text
     assert "scrollbar-width: thin" in styles.text
+
 
 def test_student_multi_image_task_reaches_runtime(api, client) -> None:
     session = api.create_session()

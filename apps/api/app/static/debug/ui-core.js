@@ -9,14 +9,23 @@
     ok: "正常", healthy: "正常", configured: "已配置", published: "已发布",
   };
   const nav = [
-    { group: "学习", items: [
+    { group: "学习", roles: ["guest", "student", "teacher", "researcher", "operator", "admin"], items: [
       { id: "workspace", href: "/workspace", label: "智能任务工作台", short: "学" },
     ] },
-    { group: "管理", items: [
+    { group: "教学", roles: ["teacher", "admin"], items: [
+      { id: "teacher", href: "/teacher", label: "教师工作台", short: "教" },
+    ] },
+    { group: "管理", roles: ["admin"], items: [
       { id: "admin", href: "/admin", label: "管理总览", short: "管" },
     ] },
-    { group: "演示", items: [
+    { group: "演示", roles: ["guest", "student", "teacher", "researcher", "operator", "admin"], items: [
       { id: "demo", href: "/demo", label: "演示中心", short: "演" },
+    ] },
+    { group: "调试", roles: ["teacher", "researcher", "operator", "admin"], items: [
+      { id: "system", href: "/system", label: "系统状态", short: "系" },
+      { id: "agents", href: "/debug/agents", label: "Agent 管理", short: "A" },
+      { id: "execution", href: "/debug/execution", label: "执行追踪", short: "追" },
+      { id: "rag", href: "/debug/rag", label: "RAG 调试", short: "R" },
     ] },
   ];
 
@@ -111,7 +120,7 @@
     const menu = el("nav", { class: "sidebar-nav", "aria-label": "主导航" });
     const sections = audience === "student" ? nav.filter((section) => section.group === "学习") : nav;
     sections.forEach((section) => {
-      const group = el("div", { class: "nav-group" });
+      const group = el("div", { class: "nav-group", "data-nav-group": section.group, "data-nav-roles": section.roles.join(",") });
       group.append(el("p", { class: "nav-group-label", text: section.group }));
       section.items.forEach((item) => {
         group.append(el("a", {
@@ -139,18 +148,30 @@
     return wrapper;
   }
 
+  function updateNavVisibility(identity) {
+    const role = identity?.guest === true ? "guest" : (identity?.role || "guest");
+    all("[data-nav-group]").forEach((group) => {
+      const roles = (group.dataset.navRoles || "").split(",").filter(Boolean);
+      group.hidden = !roles.includes(role);
+    });
+  }
+
   function toggleSidebar() {
     document.body.classList.toggle("sidebar-collapsed");
     localStorage.setItem("xinzhi_sidebar_collapsed", String(document.body.classList.contains("sidebar-collapsed")));
   }
 
   async function loadIdentityControl(target) {
-    const renderLogin = () => target.replaceChildren(
-      el("a", { class: "identity-link", href: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, text: "登录 / 注册" }),
-    );
+    const renderLogin = () => {
+      updateNavVisibility({ guest: true });
+      target.replaceChildren(
+        el("a", { class: "identity-link", href: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, text: "登录 / 注册" }),
+      );
+    };
     try {
       const identity = await api("/api/v1/auth/me");
       const isGuest = identity.guest === true || identity.role === "guest";
+      updateNavVisibility({ ...identity, guest: isGuest });
       const label = isGuest ? "游客模式" : (identity.display_name || identity.login || "已登录");
       const content = [el("span", { class: "identity-label", text: label })];
       if (isGuest) {

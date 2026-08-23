@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { TaskRead } from "../api-types.js";
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
 
@@ -131,6 +132,7 @@ function businessSections(result: UnknownRecord) {
 }
 
 export function StructuredResult({ task }: { task: TaskRead }) {
+  const [copied, setCopied] = useState(false);
   const result = record(task.result_content);
   const terminal = ["completed", "failed", "cancelled"].includes(task.status);
   if (!terminal) {
@@ -199,7 +201,7 @@ export function StructuredResult({ task }: { task: TaskRead }) {
       {text(businessView.banner) && <div className="result-banner">{text(businessView.banner)}</div>}
 
       <section className="result-section">
-        <h3>核心结论</h3>
+        <div className="result-section-heading"><h3>核心结论</h3>{answer && <button className="text-button" type="button" onClick={() => { if (navigator.clipboard) void navigator.clipboard.writeText(answer).then(() => setCopied(true)); }}>{copied ? "已复制" : "复制回答"}</button>}</div>
         {answer ? <MarkdownRenderer value={answer} /> : <p className="muted">当前没有可展示的核心结论。</p>}
       </section>
 
