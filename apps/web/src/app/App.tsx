@@ -33,7 +33,6 @@ import {
   type DemoScenario,
 } from "../demo/scenarios.js";
 import "../styles/app.css";
-import { AppShell } from "./AppShell.js";
 import { useAuth } from "./AuthContext.js";
 
 export function App() {
@@ -245,9 +244,12 @@ export function App() {
   const statusText = authLoading || loading ? "正在加载工作区" : error || "工作区已就绪";
 
   return (
-    <AppShell>
-      <main className="react-workspace app-main">
-        {authError && <div className="error-state" role="alert">{authError}。<a href="/login?next=/workspace">前往登录</a></div>}
+    <div className="react-workspace">
+      <header className="topbar">
+        <div><span className="eyebrow">XINZHI DAOXUE</span><strong>芯智导学 · 学科智能任务工作台</strong></div>
+        <span className="boundary-note">展示真实任务的规划、能力、依据和复核边界</span>
+      </header>
+      {authError && <div className="error-state" role="alert">{authError}。<a href="/login?next=/workspace">前往登录</a></div>}
       <div className="workspace-grid" style={workspaceStyle}>
         <aside className={`workspace-sidebar${mobileLeftOpen ? " workspace-drawer-open" : ""}`}>
           <SessionList sessions={sessions} activeId={activeSession?.id || null} onSelect={selectSession} onCreate={() => void createNewSession()} search={sessionSearch} onSearch={setSessionSearch} showArchived={showArchived} onToggleArchived={() => setShowArchived((value) => !value)} onArchive={(session) => void archiveOrRestoreSession(session)} />
@@ -303,9 +305,8 @@ export function App() {
       </div>
       {error && <button className="error-banner" type="button" onClick={() => setError(null)}><span>{error}</span> ×</button>}
       <footer className="footer-note">结果以可核验依据为准；资料不足或图像不清晰时请人工复核。</footer>
-      </main>
       <MemoryDialog open={memoryOpen} userId={userId} session={activeSession} onClose={() => setMemoryOpen(false)} onSessionChange={(session) => { setActiveSession(session); setSessions((current) => current.map((item) => item.id === session.id ? session : item)); }} />
-    </AppShell>
+    </div>
   );
 }
 
