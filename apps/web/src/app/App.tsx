@@ -63,8 +63,8 @@ export function App() {
     demoMode ? DEFAULT_DEMO_SCENARIO.id : null,
   );
   const [scenarioFiles, setScenarioFiles] = useState<File[]>([]);
-  const [leftWidth, setLeftWidth] = useState(264);
-  const [rightWidth, setRightWidth] = useState(280);
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [rightWidth, setRightWidth] = useState(248);
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
 
