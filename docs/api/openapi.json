@@ -17760,6 +17760,12 @@
             "title": "Target Id",
             "default": ""
           },
+          "input_ref": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Input Ref",
+            "default": ""
+          },
           "depends_on": {
             "items": {
               "type": "string"

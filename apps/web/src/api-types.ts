@@ -1569,6 +1569,7 @@ export type RuntimeNode = {
   node_type: string;
   handler_id: string;
   target_id?: string;
+  input_ref?: string;
   depends_on?: string[];
   activation?: RuntimeNodeActivation;
   recovery_for?: string[];
