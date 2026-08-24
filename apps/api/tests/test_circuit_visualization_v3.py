@@ -65,11 +65,17 @@ def test_circuit_feature_mode_controls_shadow_and_runtime_schedule() -> None:
         _request(text="请画图", circuit_ir=circuit),
         feature_mode="off",
     )
+    unavailable = decide_circuit_visualization(
+        _request(text="请画图"),
+        feature_mode="controlled",
+    )
 
     assert shadow.decision == "REQUIRED"
     assert not shadow.should_schedule
     assert controlled.should_schedule
     assert off.decision == "SKIP"
+    assert "CIRCUIT_IR_UNAVAILABLE" in unavailable.reason_codes
+    assert not unavailable.should_schedule
 
 
 def test_canonical_plan_binds_circuit_visualization_to_tool() -> None:
@@ -81,6 +87,7 @@ def test_canonical_plan_binds_circuit_visualization_to_tool() -> None:
                 node_id="circuit.visualize",
                 node_type="tool",
                 target_id="circuit.visualize",
+                input_ref="CircuitIR",
                 optional=True,
                 failure_policy="nonfatal",
             )
@@ -98,6 +105,7 @@ def test_canonical_plan_binds_circuit_visualization_to_tool() -> None:
     node = runtime_plan.nodes[0]
     assert node.handler_id == "tool.circuit.render"
     assert node.target_id == "circuit.render"
+    assert node.input_ref == "CircuitIR"
     assert node.failure_policy == "nonfatal"
 
 

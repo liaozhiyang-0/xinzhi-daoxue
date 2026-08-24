@@ -663,6 +663,7 @@ class PlannerService:
                 node_id="circuit.visualize",
                 node_type="tool",
                 target_id="circuit.visualize",
+                input_ref="CircuitIR",
                 depends_on=[node.node_id for node in updated.nodes],
                 timeout_ms=10_000,
                 optional=True,

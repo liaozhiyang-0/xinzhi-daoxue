@@ -273,6 +273,7 @@ class RuntimeNode(BaseModel):
     node_type: str = Field(min_length=1, max_length=32)
     handler_id: str = Field(min_length=1, max_length=160)
     target_id: str = Field(default="", max_length=160)
+    input_ref: str = Field(default="", max_length=160)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     activation: RuntimeNodeActivation = RuntimeNodeActivation.ALL_SUCCEEDED
     recovery_for: list[str] = Field(default_factory=list, max_length=32)

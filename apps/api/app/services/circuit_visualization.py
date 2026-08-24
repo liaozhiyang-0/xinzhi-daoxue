@@ -108,7 +108,7 @@ def decide_circuit_visualization(
         decision = "OPTIONAL"
 
     if not circuit and decision != "SKIP":
-        reasons.append("circuit_ir_unavailable")
+        reasons.append("CIRCUIT_IR_UNAVAILABLE")
     if component_count > 64:
         reasons.append("complexity_budget_exceeded")
     if critical:

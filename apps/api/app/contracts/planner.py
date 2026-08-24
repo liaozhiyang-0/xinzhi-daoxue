@@ -49,6 +49,7 @@ class CanonicalPlanNode(BaseModel):
     node_id: str = Field(min_length=1, max_length=120)
     node_type: Literal["agent", "tool", "skill", "retrieval", "verifier", "compose"]
     target_id: str = Field(min_length=1, max_length=160)
+    input_ref: str = Field(default="", max_length=160)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     parallel_group: str = Field(default="", max_length=80)
     timeout_ms: int = Field(default=30_000, ge=100, le=900_000)
