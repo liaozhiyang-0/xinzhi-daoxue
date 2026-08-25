@@ -71,6 +71,8 @@ class GeneralQuestionRuntimeService:
         retrieval_context: RetrievalContextService | None = None,
         subagent_registry: RuntimeSubagentRegistry | None = None,
         child_run_service: RuntimeChildRunService | None = None,
+        provider_timeout_ms: int = 120_000,
+        provider_max_retries: int = 1,
     ) -> None:
         self.internal_agents = internal_agents
         self.enabled = enabled
@@ -81,6 +83,8 @@ class GeneralQuestionRuntimeService:
         self.retrieval_context = retrieval_context
         self.subagent_registry = subagent_registry
         self.child_run_service = child_run_service
+        self.provider_timeout_ms = max(100, min(900_000, provider_timeout_ms))
+        self.provider_max_retries = max(0, min(3, provider_max_retries))
 
     def supports(self, agent_id: str, request: AgentRequest) -> bool:
         options = request.options.get(self.runtime_option_key)
@@ -132,7 +136,8 @@ class GeneralQuestionRuntimeService:
                     timeout_ms=60_000,
                 )
             )
-            execute_dependencies.append(retrieve_node_id)
+            if self._retrieval_must_precede_execution(request):
+                execute_dependencies.append(retrieve_node_id)
         if tool_id:
             self._validate_tool_available(tool_id)
             tool_node_id = f"{self.tool_node_id}{suffix}"
@@ -167,8 +172,10 @@ class GeneralQuestionRuntimeService:
                     depends_on=execute_dependencies,
                     timeout_ms=self._subagent_timeout_ms()
                     if self.use_typed_subagent
-                    else 120_000,
-                    max_retries=1,
+                    else self.provider_timeout_ms,
+                    max_retries=(
+                        1 if self.use_typed_subagent else self.provider_max_retries
+                    ),
                 ),
                 RuntimeNode(
                     node_id=verify_node_id,
@@ -264,6 +271,13 @@ class GeneralQuestionRuntimeService:
         return isinstance(execution_plan, Mapping) and bool(
             execution_plan.get("use_rag", False)
         )
+
+    @classmethod
+    def _retrieval_must_precede_execution(cls, request: AgentRequest) -> bool:
+        """Keep retrieval serial unless the business adapter opts into overlap."""
+
+        del request
+        return True
 
     def _validate_retrieval_available(self) -> None:
         if self.rag_retrieval is None or self.retrieval_context is None:
@@ -405,16 +419,13 @@ class GeneralQuestionRuntimeService:
     def _apply_retrieval_presentation(
         self, result: AgentResult, request: AgentRequest
     ) -> AgentResult:
-        """Persist typed-Runtime hits so the task UI can render evidence cards.
+        """Persist Runtime hits so the task UI can render evidence cards.
 
-        The frozen solver keeps its existing provider contract. Typed business
-        runtimes, however, need to carry the bounded local hits across approval
-        and checkpoint recovery because the presentation layer cannot inspect a
-        live retrieval service after the run has completed.
+        The presentation layer cannot inspect a live retrieval service after the
+        run has completed, so both typed and legacy Provider adapters must carry
+        the bounded local hits in the result contract.
         """
 
-        if not self.use_typed_subagent:
-            return result
         raw_hits = request.options.get("runtime_retrieved_knowledge_hits", [])
         if not isinstance(raw_hits, list):
             return result
@@ -685,9 +696,10 @@ class GeneralQuestionRuntimeService:
             request_for_attempt = request_for_attempt.model_copy(
                 update={"options": options}
             )
-            provider_context = self._provider_context(
-                context, retrieved_context_holder.get("packet")
-            )
+            retrieved_context = retrieved_context_holder.get("packet")
+            if not self._retrieval_must_precede_execution(request_for_attempt):
+                retrieved_context = None
+            provider_context = self._provider_context(context, retrieved_context)
             result = await self.internal_agents.run(
                 self.agent_id, request_for_attempt, provider_context
             )
@@ -790,7 +802,7 @@ class GeneralQuestionRuntimeService:
                 RuntimeHandlerDescriptor(
                     handler_id=self.execute_handler_id,
                     kind="provider",
-                    max_timeout_ms=120_000,
+                    max_timeout_ms=self.provider_timeout_ms,
                 ),
                 execute_handler,
             )
@@ -886,6 +898,15 @@ class GeneralQuestionRuntimeService:
                 RuntimeNodeStatus.FAILED,
                 RuntimeNodeStatus.PARTIAL,
             }:
+                # A timed-out provider call may still have reached the model.
+                # Replanning would submit the same expensive multimodal task a
+                # second time without evidence that the first call was safe to
+                # replay.
+                if execute_state.error_code == "runtime_node_timeout":
+                    return RuntimeDecision(
+                        action=DecisionAction.FAIL,
+                        reason_codes=[f"{self.runtime_name}_execution_timeout"],
+                    )
                 if current.iteration >= current.budget.max_iterations - 1:
                     return RuntimeDecision(
                         action=DecisionAction.FAIL,

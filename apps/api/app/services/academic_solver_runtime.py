@@ -74,6 +74,18 @@ class AcademicSolverRuntimeService(GeneralQuestionRuntimeService):
         problem = AcademicProblemSolverService._problem_from_request(request)
         return not SolverBoundaryPolicy().evaluate(problem).intercepted
 
+    @classmethod
+    def _retrieval_must_precede_execution(cls, request: AgentRequest) -> bool:
+        """Only serialize when user-provided material must reach the model."""
+
+        extracted = request.options.get("_material_extraction", {})
+        explicit_materials = (
+            isinstance(extracted, Mapping)
+            and isinstance(extracted.get("materials"), Mapping)
+            and bool(extracted.get("materials"))
+        )
+        return bool(request.attachments or request.context_refs or explicit_materials)
+
     def _provider_context(
         self, context: Any, retrieved_context: Any = None
     ) -> Any:

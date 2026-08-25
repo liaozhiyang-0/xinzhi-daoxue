@@ -197,6 +197,10 @@ def build_runtime_task_engine(
             rag_retrieval=rag_retrieval,
             retrieval_context=knowledge_qa.context_service,
             subagent_registry=runtime_subagent_registry,
+            provider_timeout_ms=int(
+                settings.academic_solver_timeout_seconds * 1000
+            ),
+            provider_max_retries=0,
         )
         if internal_agents is not None
         else None
