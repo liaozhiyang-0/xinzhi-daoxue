@@ -66,4 +66,8 @@ def test_chat_reuses_existing_non_blocking_task_flow(client: TestClient) -> None
     assert payload["intent"] == "explain_concept"
     trace = client.get(f"/api/v1/debug/traces/{submission['trace_id']}")
     assert trace.status_code == 200
-    assert trace.json()["selected_agent"]
+    trace_payload = trace.json()
+    assert trace_payload["selected_agent"]
+    assert trace_payload["projection"]["schema_version"] == "1"
+    assert trace_payload["projection"]["trace_id"] == submission["trace_id"]
+    assert trace_payload["projection"]["spans"]

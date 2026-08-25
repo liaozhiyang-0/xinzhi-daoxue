@@ -19,4 +19,10 @@ async def get_trace(trace_id: str, request: Request) -> dict[str, Any]:
     record = request.app.state.trace_store.get(trace_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Trace 不存在或已过期")
-    return record
+    from app.observability import TraceProjectionService
+
+    projection = TraceProjectionService(
+        request.app.state.trace_store,
+        request.app.state.model_tracer,
+    ).project(trace_id)
+    return {**record, "projection": projection}
