@@ -92,6 +92,7 @@ class SolverBoundaryPolicy:
             and problem.course in {"CT", "AE", "DE"}
             and check_visual_topology
             and not self._has_structured_visual_problem(problem)
+            and not self.has_explicit_textual_topology(problem.problem_text)
         ):
             return BoundaryDecision(
                 answer_status="conditional",
@@ -305,4 +306,81 @@ class SolverBoundaryPolicy:
             not in {"uncertain", "unknown", "low"}
             for item in [*problem.entities, *problem.relations]
             if isinstance(item, dict)
+        )
+
+    @staticmethod
+    def has_explicit_textual_topology(text: str) -> bool:
+        """Return whether the prompt itself supplies enough circuit facts.
+
+        An image is supplementary when the user has already stated the
+        topology in text.  This intentionally requires several independent
+        fact groups so a generic ``请分析图片中的电路`` prompt still follows
+        the conservative visual boundary.
+        """
+
+        normalized = re.sub(r"\s+", "", str(text)).casefold()
+        if not normalized:
+            return False
+
+        circuit_context = any(
+            marker in normalized
+            for marker in (
+                "运算放大器",
+                "理想运放",
+                "opamp",
+                "反相端",
+                "同相端",
+                "晶体管",
+                "mosfet",
+            )
+        )
+        topology_markers = (
+            "接地",
+            "节点",
+            "串联",
+            "并联",
+            "连接",
+            "反馈",
+            "输入端",
+            "输出端",
+            "反相端",
+            "同相端",
+            "正端",
+            "负端",
+        )
+        topology_count = sum(marker in normalized for marker in topology_markers)
+        component_markers = (
+            r"r\d+",
+            r"c\d+",
+            r"l\d+",
+            r"q\d+",
+            r"d\d+",
+            "电阻",
+            "电容",
+            "电感",
+            "负载",
+            "电源",
+            "运算放大器",
+        )
+        component_count = sum(
+            bool(re.search(marker, normalized))
+            for marker in component_markers
+        )
+        has_parameter = bool(
+            re.search(
+                r"(?:r|c|l|q|d)\d*\s*[=:＝]\s*[-+±]?\d"
+                r"|[-+±]?\d+(?:\.\d+)?\s*(?:[mkμu]?ω|欧姆|v|a|hz|f)\b",
+                normalized,
+            )
+        )
+        has_target = any(
+            marker in normalized
+            for marker in ("求", "判断", "推导", "说明", "边界", "饱和", "输出")
+        )
+        return (
+            circuit_context
+            and topology_count >= 2
+            and component_count >= 2
+            and has_parameter
+            and has_target
         )

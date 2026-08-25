@@ -2110,6 +2110,9 @@ class AcademicProblemSolverService:
     ) -> tuple[AcademicProblem, dict[str, Any]]:
         parsed = AcademicProblemSolverService._parse_visual_extraction(content)
         if parsed is None:
+            text_facts_fallback = SolverBoundaryPolicy.has_explicit_textual_topology(
+                problem.problem_text
+            )
             return (
                 problem.model_copy(
                     update={
@@ -2120,7 +2123,7 @@ class AcademicProblemSolverService:
                             *problem.uncertain_info,
                             {"description": "图片内容由视觉模型提取，需以原图为准"},
                         ],
-                        "can_continue": False,
+                        "can_continue": problem.can_continue and text_facts_fallback,
                     }
                 ),
                 {
@@ -2130,6 +2133,7 @@ class AcademicProblemSolverService:
                     "visual_relation_count": 0,
                     "visual_topology_issues": ["visual_extraction_unstructured"],
                     "visual_topology_validated": False,
+                    "text_facts_fallback": text_facts_fallback,
                 },
             )
 
@@ -2175,6 +2179,9 @@ class AcademicProblemSolverService:
                 parsed.uncertain_info,
                 problem_text=problem.problem_text,
             )
+        )
+        text_facts_fallback = SolverBoundaryPolicy.has_explicit_textual_topology(
+            problem.problem_text
         )
         if signal_text_facts_available or signal_uncertainty_noncritical:
             # Keep the provider's caveat in the published assumptions, but do
@@ -2244,7 +2251,7 @@ class AcademicProblemSolverService:
                     "complete" if topology_complete else problem.structure_status
                 ),
                 "can_continue": problem.can_continue
-                and (topology_complete or prompt_facts_cover),
+                and (topology_complete or prompt_facts_cover or text_facts_fallback),
                 "extraction_confidence": min(
                     problem.extraction_confidence,
                     parsed.confidence,
@@ -2270,6 +2277,7 @@ class AcademicProblemSolverService:
                     topology_complete and not visual_text_fallback
                 ),
                 "visual_text_fallback": visual_text_fallback,
+                "text_facts_fallback": text_facts_fallback,
                 "visual_acceptance": visual_acceptance,
             },
         )

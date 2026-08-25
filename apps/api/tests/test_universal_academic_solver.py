@@ -132,6 +132,33 @@ def test_unstructured_visual_extraction_cannot_continue_to_reasoning() -> None:
     )
 
 
+def test_explicit_circuit_prompt_survives_unstructured_visual_extraction() -> None:
+    problem = AcademicProblem(
+        course="AE",
+        problem_text=(
+            "图中为理想运算放大器，反相端接地，同相端由输入 vi 经 "
+            "R1=1 MΩ 串联后接到节点 vp，再由 R2=1 kΩ 接地，输出端接负载 RL；"
+            "电源为 ±15 V。请判断反馈状态并推导 vp、vo 饱和方向和输出边界。"
+        ),
+        figures_given=[{"file_id": "image-1"}],
+    )
+
+    merged, metadata = AcademicProblemSolverService._merge_visual_extraction(
+        problem,
+        "视觉模型只返回了自然语言摘要，未能输出结构化拓扑。",
+    )
+
+    assert metadata["text_facts_fallback"] is True
+    assert merged.can_continue is True
+    assert not SolverBoundaryPolicy().evaluate(merged).intercepted
+
+
+def test_generic_image_prompt_still_requires_structured_topology() -> None:
+    assert not SolverBoundaryPolicy.has_explicit_textual_topology(
+        "请分析图片中的电路并给出答案。"
+    )
+
+
 def test_real_provider_signal_aliases_are_normalized_without_circuit_topology() -> None:
     problem = AcademicProblem(
         course="SS",
