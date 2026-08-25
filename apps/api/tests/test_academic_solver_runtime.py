@@ -145,7 +145,7 @@ def test_academic_solver_runtime_does_not_replan_after_provider_timeout() -> Non
     with pytest.raises(RuntimeNodeError) as captured:
         asyncio.run(service.run(request, run))
 
-    assert captured.value.error_code == "runtime_node_timeout"
+    assert captured.value.error_code == "provider_timeout"
     assert fake.calls == 1
     assert run.iteration == 0
 

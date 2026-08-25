@@ -902,7 +902,10 @@ class GeneralQuestionRuntimeService:
                 # Replanning would submit the same expensive multimodal task a
                 # second time without evidence that the first call was safe to
                 # replay.
-                if execute_state.error_code == "runtime_node_timeout":
+                if execute_state.error_code in {
+                    "runtime_node_timeout",
+                    "provider_timeout",
+                }:
                     return RuntimeDecision(
                         action=DecisionAction.FAIL,
                         reason_codes=[f"{self.runtime_name}_execution_timeout"],
