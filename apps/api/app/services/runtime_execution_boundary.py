@@ -8,6 +8,7 @@ Runtime implementations remain independent from task transport concerns.
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -37,6 +38,11 @@ from app.runtime import (
     RuntimeRunStatus,
     RuntimeStateMachine,
 )
+from app.services.production_execution_manifest import (
+    ExecutionSurfaceError,
+    LegacyExecutionForbidden,
+    ProductionExecutionManifest,
+)
 from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.runtime_business_registry import (
     RuntimeBusinessRegistry,
@@ -55,6 +61,9 @@ from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 
 class RuntimeResumeInvariantError(RuntimeError):
     """Raised when durable compatibility state no longer matches a resume."""
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,15 +98,46 @@ class RuntimeExecutionBoundary:
         business_services: Iterable[RuntimeBusinessService] | None = None,
         request_preparation: RuntimeRequestPreparationService | None = None,
         legacy_provider: AgentProvider | None = None,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.lifecycle = lifecycle
         self.research_analysis = research_analysis
         self.request_preparation = request_preparation
         self.legacy_provider = legacy_provider
+        self.manifest = manifest
         services = list(business_services or [])
         if research_analysis is not None and research_analysis not in services:
             services.insert(0, research_analysis)
         self.business_registry = RuntimeBusinessRegistry(services)
+
+    def bind_manifest(self, manifest: ProductionExecutionManifest) -> None:
+        """Bind the startup source of truth before any task can execute."""
+
+        manifest.validate_bootstrap()
+        self.manifest = manifest
+
+    def _validate_execution_surface(
+        self,
+        *,
+        request: AgentRequest,
+        plan: AgentRunPlan,
+        caller: str,
+    ) -> None:
+        if self.manifest is None:
+            return
+        self.manifest.validate_runtime_plan(plan, caller=caller)
+        raw_plan = request.options.get("_canonical_plan")
+        if isinstance(raw_plan, dict):
+            from app.contracts.planner import CanonicalPlan
+
+            try:
+                canonical = CanonicalPlan.model_validate(raw_plan)
+            except ValueError as exc:
+                raise ExecutionSurfaceError(
+                    "CANONICAL_PLAN_INVALID",
+                    "request contains an invalid CanonicalPlan",
+                ) from exc
+            self.manifest.validate_canonical_plan(canonical, caller=caller)
 
     @classmethod
     def is_resumable(cls, status: str) -> bool:
@@ -371,6 +411,11 @@ class RuntimeExecutionBoundary:
         launch_decision: RuntimeLaunchSnapshot | None = None,
         compatibility_snapshot: RuntimeCompatibilitySnapshot | None = None,
     ) -> AgentRun | None:
+        if self.manifest is not None and runtime_plan is not None:
+            self.manifest.validate_runtime_plan(
+                runtime_plan,
+                caller="RuntimeExecutionBoundary.start_or_restore",
+            )
         return await self.lifecycle.start(
             db,
             task_id=task_id,
@@ -400,12 +445,38 @@ class RuntimeExecutionBoundary:
     ) -> AgentResult | None:
         """Execute a registered business Runtime, if one supports the request."""
 
+        self._validate_execution_surface(
+            request=request,
+            plan=run.plan,
+            caller="RuntimeExecutionBoundary.execute",
+        )
+
         service = self.business_registry.resolve(agent_id, request)
         if service is None:
             if (
                 self.legacy_provider is not None
                 and run.plan.plan_id.startswith("legacy-runtime:")
             ):
+                if self.manifest is not None:
+                    architecture_telemetry.increment(
+                        "legacy_runtime_invocation_count"
+                    )
+                    options = request.options
+                    logger.error(
+                        "LEGACY_EXECUTION_ATTEMPT component=%s caller=%s "
+                        "task_id=%s trace_id=%s build_id=%s "
+                        "runtime_generation=%s",
+                        run.plan.plan_id,
+                        "RuntimeExecutionBoundary.execute",
+                        options.get("task_id") or options.get("_task_id") or run.run_id,
+                        options.get("trace_id") or options.get("_trace_id") or "",
+                        self.manifest.build_id,
+                        self.manifest.runtime_generation,
+                    )
+                    raise LegacyExecutionForbidden(
+                        run.plan.plan_id,
+                        caller="RuntimeExecutionBoundary.execute",
+                    )
                 architecture_telemetry.increment("legacy_runtime_invocation_count")
                 result = await self.legacy_provider.run(
                     agent_id,

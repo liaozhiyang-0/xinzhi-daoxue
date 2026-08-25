@@ -19,6 +19,7 @@ class ContextAssemblyCache:
         self.ttl = settings.context_cache_ttl_seconds
         self.max_entries = settings.context_cache_max_entries
         self._memory: OrderedDict[str, tuple[float, str]] = OrderedDict()
+        self._version_fence = "unbound"
         self._redis = Redis.from_url(
             settings.redis_url,
             decode_responses=True,
@@ -26,6 +27,11 @@ class ContextAssemblyCache:
             socket_timeout=0.05,
         )
         self._redis_available: bool | None = None
+
+    def bind_version_fence(self, *, runtime_generation: str, build_id: str) -> None:
+        """Make cached context decisions miss across execution generations."""
+
+        self._version_fence = f"{runtime_generation}:{build_id}"
 
     async def get(
         self, key: str
@@ -78,10 +84,10 @@ class ContextAssemblyCache:
             except Exception:
                 self._redis_available = False
 
-    @staticmethod
-    def key(parts: dict[str, Any]) -> str:
+    def key(self, parts: dict[str, Any]) -> str:
+        fenced = {**parts, "_execution_surface": self._version_fence}
         stable = json.dumps(
-            parts, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            fenced, ensure_ascii=True, sort_keys=True, separators=(",", ":")
         )
         return f"xzd:context:{parts['session_id']}:{stable}"
 

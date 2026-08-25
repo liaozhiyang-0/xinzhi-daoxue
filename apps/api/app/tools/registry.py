@@ -35,12 +35,15 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, RegisteredTool] = {}
+        self._frozen = False
 
     def register(
         self,
         definition: ToolDefinition | str,
         handler: Callable[..., Any] | None = None,
     ) -> None:
+        if self._frozen:
+            raise RuntimeError("tool registry is frozen")
         if isinstance(definition, str):
             definition = ToolDefinition(definition, definition, frozenset(), {}, {})
         if not definition.tool_id or definition.tool_id in self._tools:
@@ -48,6 +51,15 @@ class ToolRegistry:
         if definition.enabled and handler is None:
             raise ValueError(f"启用的工具必须提供 handler: {definition.tool_id}")
         self._tools[definition.tool_id] = RegisteredTool(definition, handler)
+
+    def freeze(self) -> None:
+        """Freeze the active tool identity after bootstrap."""
+
+        self._frozen = True
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
 
     def get(self, name: str) -> Callable[..., Any]:
         try:

@@ -192,6 +192,13 @@ def test_worker_process_groups_deduplicate_parent_child(monkeypatch) -> None:
     assert launcher.owned_worker_pids() == [300, 400]
 
 
+def test_missing_listener_pid_in_process_snapshot_is_ignored(monkeypatch) -> None:
+    launcher = load_launcher()
+    monkeypatch.setattr(launcher, "_all_process_info", lambda: {})
+    monkeypatch.setattr(launcher, "_listening_pids", lambda _port: [999])
+    assert launcher.owned_api_pids(8000) == []
+
+
 def test_launcher_main_reports_actionable_repair_failure(monkeypatch, capsys) -> None:
     launcher = load_launcher()
     monkeypatch.setattr(
@@ -320,7 +327,7 @@ def test_container_conflicts_only_reports_foreign_owners(monkeypatch) -> None:
     ]
 
 
-def test_open_workspace_uses_workspace_url(monkeypatch) -> None:
+def test_open_workspace_uses_neutral_home_url(monkeypatch) -> None:
     launcher = load_launcher()
     opened: list[tuple[str, int]] = []
     monkeypatch.setattr(
@@ -330,7 +337,7 @@ def test_open_workspace_uses_workspace_url(monkeypatch) -> None:
     )
 
     assert launcher.open_workspace("http://127.0.0.1:8000/") is True
-    assert opened == [("http://127.0.0.1:8000/workspace", 2)]
+    assert opened == [("http://127.0.0.1:8000/", 2)]
 
 
 def test_start_reuses_running_api_without_starting_dependencies(monkeypatch) -> None:

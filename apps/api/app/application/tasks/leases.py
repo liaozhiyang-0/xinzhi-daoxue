@@ -11,8 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.contracts import AgentEventType
 from app.core.config import Settings
 from app.models import TaskModel, TaskStatus
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.repositories import TaskRepository
 from app.services.event_service import append_task_event
+from app.services.production_execution_manifest import (
+    ExecutionSurfaceError,
+    ProductionExecutionManifest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +35,15 @@ class TaskLeaseManager:
         settings: Settings,
         *,
         execution_owner: str | None = None,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.settings = settings
         self.execution_owner = execution_owner or f"local-{uuid4().hex[:12]}"
+        self.manifest = manifest
+
+    def bind_manifest(self, manifest: ProductionExecutionManifest) -> None:
+        self.manifest = manifest
 
     def can_start(self, task: TaskModel, now: datetime) -> bool:
         return not (
@@ -130,6 +140,37 @@ class TaskLeaseManager:
                 seconds=self.settings.task_lease_seconds
             )
             for task in tasks:
+                if self.manifest is not None:
+                    try:
+                        self.manifest.validate_task_envelope(task.input_content)
+                    except ExecutionSurfaceError as exc:
+                        architecture_telemetry.increment(
+                            "stale_task_rejected_count"
+                        )
+                        task.status = TaskStatus.FAILED
+                        task.completed_at = now
+                        task.updated_at = now
+                        task.heartbeat_at = now
+                        task.execution_owner = None
+                        task.lease_expires_at = None
+                        task.error_message = (
+                            "任务属于旧的生产执行代际，未恢复到旧 Runtime；"
+                            "请通过重试创建当前代际任务。"
+                        )
+                        task.failure_category = "execution_surface_incompatible"
+                        await append_task_event(
+                            db,
+                            task.id,
+                            AgentEventType.TASK_FAILED,
+                            agent_id=task.agent_id,
+                            data={
+                                "error_code": exc.code,
+                                "failure_category": task.failure_category,
+                                "recovered": False,
+                                "fail_closed": True,
+                            },
+                        )
+                        continue
                 previous_status = task.status.value
                 was_running = task.status == TaskStatus.RUNNING
                 if was_running:

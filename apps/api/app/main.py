@@ -56,6 +56,7 @@ from app.services.model_service import ModelService
 from app.services.next_check_question import NextCheckQuestionService
 from app.services.overall_routing import OverallRoutingService
 from app.services.planner import PlannerService
+from app.services.production_execution_manifest import ProductionExecutionManifest
 from app.services.rag_debug import RAGDebugService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.rag_runtime import (
@@ -202,10 +203,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         internal_agent_hub, app_settings
     )
     general_question = GeneralQuestionService(model_service)
-    overall_router = OverallRoutingService(
-        internal_agent_hub,
-        task_router,
-        app_settings,
+    overall_router = (
+        OverallRoutingService(
+            internal_agent_hub,
+            task_router,
+            app_settings,
+        )
+        if app_settings.planner_mode == "shadow"
+        else None
     )
     knowledge_base = KnowledgeBaseService(app_settings)
     text_embedding = create_text_embedding_provider(app_settings)
@@ -330,6 +335,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         development_mock_provider=development_mock_provider,
         task_leases=task_leases,
     )
+    production_manifest = ProductionExecutionManifest.build(
+        planner_version=planner.VERSION,
+        capability_bindings=planner.capability_bindings.list(),
+        tool_registry=tool_registry,
+        runtime_handler_registry=runtime_handler_registry,
+        business_services=task_engine.runtime_boundary.business_registry.services(),
+        provider_mode=provider.provider_name,
+    )
+    task_engine.bind_manifest(production_manifest)
+    planner.bind_manifest(production_manifest)
+    context_cache.bind_version_fence(
+        runtime_generation=production_manifest.runtime_generation,
+        build_id=production_manifest.build_id,
+    )
+    rag_retrieval.bind_version_fence(
+        runtime_generation=production_manifest.runtime_generation,
+        build_id=production_manifest.build_id,
+    )
+    runtime_handler_registry.freeze()
+    runtime_subagent_registry.freeze()
+    tool_registry.freeze()
+    task_leases.bind_manifest(production_manifest)
     task_coordinator = TaskExecutionCoordinator(
         app_settings,
         task_engine,
@@ -407,6 +434,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         agent_registry=agent_registry,
         task_router=task_router,
         planner=planner,
+        production_manifest=production_manifest,
         trace_store=trace_store,
         spark_provider=spark_provider,
         qwen_provider=qwen_provider,

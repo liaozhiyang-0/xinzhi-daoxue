@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.intent import IntentExecutionPlan
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.repositories import AgentRunRepository
 from app.runtime import (
     AgentRun,
@@ -17,6 +18,10 @@ from app.runtime import (
     RuntimeNodeStatus,
     RuntimeRunStatus,
     RuntimeStateMachine,
+)
+from app.services.production_execution_manifest import (
+    ExecutionSurfaceError,
+    ProductionExecutionManifest,
 )
 
 
@@ -29,10 +34,15 @@ class RuntimeRunLifecycleService:
         enabled: bool,
         timeout_ms: int = 120_000,
         max_retries: int = 0,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.enabled = enabled
         self.timeout_ms = max(100, min(900_000, timeout_ms))
         self.max_retries = max(0, min(5, max_retries))
+        self.manifest = manifest
+
+    def bind_manifest(self, manifest: ProductionExecutionManifest) -> None:
+        self.manifest = manifest
 
     async def start(
         self,
@@ -71,7 +81,21 @@ class RuntimeRunLifecycleService:
                     await repository.save_checkpoint(restored)
             return restored
 
-        run_plan = runtime_plan or self._build_legacy_plan(agent_id, goal)
+        if runtime_plan is None:
+            if self.manifest is not None:
+                raise ExecutionSurfaceError(
+                    "RUNTIME_PLAN_NOT_ACTIVE",
+                    "a production Runtime run requires an active plan",
+                )
+            architecture_telemetry.increment("legacy_plan_creation_count")
+            run_plan = self._build_legacy_plan(agent_id, goal)
+        else:
+            run_plan = runtime_plan
+        if self.manifest is not None:
+            self.manifest.validate_runtime_plan(
+                run_plan,
+                caller="RuntimeRunLifecycleService.start",
+            )
         run = AgentRun(
             run_id=uuid4().hex,
             task_id=task_id,

@@ -526,6 +526,13 @@ class Settings(BaseSettings):
     # Phase N Planner control plane. One mode is authoritative; the two older
     # booleans remain read-compatible for historical tests and adapters only.
     planner_mode: Literal["shadow", "controlled", "active"] = "active"
+    # Execution-surface lockdown switches. Legacy executable paths are never
+    # enabled by default; isolated historical tests must opt in explicitly.
+    enable_legacy_runtime: bool = False
+    allow_legacy_fallback: bool = False
+    use_old_router: bool = False
+    shadow_can_mutate: bool = False
+    allow_legacy_test_only: bool = False
     circuit_visualization_mode: Literal["off", "shadow", "controlled"] = "off"
     # Deprecated Phase B compatibility switches; production code must use
     # planner_mode instead.
@@ -622,6 +629,30 @@ class Settings(BaseSettings):
             raise ValueError("ENABLE_DEBUG_API must be false in production")
         if self.app_env == "production" and self.rag_debug_enabled:
             raise ValueError("RAG_DEBUG_ENABLED must be false in production")
+        if self.app_env == "production" and self.planner_mode != "active":
+            raise ValueError("PLANNER_MODE must be active in production")
+        if self.app_env == "production" and any(
+            (
+                self.enable_legacy_runtime,
+                self.allow_legacy_fallback,
+                self.use_old_router,
+                self.shadow_can_mutate,
+            )
+        ):
+            raise ValueError(
+                "legacy executable and mutable shadow modes are forbidden in production"
+            )
+        if any(
+            (
+                self.enable_legacy_runtime,
+                self.allow_legacy_fallback,
+                self.use_old_router,
+                self.shadow_can_mutate,
+            )
+        ) and not self.allow_legacy_test_only:
+            raise ValueError(
+                "legacy executable modes require ALLOW_LEGACY_TEST_ONLY=true"
+            )
         if self.auth_cookie_same_site == "none" and not self.auth_cookie_secure:
             raise ValueError("AUTH_COOKIE_SECURE must be true when SameSite=None")
         return self

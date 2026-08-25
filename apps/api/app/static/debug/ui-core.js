@@ -391,8 +391,94 @@
     return leftCount === rightCount;
   }
 
+  function repairTrailingLatexGroups(source) {
+    const value = String(source || "")
+      .replace(/\\[()[\]]/gu, "")
+      .replace(/\\righ\b/gu, "\\right)")
+      .replace(/\\math\b/gu, "")
+      // OCR/RAG excerpts occasionally expose delimiter command names as
+      // fragments (`\\lbrack`, `\\rbrack`) or stop in a short command such
+      // as `\\va`. Normalize those at the shared rendering boundary so a
+      // recoverable formula reaches KaTeX instead of failing wholesale.
+      .replace(/\\lbrack\b/gu, "[")
+      .replace(/\\lbrace\b/gu, "{")
+      .replace(/\\rbrack\b/gu, "]")
+      .replace(/\\rbrace\b/gu, "}")
+      .replace(/\\(?:lvert|rvert)\b/gu, "|")
+      .replace(/\\va\b/gu, "va")
+      .replace(/[_^]\{\}/gu, "")
+      .replace(/[_^]\s*\{\s*$/u, "")
+      .replace(/[。；，,.;:：]+$/u, "")
+      .trim();
+    let normalized = "";
+    let braceDepth = 0;
+    let escaped = false;
+    for (const character of value) {
+      if (escaped) {
+        escaped = false;
+        normalized += character;
+        continue;
+      }
+      if (character === "\\") {
+        escaped = true;
+        normalized += character;
+      } else if (character === "{") {
+        braceDepth += 1;
+        normalized += character;
+      } else if (character === "}") {
+        braceDepth -= 1;
+        if (braceDepth >= 0) normalized += character;
+        else braceDepth = 0;
+      } else {
+        normalized += character;
+      }
+    }
+    // Retrieved evidence can end inside a final grouped subscript, e.g.
+    // `{v}_{\\mathrm{P}`. It is safe to repair only a positive balance at the
+    // end of a token; other malformed formulas remain visible as fallback
+    // text instead of being guessed.
+    const balancedGroups = braceDepth > 0 && /[\p{L}\p{N}_}\]\)]$/u.test(normalized)
+      ? `${normalized}${"}".repeat(braceDepth)}`
+      : normalized.trim();
+    return normalizeLatexDelimiters(balancedGroups);
+  }
+
+  function normalizeLatexDelimiters(source) {
+    const pairs = { "(": ")", "[": "]", "{": "}", "|": "|", ".": "." };
+    const stack = [];
+    const value = String(source || "");
+    const pattern = /\\(left|right)\s*(?:\\)?([()[\]{}|.])/gu;
+    let cursor = 0;
+    let normalized = "";
+    for (const match of value.matchAll(pattern)) {
+      const offset = match.index ?? cursor;
+      normalized += value.slice(cursor, offset);
+      const side = match[1];
+      const delimiter = match[2];
+      if (side === "left") {
+        stack.push(delimiter);
+        normalized += `\\left${delimiter}`;
+      } else {
+        const opening = stack.pop();
+        if (!opening) {
+          normalized += delimiter;
+        } else {
+          normalized += `\\right${pairs[opening] || delimiter}`;
+        }
+      }
+      cursor = offset + match[0].length;
+    }
+    normalized += value.slice(cursor);
+    // A retrieved excerpt can contain an opening delimiter without its
+    // closing half. Keep the visible delimiter and remove only the wrapper.
+    return normalized
+      .replace(/\\left(?=\s*[()[\]{}|.])/gu, "")
+      .replace(/\\right\b/gu, "")
+      .trim();
+  }
+
   function renderLatex(source, display = false, inlineHost = false) {
-    const latex = String(source || "").trim();
+    const latex = repairTrailingLatexGroups(source);
     const outer = el(display && !inlineHost ? "div" : "span", {
       class: `math-expression ${display ? "math-display" : "math-inline"}`,
       role: "img", "aria-label": latex || "空公式", title: latex,
@@ -456,7 +542,14 @@
 
   function normalizeLooseInlineLatex(source) {
     const value = String(source || "");
-    if (!/\\(?:[A-Za-z]+|\[|\(|\]|\))/.test(value) || /(?:\\\[|\\\(|\$\$)/.test(value)) return value;
+    // A complete single-dollar formula must reach KaTeX unchanged.  The old
+    // guard only protected \(...\), \[...\] and $$...$$, so `$v_P \\approx
+    // v_N$` was treated as loose text and its operators were stripped before
+    // the inline-math scanner saw it.
+    if (
+      !/\\(?:[A-Za-z]+|\[|\(|\]|\))/.test(value)
+      || /(?:\\\[|\\\(|\$\$|\$[^$\n]+\$)/.test(value)
+    ) return value;
     return value
       .replace(/\\(?:mathrm|text|operatorname)\s*\{([^{}]*)\}/gu, "$1")
       .replace(/\\(?:mathbf|mathit|mathbb|boldsymbol)\s*\{([^{}]*)\}/gu, "$1")
@@ -666,6 +759,12 @@
   function isStandaloneMathLine(line) {
     const value = String(line || "").trim();
     if (!value || /[\u4e00-\u9fff]/u.test(value)) return false;
+    // Markdown list items and already-delimited inline formulas must go
+    // through appendRichInline, which removes the delimiters before KaTeX.
+    if (/^(?:[-*]\s+|\d+\.\s+|>\s+)/.test(value)) return false;
+    if (value.startsWith("$") && findInlineMathEnd(value, 1, "$") !== -1) {
+      return false;
+    }
     return (
       /\\[A-Za-z]+/.test(value)
       || /[A-Za-z]\s*[_^]\s*[A-Za-z0-9{]/u.test(value)

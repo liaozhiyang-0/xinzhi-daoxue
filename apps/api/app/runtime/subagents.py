@@ -38,13 +38,26 @@ class RuntimeSubagentRegistry:
 
     def __init__(self) -> None:
         self._definitions: dict[str, RuntimeSubagentDefinition] = {}
+        self._frozen = False
 
     def register(self, definition: RuntimeSubagentDefinition) -> None:
+        if self._frozen:
+            raise RuntimeSubagentRegistryError(
+                "registry_frozen",
+                "runtime sub-agent registry is frozen",
+            )
         if definition.subagent_id in self._definitions:
             raise ValueError(
                 f"runtime sub-agent already registered: {definition.subagent_id}"
             )
         self._definitions[definition.subagent_id] = definition
+
+    def freeze(self) -> None:
+        self._frozen = True
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
 
     def describe(self, subagent_id: str) -> RuntimeSubagentDefinition:
         definition = self._definitions.get(subagent_id)

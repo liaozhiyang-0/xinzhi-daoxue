@@ -138,6 +138,10 @@ def test_production_rejects_process_local_langgraph_checkpoints() -> None:
         ("allow_agent_mocks", True, "ALLOW_AGENT_MOCKS must be false"),
         ("enable_debug_api", True, "ENABLE_DEBUG_API must be false"),
         ("rag_debug_enabled", True, "RAG_DEBUG_ENABLED must be false"),
+        ("enable_legacy_runtime", True, "legacy executable"),
+        ("allow_legacy_fallback", True, "legacy executable"),
+        ("use_old_router", True, "legacy executable"),
+        ("shadow_can_mutate", True, "legacy executable"),
     ],
 )
 def test_production_forbids_mock_and_debug_surfaces(

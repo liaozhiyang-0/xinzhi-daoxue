@@ -257,6 +257,7 @@ async def create_task(
         provider.provider_name,
         request.app.state.settings,
         planner=request.app.state.planner,
+        manifest=request.app.state.production_manifest,
     ).create_queued(data, route=decision)
     if task.status == TaskStatus.QUEUED:
         await request.app.state.task_executor.submit(task.id)
@@ -512,9 +513,12 @@ async def retry_task(
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
     await _get_owned_task(db, task_id, principal)
-    task = await TaskControlService(db, provider, request.app.state.settings).retry(
-        task_id
-    )
+    task = await TaskControlService(
+        db,
+        provider,
+        request.app.state.settings,
+        manifest=request.app.state.production_manifest,
+    ).retry(task_id)
     await request.app.state.task_executor.submit(task.id)
     return _public_task_read(task, request)
 

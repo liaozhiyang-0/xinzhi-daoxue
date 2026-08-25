@@ -20,12 +20,17 @@ from app.contracts.conversation import ConversationContextBundle
 from app.contracts.planner import CanonicalPlan
 from app.core.errors import NotConfiguredError
 from app.models import TaskStatus
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository, TaskRepository
 from app.runtime import AgentRun, AgentRunPlan
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.event_service import append_task_event
 from app.services.internal_agent_execution import InternalAgentExecutionService
+from app.services.production_execution_manifest import (
+    ExecutionSurfaceError,
+    ProductionExecutionManifest,
+)
 from app.services.runtime_business_registry import RuntimeBusinessRegistry
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
 from app.services.runtime_launch_policy import (
@@ -77,6 +82,7 @@ class TaskRuntimePreparationService:
         launch_policy: RuntimeLaunchPolicy,
         runtime_lifecycle: RuntimeRunLifecycleService,
         progress: TaskProgressReporter,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider
@@ -88,6 +94,7 @@ class TaskRuntimePreparationService:
         self.launch_policy = launch_policy
         self.runtime_lifecycle = runtime_lifecycle
         self.progress = progress
+        self.manifest = manifest
 
     async def prepare(
         self,
@@ -100,6 +107,8 @@ class TaskRuntimePreparationService:
             task = await TaskRepository(db).get(task_id, for_update=True)
             if task is None or task.status != TaskStatus.QUEUED:
                 return None
+            if self.manifest is not None:
+                self.manifest.validate_task_envelope(task.input_content)
             if not self.task_leases.can_start(task, now):
                 return None
             if task.cancellation_requested:
@@ -281,6 +290,14 @@ class TaskRuntimePreparationService:
                         self.runtime_boundary.runtime_plan_version(task.agent_id)
                     ),
                 )
+            if (
+                self.manifest is not None
+                and launch_decision.mode == RuntimeLaunchMode.LEGACY
+            ):
+                raise ExecutionSurfaceError(
+                    "LEGACY_LAUNCH_FORBIDDEN",
+                    "active production tasks cannot use RuntimeLaunchMode.LEGACY",
+                )
             if not runtime_resume:
                 request = self.runtime_boundary.prepare_request_for_launch(
                     task.agent_id,
@@ -319,10 +336,16 @@ class TaskRuntimePreparationService:
                     raise NotConfiguredError(
                         "active Planner task is missing a validated CanonicalPlan"
                     )
+                if self.manifest is not None:
+                    raise ExecutionSurfaceError(
+                        "RUNTIME_PLAN_NOT_ACTIVE",
+                        "no active Runtime plan is registered for this task",
+                    )
                 # Keep published legacy agents executable while their
                 # business Runtime adapter is migrated.  The compatibility
                 # plan uses the registered provider handler and remains
                 # observable through the same durable Runtime envelope.
+                architecture_telemetry.increment("legacy_plan_creation_count")
                 runtime_plan = RuntimeRunLifecycleService._build_legacy_plan(
                     task.agent_id,
                     runtime_goal,
@@ -332,6 +355,11 @@ class TaskRuntimePreparationService:
                     mode=RuntimeLaunchMode.DEFAULT,
                     source="legacy_compatibility",
                     reason="registered_agent_runtime_plan_pending",
+                )
+            if self.manifest is not None:
+                self.manifest.validate_runtime_plan(
+                    runtime_plan,
+                    caller="TaskRuntimePreparationService.prepare",
                 )
             runtime_run = await self.runtime_boundary.start_or_restore(
                 db,

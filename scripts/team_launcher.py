@@ -916,17 +916,6 @@ def _process_kind(command_line: str) -> str | None:
     return None
 
 
-def _process_info_for_pid(
-    pid: int, process_map: dict[int, ProcessInfo]
-) -> ProcessInfo:
-    existing = process_map.get(pid)
-    if existing is not None:
-        return existing
-    info = ProcessInfo(pid, _process_parent_pid(pid), _process_command_line(pid))
-    process_map[pid] = info
-    return info
-
-
 def _project_root_for_pid(
     pid: int,
     kind: str,
@@ -937,7 +926,12 @@ def _project_root_for_pid(
     visited: set[int] = set()
     while current > 0 and current not in visited:
         visited.add(current)
-        info = _process_info_for_pid(current, process_map)
+        info = process_map.get(current)
+        if info is None:
+            # The listener PID can disappear between netstat and the process
+            # snapshot. Treat that race as an absent candidate instead of
+            # issuing a second unbounded process query during stop/restart.
+            break
         if _process_kind(info.command_line) == kind:
             root = current
         current = info.parent_pid
@@ -1047,7 +1041,9 @@ def owned_api_pids(port: int) -> list[int]:
 
 
 def open_workspace(base_url: str) -> bool:
-    url = f"{base_url.rstrip('/')}/workspace"
+    # Keep the automatic launcher on the neutral product home.  The React
+    # workspace remains available only when the user explicitly opens it.
+    url = f"{base_url.rstrip('/')}/"
     try:
         opened = webbrowser.open(url, new=2)
     except (OSError, webbrowser.Error):

@@ -38,6 +38,7 @@ from app.services.circuit_visualization import (
 )
 from app.services.experience_memory import ExperiencePlannerPrior
 from app.services.intent_plan import IntentPlanCompiler
+from app.services.production_execution_manifest import ProductionExecutionManifest
 from app.services.skill_binding import SkillBindingService
 from app.services.skill_policy import SkillPolicy
 from app.services.skill_registry import SkillMatch, SkillRegistry
@@ -130,6 +131,11 @@ class PlannerService:
             default_capability_binding_registry()
         )
         self.skill_binding_service: SkillBindingService | None = None
+        self.manifest: ProductionExecutionManifest | None = None
+
+    def bind_manifest(self, manifest: ProductionExecutionManifest) -> None:
+        manifest.validate_bootstrap()
+        self.manifest = manifest
 
     def configure_skill_registry(self, registry: SkillRegistry) -> None:
         """Bind the composition-root registry; never create a second one."""
@@ -284,6 +290,11 @@ class PlannerService:
         canonical, circuit_decision = self._append_circuit_visualization(
             request, route, settings, canonical
         )
+        if self.manifest is not None:
+            self.manifest.validate_canonical_plan(
+                canonical,
+                caller="PlannerService.build_authoritative",
+            )
         shape = self._canonical_plan_shape(canonical)
         projection = self._route_projection(route)
         lineage = PlannerLineage(

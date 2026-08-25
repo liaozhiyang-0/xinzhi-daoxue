@@ -1,38 +1,4 @@
 /** Typed task-stream boundary used by the student workspace. */
-const taskEventTypes = [
-    "task.created", "task.queued", "task.running", "route.selected", "route.reevaluated",
-    "intent.recognized", "plan.created", "plan.node_started", "plan.node_completed", "skill.selected",
-    "tool.selected", "knowledge.retrieved", "knowledge.context_built", "agent.started", "agent.progress",
-    "agent.input_required", "agent.output", "artifact.created", "cancel.requested", "task.cancelled",
-    "task.retry_created", "task.completed", "task.failed",
-];
-export function subscribeTaskStream(taskId, onEvent, onState) {
-    const source = new EventSource(`/api/v1/tasks/${encodeURIComponent(taskId)}/stream`);
-    const listeners = taskEventTypes.map((type) => {
-        const listener = (event) => {
-            const message = event;
-            let data = {};
-            try {
-                const parsed = JSON.parse(message.data || "{}");
-                if (parsed && typeof parsed === "object")
-                    data = parsed;
-            }
-            catch {
-                data = { raw: message.data };
-            }
-            onEvent({ type, sequence: Number(message.lastEventId || 0), data });
-        };
-        source.addEventListener(type, listener);
-        return [type, listener];
-    });
-    source.onopen = () => onState({ connected: true, error: null });
-    source.onerror = () => onState({ connected: false, error: "SSE 连接暂时不可用，浏览器将按既有语义自动重连" });
-    return () => {
-        listeners.forEach(([type, listener]) => source.removeEventListener(type, listener));
-        source.close();
-        onState({ connected: false, error: null });
-    };
-}
 const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
 function isTerminal(task) {
     return terminalStatuses.has(task.status);

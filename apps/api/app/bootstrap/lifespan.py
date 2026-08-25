@@ -14,6 +14,9 @@ from app.database.base import Base
 from app.services.context_cache import ContextAssemblyCache
 from app.services.external_retrieval import ExternalContentFetcher
 from app.services.model_service import ModelService
+from app.services.production_execution_manifest import (
+    ExecutionSurfaceError,
+)
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.research_knowledge import ResearchKnowledgeService
 from app.services.task_executor import TaskExecutor
@@ -43,6 +46,7 @@ def build_app_lifespan(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         resources.container.install(app)
+        _execution_surface_preflight(resources.container)
 
         research_maintenance_task: asyncio.Task[None] | None = None
         deferred_startup_task: asyncio.Task[None] | None = None
@@ -156,3 +160,36 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
         return
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+def _execution_surface_preflight(container: ApplicationContainer) -> None:
+    """Reject a bootstrap that could drift into a second execution surface."""
+
+    manifest = getattr(container, "production_manifest", None)
+    if manifest is None:
+        raise ExecutionSurfaceError("PRODUCTION_MANIFEST_MISSING")
+    manifest.validate_bootstrap()
+    if not getattr(container.runtime_handler_registry, "frozen", False):
+        raise ExecutionSurfaceError("RUNTIME_HANDLER_REGISTRY_NOT_FROZEN")
+    if not getattr(container.runtime_subagent_registry, "frozen", False):
+        raise ExecutionSurfaceError("RUNTIME_SUBAGENT_REGISTRY_NOT_FROZEN")
+    if not getattr(container.tool_registry, "frozen", False):
+        raise ExecutionSurfaceError("TOOL_REGISTRY_NOT_FROZEN")
+    if container.planner.manifest is not manifest:
+        raise ExecutionSurfaceError("PLANNER_MANIFEST_NOT_BOUND")
+    if container.task_engine.runtime_boundary.manifest is not manifest:
+        raise ExecutionSurfaceError("RUNTIME_MANIFEST_NOT_BOUND")
+    if container.task_engine.preparation.manifest is not manifest:
+        raise ExecutionSurfaceError("PREPARATION_MANIFEST_NOT_BOUND")
+    logger.info(
+        "PRODUCTION_EXECUTION_FINGERPRINT fingerprint=%s build_id=%s "
+        "runtime_generation=%s planner_version=%s active_handler_hash=%s "
+        "active_capability_hash=%s active_tool_hash=%s",
+        manifest.fingerprint,
+        manifest.build_id,
+        manifest.runtime_generation,
+        manifest.planner_version,
+        manifest.active_handler_hash,
+        manifest.active_capability_hash,
+        manifest.active_tool_hash,
+    )

@@ -18,6 +18,7 @@ from app.runtime import (
 )
 from app.services.external_retrieval_gateway import ExternalRetrievalGateway
 from app.services.internal_agent_execution import InternalAgentExecutionService
+from app.services.production_execution_manifest import ProductionExecutionManifest
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.runtime_canary_release import RuntimeCanaryReleaseRegistry
 from app.services.runtime_execution_boundary import RuntimeExecutionBoundary
@@ -136,6 +137,13 @@ class TaskRuntimeLifecycle:
         self._internal_agents = components.preparation.internal_agents
         self._shutting_down = False
         self.execution_owner = self.task_leases.execution_owner
+
+    def bind_manifest(self, manifest: ProductionExecutionManifest) -> None:
+        """Bind the immutable execution surface to every task boundary."""
+
+        self.runtime_boundary.bind_manifest(manifest)
+        self.runtime_lifecycle.bind_manifest(manifest)
+        self.preparation.manifest = manifest
 
     @property
     def runtime_launch_policy(self) -> RuntimeLaunchPolicy:

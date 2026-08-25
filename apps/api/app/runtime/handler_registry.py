@@ -180,12 +180,18 @@ class RuntimeHandlerRegistry:
 
     def __init__(self) -> None:
         self._registrations: dict[str, _Registration] = {}
+        self._frozen = False
 
     def register(
         self,
         descriptor: RuntimeHandlerDescriptor,
         handler: RuntimeNodeHandler,
     ) -> None:
+        if self._frozen:
+            raise RuntimeHandlerRegistryError(
+                "registry_frozen",
+                "runtime handler registry is frozen",
+            )
         if descriptor.handler_id in self._registrations:
             raise ValueError(
                 f"runtime handler already registered: {descriptor.handler_id}"
@@ -194,6 +200,15 @@ class RuntimeHandlerRegistry:
             descriptor=descriptor,
             handler=handler,
         )
+
+    def freeze(self) -> None:
+        """Prevent runtime drift after the executable graph is assembled."""
+
+        self._frozen = True
+
+    @property
+    def frozen(self) -> bool:
+        return self._frozen
 
     def resolve(self, node: RuntimeNode) -> RuntimeNodeHandler:
         registration = self._registrations.get(node.handler_id)

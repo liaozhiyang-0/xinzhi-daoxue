@@ -27,6 +27,7 @@ from app.services.evaluation_attachment_cleanup import (
 from app.services.event_service import append_task_event
 from app.services.intent_plan import IntentPlanCompiler
 from app.services.planner import PlannerService, PlannerSnapshot
+from app.services.production_execution_manifest import ProductionExecutionManifest
 from app.services.session_context import SessionContextService
 from app.services.session_working_state import SessionWorkingStateService
 from app.services.task_audit import (
@@ -47,6 +48,7 @@ class TaskCreationService:
         provider_name: str,
         settings: Settings | None = None,
         planner: PlannerService | None = None,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.db = db
         self.provider_name = provider_name
@@ -54,6 +56,7 @@ class TaskCreationService:
         self.repository = TaskRepository(db)
         self.plan_compiler = IntentPlanCompiler()
         self.planner = planner or PlannerService(self.plan_compiler)
+        self.manifest = manifest
         self.goal_preparation = UnifiedRequestPreparationService()
 
     @staticmethod
@@ -242,6 +245,10 @@ class TaskCreationService:
                 )
             files.append(file_model)
 
+        if self.manifest is not None:
+            options = dict(request.options)
+            options["_execution_surface"] = self.manifest.task_metadata()
+            request = request.model_copy(update={"options": options})
         persisted_request = self._without_transient_context(request)
         task = TaskModel(
             id=request.task_id,

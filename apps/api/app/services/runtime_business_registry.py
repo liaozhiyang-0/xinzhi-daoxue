@@ -48,6 +48,13 @@ class RuntimeBusinessRegistry:
 
     def __init__(self, services: Iterable[RuntimeBusinessService]) -> None:
         self._services = tuple(services)
+        self._frozen = True
+
+    @property
+    def frozen(self) -> bool:
+        """Business services are immutable once the tuple is constructed."""
+
+        return self._frozen
 
     def resolve(
         self, agent_id: str, request: AgentRequest

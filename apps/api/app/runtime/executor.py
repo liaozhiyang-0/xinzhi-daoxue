@@ -68,6 +68,11 @@ class PlanExecutor:
         after_batch_hook: RuntimeBatchHook | None = None,
     ) -> None:
         self.handlers = handlers
+        if isinstance(handlers, RuntimeHandlerRegistry):
+            # All per-run handler registrations are complete before the
+            # executor is constructed. Freezing here prevents a long-lived
+            # Runtime from changing its executable surface mid-run.
+            handlers.freeze()
         self.checkpoint_hook = checkpoint_hook
         self.event_hook = event_hook
         self.after_batch_hook = after_batch_hook

@@ -24,38 +24,89 @@ def test_browser_acceptance_uses_an_isolated_test_database() -> None:
 
 
 def test_student_page_uses_unified_task_and_event_apis(client) -> None:
-    alias = client.get("/student", follow_redirects=False)
-    page = client.get("/workspace")
-    app = (ROOT / "apps/web/src/app/App.tsx").read_text(encoding="utf-8")
-    composer = (ROOT / "apps/web/src/features/chat/Composer.tsx").read_text(
-        encoding="utf-8"
+    page = client.get("/student")
+    script = client.get("/debug-assets/workspace.js")
+    materials = client.get("/debug-assets/workspace-materials.js")
+    transport = client.get("/debug-assets/workspace-task-transport.js")
+    materials_ts = client.get("/debug-assets/ts/materials.js")
+    transport_ts = client.get("/debug-assets/ts/task-transport.js")
+    contracts = client.get("/debug-assets/ts/workspace-contracts.js")
+    styles = client.get("/debug-assets/workspace-v2.css")
+    script_text = "\n".join(
+        (
+            script.text,
+            materials.text,
+            transport.text,
+            materials_ts.text,
+            transport_ts.text,
+            contracts.text,
+        )
     )
-    transport = (ROOT / "apps/web/src/task-transport.ts").read_text(encoding="utf-8")
-    contracts = (ROOT / "apps/web/src/workspace-contracts.ts").read_text(
-        encoding="utf-8"
-    )
-    styles = (ROOT / "apps/web/src/styles/app.css").read_text(encoding="utf-8")
 
-    assert alias.status_code == 307
-    assert alias.headers["location"] == "/workspace"
     assert page.status_code == 200
-    assert '<div id="root"></div>' in page.text
-    assert "/react-assets/assets/index-" in page.text
-    assert "legacy-workspace-contract" not in page.text
-    assert "createTask" in app
-    assert "getTaskRuntimeControls" in app
-    assert "WorkspaceContextPane" in app
-    assert "new EventSource" in transport
-    assert "task.completed" in transport
-    assert "prefer_internal_agents: true" in contracts
-    assert "buildStudentTaskPayload" in contracts
-    assert "responseDepth" in composer
-    assert "composer-resize-handle" in composer
-    assert "workspace-resizer" in styles
-    assert "overflow-y: auto" in styles
-    for path in ("workspace.html", "workspace.js", "student.html", "student.js"):
-        assert client.get(f"/debug-assets/{path}").status_code == 404
-
+    assert page.headers["cache-control"] == "no-store, max-age=0"
+    assert "id=\"mode-control\"" not in page.text
+    for capability in (
+        "lesson_prep",
+        "assignment_review",
+        "student_learning_path",
+        "academic_search",
+        "knowledge_governance",
+        "solve_problem",
+    ):
+        assert f'data-capability="{capability}"' in page.text
+    assert page.text.count("data-capability=") == 6
+    assert "data-capability=\"course_qa\"" not in page.text
+    assert "data-capability=\"academic_problem_solving\"" not in page.text
+    assert "data-capability=\"data_analysis\"" not in page.text
+    assert 'class="composer-agent-track"' not in page.text
+    assert 'id="detected-course"' in page.text
+    assert 'id="detected-learning-mode"' in page.text
+    assert '<select id="course-select"' not in page.text
+    assert '<select id="teaching-mode"' not in page.text
+    assert 'id="image-input" type="file" multiple' in page.text
+    assert 'type="module"' in page.text
+    assert "api(\"/api/v1/tasks\"" in script_text
+    assert "new EventSource" in script_text
+    assert "task.error_message" in script_text
+    assert "prefer_internal_agents: true" in script_text
+    assert "allow_cloud" not in script_text
+    assert "createMaterialManager" in script_text
+    assert "createTaskTransport" in script_text
+    assert (
+        "./ts/workspace-contracts.js?v=20260825-attachment-contract-v1"
+        in script.text
+    )
+    assert "buildStudentTaskPayload" in contracts.text
+    assert "id=\"preview-images\"" in page.text
+    assert "20260825-answer-quality-v4" in page.text
+    assert "function openEvidenceDocument(item)" in script.text
+    assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
+    assert "documentPageState.controller?.abort()" in script.text
+    assert "initializeResizablePanels()" in script.text
+    assert "businessSectionAlreadyInAnswer" in script.text
+    assert "function messageStatusText(status)" in script.text
+    assert "renderMarkdown(heading" in script.text
+    assert "renderInline(heading" not in script.text
+    assert "renderMarkdown(summary, evidenceDisplayExcerpt(item.summary)" in script.text
+    assert "max-height: 7.2em" not in styles.text
+    assert "-webkit-line-clamp: 5" not in styles.text
+    assert "historyRequestSequence" in script.text
+    assert "renderedAssistantTaskIds" in script.text
+    assert "state.activeTaskWait" in script_text
+    assert "runSequence !== state.runSequence" in script.text
+    assert (
+        "attachments: materials.map((item) => attachmentRef(item.uploaded))"
+        in contracts.text
+    )
+    assert "original_index" not in contracts.text
+    assert "user_reference_name" not in contracts.text
+    assert "let pendingLearningFollowUp = null" in script.text
+    assert "intent: requestedIntent" in script.text
+    assert "source_task_id: learningFollowUp?.source_task_id" in contracts.text
+    assert "workspace-answer" in styles.text
+    assert ".workspace-composer > #question-input" in styles.text
+    assert "scrollbar-width: thin" in styles.text
 
 def test_student_multi_image_task_reaches_runtime(api, client) -> None:
     session = api.create_session()

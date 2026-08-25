@@ -66,6 +66,11 @@ def default_capability_binding_registry() -> CapabilityBindingRegistry:
                 skill_ids=("RESEARCH.EVIDENCE_BRIEF",),
             ),
             CapabilityBinding(
+                "research.academic_writing",
+                "RESEARCH_02_ACADEMIC_WRITING_V1",
+                aliases=("academic_writing", "citation_check"),
+            ),
+            CapabilityBinding(
                 "knowledge.govern",
                 "LEARN_01_KNOWLEDGE_QA_V1",
                 aliases=("course_knowledge",),

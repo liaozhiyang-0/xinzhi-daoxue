@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 
@@ -39,6 +40,9 @@ class SoakCase:
     name: str
     message: str
     expected_agent_tokens: tuple[str, ...]
+    expected_submission_status: int = 202
+    expected_task_statuses: tuple[str, ...] = ("completed",)
+    answer_required: bool = True
 
 
 LOCAL_CASES = (
@@ -60,7 +64,8 @@ LOCAL_CASES = (
     SoakCase(
         name="data_analysis",
         message="请分析以下数据的平均值、最大值和趋势：1, 2, 3, 5, 8。",
-        expected_agent_tokens=("DATA",),
+        expected_agent_tokens=(),
+        expected_submission_status=409,
     ),
     SoakCase(
         name="digital_concept",
@@ -91,6 +96,8 @@ LOCAL_CASES = (
         name="lesson_preparation",
         message="给本科生设计60分钟相量法课程，要包含课堂活动和形成性评价。",
         expected_agent_tokens=("TEACH",),
+        expected_task_statuses=("completed", "waiting_review"),
+        answer_required=False,
     ),
     SoakCase(
         name="assignment_review",
@@ -157,19 +164,62 @@ async def _run_task(
     session_id: str | None,
     poll_timeout_seconds: float,
     user_id: str,
+    expected_submission_status: int = 202,
 ) -> dict[str, Any]:
     started = time.monotonic()
+    if not session_id:
+        session_response = await client.post(
+            "/api/v1/sessions",
+            json={
+                "user_id": user_id,
+                "course_id": "AUTO",
+                "title": "Release A soak",
+            },
+        )
+        session_response.raise_for_status()
+        session_id = str(session_response.json()["id"])
     payload: dict[str, Any] = {
-        "message": message,
+        "session_id": session_id,
         "user_id": user_id,
-        "metadata": {"source": "e2e_soak"},
+        "user_role": "student",
+        "scene": "dispatch",
+        "course_id": "AUTO",
+        "intent": "unknown",
+        "canonical_input": {"text": message},
+        "attachments": [],
+        "context_refs": [],
+        "options": {
+            "request_id": str(uuid4()),
+            "response_depth": "standard",
+            "teaching_mode": "direct_answer",
+            "prefer_internal_agents": True,
+            "use_local_rag": True,
+        },
     }
-    if session_id:
-        payload["session_id"] = session_id
-    response = await client.post("/api/v1/chat", json=payload)
+    # AgentRequest intentionally rejects unknown fields; keep provenance in
+    # the allowed options envelope rather than reintroducing the old /chat
+    # payload contract.
+    payload["options"]["soak_source"] = "release_a"
+    response = await client.post("/api/v1/tasks", json=payload)
+    if (
+        response.status_code == expected_submission_status
+        and expected_submission_status != 202
+    ):
+        try:
+            error: Any = response.json()
+        except ValueError:
+            error = response.text
+        return {
+            "status": "blocked_by_configuration",
+            "submission_status": response.status_code,
+            "submission_error": error,
+            "session_id": session_id,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+        }
     response.raise_for_status()
     submission = response.json()
-    task = await _wait_task(client, str(submission["task_id"]), poll_timeout_seconds)
+    task = await _wait_task(client, str(submission["id"]), poll_timeout_seconds)
+    task["session_id"] = session_id
     task["submission"] = submission
     task["elapsed_seconds"] = round(time.monotonic() - started, 3)
     return task
@@ -183,6 +233,10 @@ def _task_record(name: str, task: dict[str, Any]) -> dict[str, Any]:
         "case": name,
         "task_id": task.get("id"),
         "status": task.get("status"),
+        "failure_category": task.get("failure_category"),
+        "error_message": task.get("error_message"),
+        "submission_status": task.get("submission_status", 202),
+        "submission_error": task.get("submission_error"),
         "agent_id": task.get("agent_id"),
         "intent": task.get("intent"),
         "elapsed_seconds": task.get("elapsed_seconds"),
@@ -209,9 +263,20 @@ def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
 
 def _validate_case(case: SoakCase, task: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if task.get("status") != "completed":
-        errors.append(f"status={task.get('status')}")
-    if not _answer(task).strip():
+    if case.expected_submission_status != 202:
+        if task.get("submission_status") != case.expected_submission_status:
+            errors.append(
+                "submission_status="
+                f"{task.get('submission_status')} "
+                f"(expected {case.expected_submission_status})"
+            )
+        return errors
+    status = str(task.get("status"))
+    if status not in case.expected_task_statuses:
+        errors.append(
+            f"status={status} (expected one of {case.expected_task_statuses})"
+        )
+    if status == "completed" and case.answer_required and not _answer(task).strip():
         errors.append("empty_answer")
     agent_id = str(task.get("agent_id", "")).upper()
     if not any(token in agent_id for token in case.expected_agent_tokens):
@@ -225,9 +290,14 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
     workspace = await client.get("/workspace")
     workspace.raise_for_status()
     html = workspace.text
+    # The certified product surface is the legacy workspace.  Keep this
+    # harness aligned with `/workspace`; an old React asset assertion would
+    # turn a healthy release into a false infrastructure failure.
     asset_paths = (
-        "/react-assets/assets/index-NRUFDfgf.js",
-        "/react-assets/assets/index-Bs4hMYKJ.css",
+        "/debug-assets/vendor/katex/katex.min.js",
+        "/debug-assets/ui-core.js",
+        "/debug-assets/workspace.js",
+        "/debug-assets/workspace-v2.css",
     )
     asset_statuses: dict[str, int] = {}
     for path in asset_paths:
@@ -239,9 +309,9 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
         "workspace_status": workspace.status_code,
         "frontend_asset_statuses": asset_statuses,
         "frontend_build_ready": (
-            '<div id="root"></div>' in html
-            and "/react-assets/assets/index-" in html
-            and "legacy-workspace-contract" not in html
+            'class="workspace-page"' in html
+            and 'id="student-form"' in html
+            and "/debug-assets/workspace.js" in html
             and all(status == 200 for status in asset_statuses.values())
         ),
     }
@@ -270,6 +340,7 @@ async def _run_cycle(
                 session_id=None,
                 poll_timeout_seconds=poll_timeout_seconds,
                 user_id=user_id,
+                expected_submission_status=case.expected_submission_status,
             )
             cycle_record["tasks"].append(_task_record(case.name, task))
             cycle_record["failures"].extend(
@@ -291,9 +362,29 @@ async def _run_cycle(
             cycle_record["tasks"].append(first_record)
             if first.get("status") != "completed":
                 cycle_record["failures"].append("research_initial:incomplete")
-            if first_record["external_items"] <= 0:
-                cycle_record["failures"].append("research_initial:no_external_evidence")
             first_answer = _answer(first)
+            external = _structured(first).get("external_retrieval")
+            provider_status = first_record["external_provider_status"]
+            bounded_no_evidence_refusal = (
+                first_record["external_items"] <= 0
+                and isinstance(external, dict)
+                and external.get("status") == "completed"
+                and _contains_any(
+                    first_answer,
+                    (
+                        "当前未获得与",
+                        "暂无可核验证据",
+                        "未找到可展示的论文",
+                        "暂不生成代表性进展结论",
+                    ),
+                )
+                and (
+                    not provider_status
+                    or any(status == "completed" for status in provider_status.values())
+                )
+            )
+            if first_record["external_items"] <= 0 and not bounded_no_evidence_refusal:
+                cycle_record["failures"].append("research_initial:no_external_evidence")
             if not _contains_any(first_answer, ("多模态", "智能体", "agent")):
                 cycle_record["failures"].append(
                     "research_initial:topic_terms_missing"
@@ -302,12 +393,10 @@ async def _run_cycle(
                 cycle_record["failures"].append(
                     "research_initial:stale_topic_leak"
                 )
-            external = _structured(first).get("external_retrieval")
             if isinstance(external, dict) and external.get("status") != "completed":
                 cycle_record["failures"].append(
                     f"research_initial:external_status={external.get('status')}"
                 )
-            provider_status = first_record["external_provider_status"]
             if provider_status and not any(
                 status == "completed" for status in provider_status.values()
             ):

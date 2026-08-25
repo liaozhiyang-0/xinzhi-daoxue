@@ -148,6 +148,7 @@ class RAGRetrievalService:
         self._result_cache: OrderedDict[
             tuple[str, ...], tuple[float, RetrievalResult]
         ] = OrderedDict()
+        self._version_fence = "unbound"
         self._index_version_cache: tuple[int, int, str] | None = None
         self._executor = ThreadPoolExecutor(
             max_workers=settings.rag_retrieval_worker_count,
@@ -167,6 +168,11 @@ class RAGRetrievalService:
             "components": {},
             "failed_components": [],
         }
+
+    def bind_version_fence(self, *, runtime_generation: str, build_id: str) -> None:
+        """Fence in-process retrieval decisions to the active build."""
+
+        self._version_fence = f"{runtime_generation}:{build_id}"
 
     def warmup(self) -> dict[str, Any]:
         """Load retrieval models before the API begins accepting requests."""
@@ -826,6 +832,7 @@ class RAGRetrievalService:
         elif query_image is not None:
             image_digest = f"object:{id(query_image)}"
         return (
+            self._version_fence,
             course_id,
             intent,
             policy.name,
@@ -901,6 +908,7 @@ class RAGRetrievalService:
 
     def _cached_text_query(self, text: str) -> list[float]:
         key = (
+            self._version_fence,
             "text",
             self.text_provider.model_name,
             self.text_provider.model_revision,
@@ -915,6 +923,7 @@ class RAGRetrievalService:
 
     def _cached_image_text_query(self, text: str) -> list[float]:
         key = (
+            self._version_fence,
             "image_text",
             self.image_provider.model_name,
             self.image_provider.model_revision,
@@ -937,6 +946,7 @@ class RAGRetrievalService:
         else:
             digest = f"object:{id(image)}"
         key = (
+            self._version_fence,
             "image",
             self.image_provider.model_name,
             self.image_provider.model_revision,

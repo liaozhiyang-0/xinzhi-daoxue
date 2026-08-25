@@ -32,6 +32,7 @@ from app.services.evaluation_attachment_cleanup import (
     cleanup_evaluation_attachments,
 )
 from app.services.event_service import append_task_event
+from app.services.production_execution_manifest import ProductionExecutionManifest
 from app.services.runtime_run_lifecycle import RuntimeRunLifecycleService
 from app.services.task_audit import (
     audit_for_terminal,
@@ -61,11 +62,17 @@ TERMINAL_STATUSES = {
 
 class TaskControlService:
     def __init__(
-        self, db: AsyncSession, provider: AgentProvider, settings: Settings
+        self,
+        db: AsyncSession,
+        provider: AgentProvider,
+        settings: Settings,
+        *,
+        manifest: ProductionExecutionManifest | None = None,
     ) -> None:
         self.db = db
         self.provider = provider
         self._settings = settings
+        self.manifest = manifest
         self.repository = TaskRepository(db)
 
     async def retry(self, task_id: str) -> TaskModel:
@@ -112,7 +119,10 @@ class TaskControlService:
             }
         )
         new_task = await TaskCreationService(
-            self.db, self.provider.provider_name
+            self.db,
+            self.provider.provider_name,
+            self._settings,
+            manifest=self.manifest,
         ).create_queued(
             request,
             route=RouteDecision.model_validate(route_payload),

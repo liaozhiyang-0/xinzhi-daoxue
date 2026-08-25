@@ -109,3 +109,40 @@ def test_authoritative_planner_binds_an_approved_domain_skill_to_runtime() -> No
     )
     assert output.canonical_plan.nodes[0].node_type == "skill"
     assert output.canonical_plan.nodes[0].target_id == "AE.CIRCUIT_IMAGE_PARSE"
+
+
+def test_authoritative_planner_keeps_academic_writing_on_current_surface() -> None:
+    request = AgentRequest(
+        task_id="planner-academic-writing",
+        session_id="session-academic-writing",
+        user_id="user-academic-writing",
+        user_role=UserRole.STUDENT,
+        scene=Scene.RESEARCH,
+        course_id="AUTO",
+        intent=Intent.UNKNOWN,
+        canonical_input={
+            "text": "请把下面这句话改写成学术中文：柔性传感器能够感知人体运动。"
+        },
+    )
+    settings = Settings(app_env="test", planner_mode="active")
+    route = TaskRouter(AgentRegistry(), settings).route(request)
+    goal = UnifiedRequestPreparationService().build_goal(request)
+    planner = PlannerService(
+        skill_registry=SkillRegistry(
+            default_course_registry(), default_capability_registry()
+        )
+    )
+
+    output = planner.build_authoritative(
+        request,
+        goal,
+        route,
+        settings=settings,
+        mode="active",
+    )
+
+    assert route.agent_id == "RESEARCH_02_ACADEMIC_WRITING_V1"
+    assert output.canonical_plan.capabilities == ["research.academic_writing"]
+    assert output.canonical_plan.capability_bindings[0].handler_id == (
+        "RESEARCH_02_ACADEMIC_WRITING_V1"
+    )
