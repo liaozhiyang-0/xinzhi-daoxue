@@ -31,7 +31,6 @@ SECRET_NAMES = (
 )
 COMPOSE_PROJECT_NAME = "xinzhi-daoxue"
 CONTAINER_NAMES = ("xzd-postgres", "xzd-redis", "xzd-minio", "xzd-qdrant")
-REACT_ASSET_PREFIX = "/react-assets/assets/index-"
 SERVICE_READY_TIMEOUT_SECONDS = 90
 class LaunchError(RuntimeError):
     """A safe, user-facing launcher failure."""
@@ -774,10 +773,10 @@ def frontend_build_ready(base_url: str) -> bool:
         with urlopen(f"{base_url}/workspace", timeout=2) as response:  # noqa: S310
             html = response.read().decode("utf-8", errors="replace")
         return (
-            '<div id="root"></div>' in html
-            and REACT_ASSET_PREFIX in html
-            and "legacy-workspace-contract" not in html
-            and "workspace.js" not in html
+            'class="workspace-page"' in html
+            and 'id="student-form"' in html
+            and "/debug-assets/workspace.js" in html
+            and "/react-assets/assets/index-" not in html
         )
     except (URLError, TimeoutError, OSError, UnicodeError):
         return False

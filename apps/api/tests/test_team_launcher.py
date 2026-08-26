@@ -125,7 +125,7 @@ def test_api_readiness_checks_root_health_endpoint_first(monkeypatch) -> None:
     assert requested == ["http://127.0.0.1:8031/health|2"]
 
 
-def test_frontend_build_check_matches_served_react_workspace(monkeypatch) -> None:
+def test_frontend_build_check_matches_served_legacy_workspace(monkeypatch) -> None:
     launcher = load_launcher()
 
     class Response:
@@ -137,9 +137,9 @@ def test_frontend_build_check_matches_served_react_workspace(monkeypatch) -> Non
 
         def read(self) -> bytes:
             return (
-                b'<div id="root"></div>'
-                b'<script type="module" '
-                b'src="/react-assets/assets/index-test.js"></script>'
+                b'<body class="workspace-page">'
+                b'<form id="student-form"></form>'
+                b'<script src="/debug-assets/workspace.js"></script>'
             )
 
     monkeypatch.setattr(launcher, "urlopen", lambda *_args, **_kwargs: Response())

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 
-def test_react_workspace_is_default_with_explicit_legacy_rollback(
+def test_legacy_workspace_is_default_with_react_entry_quarantined(
     client,
 ) -> None:
-    legacy = client.get("/workspace")
-    rollback = client.get("/workspace-legacy", follow_redirects=False)
+    workspace = client.get("/workspace")
+    legacy = client.get("/workspace-legacy")
     react = client.get("/workspace-react", follow_redirects=False)
 
-    assert legacy.status_code == 200
-    assert "React" in legacy.text
-    assert rollback.status_code == 307
-    assert rollback.headers["location"] == "/workspace"
+    for response in (workspace, legacy):
+        assert response.status_code == 200
+        assert 'class="workspace-page"' in response.text
+        assert 'id="student-form"' in response.text
+        assert "/debug-assets/workspace.js" in response.text
+        assert "/react-assets/assets/index-" not in response.text
     assert react.status_code == 307
     assert react.headers["location"] == "/workspace"
