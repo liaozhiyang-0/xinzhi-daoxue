@@ -91,6 +91,12 @@ The bounded real E2E cycle (`.codex-tmp/release-b-final-e2e.jsonl`) recorded 11
 tasks, 10 completed and one expected configuration rejection, with zero cycle
 failures. The legacy workspace and KaTeX asset checks all returned HTTP 200.
 
+After the final committed restart, the explicit OFF check used task
+`task_41332e72770d4a47acacbceb59dcc4ff`: `feature_mode=off`, planner decision
+`SKIP`, no circuit tool selected, no circuit artifact, and terminal status
+`completed`. Its execution-surface fence carried build
+`979bc71a5890080b52d5d61c9672170a128dec80` and generation `runtime-v3`.
+
 ## Current risks
 
 - Real image-to-CircuitIR extraction is not auto-created by the Planner; it
