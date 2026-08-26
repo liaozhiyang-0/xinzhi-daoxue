@@ -143,9 +143,7 @@ class PlannerService:
 
         self.skill_registry = registry
 
-    def configure_skill_binding_service(
-        self, service: SkillBindingService
-    ) -> None:
+    def configure_skill_binding_service(self, service: SkillBindingService) -> None:
         self.skill_binding_service = service
 
     def build_authoritative(
@@ -171,9 +169,7 @@ class PlannerService:
             [
                 *self._string_list(goal.constraints.get("capabilities")),
                 *route.capabilities,
-                *self._string_list(
-                    route.intent_recognition.get("capabilities")
-                ),
+                *self._string_list(route.intent_recognition.get("capabilities")),
             ]
         )
         if not capabilities:
@@ -186,8 +182,7 @@ class PlannerService:
             raise ValueError("planner produced no registered capability")
         capabilities = list(
             dict.fromkeys(
-                self._canonical_capability(item, route)
-                for item in capabilities
+                self._canonical_capability(item, route) for item in capabilities
             )
         )
         skills, skill_status, skill_rejections = self._select_goal_skills(
@@ -205,10 +200,7 @@ class PlannerService:
             self.capability_bindings.get(item)
             for item in capabilities
             if item
-            in {
-                binding.capability_id
-                for binding in self.capability_bindings.list()
-            }
+            in {binding.capability_id for binding in self.capability_bindings.list()}
         ]
         primary_capability_binding = next(
             (
@@ -281,13 +273,11 @@ class PlannerService:
                                 node_id="planner.skill.primary",
                                 node_type="skill",
                                 target_id=primary_binding.skill_id,
-                                timeout_ms=min(
-                                    300_000, primary_binding.max_timeout_ms
-                                ),
+                                timeout_ms=min(300_000, primary_binding.max_timeout_ms),
                             )
                         ]
                     }
-                    )
+                )
         canonical, circuit_decision = self._append_circuit_visualization(
             request, route, settings, canonical
         )
@@ -379,9 +369,7 @@ class PlannerService:
         registered = {item.capability_id for item in registry.list_capabilities()}
         return [item for item in candidates if item in registered]
 
-    def _canonical_capability(
-        self, capability_id: str, route: RouteDecision
-    ) -> str:
+    def _canonical_capability(self, capability_id: str, route: RouteDecision) -> str:
         # ``general_answer`` is a historical recognition label shared by
         # several routes. Resolve only the two known semantic aliases; an
         # ordinary general question must remain a general-answer capability.
@@ -420,9 +408,7 @@ class PlannerService:
             problem_type=str(route.intent_recognition.get("problem_type", "")),
             capabilities=capabilities,
             context_summary=goal.normalized_goal,
-            evidence_state=self._mapping_value(
-                goal.constraints.get("evidence_state")
-            ),
+            evidence_state=self._mapping_value(goal.constraints.get("evidence_state")),
             learner_state={},
             available_workers=self._available_skill_workers(),
             available_tools=self._available_skill_tools(route),
@@ -494,9 +480,7 @@ class PlannerService:
                 else:
                     rejected.extend(decision.rejected)
         rejection_reasons = [
-            reason
-            for item in rejected
-            for reason in item.reason_codes
+            reason for item in rejected for reason in item.reason_codes
         ]
         return (
             selected,
@@ -524,9 +508,7 @@ class PlannerService:
     def _mapping_value(value: object) -> dict[str, object]:
         return dict(value) if isinstance(value, dict) else {}
 
-    def _prerequisites_satisfied(
-        self, skill_id: str, route: RouteDecision
-    ) -> bool:
+    def _prerequisites_satisfied(self, skill_id: str, route: RouteDecision) -> bool:
         if self.skill_registry is None:
             return False
         available = list(route.selected_skills)
@@ -653,6 +635,8 @@ class PlannerService:
                 request,
                 configured_mode=settings.circuit_visualization_mode,
                 frontend_enabled=settings.circuit_visualization_frontend_enabled,
+                render_enabled=settings.circuit_render_enabled,
+                auto_enabled=settings.circuit_render_auto,
             ),
             course_id=route.course_id,
         )
@@ -664,9 +648,7 @@ class PlannerService:
         if any(node.node_id == "circuit.visualize" for node in updated.nodes):
             return updated, decision
         bindings = list(updated.capability_bindings)
-        if not any(
-            item.capability_id == "circuit.visualize" for item in bindings
-        ):
+        if not any(item.capability_id == "circuit.visualize" for item in bindings):
             bindings.append(
                 CapabilityBinding(
                     capability_id="circuit.visualize",
@@ -779,9 +761,7 @@ class PlannerService:
             course=route.course_id,
             intent=route.intent,
             problem_type=str(route.intent_recognition.get("problem_type", "")),
-            capabilities=list(
-                dict.fromkeys([*route.capabilities, *plan.capabilities])
-            ),
+            capabilities=list(dict.fromkeys([*route.capabilities, *plan.capabilities])),
             context_summary=objective,
             evidence_state=evidence_state,
             learner_state=(
@@ -825,9 +805,7 @@ class PlannerService:
         )
         selected_ids = [item.skill_id for item in policy_result.approved]
         rejection_reasons = [
-            reason
-            for item in policy_result.rejected
-            for reason in item.reason_codes
+            reason for item in policy_result.rejected for reason in item.reason_codes
         ]
         status: Literal["selected", "empty", "rejected", "unavailable"]
         if selected_ids:
@@ -912,9 +890,7 @@ class PlannerService:
         allowed_scenarios = _csv(settings.planner_canary_scenario_ids)
         if not allowed_agents and not allowed_scenarios:
             return False
-        routed_agent = str(
-            request.options.get("_routing", {}).get("agent_id", "")
-        )
+        routed_agent = str(request.options.get("_routing", {}).get("agent_id", ""))
         agent_allowed = (
             not allowed_agents
             or str(request.options.get("scenario_agent_id", "")) in allowed_agents
@@ -984,9 +960,7 @@ class PlannerService:
         version = plan.version
         node_ids = [node.node_id for node in plan.nodes]
         target_ids = [node.target_id for node in plan.nodes]
-        dependencies = {
-            node.node_id: list(node.depends_on) for node in plan.nodes
-        }
+        dependencies = {node.node_id: list(node.depends_on) for node in plan.nodes}
         payload = {
             "plan_id": plan_id,
             "version": version,
@@ -1009,9 +983,7 @@ class PlannerService:
         version = plan.version
         node_ids = [node.node_id for node in plan.nodes]
         target_ids = [node.target_id for node in plan.nodes]
-        dependencies = {
-            node.node_id: list(node.depends_on) for node in plan.nodes
-        }
+        dependencies = {node.node_id: list(node.depends_on) for node in plan.nodes}
         payload = {
             "plan_id": plan_id,
             "version": version,

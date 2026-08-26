@@ -13,16 +13,25 @@ from app.circuit.contracts import (
 )
 from app.circuit.layout import build_schematic_layout, classify_topology
 from app.circuit.layout_contracts import (
+    SchematicAnnotation,
     SchematicBoundingBox,
+    SchematicDirectionArrow,
+    SchematicGroup,
     SchematicJunction,
     SchematicLabel,
     SchematicLayoutIR,
     SchematicPlacement,
     SchematicPoint,
+    SchematicPolarityMarker,
     SchematicPort,
+    SchematicSubcircuit,
     SchematicWire,
 )
 from app.circuit.renderer import render_circuit
+from app.circuit.semantic import (
+    circuit_ir_from_text,
+    circuit_ir_from_vision_extraction,
+)
 from app.circuit.tool import circuit_render_tool
 from app.circuit.validator import validate_circuit
 
@@ -37,12 +46,17 @@ __all__ = [
     "CircuitRenderResult",
     "CircuitUncertainty",
     "SchematicBoundingBox",
+    "SchematicAnnotation",
+    "SchematicDirectionArrow",
+    "SchematicGroup",
     "SchematicJunction",
     "SchematicLabel",
     "SchematicLayoutIR",
+    "SchematicPolarityMarker",
     "SchematicPlacement",
     "SchematicPoint",
     "SchematicPort",
+    "SchematicSubcircuit",
     "SchematicWire",
     "ValidationIssue",
     "ValidationReport",
@@ -50,5 +64,7 @@ __all__ = [
     "build_schematic_layout",
     "classify_topology",
     "render_circuit",
+    "circuit_ir_from_text",
+    "circuit_ir_from_vision_extraction",
     "validate_circuit",
 ]

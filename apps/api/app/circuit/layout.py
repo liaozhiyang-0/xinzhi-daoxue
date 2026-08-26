@@ -7,14 +7,19 @@ from typing import cast
 
 from app.circuit.contracts import CircuitComponent, CircuitIR
 from app.circuit.layout_contracts import (
+    AnnotationKind,
     Direction,
     LabelKind,
+    SchematicAnnotation,
     SchematicBoundingBox,
+    SchematicDirectionArrow,
+    SchematicGroup,
     SchematicJunction,
     SchematicLabel,
     SchematicLayoutIR,
     SchematicPlacement,
     SchematicPoint,
+    SchematicPolarityMarker,
     SchematicPort,
     SchematicWire,
 )
@@ -150,6 +155,10 @@ def build_schematic_layout(
     ports = _place_ports(circuit, placements)
     wires, junctions = _route_nets(circuit, ports, placements, width, height, warnings)
     labels = _place_labels(circuit, placements, ports, warnings)
+    polarity_markers = _place_polarity_markers(circuit, ports)
+    direction_arrows = _place_direction_arrows(circuit, placements, ports)
+    groups = _place_groups(circuit, placements)
+    annotations = _place_annotations(circuit, placements)
     return SchematicLayoutIR(
         template=selected,
         width=width,
@@ -159,6 +168,10 @@ def build_schematic_layout(
         junctions=junctions,
         labels=labels,
         ports=ports,
+        polarity_markers=polarity_markers,
+        direction_arrows=direction_arrows,
+        groups=groups,
+        annotations=annotations,
         warnings=list(dict.fromkeys(warnings)),
     )
 
@@ -591,6 +604,11 @@ def _place_labels(
                 )
             )
     for annotation in circuit.annotations:
+        # Arrow annotations have a dedicated direction-arrow layer.  Keep
+        # their explanatory text in SchematicAnnotation so the SVG contains
+        # one semantic label instead of duplicating it in both layers.
+        if annotation.kind == "arrow":
+            continue
         target = next(
             (item for item in placements if item.component_id == annotation.target_id),
             None,
@@ -611,6 +629,122 @@ def _place_labels(
             )
         )
     return labels
+
+
+def _place_polarity_markers(
+    circuit: CircuitIR, ports: list[SchematicPort]
+) -> list[SchematicPolarityMarker]:
+    by_component: dict[str, dict[str, SchematicPoint]] = {}
+    for port in ports:
+        by_component.setdefault(port.component_id, {})[port.port] = port.point
+    result: list[SchematicPolarityMarker] = []
+    for component in circuit.components:
+        if component.type not in {"voltage_source", "dependent_voltage_source"}:
+            continue
+        points = by_component.get(component.id, {})
+        if "p" in points and "n" in points:
+            result.append(
+                SchematicPolarityMarker(
+                    component_id=component.id,
+                    positive_port="p",
+                    negative_port="n",
+                    positive_point=points["p"],
+                    negative_point=points["n"],
+                )
+            )
+    return result
+
+
+def _place_direction_arrows(
+    circuit: CircuitIR,
+    placements: list[SchematicPlacement],
+    ports: list[SchematicPort],
+) -> list[SchematicDirectionArrow]:
+    by_component: dict[str, dict[str, SchematicPoint]] = {}
+    for port in ports:
+        by_component.setdefault(port.component_id, {})[port.port] = port.point
+    result: list[SchematicDirectionArrow] = []
+    for component in circuit.components:
+        if component.type not in {
+            "current_source",
+            "dependent_current_source",
+        }:
+            continue
+        points = by_component.get(component.id, {})
+        if "p" in points and "n" in points:
+            result.append(
+                SchematicDirectionArrow(
+                    target_id=component.id,
+                    start=points["p"],
+                    end=points["n"],
+                    label="I",
+                )
+            )
+    placement_by_id = {item.component_id: item for item in placements}
+    for annotation in circuit.annotations:
+        if annotation.kind != "arrow" or not annotation.target_id:
+            continue
+        placement = placement_by_id.get(annotation.target_id)
+        if placement is None:
+            continue
+        result.append(
+            SchematicDirectionArrow(
+                target_id=annotation.target_id,
+                start=SchematicPoint(x=placement.x - 24, y=placement.y - 46),
+                end=SchematicPoint(x=placement.x + 24, y=placement.y - 46),
+                label=annotation.text,
+            )
+        )
+    return result
+
+
+def _place_groups(
+    circuit: CircuitIR, placements: list[SchematicPlacement]
+) -> list[SchematicGroup]:
+    if len(placements) < 2:
+        return []
+    boxes = [item.bounding_box for item in placements]
+    left = min(item.x for item in boxes) - 18
+    top = min(item.y for item in boxes) - 18
+    right = max(item.x + item.width for item in boxes) + 18
+    bottom = max(item.y + item.height for item in boxes) + 18
+    return [
+        SchematicGroup(
+            group_id="main_network",
+            label=circuit.topology_hint or "circuit",
+            member_ids=[item.component_id for item in placements],
+            bounding_box=SchematicBoundingBox(
+                x=left,
+                y=top,
+                width=max(1.0, right - left),
+                height=max(1.0, bottom - top),
+            ),
+        )
+    ]
+
+
+def _place_annotations(
+    circuit: CircuitIR, placements: list[SchematicPlacement]
+) -> list[SchematicAnnotation]:
+    placement_by_id = {item.component_id: item for item in placements}
+    result: list[SchematicAnnotation] = []
+    for index, annotation in enumerate(circuit.annotations):
+        target = placement_by_id.get(annotation.target_id or "")
+        point = (
+            SchematicPoint(x=target.x, y=target.y - 72)
+            if target is not None
+            else SchematicPoint(x=24, y=24 + index * 18)
+        )
+        kind: AnnotationKind = "equation" if annotation.kind == "equation" else "text"
+        result.append(
+            SchematicAnnotation(
+                kind=kind,
+                text=annotation.text,
+                point=point,
+                target_id=annotation.target_id,
+            )
+        )
+    return result
 
 
 def _collision_free_label_point(

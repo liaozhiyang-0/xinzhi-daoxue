@@ -6,12 +6,14 @@ from typing import cast
 
 import pytest
 from app.circuit import (
+    CircuitAnnotation,
     CircuitComponent,
     CircuitIR,
     CircuitRenderOptions,
     build_schematic_layout,
     render_circuit,
 )
+from app.circuit import renderer as renderer_module
 from app.circuit.contracts import PORT_CONTRACTS
 from app.circuit.renderer import _symbol_body
 from app.services.circuit_visualization import observation_from_result
@@ -301,6 +303,40 @@ def test_layout_contract_is_deterministic_and_orthogonal() -> None:
             )
 
 
+def test_layout_contract_carries_reference_direction_and_annotation_layers() -> None:
+    voltage_case = _golden_circuits()[0]
+    layout = build_schematic_layout(voltage_case)
+    assert layout.schema_version == "schematic_layout.v1"
+    assert layout.polarity_markers
+    assert layout.groups
+    assert layout.annotations == []
+
+    current_case = _golden_circuits()[6]
+    current_layout = build_schematic_layout(current_case)
+    assert current_layout.direction_arrows
+
+    annotated = current_case.model_copy(
+        update={
+            "annotations": [
+                CircuitAnnotation(kind="equation", text="i = v / R", target_id="r1")
+            ]
+        }
+    )
+    annotated_layout = build_schematic_layout(annotated)
+    assert annotated_layout.annotations[0].kind == "equation"
+
+    arrow_annotated = current_case.model_copy(
+        update={
+            "annotations": [
+                CircuitAnnotation(kind="arrow", text="Iout", target_id="i1")
+            ]
+        }
+    )
+    arrow_layout = build_schematic_layout(arrow_annotated)
+    assert not any(label.text == "Iout" for label in arrow_layout.labels)
+    assert arrow_layout.annotations[0].text == "Iout"
+
+
 def test_layout_emits_junctions_and_unknown_value_marker() -> None:
     parallel = build_schematic_layout(_golden_circuits()[2], "parallel")
     assert any(junction.net_id == "gnd" for junction in parallel.junctions)
@@ -329,6 +365,17 @@ def test_professional_renderer_preserves_component_and_wire_metadata() -> None:
     assert result.svg is not None
     assert 'data-component-id="op1"' in result.svg
     assert 'data-wire-net="out"' in result.svg
+
+
+def test_professional_renderer_emits_polarity_and_direction_metadata() -> None:
+    voltage_result = render_circuit(_golden_circuits()[0])
+    assert voltage_result.svg is not None
+    assert 'data-polarity="v1:positive"' in voltage_result.svg
+
+    current_result = render_circuit(_golden_circuits()[6])
+    assert current_result.svg is not None
+    assert 'data-direction-target="i1"' in current_result.svg
+    assert 'marker-end="url(#circuit-arrow)"' in current_result.svg
 
 
 def test_runtime_projection_accepts_professional_renderer_metadata() -> None:
@@ -384,6 +431,77 @@ def test_invalid_circuit_does_not_emit_svg() -> None:
     assert result.svg is None
     assert result.professional_renderer_success is False
     assert result.validation.render_status == "invalid"
+
+
+def test_renderer_and_layout_failures_are_nonfatal_to_the_circuit_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    circuit = _golden_circuits()[0]
+
+    def fail_layout(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("layout-injected")
+
+    monkeypatch.setattr(renderer_module, "build_schematic_layout", fail_layout)
+    layout_failure = render_circuit(circuit)
+    assert layout_failure.status == "failed"
+    assert layout_failure.svg is None
+    assert layout_failure.professional_renderer_success is False
+
+    monkeypatch.undo()
+
+    def fail_render(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError("render-injected")
+
+    monkeypatch.setattr(renderer_module, "_render_svg", fail_render)
+    render_failure = render_circuit(circuit)
+    assert render_failure.status == "failed"
+    assert render_failure.svg is None
+    assert render_failure.professional_renderer_success is False
+
+
+def _large_chain(component_count: int) -> CircuitIR:
+    components: list[dict[str, object]] = [
+        {
+            "id": "v1",
+            "type": "voltage_source",
+            "ports": {"p": "n0", "n": "gnd"},
+            "value": "5V",
+        }
+    ]
+    for index in range(component_count):
+        components.append(
+            {
+                "id": f"r{index}",
+                "type": "resistor",
+                "ports": {
+                    "p": f"n{index}",
+                    "n": ("gnd" if index == component_count - 1 else f"n{index + 1}"),
+                },
+                "value": "1k",
+            }
+        )
+    components.append({"id": "gnd", "type": "ground", "ports": {"g": "gnd"}})
+    net_ids = ["gnd", *[f"n{index}" for index in range(component_count)]]
+    return CircuitIR.model_validate(
+        {
+            "components": components,
+            "nets": [
+                {
+                    "id": net_id,
+                    "kind": "reference" if net_id == "gnd" else "signal",
+                }
+                for net_id in net_ids
+            ],
+        }
+    )
+
+
+@pytest.mark.parametrize("component_count", [5, 10, 20, 30, 50])
+def test_large_circuits_stay_bounded_and_renderable(component_count: int) -> None:
+    result = render_circuit(_large_chain(component_count))
+    assert result.status in {"rendered", "degraded"}
+    assert result.svg is not None
+    assert result.professional_renderer_success is True
 
 
 def test_rendering_benchmark_has_50_cases_per_course_and_no_failed_renders() -> None:

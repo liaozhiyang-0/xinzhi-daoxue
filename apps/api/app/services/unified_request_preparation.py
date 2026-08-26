@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.circuit.semantic import circuit_ir_from_text
 from app.contracts import AgentRequest, GoalContract
 from app.contracts.planner import PlannerBudget
+from app.core.config import Settings
 from app.services.multimodal_policy import (
     enrich_multimodal_request,
     get_multimodal_capability_hint,
@@ -18,6 +20,9 @@ class UnifiedRequestPreparationService:
     route.
     """
 
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings
+
     def build_goal(self, request: AgentRequest) -> GoalContract:
         request = enrich_multimodal_request(request)
         options = request.options
@@ -26,13 +31,10 @@ class UnifiedRequestPreparationService:
         recognition = routing_data.get("intent_recognition")
         recognition_data = recognition if isinstance(recognition, dict) else {}
         scenario_contract = options.get("scenario_contract")
-        scenario_data = (
-            scenario_contract if isinstance(scenario_contract, dict) else {}
-        )
+        scenario_data = scenario_contract if isinstance(scenario_contract, dict) else {}
         modalities = self._modalities(request)
         desired_output = self._string_list(
-            options.get("desired_output")
-            or scenario_data.get("expected_output")
+            options.get("desired_output") or scenario_data.get("expected_output")
         )
         evidence = self._string_list(
             options.get("evidence_requirements")
@@ -94,11 +96,46 @@ class UnifiedRequestPreparationService:
 
     def attach(self, request: AgentRequest) -> AgentRequest:
         request = enrich_multimodal_request(request)
+        request = self._attach_conservative_text_circuit_ir(request)
         goal = self.build_goal(request)
         options = dict(request.options)
         options["_goal_contract"] = goal.model_dump(mode="json")
         options["goal_id"] = goal.goal_id
         return request.model_copy(update={"options": options})
+
+    def _attach_conservative_text_circuit_ir(
+        self, request: AgentRequest
+    ) -> AgentRequest:
+        """Make explicit text topologies available to the optional renderer."""
+
+        if request.attachments or request.canonical_input.get("circuit_ir"):
+            return request
+        hint = get_multimodal_capability_hint(request)
+        requested_mode = request.options.get("circuit_visualization_mode")
+        configured_mode = (
+            self.settings.circuit_visualization_mode if self.settings else "off"
+        )
+        render_enabled = self.settings.circuit_render_enabled if self.settings else True
+        auto_enabled = self.settings.circuit_render_auto if self.settings else True
+        if (
+            not hint.circuit_ir_requested
+            or not (
+                requested_mode in {"controlled", "shadow"}
+                or (configured_mode in {"controlled", "shadow"} and auto_enabled)
+            )
+            or not render_enabled
+        ):
+            return request
+        circuit = circuit_ir_from_text(request.input_text())
+        if circuit is None:
+            return request
+        canonical_input = dict(request.canonical_input)
+        canonical_input["circuit_ir"] = circuit.model_dump(mode="json")
+        options = dict(request.options)
+        options["circuit_ir_source"] = "text:circuit_text_v1"
+        return request.model_copy(
+            update={"canonical_input": canonical_input, "options": options}
+        )
 
     @staticmethod
     def _modalities(request: AgentRequest) -> list[str]:
@@ -121,9 +158,7 @@ class UnifiedRequestPreparationService:
         if not isinstance(value, list):
             return []
         return list(
-            dict.fromkeys(
-                str(item).strip() for item in value if str(item).strip()
-            )
+            dict.fromkeys(str(item).strip() for item in value if str(item).strip())
         )
 
     @staticmethod

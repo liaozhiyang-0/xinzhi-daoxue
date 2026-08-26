@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import ValidationError
 
 from app.agents.internal.contracts import VisionExtraction
+from app.circuit.semantic import circuit_ir_from_vision_extraction
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -109,9 +110,7 @@ class AcademicProblemSolverService:
         fallback_tracker = FallbackTracker()
         fallback_tracker.start(self.agent_id)
         boundary_started = perf_counter()
-        boundary = self.boundary_policy.evaluate(
-            problem, check_visual_topology=False
-        )
+        boundary = self.boundary_policy.evaluate(problem, check_visual_topology=False)
         node_timings.append(
             self._node_timing(
                 "boundary_policy",
@@ -490,9 +489,7 @@ class AcademicProblemSolverService:
                 acceptance_spec=request.options.get("visual_acceptance"),
                 require_specialized_topology=specialized_topology,
             )
-            architecture_telemetry.increment(
-                "reused_multimodal_observation_count"
-            )
+            architecture_telemetry.increment("reused_multimodal_observation_count")
             return problem, {
                 "status": "reused",
                 "strategy": "reused_observation",
@@ -621,29 +618,25 @@ class AcademicProblemSolverService:
                 async with asyncio.timeout(
                     self._vision_call_timeout_seconds(budget, settings)
                 ):
-                    retry_response = (
-                        await self.model_service.analyze_images_for_task(
-                            task_type,
-                            prompt=(
-                                pack.build_extraction_prompt(problem)
-                                + " 这是一次严格的视觉验收复核。只依据原图，"
-                                "不要输出泛化的‘已提取’描述；必须在 JSON 顶层字段"
-                                "中逐项给出验收字段的原始可见值。若字段确实不可见，"
-                                "明确写入 uncertain_info，不得猜测。"
-                                + self._visual_acceptance_instruction(
-                                    request.options["visual_acceptance"]
-                                )
-                                + self._visual_extraction_instruction(
-                                    require_component_topology=specialized_topology
-                                )
-                            ),
-                            images=list(prepared.images),
-                            request_id=(
-                                str(request.options.get("request_id", "")) or None
-                            ),
-                            json_mode=True,
-                            extra_options={"_allow_route_fallback": False},
-                        )
+                    retry_response = await self.model_service.analyze_images_for_task(
+                        task_type,
+                        prompt=(
+                            pack.build_extraction_prompt(problem)
+                            + " 这是一次严格的视觉验收复核。只依据原图，"
+                            "不要输出泛化的‘已提取’描述；必须在 JSON 顶层字段"
+                            "中逐项给出验收字段的原始可见值。若字段确实不可见，"
+                            "明确写入 uncertain_info，不得猜测。"
+                            + self._visual_acceptance_instruction(
+                                request.options["visual_acceptance"]
+                            )
+                            + self._visual_extraction_instruction(
+                                require_component_topology=specialized_topology
+                            )
+                        ),
+                        images=list(prepared.images),
+                        request_id=(str(request.options.get("request_id", "")) or None),
+                        json_mode=True,
+                        extra_options={"_allow_route_fallback": False},
                     )
                 retry_problem, retry_structure = self._merge_visual_extraction(
                     problem,
@@ -663,9 +656,7 @@ class AcademicProblemSolverService:
                     ),
                     "provider": retry_response.provider,
                     "model": retry_response.model,
-                    "elapsed_ms": max(
-                        0, int((perf_counter() - retry_started) * 1000)
-                    ),
+                    "elapsed_ms": max(0, int((perf_counter() - retry_started) * 1000)),
                     "model_calls": 1,
                 }
                 architecture_telemetry.increment("duplicate_vision_call_count")
@@ -1441,9 +1432,7 @@ class AcademicProblemSolverService:
         if len(answer) <= max_chars:
             return answer
         half = max_chars // 2
-        return (
-            f"{answer[:half]}\n\n[中间部分因上下文预算省略]\n\n{answer[-half:]}"
-        )
+        return f"{answer[:half]}\n\n[中间部分因上下文预算省略]\n\n{answer[-half:]}"
 
     @staticmethod
     def _combined_usage(responses: list[ModelResponse]) -> dict[str, int] | None:
@@ -2068,14 +2057,12 @@ class AcademicProblemSolverService:
             attachment_ids=list(roles),
             attachment_roles=roles,
             recognized_text=[
-                str(item)
-                for item in visual_structure.get("recognized_text", [])
+                str(item) for item in visual_structure.get("recognized_text", [])
             ][:40],
             summary=summary[:50_000],
             possible_capabilities=list(hint.possible_capabilities),
             confidence=float(
-                visual_structure.get("visual_extraction_confidence", 0.0)
-                or 0.0
+                visual_structure.get("visual_extraction_confidence", 0.0) or 0.0
             ),
             partial=visual_structure.get("visual_structure_status") != "complete",
             warnings=warnings,
@@ -2174,9 +2161,7 @@ class AcademicProblemSolverService:
                         for key, item in (raw.get("terminal_map") or {}).items()
                     },
                     "polarity": str(raw.get("polarity") or "") or None,
-                    "reference_direction": str(
-                        raw.get("reference_direction") or ""
-                    )
+                    "reference_direction": str(raw.get("reference_direction") or "")
                     or None,
                     "certainty": (
                         raw.get("certainty")
@@ -2196,12 +2181,10 @@ class AcademicProblemSolverService:
             "uncertain_info": [
                 item
                 for item in (
-                    str(raw).strip()
-                    for raw in payload.get("uncertain_info", [])
+                    str(raw).strip() for raw in payload.get("uncertain_info", [])
                 )
                 if item
-                and item.casefold()
-                not in {"none", "null", "n/a", "无", "无不确定项"}
+                and item.casefold() not in {"none", "null", "n/a", "无", "无不确定项"}
             ],
             "confidence": payload.get("confidence", 0.5),
             "primary_role": payload.get("primary_role", "UNKNOWN"),
@@ -2210,9 +2193,7 @@ class AcademicProblemSolverService:
                 for item in payload.get("secondary_roles", [])
                 if str(item).strip()
             ],
-            "role_source": payload.get(
-                "role_source", "multimodal_inference"
-            ),
+            "role_source": payload.get("role_source", "multimodal_inference"),
         }
 
     @staticmethod
@@ -2273,9 +2254,7 @@ class AcademicProblemSolverService:
                             {"description": "图片内容由视觉模型提取，需以原图为准"},
                         ],
                         "can_continue": problem.can_continue
-                        and (
-                            not require_specialized_topology or text_facts_fallback
-                        ),
+                        and (not require_specialized_topology or text_facts_fallback),
                     }
                 ),
                 {
@@ -2348,8 +2327,9 @@ class AcademicProblemSolverService:
                 require_component_topology=(
                     require_specialized_topology
                     and (
-                        AcademicProblemSolverService
-                        ._visual_requires_component_topology(acceptance_spec)
+                        AcademicProblemSolverService._visual_requires_component_topology(
+                            acceptance_spec
+                        )
                     )
                     and not (
                         AcademicProblemSolverService._visual_is_signal_extraction(
@@ -2380,14 +2360,17 @@ class AcademicProblemSolverService:
             )
         topology_issues = list(dict.fromkeys([*topology_issues, *acceptance_issues]))
         topology_complete = topology_complete and not acceptance_issues
+        visual_circuit = (
+            circuit_ir_from_vision_extraction(parsed.model_dump(mode="json"))
+            if topology_complete and not visual_text_fallback
+            else None
+        )
         recognized_text = "\n".join(parsed.recognized_text).strip()
         summary_parts = [parsed.diagram_description.strip()]
         if recognized_text:
             summary_parts.append(f"识别文字：{recognized_text}")
         if parsed.uncertain_info:
-            summary_parts.append(
-                "不确定项：" + "；".join(parsed.uncertain_info)
-            )
+            summary_parts.append("不确定项：" + "；".join(parsed.uncertain_info))
         merged = problem.model_copy(
             update={
                 "problem_text": (
@@ -2441,6 +2424,11 @@ class AcademicProblemSolverService:
                 "visual_acceptance": visual_acceptance,
                 "circuit_ir_requested": require_specialized_topology,
                 "recognized_text": list(parsed.recognized_text),
+                **(
+                    {"circuit_ir": visual_circuit.model_dump(mode="json")}
+                    if visual_circuit is not None
+                    else {}
+                ),
             },
         )
 
@@ -2499,9 +2487,7 @@ class AcademicProblemSolverService:
                     duplicate_labels.add(label)
                 labels.add(label)
             connections = {
-                value.strip()
-                for value in component.connections
-                if value.strip()
+                value.strip() for value in component.connections if value.strip()
             }
             terminal_map = {
                 str(key).strip(): str(value).strip()
@@ -2587,8 +2573,7 @@ class AcademicProblemSolverService:
             "bit_order",
         )
         return any(
-            any(token in marker for token in component_markers)
-            for marker in markers
+            any(token in marker for token in component_markers) for marker in markers
         )
 
     @staticmethod

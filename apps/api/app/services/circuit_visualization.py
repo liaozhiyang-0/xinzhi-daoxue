@@ -10,6 +10,10 @@ from app.circuit.contracts import (
     CircuitRenderObservation,
     CircuitRenderResult,
 )
+from app.circuit.semantic import (
+    circuit_ir_from_text,
+    circuit_ir_from_vision_extraction,
+)
 from app.contracts.agent import AgentRequest, AgentResult, Artifact, ArtifactType
 from app.observability.architecture_telemetry import architecture_telemetry
 from app.runtime.contracts import AgentRun, RuntimeObservation
@@ -51,15 +55,19 @@ def resolve_circuit_visualization_mode(
     *,
     configured_mode: CircuitVisualizationMode,
     frontend_enabled: bool = True,
+    render_enabled: bool = True,
+    auto_enabled: bool = True,
 ) -> CircuitVisualizationMode:
     """Resolve the per-task workspace switch without changing global policy."""
 
+    if not render_enabled:
+        return "off"
     requested = request.options.get("circuit_visualization_mode")
     if requested == "off":
         return "off"
     if requested == "controlled" and frontend_enabled:
         return "controlled"
-    return configured_mode
+    return configured_mode if auto_enabled else "off"
 
 
 def decide_circuit_visualization(
@@ -166,7 +174,11 @@ def decide_circuit_visualization(
 
 
 def extract_circuit_ir(request: AgentRequest) -> CircuitIR | None:
-    """Read only trusted structured IR; do not infer IR from text or images."""
+    """Resolve trusted IR, then conservative text/vision semantic adapters.
+
+    Images are never converted from pixels here, and free text is accepted
+    only when multimodal policy marks a circuit topology as relevant.
+    """
 
     for container in (request.canonical_input, request.options):
         candidate = container.get("circuit_ir")
@@ -176,7 +188,19 @@ def extract_circuit_ir(request: AgentRequest) -> CircuitIR | None:
             try:
                 return CircuitIR.model_validate(candidate)
             except ValueError:
-                return None
+                continue
+
+    vision_candidate = request.options.get("vision_extraction")
+    if isinstance(vision_candidate, Mapping):
+        circuit = circuit_ir_from_vision_extraction(vision_candidate)
+        if circuit is not None:
+            return circuit
+
+    if (
+        not request.attachments
+        and get_multimodal_capability_hint(request).circuit_ir_requested
+    ):
+        return circuit_ir_from_text(request.input_text())
     return None
 
 

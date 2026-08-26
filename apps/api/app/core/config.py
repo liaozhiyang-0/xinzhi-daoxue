@@ -187,9 +187,7 @@ class Settings(BaseSettings):
         PROJECT_ROOT / ".local_outputs" / "research_analysis_tmp"
     )
     research_analysis_model_assist_enabled: bool = True
-    research_analysis_model_assist_max_tokens: int = Field(
-        default=900, ge=256, le=4000
-    )
+    research_analysis_model_assist_max_tokens: int = Field(default=900, ge=256, le=4000)
     research_analysis_model_direct_enabled: bool = True
     research_analysis_model_direct_max_tokens: int = Field(
         default=2400, ge=512, le=8000
@@ -220,9 +218,7 @@ class Settings(BaseSettings):
     knowledge_ocr_review_cache_path: Path = (
         PROJECT_ROOT / ".local_outputs" / "ocr_review_snapshots"
     )
-    knowledge_ocr_review_cache_ttl_seconds: int = Field(
-        default=300, ge=1, le=86_400
-    )
+    knowledge_ocr_review_cache_ttl_seconds: int = Field(default=300, ge=1, le=86_400)
     knowledge_min_score_v2: float = Field(default=0.35, ge=0)
     knowledge_low_confidence_threshold: float = Field(default=0.45, ge=0, le=1)
     knowledge_max_hits_per_document: int = Field(default=2, ge=1, le=10)
@@ -322,26 +318,18 @@ class Settings(BaseSettings):
     external_retrieval_intent_gate_enabled: bool = True
     external_retrieval_timeout_seconds: float = Field(default=120, gt=0, le=180)
     external_retrieval_review_enabled: bool = True
-    external_retrieval_planning_timeout_seconds: float = Field(
-        default=6, gt=0, le=60
-    )
-    external_retrieval_planning_max_tokens: int = Field(
-        default=700, ge=256, le=4000
-    )
+    external_retrieval_planning_timeout_seconds: float = Field(default=6, gt=0, le=60)
+    external_retrieval_planning_max_tokens: int = Field(default=700, ge=256, le=4000)
     external_retrieval_review_timeout_seconds: float = Field(default=10, gt=0, le=60)
     external_retrieval_review_max_tokens: int = Field(default=2400, ge=512, le=8000)
     external_retrieval_provider_retries: int = Field(default=1, ge=0, le=3)
-    external_retrieval_max_provider_concurrency: int = Field(
-        default=4, ge=1, le=16
-    )
+    external_retrieval_max_provider_concurrency: int = Field(default=4, ge=1, le=16)
     external_retrieval_max_query_variants: int = Field(default=2, ge=1, le=6)
     external_retrieval_rate_limit_cooldown_seconds: float = Field(
         default=60, ge=0, le=3600
     )
     external_retrieval_cache_size: int = Field(default=128, ge=0, le=10_000)
-    external_retrieval_cache_ttl_seconds: float = Field(
-        default=120, ge=0, le=86_400
-    )
+    external_retrieval_cache_ttl_seconds: float = Field(default=120, ge=0, le=86_400)
     external_retrieval_max_results: int = Field(default=8, ge=1, le=50)
     external_retrieval_max_fetches: int = Field(default=4, ge=0, le=20)
     external_retrieval_allow_full_text: bool = False
@@ -354,28 +342,20 @@ class Settings(BaseSettings):
     external_arxiv_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_crossref_base_url: str = "https://api.crossref.org"
     external_crossref_mailto: str = ""
-    external_crossref_min_delay_seconds: float = Field(
-        default=0.5, ge=0, le=10
-    )
+    external_crossref_min_delay_seconds: float = Field(default=0.5, ge=0, le=10)
     external_crossref_timeout_seconds: float = Field(default=30, gt=0, le=120)
     external_crossref_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_openalex_base_url: str = "https://api.openalex.org"
     external_openalex_api_key: SecretStr = SecretStr("")
     external_openalex_mailto: str = ""
-    external_openalex_min_delay_seconds: float = Field(
-        default=0.5, ge=0, le=10
-    )
+    external_openalex_min_delay_seconds: float = Field(default=0.5, ge=0, le=10)
     external_openalex_timeout_seconds: float = Field(default=45, gt=0, le=120)
     external_openalex_max_concurrency: int = Field(default=2, ge=1, le=4)
     external_semantic_scholar_base_url: str = "https://api.semanticscholar.org/graph/v1"
     external_semantic_scholar_api_key: SecretStr = SecretStr("")
     external_semantic_scholar_allow_unauthenticated: bool = False
-    external_semantic_scholar_min_delay_seconds: float = Field(
-        default=1, ge=0, le=30
-    )
-    external_semantic_scholar_timeout_seconds: float = Field(
-        default=30, gt=0, le=120
-    )
+    external_semantic_scholar_min_delay_seconds: float = Field(default=1, ge=0, le=30)
+    external_semantic_scholar_timeout_seconds: float = Field(default=30, gt=0, le=120)
     external_semantic_scholar_max_concurrency: int = Field(default=1, ge=1, le=4)
     external_cnki_base_url: str = ""
     external_cnki_api_key: SecretStr = SecretStr("")
@@ -397,9 +377,7 @@ class Settings(BaseSettings):
     external_tavily_timeout_seconds: float = Field(default=30, gt=0, le=120)
     external_tavily_max_results: int = Field(default=5, ge=1, le=20)
     external_tavily_max_concurrency: int = Field(default=1, ge=1, le=4)
-    external_brave_base_url: str = (
-        "https://api.search.brave.com/res/v1/web/search"
-    )
+    external_brave_base_url: str = "https://api.search.brave.com/res/v1/web/search"
     external_brave_api_key: SecretStr = SecretStr("")
     external_brave_auth_header: str = "X-Subscription-Token"
     external_brave_country: str = "CN"
@@ -533,6 +511,10 @@ class Settings(BaseSettings):
     use_old_router: bool = False
     shadow_can_mutate: bool = False
     allow_legacy_test_only: bool = False
+    # Circuit drawing is an optional capability.  Keep the global mode off by
+    # default; these flags make deployment and rollback explicit and cheap.
+    circuit_render_enabled: bool = True
+    circuit_render_auto: bool = True
     circuit_visualization_mode: Literal["off", "shadow", "controlled"] = "off"
     # The workspace can opt one task into the controlled renderer. The global
     # mode remains off by default so ordinary tasks never schedule drawing.
@@ -560,9 +542,7 @@ class Settings(BaseSettings):
         "controlled_canary",
         "production",
     ] = "offline_real_case"
-    experience_planner_max_influence_weight: float = Field(
-        default=0.15, ge=0, le=1
-    )
+    experience_planner_max_influence_weight: float = Field(default=0.15, ge=0, le=1)
 
     @field_validator("log_level")
     @classmethod
@@ -645,14 +625,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "legacy executable and mutable shadow modes are forbidden in production"
             )
-        if any(
-            (
-                self.enable_legacy_runtime,
-                self.allow_legacy_fallback,
-                self.use_old_router,
-                self.shadow_can_mutate,
+        if (
+            any(
+                (
+                    self.enable_legacy_runtime,
+                    self.allow_legacy_fallback,
+                    self.use_old_router,
+                    self.shadow_can_mutate,
+                )
             )
-        ) and not self.allow_legacy_test_only:
+            and not self.allow_legacy_test_only
+        ):
             raise ValueError(
                 "legacy executable modes require ALLOW_LEGACY_TEST_ONLY=true"
             )

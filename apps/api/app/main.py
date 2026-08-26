@@ -182,8 +182,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     tool_registry = default_tool_registry(
         circuit_render_enabled=(
-            app_settings.circuit_visualization_mode != "off"
-            or app_settings.circuit_visualization_frontend_enabled
+            app_settings.circuit_render_enabled
+            and (
+                app_settings.circuit_visualization_mode != "off"
+                or app_settings.circuit_visualization_frontend_enabled
+            )
         )
     )
     graph_checkpointer = _create_graph_checkpointer(app_settings)
@@ -199,9 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         graph_factory.create("academic_problem_solver"), model_service, storage
     )
     internal_agent_hub = InternalAgentHub(model_service)
-    academic_paper_review = AcademicPaperReviewService(
-        internal_agent_hub, app_settings
-    )
+    academic_paper_review = AcademicPaperReviewService(internal_agent_hub, app_settings)
     academic_search_planner = AcademicSearchPlannerService(
         internal_agent_hub, app_settings
     )
@@ -380,18 +381,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for service in task_engine.runtime_boundary.business_registry.services()
         if getattr(service, "agent_id", "") != "*"
     )
-    runtime_capability_descriptors = (
-        descriptors_from_task_runtime_services(
-            task_runtime_services,
-            agent_versions={
-                definition.agent_id: definition.version
-                for definition in agent_registry.list_agents()
-            },
-        )
-        + descriptors_from_learning_loop_services(
-            teaching_interaction=teaching_interaction_runtime,
-            learning_progress=learning_progress_runtime,
-        )
+    runtime_capability_descriptors = descriptors_from_task_runtime_services(
+        task_runtime_services,
+        agent_versions={
+            definition.agent_id: definition.version
+            for definition in agent_registry.list_agents()
+        },
+    ) + descriptors_from_learning_loop_services(
+        teaching_interaction=teaching_interaction_runtime,
+        learning_progress=learning_progress_runtime,
     )
     runtime_agent_readiness = RuntimeAgentReadinessService(
         agent_registry,
@@ -511,8 +509,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     )
 
-
-
     app = FastAPI(
         title=app_settings.app_name,
         version=app_settings.app_version,
@@ -523,7 +519,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     configure_http_app(app)
-
 
     return app
 

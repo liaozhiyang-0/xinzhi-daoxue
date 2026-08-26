@@ -126,10 +126,15 @@ def _render_svg(
         ".value{fill:#465b6b;font:11px system-ui,sans-serif}"
         ".net-label{fill:#0f5b78;font:12px system-ui,sans-serif;font-weight:600}"
         ".annotation{fill:#526475;font:12px system-ui,sans-serif}"
+        ".polarity{fill:#162534;font:700 13px system-ui,sans-serif}"
+        ".direction-arrow{fill:none;stroke:#0f5b78;stroke-width:1.8;stroke-linecap:round}"
         ".junction{fill:#162534}"
         ".port{fill:#fff;stroke:#0f5b78;stroke-width:1.5}"
         ".unknown{fill:#fff7ed;stroke:#b45309;stroke-width:2;stroke-dasharray:4 3}"
         "</style>",
+        '<defs><marker id="circuit-arrow" markerWidth="8" markerHeight="8" '
+        'refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" '
+        'fill="#0f5b78"/></marker></defs>',
         '<rect width="100%" height="100%" fill="#ffffff"/>',
     ]
     for wire in layout.wires:
@@ -143,6 +148,26 @@ def _render_svg(
             f'<circle class="junction" '
             f'data-junction-net="{html.escape(junction.net_id)}" '
             f'cx="{junction.point.x:.1f}" cy="{junction.point.y:.1f}" r="4"/>'
+        )
+    for marker in layout.polarity_markers:
+        component_id = html.escape(marker.component_id)
+        pieces.extend(
+            [
+                f'<text class="polarity" data-polarity="{component_id}:positive" '
+                f'x="{marker.positive_point.x + 7:.1f}" '
+                f'y="{marker.positive_point.y - 7:.1f}">+</text>',
+                f'<text class="polarity" data-polarity="{component_id}:negative" '
+                f'x="{marker.negative_point.x + 7:.1f}" '
+                f'y="{marker.negative_point.y - 7:.1f}">−</text>',
+            ]
+        )
+    for arrow in layout.direction_arrows:
+        target_id = html.escape(arrow.target_id or "")
+        pieces.append(
+            f'<line class="direction-arrow" data-direction-target="{target_id}" '
+            f'x1="{arrow.start.x:.1f}" y1="{arrow.start.y:.1f}" '
+            f'x2="{arrow.end.x:.1f}" y2="{arrow.end.y:.1f}" '
+            'marker-end="url(#circuit-arrow)"/>'
         )
     for placement in layout.placements:
         component = components[placement.component_id]
@@ -163,6 +188,7 @@ def _render_svg(
             )
     if options.include_labels:
         pieces.extend(_render_labels(layout.labels))
+        pieces.extend(_render_annotations(layout.annotations))
     pieces.append("</svg>")
     return "".join(pieces)
 
@@ -444,6 +470,16 @@ def _render_labels(labels: list[SchematicLabel]) -> list[str]:
             f"{html.escape(label.text)}</text>"
         )
     return rendered
+
+
+def _render_annotations(annotations: list[Any]) -> list[str]:
+    return [
+        f'<text class="annotation" '
+        f'data-annotation-target="{html.escape(annotation.target_id or "")}" '
+        f'x="{annotation.point.x:.1f}" y="{annotation.point.y:.1f}">'
+        f"{html.escape(annotation.text)}</text>"
+        for annotation in annotations
+    ]
 
 
 def _validate_render_output(

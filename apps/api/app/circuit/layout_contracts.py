@@ -8,6 +8,7 @@ Orientation = Literal["horizontal", "vertical"]
 Anchor = Literal["start", "middle", "end"]
 Direction = Literal["up", "down", "left", "right"]
 LabelKind = Literal["component", "value", "net", "port", "annotation"]
+AnnotationKind = Literal["text", "equation", "warning"]
 
 
 class SchematicPoint(BaseModel):
@@ -74,6 +75,53 @@ class SchematicLabel(BaseModel):
     kind: LabelKind = "annotation"
 
 
+class SchematicPolarityMarker(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    component_id: str = Field(min_length=1, max_length=128)
+    positive_port: str = Field(min_length=1, max_length=64)
+    negative_port: str = Field(min_length=1, max_length=64)
+    positive_point: SchematicPoint
+    negative_point: SchematicPoint
+
+
+class SchematicDirectionArrow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_id: str | None = None
+    start: SchematicPoint
+    end: SchematicPoint
+    label: str | None = Field(default=None, max_length=120)
+
+
+class SchematicGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=200)
+    member_ids: list[str] = Field(default_factory=list, max_length=128)
+    bounding_box: SchematicBoundingBox
+
+
+class SchematicSubcircuit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subcircuit_id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=200)
+    component_ids: list[str] = Field(default_factory=list, max_length=128)
+    net_ids: list[str] = Field(default_factory=list, max_length=128)
+    bounding_box: SchematicBoundingBox
+
+
+class SchematicAnnotation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: AnnotationKind = "text"
+    text: str = Field(min_length=1, max_length=500)
+    point: SchematicPoint
+    target_id: str | None = None
+
+
 class SchematicLayoutIR(BaseModel):
     """Deterministic visual projection of semantic CircuitIR.
 
@@ -93,4 +141,9 @@ class SchematicLayoutIR(BaseModel):
     junctions: list[SchematicJunction] = Field(default_factory=list)
     labels: list[SchematicLabel] = Field(default_factory=list)
     ports: list[SchematicPort] = Field(default_factory=list)
+    polarity_markers: list[SchematicPolarityMarker] = Field(default_factory=list)
+    direction_arrows: list[SchematicDirectionArrow] = Field(default_factory=list)
+    groups: list[SchematicGroup] = Field(default_factory=list)
+    subcircuits: list[SchematicSubcircuit] = Field(default_factory=list)
+    annotations: list[SchematicAnnotation] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list, max_length=64)

@@ -5,6 +5,7 @@ import json
 import statistics
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -20,8 +21,598 @@ from app.circuit import (  # noqa: E402
     build_schematic_layout,
     render_circuit,
 )
+from app.circuit.contracts import PORT_CONTRACTS  # noqa: E402
+from app.circuit.renderer import _symbol_body  # noqa: E402
 from app.circuit.validator import validate_circuit  # noqa: E402
 from app.services.circuit_visualization import observation_from_result  # noqa: E402
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkCase:
+    course: str
+    category: str
+    circuit: CircuitIR
+    template: str
+
+
+def _make_ct_case(index: int, category: str) -> BenchmarkCase:
+    prefix = f"{category[:2]}{index}"
+    if category == "rlc":
+        components = [
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "in", "n": "gnd"},
+                "value": "5V",
+            },
+            {
+                "id": f"r{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "n1"},
+                "value": "1k",
+            },
+            {
+                "id": f"l{prefix}",
+                "type": "inductor",
+                "ports": {"p": "n1", "n": "n2"},
+                "value": "10mH",
+            },
+            {
+                "id": f"c{prefix}",
+                "type": "capacitor",
+                "ports": {"p": "n2", "n": "gnd"},
+                "value": "1uF",
+            },
+        ]
+        nets = ["in", "n1", "n2", "gnd"]
+        template = "rlc_series"
+    elif category == "dependent":
+        components = [
+            {
+                "id": f"e{prefix}",
+                "type": "dependent_voltage_source",
+                "ports": {"p": "out", "n": "gnd", "cp": "sense_p", "cn": "sense_n"},
+                "value": "2",
+            },
+            {
+                "id": f"r{prefix}",
+                "type": "resistor",
+                "ports": {"p": "sense_p", "n": "sense_n"},
+                "value": "1k",
+            },
+            {
+                "id": f"load{prefix}",
+                "type": "resistor",
+                "ports": {"p": "out", "n": "gnd"},
+                "value": "2k",
+            },
+        ]
+        nets = ["out", "sense_p", "sense_n", "gnd"]
+        template = "generic_left_to_right"
+    elif category == "bridge":
+        components = [
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "in", "n": "gnd"},
+                "value": "5V",
+            },
+            {
+                "id": f"r1{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "left"},
+                "value": "1k",
+            },
+            {
+                "id": f"r2{prefix}",
+                "type": "resistor",
+                "ports": {"p": "left", "n": "gnd"},
+                "value": "2k",
+            },
+            {
+                "id": f"r3{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "right"},
+                "value": "3k",
+            },
+            {
+                "id": f"r4{prefix}",
+                "type": "resistor",
+                "ports": {"p": "right", "n": "gnd"},
+                "value": "4k",
+            },
+            {
+                "id": f"rb{prefix}",
+                "type": "resistor",
+                "ports": {"p": "left", "n": "right"},
+                "value": "5k",
+            },
+        ]
+        nets = ["in", "left", "right", "gnd"]
+        template = "bridge"
+    elif category == "coupled_special":
+        components = [
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "in", "n": "gnd1"},
+                "value": "5V",
+            },
+            {
+                "id": f"k{prefix}",
+                "type": "coupled_inductor",
+                "ports": {
+                    "p1": "in",
+                    "n1": "gnd1",
+                    "p2": "out",
+                    "n2": "gnd2",
+                },
+                "value": "k=0.9",
+            },
+            {
+                "id": f"r{prefix}",
+                "type": "resistor",
+                "ports": {"p": "out", "n": "gnd2"},
+                "value": "1k",
+            },
+        ]
+        components.extend(
+            [
+                {"id": f"g1{prefix}", "type": "ground", "ports": {"g": "gnd1"}},
+                {"id": f"g2{prefix}", "type": "ground", "ports": {"g": "gnd2"}},
+            ]
+        )
+        nets = ["in", "out", "gnd1", "gnd2"]
+        template = "generic_left_to_right"
+    else:
+        components = [
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "in", "n": "gnd"},
+                "value": "5V",
+            },
+            {
+                "id": f"r1{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "mid"},
+                "value": "1k",
+            },
+            {
+                "id": f"r2{prefix}",
+                "type": "resistor",
+                "ports": {"p": "mid", "n": "gnd"},
+                "value": "2k",
+            },
+        ]
+        if category == "kcl_kvl":
+            components.append(
+                {
+                    "id": f"i{prefix}",
+                    "type": "current_source",
+                    "ports": {"p": "mid", "n": "gnd"},
+                    "value": "1mA",
+                }
+            )
+        elif category == "thevenin_norton":
+            components.append(
+                {
+                    "id": f"rl{prefix}",
+                    "type": "resistor",
+                    "ports": {"p": "mid", "n": "gnd"},
+                    "value": "3k",
+                }
+            )
+        else:
+            components.append(
+                {
+                    "id": f"s{prefix}",
+                    "type": "switch",
+                    "ports": {"p": "mid", "n": "gnd"},
+                    "value": "open",
+                }
+            )
+        nets = ["in", "mid", "gnd"]
+        template = (
+            "divider"
+            if category in {"simple_series_parallel", "thevenin_norton"}
+            else "generic_left_to_right"
+        )
+    if category != "coupled_special":
+        components.append({"id": f"g{prefix}", "type": "ground", "ports": {"g": "gnd"}})
+    return BenchmarkCase(
+        "CT",
+        category,
+        CircuitIR.model_validate(
+            {
+                "components": components,
+                "nets": [
+                    {"id": item, "kind": "reference" if item == "gnd" else "signal"}
+                    for item in nets
+                ],
+            }
+        ),
+        template,
+    )
+
+
+def _make_ae_case(index: int, category: str) -> BenchmarkCase:
+    prefix = f"{category[:2]}{index}"
+    if category == "diode":
+        components = [
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "in", "n": "gnd"},
+                "value": "5V",
+            },
+            {
+                "id": f"d{prefix}",
+                "type": "diode",
+                "ports": {"a": "in", "k": "out"},
+                "value": "Si",
+            },
+            {
+                "id": f"r{prefix}",
+                "type": "resistor",
+                "ports": {"p": "out", "n": "gnd"},
+                "value": "1k",
+            },
+        ]
+        template = "series"
+    elif category in {"bjt", "bias"}:
+        components = [
+            {
+                "id": f"q{prefix}",
+                "type": "bjt",
+                "ports": {"b": "base", "c": "collector", "e": "gnd"},
+                "parameters": {"symbol_variant": "npn" if category == "bjt" else "pnp"},
+            },
+            {
+                "id": f"rb{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "base"},
+                "value": "100k",
+            },
+            {
+                "id": f"rc{prefix}",
+                "type": "resistor",
+                "ports": {"p": "vcc", "n": "collector"},
+                "value": "2k",
+            },
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "vcc", "n": "gnd"},
+                "value": "12V",
+            },
+            {"id": f"in{prefix}", "type": "input", "ports": {"p": "in"}},
+        ]
+        template = "transistor_stage"
+    elif category in {"mos", "small_signal"}:
+        components = [
+            {
+                "id": f"m{prefix}",
+                "type": "mosfet",
+                "ports": {"g": "gate", "d": "drain", "s": "gnd"},
+                "parameters": {"symbol_variant": "nmos", "gm": "0.01S"},
+            },
+            {
+                "id": f"rg{prefix}",
+                "type": "resistor",
+                "ports": {"p": "in", "n": "gate"},
+                "value": "1M",
+            },
+            {
+                "id": f"rd{prefix}",
+                "type": "resistor",
+                "ports": {"p": "vdd", "n": "drain"},
+                "value": "2k",
+            },
+            {
+                "id": f"v{prefix}",
+                "type": "voltage_source",
+                "ports": {"p": "vdd", "n": "gnd"},
+                "value": "5V",
+            },
+            {"id": f"in{prefix}", "type": "input", "ports": {"p": "in"}},
+        ]
+        template = "small_signal" if category == "small_signal" else "transistor_stage"
+    else:
+        components = [
+            {
+                "id": f"a{prefix}",
+                "type": "opamp",
+                "ports": {
+                    "plus": "in",
+                    "minus": "fb",
+                    "out": "out",
+                    "vplus": "vcc",
+                    "vminus": "gnd",
+                },
+                "parameters": {"model": "ideal"},
+            },
+            {
+                "id": f"rin{prefix}",
+                "type": "resistor",
+                "ports": {"p": "input", "n": "fb"},
+                "value": "10k",
+            },
+            {
+                "id": f"rf{prefix}",
+                "type": "resistor",
+                "ports": {"p": "fb", "n": "out"},
+                "value": "100k",
+            },
+            {"id": f"in{prefix}", "type": "input", "ports": {"p": "input"}},
+        ]
+        if category == "feedback":
+            components.append(
+                {
+                    "id": f"c{prefix}",
+                    "type": "capacitor",
+                    "ports": {"p": "out", "n": "fb"},
+                    "value": "10pF",
+                }
+            )
+        template = (
+            "opamp_feedback" if category in {"feedback", "opamp"} else "opamp_inverting"
+        )
+    components.append({"id": f"g{prefix}", "type": "ground", "ports": {"g": "gnd"}})
+    net_ids = sorted({net for item in components for net in item["ports"].values()})
+    return BenchmarkCase(
+        "AE",
+        category,
+        CircuitIR.model_validate(
+            {
+                "components": components,
+                "nets": [
+                    {
+                        "id": item,
+                        "kind": "reference"
+                        if item == "gnd"
+                        else "power"
+                        if item in {"vcc", "vdd"}
+                        else "signal",
+                    }
+                    for item in net_ids
+                ],
+            }
+        ),
+        template,
+    )
+
+
+def _make_de_case(index: int, category: str) -> BenchmarkCase:
+    prefix = f"{category[:2]}{index}"
+    kinds = {
+        "basic_gates": (
+            "and_gate",
+            "or_gate",
+            "not_gate",
+            "nand_gate",
+            "nor_gate",
+            "xor_gate",
+            "xnor_gate",
+            "buffer",
+            "schmitt_trigger",
+            "and_gate",
+        ),
+        "combinational": (
+            "half_adder",
+            "full_adder",
+            "encoder",
+            "decoder",
+            "demux",
+            "half_adder",
+            "full_adder",
+            "encoder",
+            "decoder",
+            "demux",
+        ),
+        "mux_decoder": (
+            "mux",
+            "decoder",
+            "mux",
+            "decoder",
+            "mux",
+            "demux",
+            "encoder",
+            "decoder",
+            "mux",
+            "demux",
+        ),
+        "flip_flop": (
+            "d_flip_flop",
+            "jk_flip_flop",
+            "t_flip_flop",
+            "sr_latch",
+            "d_flip_flop",
+            "jk_flip_flop",
+            "t_flip_flop",
+            "sr_latch",
+            "d_flip_flop",
+            "jk_flip_flop",
+        ),
+        "timing": (
+            "clock",
+            "buffer",
+            "schmitt_trigger",
+            "clock",
+            "and_gate",
+            "clock",
+            "buffer",
+            "schmitt_trigger",
+            "clock",
+            "and_gate",
+        ),
+    }
+    kind = kinds[category][index % 10]
+    required, optional = PORT_CONTRACTS[kind]
+    ports = {port: f"n{prefix}_{port}" for port in sorted(required | optional)}
+    components: list[dict[str, object]] = [
+        {"id": f"u{prefix}", "type": kind, "ports": ports}
+    ]
+    output_ports = {
+        "out",
+        "out1",
+        "out2",
+        "q",
+        "qb",
+        "sum",
+        "carry",
+        "y",
+        "y0",
+        "y1",
+        "y2",
+        "y3",
+    }
+    for port, net_id in ports.items():
+        endpoint_type = "logic_output" if port in output_ports else "logic_input"
+        components.append(
+            {
+                "id": f"{endpoint_type}_{prefix}_{port}",
+                "type": endpoint_type,
+                "ports": {"p": net_id},
+            }
+        )
+    net_ids = sorted(ports.values())
+    return BenchmarkCase(
+        "DE",
+        category,
+        CircuitIR.model_validate(
+            {
+                "components": components,
+                "nets": [{"id": item, "kind": "signal"} for item in net_ids],
+            }
+        ),
+        "logic_flow",
+    )
+
+
+def coverage_cases() -> list[BenchmarkCase]:
+    distributions = {
+        "CT": {
+            "simple_series_parallel": 10,
+            "kcl_kvl": 10,
+            "thevenin_norton": 10,
+            "rlc": 5,
+            "dependent": 5,
+            "bridge": 5,
+            "coupled_special": 5,
+        },
+        "AE": {
+            "diode": 5,
+            "bjt": 10,
+            "mos": 10,
+            "opamp": 10,
+            "feedback": 5,
+            "bias": 5,
+            "small_signal": 5,
+        },
+        "DE": {
+            "basic_gates": 10,
+            "combinational": 10,
+            "mux_decoder": 10,
+            "flip_flop": 10,
+            "timing": 10,
+        },
+    }
+    result: list[BenchmarkCase] = []
+    for course, groups in distributions.items():
+        for category, count in groups.items():
+            for index in range(count):
+                result.append(
+                    _make_ct_case(index, category)
+                    if course == "CT"
+                    else _make_ae_case(index, category)
+                    if course == "AE"
+                    else _make_de_case(index, category)
+                )
+    return result
+
+
+def semantic_metrics(cases: list[BenchmarkCase]) -> dict[str, float]:
+    totals = {
+        key: 0
+        for key in (
+            "components",
+            "types",
+            "values",
+            "nodes",
+            "branches",
+            "polarity",
+            "ports",
+            "renders",
+        )
+    }
+    hits = dict(totals)
+    for case in cases:
+        circuit = case.circuit
+        layout = build_schematic_layout(circuit, case.template)
+        rendered = render_circuit(circuit, CircuitRenderOptions(template=case.template))
+        expected_components = {item.id for item in circuit.components}
+        rendered_components = {item.component_id for item in layout.placements}
+        totals["components"] += len(expected_components)
+        hits["components"] += len(expected_components & rendered_components)
+        totals["types"] += len(circuit.components)
+        hits["types"] += sum(
+            'class="unknown"' not in _symbol_body(item) for item in circuit.components
+        )
+        value_items = [item for item in circuit.components if item.value is not None]
+        totals["values"] += len(value_items)
+        hits["values"] += sum(
+            str(item.value) in (rendered.svg or "") for item in value_items
+        )
+        expected_nodes = {
+            net_id for item in circuit.components for net_id in item.ports.values()
+        }
+        actual_nodes = {item.net_id for item in layout.ports}
+        totals["nodes"] += len(expected_nodes)
+        hits["nodes"] += len(expected_nodes & actual_nodes)
+        expected_branches = {
+            item.id
+            for item in circuit.nets
+            if sum(
+                item.id == net
+                for component in circuit.components
+                for net in component.ports.values()
+            )
+            >= 2
+        }
+        actual_branches = {item.net_id for item in layout.wires}
+        totals["branches"] += len(expected_branches)
+        hits["branches"] += len(expected_branches & actual_branches)
+        source_count = sum(
+            item.type in {"voltage_source", "dependent_voltage_source"}
+            for item in circuit.components
+        )
+        totals["polarity"] += source_count
+        hits["polarity"] += min(source_count, len(layout.polarity_markers))
+        expected_ports = {
+            (item.id, port) for item in circuit.components for port in item.ports
+        }
+        actual_ports = {(item.component_id, item.port) for item in layout.ports}
+        totals["ports"] += len(expected_ports)
+        hits["ports"] += len(expected_ports & actual_ports)
+        hits["renders"] += int(
+            rendered.svg is not None and rendered.professional_renderer_success
+        )
+        totals["renders"] += 1
+    names = {
+        "components": "ComponentRecall",
+        "types": "ComponentTypeAccuracy",
+        "values": "ValueAccuracy",
+        "nodes": "NodeAccuracy",
+        "branches": "BranchAccuracy",
+        "polarity": "PolarityAccuracy",
+        "ports": "PortAccuracy",
+        "renders": "RenderSuccess",
+    }
+    return {
+        names[key]: round(100 * hits[key] / totals[key], 2) if totals[key] else 100.0
+        for key in names
+    }
 
 
 def representative_cases() -> list[tuple[str, CircuitIR, str]]:
@@ -160,6 +751,7 @@ def measure(
 
 def run(iterations: int) -> dict[str, Any]:
     cases = representative_cases()
+    coverage = coverage_cases()
     timings: list[dict[str, float | int | str]] = []
     total_renders = 0
     for course, circuit, template in cases:
@@ -188,22 +780,34 @@ def run(iterations: int) -> dict[str, Any]:
             ]
         )
         total_renders += iterations
-    failures = [
+    coverage_failures = [
         {
-            "course": course,
-            "status": render_circuit(
-                circuit, CircuitRenderOptions(template=template)
-            ).status,
+            "course": case.course,
+            "category": case.category,
+            "status": result.status,
         }
-        for course, circuit, template in cases
-        if render_circuit(circuit, CircuitRenderOptions(template=template)).svg is None
+        for case in coverage
+        for result in [
+            render_circuit(case.circuit, CircuitRenderOptions(template=case.template))
+        ]
+        if result.svg is None or not result.professional_renderer_success
     ]
+    total_renders += len(coverage)
     return {
         "schema": "circuit_rendering_v2_benchmark.v1",
         "iterations_per_case": iterations,
         "representative_cases": len(cases),
+        "coverage_cases": len(coverage),
+        "coverage_distribution": {
+            f"{case.course}.{case.category}": sum(
+                item.course == case.course and item.category == case.category
+                for item in coverage
+            )
+            for case in coverage
+        },
         "total_continuous_renders": total_renders,
-        "failures": failures,
+        "failures": coverage_failures,
+        "metrics": semantic_metrics(coverage),
         "timings": timings,
     }
 

@@ -117,6 +117,22 @@ def test_workspace_toggle_resolves_controlled_mode_per_task() -> None:
         )
         == "off"
     )
+    assert (
+        resolve_circuit_visualization_mode(
+            request,
+            configured_mode="controlled",
+            render_enabled=False,
+        )
+        == "off"
+    )
+    assert (
+        resolve_circuit_visualization_mode(
+            _request(text="请解释分压原理", circuit_ir=_valid_circuit()),
+            configured_mode="controlled",
+            auto_enabled=False,
+        )
+        == "off"
+    )
 
 
 def test_canonical_plan_binds_circuit_visualization_to_tool() -> None:
@@ -177,21 +193,17 @@ def test_planner_shadow_records_but_controlled_appends_the_tool_node() -> None:
     shadow_plan, shadow_decision = PlannerService._append_circuit_visualization(
         request, route, Settings(circuit_visualization_mode="shadow"), plan
     )
-    controlled_plan, controlled_decision = (
-        PlannerService._append_circuit_visualization(
-            request,
-            route,
-            Settings(circuit_visualization_mode="controlled"),
-            plan,
-        )
+    controlled_plan, controlled_decision = PlannerService._append_circuit_visualization(
+        request,
+        route,
+        Settings(circuit_visualization_mode="controlled"),
+        plan,
     )
 
     assert shadow_decision.decision == "REQUIRED"
     assert not any(node.node_id == "circuit.visualize" for node in shadow_plan.nodes)
     assert controlled_decision.should_schedule
-    assert any(
-        node.node_id == "circuit.visualize" for node in controlled_plan.nodes
-    )
+    assert any(node.node_id == "circuit.visualize" for node in controlled_plan.nodes)
 
 
 def test_academic_solver_runtime_reuses_controlled_circuit_tool_node() -> None:
@@ -331,6 +343,8 @@ def test_rendered_observation_projects_to_a_circuit_svg_artifact() -> None:
 
 def test_circuit_tool_is_opt_in_at_registry_composition_root() -> None:
     assert not default_tool_registry().describe("circuit.render").enabled
-    assert default_tool_registry(circuit_render_enabled=True).describe(
-        "circuit.render"
-    ).enabled
+    assert (
+        default_tool_registry(circuit_render_enabled=True)
+        .describe("circuit.render")
+        .enabled
+    )

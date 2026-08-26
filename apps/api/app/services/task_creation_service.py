@@ -57,7 +57,7 @@ class TaskCreationService:
         self.plan_compiler = IntentPlanCompiler()
         self.planner = planner or PlannerService(self.plan_compiler)
         self.manifest = manifest
-        self.goal_preparation = UnifiedRequestPreparationService()
+        self.goal_preparation = UnifiedRequestPreparationService(self.settings)
 
     @staticmethod
     def _route_failure(route: RouteDecision) -> tuple[str, str] | None:

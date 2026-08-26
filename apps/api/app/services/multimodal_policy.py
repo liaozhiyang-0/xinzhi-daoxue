@@ -210,9 +210,7 @@ def _assign_attachment_roles(
         if override is not None:
             role = override[0]
         else:
-            role, inferred_secondary = _roles_from_position(
-                prompt, index, image_count
-            )
+            role, inferred_secondary = _roles_from_position(prompt, index, image_count)
         if role is None:
             role, inferred_secondary = _roles_from_position(
                 conversation, index, image_count
@@ -234,11 +232,7 @@ def _assign_attachment_roles(
             else "unknown"
         )
         confidence = (
-            1.0
-            if source == "explicit_user"
-            else 0.75
-            if role != "UNKNOWN"
-            else 0.0
+            1.0 if source == "explicit_user" else 0.75 if role != "UNKNOWN" else 0.0
         )
         secondary_roles = (
             override[1]
@@ -468,6 +462,8 @@ def _circuit_ir_trigger(
     request: AgentRequest, intent: str, text: str
 ) -> tuple[bool, str, list[str]]:
     options = request.options
+    if options.get("circuit_visualization_mode") == "controlled":
+        return True, "explicit_user", ["controlled_renderer_toggle"]
     if intent == "CIRCUIT_RENDER":
         return True, "explicit_user", ["explicit_circuit_render"]
     if intent == "CIRCUIT_ANALYSIS" and (
@@ -475,13 +471,15 @@ def _circuit_ir_trigger(
         or any(marker in text for marker in ("电路", "circuit"))
     ):
         return True, "user_prompt", ["topology_level_circuit_analysis"]
-    if options.get("requires_topology") is True or options.get(
-        "solver_requires_topology"
-    ) is True:
+    if (
+        options.get("requires_topology") is True
+        or options.get("solver_requires_topology") is True
+    ):
         return True, "planner_hint", ["solver_requires_topology"]
-    if options.get("plan_pattern") == "SOLVE_VERIFY_RENDER" or options.get(
-        "_planner_plan_pattern"
-    ) == "SOLVE_VERIFY_RENDER":
+    if (
+        options.get("plan_pattern") == "SOLVE_VERIFY_RENDER"
+        or options.get("_planner_plan_pattern") == "SOLVE_VERIFY_RENDER"
+    ):
         return True, "plan_pattern", ["solve_verify_render"]
     if any(marker in text for marker in _CIRCUIT_TOPOLOGY_MARKERS):
         return True, "topology_signal", ["topology_terms_require_structured_ir"]
