@@ -673,7 +673,7 @@ class PlannerService:
             CanonicalPlanNode(
                 node_id="circuit.visualize",
                 node_type="tool",
-                target_id="circuit.visualize",
+                target_id="circuit.render",
                 input_ref="CircuitIR",
                 depends_on=[node.node_id for node in updated.nodes],
                 timeout_ms=10_000,

@@ -32,6 +32,10 @@ from app.runtime import (
     RuntimeSubagentRegistry,
     RuntimeSubagentRegistryError,
 )
+from app.services.circuit_visualization import (
+    extract_circuit_ir,
+    runtime_observation_from_tool,
+)
 from app.services.internal_agent_execution import InternalAgentExecutionService
 from app.services.rag_retrieval import RAGRetrievalService
 from app.services.retrieval_context import RetrievalContextService
@@ -623,6 +627,14 @@ class GeneralQuestionRuntimeService:
                 if not isinstance(runtime_options, dict):
                     raise RuntimeNodeError("runtime_tool_options_invalid")
                 raw_input = runtime_options.get("tool_input", {})
+                if requested_tool_id == "circuit.render":
+                    circuit = extract_circuit_ir(request_for_attempt)
+                    if circuit is None:
+                        raise RuntimeNodeError("circuit_ir_unavailable")
+                    raw_input = {
+                        "args": [{"circuit": circuit.model_dump(mode="json")}],
+                        "kwargs": {},
+                    }
                 if not isinstance(raw_input, Mapping):
                     raise RuntimeNodeError("runtime_tool_input_invalid")
                 args = raw_input.get("args", [])
@@ -639,6 +651,23 @@ class GeneralQuestionRuntimeService:
                     update={"options": options}
                 )
                 self._sync_request(current, request_for_attempt)
+                if requested_tool_id == "circuit.render":
+                    circuit = extract_circuit_ir(request_for_attempt)
+                    bounded_output = self._bounded_value(output)
+                    return runtime_observation_from_tool(
+                        node_id=node.node_id,
+                        execution_key=current.nodes[node.node_id].execution_key,
+                        circuit_payload=(
+                            circuit.model_dump(mode="json")
+                            if circuit is not None
+                            else None
+                        ),
+                        result=(
+                            bounded_output
+                            if isinstance(bounded_output, Mapping)
+                            else None
+                        ),
+                    )
                 return RuntimeObservation(
                     node_id=node.node_id,
                     facts={

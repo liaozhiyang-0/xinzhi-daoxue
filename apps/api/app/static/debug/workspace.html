@@ -64,6 +64,17 @@
           </header>
           <div id="answer-text" class="markdown-view markdown-document"></div>
           <div id="business-result" class="business-result"></div>
+          <section id="circuit-artifact-panel" class="circuit-artifact-panel" hidden aria-label="电路图产物">
+            <div class="circuit-artifact-heading">
+              <div>
+                <h3>电路图产物</h3>
+                <p id="circuit-artifact-status" class="circuit-artifact-status"></p>
+              </div>
+              <span id="circuit-artifact-validation" class="status-badge"></span>
+            </div>
+            <div id="circuit-artifact-content" class="circuit-artifact-content"></div>
+            <ul id="circuit-artifact-warnings" class="circuit-artifact-warnings"></ul>
+          </section>
           <div id="answer-notices" class="notice-stack"></div>
           <section id="runtime-task-controls" class="runtime-task-controls" hidden aria-labelledby="runtime-task-controls-title">
             <header>
@@ -254,6 +265,6 @@
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
     <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260826-inline-latex-fence-v8"></script>
-    <script type="module" src="/debug-assets/workspace.js?v=20260826-session-draft-fence-v1"></script>
+    <script type="module" src="/debug-assets/workspace.js?v=20260826-circuit-artifact-v1"></script>
 </body>
 </html>

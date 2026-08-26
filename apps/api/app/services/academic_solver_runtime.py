@@ -12,6 +12,7 @@ from typing import Any
 
 from app.contracts import AgentRequest
 from app.services.academic_solver_service import AcademicProblemSolverService
+from app.services.circuit_visualization import extract_circuit_ir
 from app.services.general_question_runtime import GeneralQuestionRuntimeService
 from app.services.solver_boundary_policy import SolverBoundaryPolicy
 
@@ -37,6 +38,32 @@ class AcademicSolverRuntimeService(GeneralQuestionRuntimeService):
     # Keep the frozen solver action on its existing Provider-style adapter
     # until its real paired parity corpus is approved for migration.
     use_typed_subagent = False
+
+    @classmethod
+    def _requested_tool_id(cls, request: AgentRequest) -> str:
+        requested = super()._requested_tool_id(request)
+        if requested:
+            return requested
+        if extract_circuit_ir(request) is None:
+            return ""
+        snapshot = request.options.get("_planner_snapshot")
+        canonical = request.options.get("_canonical_plan")
+        if not isinstance(canonical, Mapping) and isinstance(snapshot, Mapping):
+            canonical = snapshot.get("canonical_plan")
+        decision = (
+            canonical.get("circuit_visualization")
+            if isinstance(canonical, Mapping)
+            else None
+        )
+        if not isinstance(decision, Mapping):
+            return ""
+        if (
+            decision.get("feature_mode") == "controlled"
+            and decision.get("decision") in {"OPTIONAL", "REQUIRED"}
+            and not decision.get("blocked", False)
+        ):
+            return "circuit.render"
+        return ""
 
     @staticmethod
     def _question(request: AgentRequest) -> str:

@@ -64,6 +64,7 @@ def decide_circuit_visualization(
             "重绘",
             "绘制电路",
             "生成电路图",
+            "电路图",
             "等效电路",
             "draw circuit",
             "redraw circuit",

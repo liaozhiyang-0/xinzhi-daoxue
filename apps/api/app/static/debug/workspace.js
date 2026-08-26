@@ -1933,6 +1933,7 @@ function renderResult(task) {
   // workspace result surface. They previously replaced complete workflow
   // answers with a generic H0 prompt and fetched unrelated learning state.
   renderBusinessView(structured.business_view || researchBriefView(structured.research_brief), state.lastAnswer, structured);
+  renderCircuitArtifact(structured);
   const notices = [];
   if (summary.mock || result.provider === "mock" || result.mock_used) notices.push({ status: "mock", text: "当前为开发态模拟结果，不代表正式智能能力输出。" });
   if (presentation.answer_quality_message) notices.push({
@@ -2358,6 +2359,77 @@ function renderBusinessView(view, answer = "", structured = {}) {
     const content = businessSectionText(section);
     card.append(el("div", { class: "markdown-view" })); renderMarkdown(card.lastElementChild, content);
     root.append(card);
+  });
+}
+
+function circuitArtifactStatusLabel(status) {
+  return {
+    rendered: "已生成",
+    degraded: "降级生成",
+    failed: "未生成",
+  }[String(status)] || "待复核";
+}
+
+function circuitValidationLabel(validationState) {
+  return {
+    validated: "拓扑已校验",
+    partially_validated: "部分校验",
+    needs_review: "需要复核",
+    invalid: "拓扑无效",
+  }[String(validationState)] || "状态未知";
+}
+
+function safeCircuitSvg(svgText) {
+  if (typeof svgText !== "string" || !svgText.trim()) return null;
+  try {
+    const documentNode = new DOMParser().parseFromString(svgText, "image/svg+xml");
+    const root = documentNode.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== "svg") return null;
+    root.querySelectorAll("script, foreignObject").forEach((node) => node.remove());
+    root.querySelectorAll("*").forEach((node) => {
+      [...node.attributes].forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value.trim().toLowerCase();
+        if (name.startsWith("on") || (name === "href" && value.startsWith("javascript:"))) {
+          node.removeAttribute(attribute.name);
+        }
+      });
+    });
+    return document.importNode(root, true);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function renderCircuitArtifact(structured = {}) {
+  const panel = $("#circuit-artifact-panel");
+  const content = $("#circuit-artifact-content");
+  const warningList = $("#circuit-artifact-warnings");
+  const artifact = structured.circuit_artifact;
+  panel.hidden = !artifact || typeof artifact !== "object";
+  content.replaceChildren();
+  warningList.replaceChildren();
+  if (panel.hidden) return;
+
+  const status = String(artifact.status || "failed");
+  const validationState = String(artifact.validation_state || "invalid");
+  $("#circuit-artifact-status").textContent = circuitArtifactStatusLabel(status);
+  const validation = $("#circuit-artifact-validation");
+  validation.textContent = circuitValidationLabel(validationState);
+  validation.className = `status-badge ${validationState === "validated" ? "status-success" : "status-warning"}`;
+
+  const svg = safeCircuitSvg(artifact.svg);
+  if (svg && status !== "failed") {
+    content.append(svg);
+  } else {
+    content.append(el("p", {
+      class: "notice warning",
+      text: "电路图未生成；解题答案仍可继续查看。请根据下方提示人工复核拓扑或重新提交。",
+    }));
+  }
+  const warnings = Array.isArray(artifact.warnings) ? artifact.warnings : [];
+  warnings.slice(0, 16).forEach((warning) => {
+    warningList.append(el("li", { text: String(warning) }));
   });
 }
 

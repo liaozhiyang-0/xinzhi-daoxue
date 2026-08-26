@@ -248,6 +248,23 @@ def test_workspace_clears_previous_answer_while_next_task_runs() -> None:
     assert "renderEvidence([], {});" in script
 
 
+def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    html = (root / "apps/api/app/static/debug/workspace.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'id="circuit-artifact-panel"' in html
+    assert "function renderCircuitArtifact(structured = {})" in script
+    assert "function safeCircuitSvg(svgText)" in script
+    assert 'root.querySelectorAll("script, foreignObject")' in script
+    assert 'renderCircuitArtifact(structured);' in script
+    assert 'structured.circuit_artifact' in script
+
+
 def test_workspace_new_session_reenables_task_controls() -> None:
     root = Path(__file__).resolve().parents[3]
     script = (root / "apps/api/app/static/debug/workspace.js").read_text(

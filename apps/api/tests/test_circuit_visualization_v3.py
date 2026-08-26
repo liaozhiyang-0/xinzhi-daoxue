@@ -13,6 +13,7 @@ from app.contracts.planner import (
 from app.contracts.routing import RouteDecision, RouteStatus
 from app.core.config import Settings
 from app.runtime import AgentRun, AgentRunPlan, RuntimeNode
+from app.services.academic_solver_runtime import AcademicSolverRuntimeService
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.circuit_visualization import (
     decide_circuit_visualization,
@@ -61,6 +62,11 @@ def test_circuit_feature_mode_controls_shadow_and_runtime_schedule() -> None:
         _request(text="请画图", circuit_ir=circuit),
         feature_mode="controlled",
     )
+    explicit_ae = decide_circuit_visualization(
+        _request(text="请生成这个分压电路的电路图", circuit_ir=circuit),
+        feature_mode="controlled",
+        course_id="AE",
+    )
     off = decide_circuit_visualization(
         _request(text="请画图", circuit_ir=circuit),
         feature_mode="off",
@@ -73,6 +79,7 @@ def test_circuit_feature_mode_controls_shadow_and_runtime_schedule() -> None:
     assert shadow.decision == "REQUIRED"
     assert not shadow.should_schedule
     assert controlled.should_schedule
+    assert explicit_ae.should_schedule
     assert off.decision == "SKIP"
     assert "CIRCUIT_IR_UNAVAILABLE" in unavailable.reason_codes
     assert not unavailable.should_schedule
@@ -151,6 +158,38 @@ def test_planner_shadow_records_but_controlled_appends_the_tool_node() -> None:
     assert any(
         node.node_id == "circuit.visualize" for node in controlled_plan.nodes
     )
+
+
+def test_academic_solver_runtime_reuses_controlled_circuit_tool_node() -> None:
+    circuit = _valid_circuit()
+    canonical = {
+        "circuit_visualization": {
+            "decision": "OPTIONAL",
+            "feature_mode": "controlled",
+            "blocked": False,
+        }
+    }
+    request = _request(text="请画图", circuit_ir=circuit).model_copy(
+        update={
+            "options": {
+                "_canonical_plan": canonical,
+                "_planner_snapshot": {"canonical_plan": canonical},
+            }
+        }
+    )
+    service = AcademicSolverRuntimeService(
+        None,
+        enabled=True,
+        tool_registry=default_tool_registry(circuit_render_enabled=True),
+    )
+
+    assert service._requested_tool_id(request) == "circuit.render"
+    node = next(
+        node
+        for node in service.build_plan(request).nodes
+        if node.target_id == "circuit.render"
+    )
+    assert node.handler_id == "academic.solver.tool.circuit.render"
 
 
 def test_failed_circuit_render_is_a_nonfatal_runtime_observation() -> None:
