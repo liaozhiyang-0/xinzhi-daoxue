@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contracts.multimodal import ImageRole, RoleSource
+
 
 class CourseClassification(BaseModel):
     course: Literal[
@@ -183,6 +185,9 @@ class VisionExtraction(BaseModel):
     components: list[VisionComponent] = Field(default_factory=list, max_length=30)
     uncertain_info: list[str] = Field(default_factory=list, max_length=20)
     confidence: float = Field(ge=0, le=1)
+    primary_role: ImageRole = "UNKNOWN"
+    secondary_roles: list[ImageRole] = Field(default_factory=list, max_length=4)
+    role_source: RoleSource = "multimodal_inference"
 
 
 class InternalAgentResult(BaseModel):

@@ -11,7 +11,7 @@ import pytest
         ("/", "欢迎使用芯智导学"),
         ("/student", "把目标交给学科智能体"),
         ("/workspace", "把目标交给学科智能体"),
-        ("/debug/rag", "统一执行调试"),
+        ("/debug/rag", "多模态 RAG 调试"),
         ("/debug/execution", "统一执行调试"),
         ("/debug/agents", "Agent 管理"),
         ("/system", "系统状态"),
@@ -256,6 +256,9 @@ def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
     html = (root / "apps/api/app/static/debug/workspace.html").read_text(
         encoding="utf-8"
     )
+    styles = (root / "apps/api/app/static/debug/workspace-v2.css").read_text(
+        encoding="utf-8"
+    )
 
     assert 'id="circuit-artifact-panel"' in html
     assert 'id="circuit-visualization-toggle"' in html
@@ -271,6 +274,9 @@ def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
     assert 'root.querySelectorAll("script, foreignObject")' in script
     assert 'renderCircuitArtifact(structured);' in script
     assert 'structured.circuit_artifact' in script
+    assert ".circuit-artifact-content {" in styles
+    assert "background: var(--bg-elevated)" in styles
+    assert "color: var(--accent-hover)" in styles
 
 
 def test_workspace_new_session_reenables_task_controls() -> None:

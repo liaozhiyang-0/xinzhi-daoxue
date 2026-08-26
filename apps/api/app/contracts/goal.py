@@ -29,5 +29,9 @@ class GoalContract(BaseModel):
     risk_level: str = Field(default="low", max_length=16)
     budget: PlannerBudget = Field(default_factory=PlannerBudget)
     attachment_refs: list[AttachmentRef] = Field(default_factory=list, max_length=16)
+    multimodal_intent: str = Field(default="UNKNOWN", max_length=64)
+    multimodal_capability_hint: dict[str, Any] = Field(
+        default_factory=dict, max_length=16
+    )
     session_context_ref: str = Field(default="", max_length=160)
     scenario_hint: str = Field(default="", max_length=64)

@@ -72,6 +72,13 @@
               </div>
               <span id="circuit-artifact-validation" class="status-badge"></span>
             </div>
+            <div class="circuit-artifact-toolbar" role="toolbar" aria-label="电路图缩放">
+              <span>查看比例</span>
+              <button id="circuit-zoom-out" class="text-button" type="button" aria-label="缩小电路图">−</button>
+              <button id="circuit-zoom-reset" class="text-button" type="button">适应宽度</button>
+              <button id="circuit-zoom-in" class="text-button" type="button" aria-label="放大电路图">＋</button>
+              <output id="circuit-zoom-value" aria-live="polite">100%</output>
+            </div>
             <div id="circuit-artifact-content" class="circuit-artifact-content"></div>
             <ul id="circuit-artifact-warnings" class="circuit-artifact-warnings"></ul>
           </section>

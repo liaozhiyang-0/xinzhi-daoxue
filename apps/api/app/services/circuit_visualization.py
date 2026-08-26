@@ -13,6 +13,7 @@ from app.circuit.contracts import (
 from app.contracts.agent import AgentRequest, AgentResult, Artifact, ArtifactType
 from app.observability.architecture_telemetry import architecture_telemetry
 from app.runtime.contracts import AgentRun, RuntimeObservation
+from app.services.multimodal_policy import get_multimodal_capability_hint
 
 CircuitVisualizationMode = Literal["off", "shadow", "controlled"]
 CircuitDecision = Literal["SKIP", "OPTIONAL", "REQUIRED"]
@@ -31,6 +32,9 @@ class CircuitVisualizationDecision(BaseModel):
     critical_uncertainty_count: int = Field(default=0, ge=0)
     component_count: int = Field(default=0, ge=0)
     blocked: bool = False
+    multimodal_intent: str = "UNKNOWN"
+    circuit_ir_requested: bool = False
+    trigger_source: str = "default"
 
     @property
     def should_schedule(self) -> bool:
@@ -72,21 +76,9 @@ def decide_circuit_visualization(
     """
 
     circuit = extract_circuit_ir(request)
+    multimodal_hint = get_multimodal_capability_hint(request)
     text = request.input_text().casefold()
-    explicit = any(
-        marker in text
-        for marker in (
-            "画图",
-            "重绘",
-            "绘制电路",
-            "生成电路图",
-            "电路图",
-            "等效电路",
-            "draw circuit",
-            "redraw circuit",
-            "circuit diagram",
-        )
-    )
+    explicit = multimodal_hint.intent == "CIRCUIT_RENDER"
     topology_signal = any(
         marker in text
         for marker in (
@@ -104,9 +96,11 @@ def decide_circuit_visualization(
             "高通",
         )
     ) or bool(circuit and circuit.topology_hint)
-    critical = sum(
-        item.severity == "critical" for item in circuit.uncertainties
-    ) if circuit else 0
+    critical = (
+        sum(item.severity == "critical" for item in circuit.uncertainties)
+        if circuit
+        else 0
+    )
     component_count = len(circuit.components) if circuit else 0
     reasons: list[str] = []
     decision: CircuitDecision
@@ -114,8 +108,8 @@ def decide_circuit_visualization(
     if feature_mode == "off":
         reasons.append("feature_mode_off")
         decision = "SKIP"
-    elif not explicit and not topology_signal:
-        reasons.append("no_visualization_signal")
+    elif not multimodal_hint.circuit_ir_requested:
+        reasons.append("circuit_ir_not_requested")
         decision = "SKIP"
     elif explicit:
         reasons.append("explicit_draw_request")
@@ -126,21 +120,21 @@ def decide_circuit_visualization(
 
     if not circuit and decision != "SKIP":
         reasons.append("CIRCUIT_IR_UNAVAILABLE")
+        architecture_telemetry.increment("circuit_ir_failure_count")
     if component_count > 64:
         reasons.append("complexity_budget_exceeded")
     if critical:
         reasons.append("critical_uncertainty")
 
-    blocked = not circuit or component_count > 64 or critical > 0
+    blocked = decision != "SKIP" and (
+        not circuit or component_count > 64 or critical > 0
+    )
     if feature_mode == "controlled" and decision != "SKIP" and not explicit:
         normalized_course = (course_id or request.course_id).upper()
-        controlled_allowlist = (
-            normalized_course == "CT"
-            or (
-                normalized_course == "AE"
-                and any(marker in text for marker in ("ideal", "理想"))
-                and any(marker in text for marker in ("op amp", "opamp", "运放"))
-            )
+        controlled_allowlist = normalized_course == "CT" or (
+            normalized_course == "AE"
+            and any(marker in text for marker in ("ideal", "理想"))
+            and any(marker in text for marker in ("op amp", "opamp", "运放"))
         )
         if not controlled_allowlist:
             reasons.append("controlled_allowlist_miss")
@@ -156,11 +150,18 @@ def decide_circuit_visualization(
         critical_uncertainty_count=critical,
         component_count=component_count,
         blocked=blocked,
+        multimodal_intent=multimodal_hint.intent,
+        circuit_ir_requested=multimodal_hint.circuit_ir_requested,
+        trigger_source=multimodal_hint.trigger_source,
     )
     architecture_telemetry.increment("circuit_decision_total")
     architecture_telemetry.increment(
         f"circuit_decision_total_{result.decision.casefold()}"
     )
+    if result.circuit_ir_requested:
+        architecture_telemetry.increment("circuit_ir_requested_count")
+    else:
+        architecture_telemetry.increment("circuit_ir_skipped_count")
     return result
 
 
@@ -197,10 +198,11 @@ def observation_from_result(
         }[render_result.validation_state],
     )
     renderer = cast(
-        Literal["schemdraw", "deterministic_fallback", "none"],
+        Literal["professional_svg", "schemdraw", "deterministic_fallback", "none"],
         "none"
         if render_result.status == "failed"
         else {
+            "professional_svg": "professional_svg",
             "schemdraw": "schemdraw",
             "fallback_svg": "deterministic_fallback",
         }.get(render_result.renderer, "none"),
@@ -218,6 +220,11 @@ def observation_from_result(
             item.severity == "critical" for item in circuit.uncertainties
         ),
         recoverable=recoverable,
+        professional_renderer_success=render_result.professional_renderer_success,
+        layout_schema_version=render_result.layout_schema_version,
+        template=render_result.template,
+        width=render_result.width,
+        height=render_result.height,
     )
     architecture_telemetry.increment("circuit_render_total")
     architecture_telemetry.increment(
@@ -316,13 +323,20 @@ def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
                         render_observation.critical_uncertainty_count
                     ),
                     "render_latency_ms": render_observation.render_latency_ms,
+                    "renderer": render_observation.renderer,
+                    "professional_renderer_success": (
+                        render_observation.professional_renderer_success
+                    ),
+                    "layout_schema_version": render_observation.layout_schema_version,
+                    "template": render_observation.template,
+                    "width": render_observation.width,
+                    "height": render_observation.height,
                 },
             },
         )
         render_observation = render_observation.model_copy(
             update={
-                "artifact_ref": render_observation.artifact_ref
-                or artifact.artifact_id
+                "artifact_ref": render_observation.artifact_ref or artifact.artifact_id
             }
         )
         artifacts.append(artifact)
@@ -339,6 +353,14 @@ def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
                     render_observation.critical_uncertainty_count
                 ),
                 "render_latency_ms": render_observation.render_latency_ms,
+                "renderer": render_observation.renderer,
+                "professional_renderer_success": (
+                    render_observation.professional_renderer_success
+                ),
+                "layout_schema_version": render_observation.layout_schema_version,
+                "template": render_observation.template,
+                "width": render_observation.width,
+                "height": render_observation.height,
             },
         }
     structured["circuit_render_observation"] = render_observation.model_dump(

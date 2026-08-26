@@ -438,7 +438,9 @@ def build_runtime_handler_registry(
     *,
     subagent_registry: RuntimeSubagentRegistry | None = None,
 ) -> RuntimeHandlerRegistry:
-    registry = RuntimeHandlerRegistry()
+    registry = RuntimeHandlerRegistry(
+        allow_development_registration=provider.provider_name == "mock"
+    )
     register_tool_handlers(registry, tool_registry)
     register_provider_handler(registry, provider)
     if internal_agents is not None:

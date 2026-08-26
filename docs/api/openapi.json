@@ -11018,6 +11018,66 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Extraction Metadata"
+          },
+          "primary_role": {
+            "type": "string",
+            "enum": [
+              "TEXT_SCREENSHOT",
+              "PROBLEM_STATEMENT",
+              "CIRCUIT_DIAGRAM",
+              "STUDENT_SOLUTION",
+              "TABLE",
+              "CHART",
+              "WAVEFORM",
+              "FORMULA",
+              "DOCUMENT_PAGE",
+              "REFERENCE_IMAGE",
+              "GENERAL_IMAGE",
+              "UNKNOWN"
+            ],
+            "title": "Primary Role",
+            "default": "UNKNOWN"
+          },
+          "secondary_roles": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "TEXT_SCREENSHOT",
+                "PROBLEM_STATEMENT",
+                "CIRCUIT_DIAGRAM",
+                "STUDENT_SOLUTION",
+                "TABLE",
+                "CHART",
+                "WAVEFORM",
+                "FORMULA",
+                "DOCUMENT_PAGE",
+                "REFERENCE_IMAGE",
+                "GENERAL_IMAGE",
+                "UNKNOWN"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Secondary Roles"
+          },
+          "role_source": {
+            "type": "string",
+            "enum": [
+              "explicit_user",
+              "user_prompt",
+              "conversation",
+              "multimodal_inference",
+              "unknown"
+            ],
+            "title": "Role Source",
+            "default": "unknown"
+          },
+          "role_confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Role Confidence",
+            "default": 0.0
           }
         },
         "additionalProperties": false,

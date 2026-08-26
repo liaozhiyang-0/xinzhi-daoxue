@@ -66,6 +66,7 @@ export interface BuildStudentTaskPayloadInput {
   canonicalInput: CanonicalInput;
   materials: readonly UploadedMaterial[];
   responseDepth: string;
+  circuitVisualizationEnabled?: boolean;
   teachingMode: string;
   studentAttempt: string;
   learningFollowUp?: LearningFollowUp | null;
@@ -94,6 +95,7 @@ export function buildStudentTaskPayload({
   canonicalInput,
   materials,
   responseDepth,
+  circuitVisualizationEnabled = false,
   teachingMode,
   studentAttempt,
   learningFollowUp,
@@ -103,6 +105,7 @@ export function buildStudentTaskPayload({
   const options: StudentTaskOptions = {
     request_id: requestId,
     response_depth: responseDepth,
+    circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : "off",
     teaching_mode: teachingMode,
     student_attempt: studentAttempt ? { raw_text: studentAttempt } : undefined,
     prefer_internal_agents: true,

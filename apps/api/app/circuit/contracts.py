@@ -26,6 +26,37 @@ SUPPORTED_COMPONENT_TYPES = frozenset(
         "input",
         "output",
         "node_label",
+        "zener_diode",
+        "coupled_inductor",
+        "open_circuit",
+        "short_circuit",
+        "and_gate",
+        "or_gate",
+        "not_gate",
+        "nand_gate",
+        "nor_gate",
+        "xor_gate",
+        "xnor_gate",
+        "buffer",
+        "schmitt_trigger",
+        "d_flip_flop",
+        "jk_flip_flop",
+        "t_flip_flop",
+        "sr_latch",
+        "mux",
+        "demux",
+        "encoder",
+        "decoder",
+        "half_adder",
+        "full_adder",
+        "clock",
+        "logic_input",
+        "logic_output",
+        "bus",
+        "vcc",
+        "vdd",
+        "vss",
+        "vee",
     }
 )
 PORT_CONTRACTS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
@@ -45,6 +76,40 @@ PORT_CONTRACTS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "input": (frozenset({"p"}), frozenset()),
     "output": (frozenset({"p"}), frozenset()),
     "node_label": (frozenset({"p"}), frozenset()),
+    "zener_diode": (frozenset({"a", "k"}), frozenset()),
+    "coupled_inductor": (frozenset({"p1", "n1", "p2", "n2"}), frozenset()),
+    "open_circuit": (frozenset({"p", "n"}), frozenset()),
+    "short_circuit": (frozenset({"p", "n"}), frozenset()),
+    "and_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "or_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "not_gate": (frozenset({"in", "out"}), frozenset()),
+    "nand_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "nor_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "xor_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "xnor_gate": (frozenset({"in1", "in2", "out"}), frozenset()),
+    "buffer": (frozenset({"in", "out"}), frozenset()),
+    "schmitt_trigger": (frozenset({"in", "out"}), frozenset()),
+    "d_flip_flop": (frozenset({"d", "clk", "q"}), frozenset({"qb", "reset", "set"})),
+    "jk_flip_flop": (
+        frozenset({"j", "k", "clk", "q"}),
+        frozenset({"qb", "reset", "set"}),
+    ),
+    "t_flip_flop": (frozenset({"t", "clk", "q"}), frozenset({"qb", "reset", "set"})),
+    "sr_latch": (frozenset({"s", "r", "q"}), frozenset({"qb", "enable"})),
+    "mux": (frozenset({"in1", "in2", "sel", "out"}), frozenset()),
+    "demux": (frozenset({"in", "sel", "out1", "out2"}), frozenset()),
+    "encoder": (frozenset({"in1", "in2", "in3", "in4", "out1", "out2"}), frozenset()),
+    "decoder": (frozenset({"in1", "in2", "out1", "out2", "out3", "out4"}), frozenset()),
+    "half_adder": (frozenset({"a", "b", "sum", "carry"}), frozenset()),
+    "full_adder": (frozenset({"a", "b", "cin", "sum", "carry"}), frozenset()),
+    "clock": (frozenset({"out"}), frozenset()),
+    "logic_input": (frozenset({"p"}), frozenset()),
+    "logic_output": (frozenset({"p"}), frozenset()),
+    "bus": (frozenset({"in", "out"}), frozenset()),
+    "vcc": (frozenset({"p"}), frozenset()),
+    "vdd": (frozenset({"p"}), frozenset()),
+    "vss": (frozenset({"p"}), frozenset()),
+    "vee": (frozenset({"p"}), frozenset()),
 }
 OUTPUT_PORT_NAMES = frozenset({"out", "output", "y"})
 
@@ -117,6 +182,12 @@ class ValidationReport(BaseModel):
     issues: list[ValidationIssue] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     latency_ms: float = 0.0
+    schema_status: Literal["validated", "invalid"] = "validated"
+    topology_status: Literal["validated", "invalid", "uncertain"] = "validated"
+    semantic_status: Literal["validated", "partially_validated", "needs_review"] = (
+        "validated"
+    )
+    render_status: Literal["not_run", "validated", "degraded", "invalid"] = "not_run"
 
 
 class CircuitRenderOptions(BaseModel):
@@ -124,9 +195,10 @@ class CircuitRenderOptions(BaseModel):
 
     template: str = "generic_left_to_right"
     width: int = Field(default=900, ge=320, le=4000)
-    height: int = Field(default=360, ge=180, le=2400)
+    height: int = Field(default=520, ge=180, le=2400)
     include_values: bool = True
     include_labels: bool = True
+    professional_renderer: bool = True
 
 
 class CircuitRenderRequest(BaseModel):
@@ -147,6 +219,11 @@ class CircuitRenderResult(BaseModel):
     validation: ValidationReport
     render_latency_ms: float = 0.0
     renderer: str = "fallback_svg"
+    professional_renderer_success: bool = False
+    layout_schema_version: str = ""
+    template: str = ""
+    width: int = 0
+    height: int = 0
 
 
 class CircuitRenderObservation(BaseModel):
@@ -163,7 +240,7 @@ class CircuitRenderObservation(BaseModel):
     validation_state: Literal[
         "validated", "partially_validated", "needs_review", "invalid"
     ]
-    renderer: Literal["schemdraw", "deterministic_fallback", "none"]
+    renderer: Literal["professional_svg", "schemdraw", "deterministic_fallback", "none"]
     warnings: list[str] = Field(default_factory=list, max_length=32)
     svg: str | None = None
     artifact_ref: str | None = None
@@ -171,3 +248,8 @@ class CircuitRenderObservation(BaseModel):
     circuit_ir_version: Literal["circuit_ir.v1"] = "circuit_ir.v1"
     critical_uncertainty_count: int = Field(default=0, ge=0)
     recoverable: bool = True
+    professional_renderer_success: bool = False
+    layout_schema_version: str = ""
+    template: str = ""
+    width: int = Field(default=0, ge=0)
+    height: int = Field(default=0, ge=0)

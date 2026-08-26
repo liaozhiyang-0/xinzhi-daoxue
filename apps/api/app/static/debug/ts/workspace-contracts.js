@@ -9,7 +9,7 @@ function attachmentRef(file) {
         checksum_sha256: file.checksum_sha256,
     };
 }
-export function buildStudentTaskPayload({ sessionId, userId, userRole, courseId, intent, scenarioId, canonicalInput, materials, responseDepth, circuitVisualizationEnabled, teachingMode, studentAttempt, learningFollowUp, requestId, researchAnalysis, }) {
+export function buildStudentTaskPayload({ sessionId, userId, userRole, courseId, intent, scenarioId, canonicalInput, materials, responseDepth, circuitVisualizationEnabled = false, teachingMode, studentAttempt, learningFollowUp, requestId, researchAnalysis, }) {
     const options = {
         request_id: requestId,
         response_depth: responseDepth,

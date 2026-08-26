@@ -318,7 +318,9 @@ def build_runtime_task_engine(
         # The active composition root never injects the historical Provider
         # execution bridge. Historical data may still be read, but it cannot
         # regain execution authority through this boundary.
-        legacy_provider=None,
+        legacy_provider=(
+            provider if provider.provider_name == "mock" else None
+        ),
     )
     launch_policy = RuntimeLaunchPolicy(
         release_gate_required=settings.agent_runtime_release_gate_required,

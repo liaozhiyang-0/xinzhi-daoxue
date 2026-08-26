@@ -710,7 +710,9 @@ async def test_multi_image_solver_sends_ordered_originals_to_vision_model() -> N
     assert execution["model_image_count"] == 2
     assert execution["original_order_preserved"] is True
     assert model_service.vision_image_counts == [2]
-    assert result.metrics.model_calls == 1
+    # Ordinary multimodal solving continues through the Solver after the
+    # general vision pass; the generation call is therefore intentional.
+    assert result.metrics.model_calls == 2
 
 
 @pytest.mark.asyncio
@@ -808,8 +810,8 @@ async def test_complex_multi_image_solver_uses_one_cross_image_vision_call() -> 
     assert execution["model_image_count"] == 3
     assert execution["original_order_preserved"] is True
     assert model_service.vision_image_counts == [3]
-    assert model_service.text_task_types == []
-    assert result.metrics.model_calls == 1
+    assert model_service.text_task_types == ["academic_problem_solving"]
+    assert result.metrics.model_calls == 2
 
 
 class FakeAcademicRegistry:

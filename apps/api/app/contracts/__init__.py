@@ -128,6 +128,13 @@ from app.contracts.model import (
     ModelUsage,
     ProviderHealth,
 )
+from app.contracts.multimodal import (
+    AttachmentRole,
+    ImageRole,
+    MultimodalCapabilityHint,
+    MultimodalObservation,
+    RoleSource,
+)
 from app.contracts.orchestration import (
     AgentRequestV2,
     AgentResponse,
@@ -240,6 +247,11 @@ __all__ = [
     "Artifact",
     "ArtifactType",
     "AttachmentRef",
+    "AttachmentRole",
+    "ImageRole",
+    "MultimodalCapabilityHint",
+    "MultimodalObservation",
+    "RoleSource",
     "Intent",
     "KnowledgeCourseId",
     "KnowledgeDocumentPage",

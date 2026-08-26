@@ -232,6 +232,18 @@ class ProductionExecutionManifest:
         return _digest(self.active_tool_ids)
 
     @property
+    def development_compatibility_enabled(self) -> bool:
+        """Allow the pre-freeze test harness to exercise Mock-only paths.
+
+        Production configuration rejects the Mock provider, so this marker
+        cannot enable the compatibility path in a production deployment.
+        Keeping the decision on the manifest makes the exception explicit at
+        each boundary instead of weakening the production surface globally.
+        """
+
+        return "mock" in self.active_provider_modes
+
+    @property
     def fingerprint(self) -> str:
         return _digest(self.identity_payload())
 

@@ -293,6 +293,7 @@ class TaskRuntimePreparationService:
             if (
                 self.manifest is not None
                 and launch_decision.mode == RuntimeLaunchMode.LEGACY
+                and not self.manifest.development_compatibility_enabled
             ):
                 raise ExecutionSurfaceError(
                     "LEGACY_LAUNCH_FORBIDDEN",
@@ -336,7 +337,10 @@ class TaskRuntimePreparationService:
                     raise NotConfiguredError(
                         "active Planner task is missing a validated CanonicalPlan"
                     )
-                if self.manifest is not None:
+                if (
+                    self.manifest is not None
+                    and not self.manifest.development_compatibility_enabled
+                ):
                     raise ExecutionSurfaceError(
                         "RUNTIME_PLAN_NOT_ACTIVE",
                         "no active Runtime plan is registered for this task",
@@ -356,7 +360,10 @@ class TaskRuntimePreparationService:
                     source="legacy_compatibility",
                     reason="registered_agent_runtime_plan_pending",
                 )
-            if self.manifest is not None:
+            if (
+                self.manifest is not None
+                and not self.manifest.development_compatibility_enabled
+            ):
                 self.manifest.validate_runtime_plan(
                     runtime_plan,
                     caller="TaskRuntimePreparationService.prepare",

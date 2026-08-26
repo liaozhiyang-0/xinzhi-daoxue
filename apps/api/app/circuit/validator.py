@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from time import perf_counter
+from typing import Literal
 
 import networkx as nx
 
@@ -174,11 +175,45 @@ def validate_circuit(circuit: CircuitIR) -> ValidationReport:
         if has_critical_uncertainty
         else "validated"
     )
+    schema_error_codes = {
+        "duplicate_component_id",
+        "duplicate_net_id",
+        "invalid_component_type",
+        "required_port_missing",
+        "invalid_port",
+        "invalid_net_ref",
+    }
+    schema_status: Literal["validated", "invalid"] = (
+        "invalid"
+        if any(issue.code in schema_error_codes for issue in issues)
+        else "validated"
+    )
+    topology_status: Literal["validated", "invalid", "uncertain"] = (
+        "invalid"
+        if any(
+            issue.code in {"self_connection", "disconnected_graph"}
+            and issue.severity == "error"
+            for issue in issues
+        )
+        else "uncertain"
+        if any(issue.code == "floating_component" for issue in issues)
+        else "validated"
+    )
+    semantic_status: Literal["validated", "partially_validated", "needs_review"] = (
+        "needs_review"
+        if has_critical_uncertainty
+        else "partially_validated"
+        if warnings
+        else "validated"
+    )
     report = ValidationReport(
         status=status,
         issues=issues,
         warnings=warnings,
         latency_ms=(perf_counter() - started) * 1000,
+        schema_status=schema_status,
+        topology_status=topology_status,
+        semantic_status=semantic_status,
     )
     circuit.validation_state = status
     return report

@@ -4,6 +4,10 @@ from typing import Any
 
 from app.contracts import AgentRequest, GoalContract
 from app.contracts.planner import PlannerBudget
+from app.services.multimodal_policy import (
+    enrich_multimodal_request,
+    get_multimodal_capability_hint,
+)
 
 
 class UnifiedRequestPreparationService:
@@ -15,6 +19,7 @@ class UnifiedRequestPreparationService:
     """
 
     def build_goal(self, request: AgentRequest) -> GoalContract:
+        request = enrich_multimodal_request(request)
         options = request.options
         routing = options.get("_routing")
         routing_data = routing if isinstance(routing, dict) else {}
@@ -48,6 +53,15 @@ class UnifiedRequestPreparationService:
             value = options.get(key, scenario_data.get(key))
             if value not in (None, "", [], {}):
                 constraints[key] = value
+        has_images = any(
+            attachment.content_type.startswith("image/")
+            for attachment in request.attachments
+        )
+        capability_hint = get_multimodal_capability_hint(request)
+        if has_images:
+            constraints["multimodal_capability_hint"] = capability_hint.model_dump(
+                mode="json"
+            )
         budget = self._budget(options.get("budget"))
         task_family = str(
             options.get("task_family_hint")
@@ -68,6 +82,10 @@ class UnifiedRequestPreparationService:
             risk_level=str(options.get("risk_level", "low")),
             budget=budget,
             attachment_refs=list(request.attachments),
+            multimodal_intent=capability_hint.intent if has_images else "UNKNOWN",
+            multimodal_capability_hint=(
+                capability_hint.model_dump(mode="json") if has_images else {}
+            ),
             session_context_ref=str(
                 options.get("session_context_ref") or request.session_id
             ),
@@ -75,6 +93,7 @@ class UnifiedRequestPreparationService:
         )
 
     def attach(self, request: AgentRequest) -> AgentRequest:
+        request = enrich_multimodal_request(request)
         goal = self.build_goal(request)
         options = dict(request.options)
         options["_goal_contract"] = goal.model_dump(mode="json")

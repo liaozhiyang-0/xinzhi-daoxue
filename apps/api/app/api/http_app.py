@@ -132,7 +132,7 @@ def _register_page_routes(app: FastAPI) -> None:
         dependencies=[Depends(require_admin)],
     )
     async def rag_debug_page() -> FileResponse:
-        return FileResponse(DEBUG_ROOT / "execution.html")
+        return FileResponse(DEBUG_ROOT / "rag.html")
 
     @app.get(
         "/debug/agents",

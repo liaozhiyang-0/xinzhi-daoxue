@@ -82,7 +82,10 @@ class RuntimeRunLifecycleService:
             return restored
 
         if runtime_plan is None:
-            if self.manifest is not None:
+            if (
+                self.manifest is not None
+                and not self.manifest.development_compatibility_enabled
+            ):
                 raise ExecutionSurfaceError(
                     "RUNTIME_PLAN_NOT_ACTIVE",
                     "a production Runtime run requires an active plan",
@@ -91,7 +94,10 @@ class RuntimeRunLifecycleService:
             run_plan = self._build_legacy_plan(agent_id, goal)
         else:
             run_plan = runtime_plan
-        if self.manifest is not None:
+        if (
+            self.manifest is not None
+            and not self.manifest.development_compatibility_enabled
+        ):
             self.manifest.validate_runtime_plan(
                 run_plan,
                 caller="RuntimeRunLifecycleService.start",

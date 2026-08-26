@@ -6,7 +6,7 @@ import logging
 import re
 from collections.abc import Mapping
 from time import perf_counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ValidationError
 
@@ -16,8 +16,10 @@ from app.contracts import (
     AgentResult,
     Artifact,
     ArtifactType,
+    AttachmentRole,
     ImageInput,
     ModelResponse,
+    MultimodalObservation,
     RunMetrics,
 )
 from app.contracts.solver import (
@@ -33,6 +35,7 @@ from app.contracts.solver import (
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.multimodal import MultiImageComposer, PreparedImageBatch, SourceImage
+from app.observability.architecture_telemetry import architecture_telemetry
 from app.orchestrator.graphs import AcademicProblemSolverGraph
 from app.orchestrator.state import new_graph_state
 from app.services.academic_review import AcademicReviewService
@@ -40,6 +43,11 @@ from app.services.ae_validator import AEValidator
 from app.services.ct_validator import CTValidator
 from app.services.de_validator import DEValidator
 from app.services.math_formatting_service import MATH_OUTPUT_INSTRUCTION
+from app.services.multimodal_policy import (
+    enrich_multimodal_request,
+    get_multimodal_capability_hint,
+    requires_circuit_ir,
+)
 from app.services.response_depth import (
     ResponseDepthPolicy,
     depth_instruction,
@@ -85,9 +93,11 @@ class AcademicProblemSolverService:
         self.review_service = AcademicReviewService()
 
     async def run(self, request: AgentRequest, context: Any = None) -> AgentResult:
+        request = enrich_multimodal_request(request)
         settings = self._settings()
         node_timings: list[SolverNodeTiming] = []
         problem = self._problem_from_request(request)
+        requires_visual_topology = requires_circuit_ir(request)
         complexity = self.runtime_policy.classify(problem)
         budget = self._request_time_budget(
             settings,
@@ -99,7 +109,9 @@ class AcademicProblemSolverService:
         fallback_tracker = FallbackTracker()
         fallback_tracker.start(self.agent_id)
         boundary_started = perf_counter()
-        boundary = self.boundary_policy.evaluate(problem, check_visual_topology=False)
+        boundary = self.boundary_policy.evaluate(
+            problem, check_visual_topology=False
+        )
         node_timings.append(
             self._node_timing(
                 "boundary_policy",
@@ -136,13 +148,9 @@ class AcademicProblemSolverService:
             self._record_execution_fallback(vision_execution, fallback_tracker)
             if not boundary.intercepted:
                 visual_boundary_started = perf_counter()
-                visual_acceptance = vision_execution.get("visual_acceptance")
-                prompt_facts_cover = isinstance(visual_acceptance, dict) and bool(
-                    visual_acceptance.get("prompt_facts_cover")
-                )
                 visual_boundary = self.boundary_policy.evaluate(
                     problem,
-                    check_visual_topology=not prompt_facts_cover,
+                    check_visual_topology=requires_visual_topology,
                 )
                 if visual_boundary.intercepted:
                     boundary = visual_boundary
@@ -472,7 +480,29 @@ class AcademicProblemSolverService:
             for item in request.attachments
             if item.content_type.startswith("image/")
         ]
-        task_type = self._visual_task_type(problem.course)
+        specialized_topology = requires_circuit_ir(request)
+        task_type = self._visual_task_type_for_request(request, problem.course)
+        reused = self._reused_multimodal_observation(request, images)
+        if reused is not None:
+            problem, visual_structure = self._merge_visual_extraction(
+                problem,
+                reused.summary,
+                acceptance_spec=request.options.get("visual_acceptance"),
+                require_specialized_topology=specialized_topology,
+            )
+            architecture_telemetry.increment(
+                "reused_multimodal_observation_count"
+            )
+            return problem, {
+                "status": "reused",
+                "strategy": "reused_observation",
+                "image_count": len(images),
+                "source_image_count": len(images),
+                "model_image_count": 0,
+                "model_calls": 0,
+                "multimodal_observation": reused.model_dump(mode="json"),
+                **visual_structure,
+            }
         if (
             not images
             or self.model_service is None
@@ -486,6 +516,8 @@ class AcademicProblemSolverService:
                 "reason": "time_budget_exhausted",
                 "model_calls": 0,
             }
+        if not specialized_topology:
+            architecture_telemetry.increment("general_vision_count")
         try:
             sources = [
                 SourceImage(
@@ -510,6 +542,7 @@ class AcademicProblemSolverService:
                     filenames=[item.filename for item in images],
                     task_type=task_type,
                     budget=budget,
+                    require_specialized_topology=specialized_topology,
                 )
             pack = self.graph.courses.get(problem.course)
             async with asyncio.timeout(
@@ -530,7 +563,9 @@ class AcademicProblemSolverService:
                                 else ""
                             )
                         )
-                        + self._visual_extraction_instruction()
+                        + self._visual_extraction_instruction(
+                            require_component_topology=specialized_topology
+                        )
                     ),
                     images=list(prepared.images),
                     request_id=str(request.options.get("request_id", "")) or None,
@@ -572,6 +607,7 @@ class AcademicProblemSolverService:
             problem,
             visual_summary,
             acceptance_spec=request.options.get("visual_acceptance"),
+            require_specialized_topology=specialized_topology,
         )
         visual_retry: dict[str, Any] = {}
         acceptance = visual_structure.get("visual_acceptance", {})
@@ -597,7 +633,9 @@ class AcademicProblemSolverService:
                                 + self._visual_acceptance_instruction(
                                     request.options["visual_acceptance"]
                                 )
-                                + self._visual_extraction_instruction()
+                                + self._visual_extraction_instruction(
+                                    require_component_topology=specialized_topology
+                                )
                             ),
                             images=list(prepared.images),
                             request_id=(
@@ -612,6 +650,7 @@ class AcademicProblemSolverService:
                     retry_response.content[:20_000],
                     section_title="图片结构化提取·验收复核",
                     acceptance_spec=request.options.get("visual_acceptance"),
+                    require_specialized_topology=specialized_topology,
                 )
                 retry_acceptance = retry_structure.get("visual_acceptance", {})
                 if retry_acceptance.get("status") == "passed":
@@ -629,6 +668,7 @@ class AcademicProblemSolverService:
                     ),
                     "model_calls": 1,
                 }
+                architecture_telemetry.increment("duplicate_vision_call_count")
             except (TimeoutError, AppError) as exc:
                 visual_retry = {
                     "status": "failed",
@@ -656,6 +696,13 @@ class AcademicProblemSolverService:
                 ),
                 "composite_width": prepared.composite_width,
                 "composite_height": prepared.composite_height,
+                "multimodal_observation": self._build_multimodal_observation(
+                    request,
+                    visual_summary,
+                    visual_structure,
+                    source="vision",
+                ).model_dump(mode="json"),
+                "circuit_ir_requested": specialized_topology,
                 **visual_structure,
                 "visual_retry": visual_retry,
                 **self._fallback_metadata(response),
@@ -671,6 +718,7 @@ class AcademicProblemSolverService:
         filenames: list[str],
         task_type: str,
         budget: RequestTimeBudget,
+        require_specialized_topology: bool,
     ) -> tuple[AcademicProblem, dict[str, Any]]:
         model_service = self.model_service
         assert model_service is not None
@@ -703,7 +751,11 @@ class AcademicProblemSolverService:
                                 pack.build_extraction_prompt(problem)
                                 + f" 当前是第 {index}/{prepared.source_count} 张图，"
                                 "请保留跨图衔接所需的节点名、题号、方向、参数和不确定项；"
-                                + self._visual_extraction_instruction()
+                                + self._visual_extraction_instruction(
+                                    require_component_topology=(
+                                        require_specialized_topology
+                                    )
+                                )
                             ),
                             images=[image],
                             request_id=(
@@ -791,6 +843,7 @@ class AcademicProblemSolverService:
             visual_summary,
             section_title="多图内容汇总",
             acceptance_spec=request.options.get("visual_acceptance"),
+            require_specialized_topology=require_specialized_topology,
         )
         uncertain = [
             *problem.uncertain_info,
@@ -861,6 +914,13 @@ class AcademicProblemSolverService:
                     for item in executions
                 ],
                 "summary_execution": summary_execution,
+                "multimodal_observation": self._build_multimodal_observation(
+                    request,
+                    visual_summary,
+                    visual_structure,
+                    source="vision",
+                ).model_dump(mode="json"),
+                "circuit_ir_requested": require_specialized_topology,
                 **visual_structure,
             },
         )
@@ -1928,18 +1988,97 @@ class AcademicProblemSolverService:
         )
 
     @staticmethod
-    def _visual_extraction_instruction() -> str:
+    def _visual_task_type_for_request(request: AgentRequest, course: str) -> str:
         return (
-            " 只输出可观察内容，不补造参数。电路或逻辑图必须逐个子图列出器件、"
-            "器件端点与节点连接、控制端、极性、参考方向和标号；波形图必须列出"
-            "分段区间、关键坐标、跳变以及端点是否包含；频谱/带通采样图必须列出"
-            "频率轴、单位、正负非零频带的起止边界和方向。先覆盖全部子图，再描述"
-            "不确定项，不得用通用电路类型替代实际拓扑。优先输出 JSON 对象，字段为"
-            " recognized_text（字符串数组）、diagram_description（字符串）、components"
-            "（数组；每项包含 component_type、label、value、connections、"
-            "terminal_map、polarity、reference_direction、certainty）、"
-            "uncertain_info（字符串数组）和 confidence（0 到 1）；若无法可靠结构化，"
-            "仍需保留不确定项，不得臆造连接。"
+            AcademicProblemSolverService._visual_task_type(course)
+            if requires_circuit_ir(request)
+            else "academic_image_extraction"
+        )
+
+    @staticmethod
+    def _visual_extraction_instruction(
+        *, require_component_topology: bool = True
+    ) -> str:
+        topology = (
+            "电路或逻辑图必须逐个子图列出器件、器件端点与节点连接、控制端、极性、"
+            "参考方向和标号；不得用通用电路类型替代实际拓扑。"
+            if require_component_topology
+            else (
+                "若图片是电路，只描述实际可见的器件、文字和大致关系，"
+                "不要求形成完整拓扑。"
+            )
+        )
+        return (
+            " 只输出可观察内容，不补造参数。"
+            + topology
+            + "波形图必须列出分段区间、关键坐标、跳变以及端点是否包含；频谱/带通采样图"
+            "必须列出频率轴、单位、正负非零频带的起止边界和方向。先覆盖全部子图，再"
+            "描述不确定项。优先输出 JSON 对象，字段为 recognized_text（字符串数组）、"
+            "diagram_description（字符串）、components（数组；每项包含 component_type、"
+            "label、value、connections、terminal_map、polarity、reference_direction、"
+            "certainty）、uncertain_info（字符串数组）和 confidence（0 到 1）；若无法"
+            "可靠结构化，仍需保留不确定项，不得臆造连接。"
+        )
+
+    @staticmethod
+    def _reused_multimodal_observation(
+        request: AgentRequest, images: list[Any]
+    ) -> MultimodalObservation | None:
+        if not images:
+            return None
+        raw = request.options.get("multimodal_observation")
+        if isinstance(raw, MultimodalObservation):
+            observation = raw
+        elif isinstance(raw, Mapping):
+            try:
+                observation = MultimodalObservation.model_validate(raw)
+            except ValidationError:
+                return None
+        else:
+            return None
+        image_ids = {item.file_id for item in images}
+        if image_ids != set(observation.attachment_ids):
+            return None
+        return observation
+
+    @staticmethod
+    def _build_multimodal_observation(
+        request: AgentRequest,
+        summary: str,
+        visual_structure: Mapping[str, Any],
+        *,
+        source: Literal["vision", "reused", "fallback"],
+    ) -> MultimodalObservation:
+        hint = get_multimodal_capability_hint(request)
+        roles: dict[str, AttachmentRole] = {
+            item.file_id: AttachmentRole(
+                primary_role=item.primary_role,
+                secondary_roles=list(item.secondary_roles),
+                role_source=item.role_source,
+                confidence=item.role_confidence,
+            )
+            for item in request.attachments
+            if item.content_type.startswith("image/")
+        }
+        issues = visual_structure.get("visual_topology_issues", [])
+        warnings = [str(item) for item in issues if str(item)][:16]
+        return MultimodalObservation(
+            observation_id=f"vision:{request.task_id}",
+            source=source,
+            attachment_ids=list(roles),
+            attachment_roles=roles,
+            recognized_text=[
+                str(item)
+                for item in visual_structure.get("recognized_text", [])
+            ][:40],
+            summary=summary[:50_000],
+            possible_capabilities=list(hint.possible_capabilities),
+            confidence=float(
+                visual_structure.get("visual_extraction_confidence", 0.0)
+                or 0.0
+            ),
+            partial=visual_structure.get("visual_structure_status") != "complete",
+            warnings=warnings,
         )
 
     @staticmethod
@@ -2065,6 +2204,15 @@ class AcademicProblemSolverService:
                 not in {"none", "null", "n/a", "无", "无不确定项"}
             ],
             "confidence": payload.get("confidence", 0.5),
+            "primary_role": payload.get("primary_role", "UNKNOWN"),
+            "secondary_roles": [
+                str(item).strip().upper()
+                for item in payload.get("secondary_roles", [])
+                if str(item).strip()
+            ],
+            "role_source": payload.get(
+                "role_source", "multimodal_inference"
+            ),
         }
 
     @staticmethod
@@ -2107,6 +2255,7 @@ class AcademicProblemSolverService:
         *,
         section_title: str = "图片结构化提取",
         acceptance_spec: Mapping[str, Any] | None = None,
+        require_specialized_topology: bool = True,
     ) -> tuple[AcademicProblem, dict[str, Any]]:
         parsed = AcademicProblemSolverService._parse_visual_extraction(content)
         if parsed is None:
@@ -2123,7 +2272,10 @@ class AcademicProblemSolverService:
                             *problem.uncertain_info,
                             {"description": "图片内容由视觉模型提取，需以原图为准"},
                         ],
-                        "can_continue": problem.can_continue and text_facts_fallback,
+                        "can_continue": problem.can_continue
+                        and (
+                            not require_specialized_topology or text_facts_fallback
+                        ),
                     }
                 ),
                 {
@@ -2134,6 +2286,7 @@ class AcademicProblemSolverService:
                     "visual_topology_issues": ["visual_extraction_unstructured"],
                     "visual_topology_validated": False,
                     "text_facts_fallback": text_facts_fallback,
+                    "circuit_ir_requested": require_specialized_topology,
                 },
             )
 
@@ -2193,8 +2346,10 @@ class AcademicProblemSolverService:
                 validation_extraction,
                 problem_text=problem.problem_text,
                 require_component_topology=(
-                    AcademicProblemSolverService._visual_requires_component_topology(
-                        acceptance_spec
+                    require_specialized_topology
+                    and (
+                        AcademicProblemSolverService
+                        ._visual_requires_component_topology(acceptance_spec)
                     )
                     and not (
                         AcademicProblemSolverService._visual_is_signal_extraction(
@@ -2251,7 +2406,12 @@ class AcademicProblemSolverService:
                     "complete" if topology_complete else problem.structure_status
                 ),
                 "can_continue": problem.can_continue
-                and (topology_complete or prompt_facts_cover or text_facts_fallback),
+                and (
+                    not require_specialized_topology
+                    or topology_complete
+                    or prompt_facts_cover
+                    or text_facts_fallback
+                ),
                 "extraction_confidence": min(
                     problem.extraction_confidence,
                     parsed.confidence,
@@ -2279,6 +2439,8 @@ class AcademicProblemSolverService:
                 "visual_text_fallback": visual_text_fallback,
                 "text_facts_fallback": text_facts_fallback,
                 "visual_acceptance": visual_acceptance,
+                "circuit_ir_requested": require_specialized_topology,
+                "recognized_text": list(parsed.recognized_text),
             },
         )
 

@@ -94,6 +94,7 @@ const materialManager = createMaterialManager({
   onChanged: (files) => showMaterialPreview(files),
 });
 let materialPreviewUrls = [];
+let circuitArtifactZoom = 1;
 let identityReady = Promise.resolve();
 localStorage.setItem("xinzhi_student_user", state.userId);
 
@@ -2401,11 +2402,43 @@ function safeCircuitSvg(svgText) {
   }
 }
 
+function applyCircuitArtifactZoom() {
+  const content = $("#circuit-artifact-content");
+  const svg = content?.querySelector("svg");
+  const value = $("#circuit-zoom-value");
+  if (!svg || !value) return;
+  const percentage = Math.round(circuitArtifactZoom * 100);
+  svg.style.width = `${percentage}%`;
+  svg.style.maxWidth = "none";
+  svg.style.maxHeight = circuitArtifactZoom > 1 ? "none" : "520px";
+  value.textContent = `${percentage}%`;
+}
+
+function bindCircuitArtifactZoom() {
+  const panel = $("#circuit-artifact-panel");
+  if (!panel || panel.dataset.zoomBound === "true") return;
+  panel.dataset.zoomBound = "true";
+  $("#circuit-zoom-out")?.addEventListener("click", () => {
+    circuitArtifactZoom = Math.max(0.6, circuitArtifactZoom - 0.2);
+    applyCircuitArtifactZoom();
+  });
+  $("#circuit-zoom-reset")?.addEventListener("click", () => {
+    circuitArtifactZoom = 1;
+    applyCircuitArtifactZoom();
+  });
+  $("#circuit-zoom-in")?.addEventListener("click", () => {
+    circuitArtifactZoom = Math.min(2.4, circuitArtifactZoom + 0.2);
+    applyCircuitArtifactZoom();
+  });
+}
+
 function renderCircuitArtifact(structured = {}) {
   const panel = $("#circuit-artifact-panel");
   const content = $("#circuit-artifact-content");
   const warningList = $("#circuit-artifact-warnings");
   const artifact = structured.circuit_artifact;
+  bindCircuitArtifactZoom();
+  circuitArtifactZoom = 1;
   panel.hidden = !artifact || typeof artifact !== "object";
   content.replaceChildren();
   warningList.replaceChildren();
@@ -2421,6 +2454,7 @@ function renderCircuitArtifact(structured = {}) {
   const svg = safeCircuitSvg(artifact.svg);
   if (svg && status !== "failed") {
     content.append(svg);
+    applyCircuitArtifactZoom();
   } else {
     content.append(el("p", {
       class: "notice warning",

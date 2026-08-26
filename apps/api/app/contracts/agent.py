@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.contracts.math_content import MathRichContent
+from app.contracts.multimodal import ImageRole, RoleSource
 
 
 def utc_now() -> datetime:
@@ -125,6 +126,10 @@ class AttachmentRef(BaseModel):
     page_count: int = Field(default=0, ge=0)
     extracted_text: str = ""
     extraction_metadata: dict[str, Any] = Field(default_factory=dict)
+    primary_role: ImageRole = "UNKNOWN"
+    secondary_roles: list[ImageRole] = Field(default_factory=list, max_length=4)
+    role_source: RoleSource = "unknown"
+    role_confidence: float = Field(default=0.0, ge=0, le=1)
 
 
 class RunMetrics(BaseModel):

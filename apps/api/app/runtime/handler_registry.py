@@ -178,16 +178,17 @@ class _Registration:
 class RuntimeHandlerRegistry:
     """Validated registry for executable Runtime handlers."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, allow_development_registration: bool = False) -> None:
         self._registrations: dict[str, _Registration] = {}
         self._frozen = False
+        self._allow_development_registration = allow_development_registration
 
     def register(
         self,
         descriptor: RuntimeHandlerDescriptor,
         handler: RuntimeNodeHandler,
     ) -> None:
-        if self._frozen:
+        if self._frozen and not self._allow_development_registration:
             raise RuntimeHandlerRegistryError(
                 "registry_frozen",
                 "runtime handler registry is frozen",

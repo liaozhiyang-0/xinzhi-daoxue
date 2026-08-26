@@ -123,7 +123,10 @@ class RuntimeExecutionBoundary:
         plan: AgentRunPlan,
         caller: str,
     ) -> None:
-        if self.manifest is None:
+        if (
+            self.manifest is None
+            or self.manifest.development_compatibility_enabled
+        ):
             return
         self.manifest.validate_runtime_plan(plan, caller=caller)
         raw_plan = request.options.get("_canonical_plan")
@@ -411,7 +414,11 @@ class RuntimeExecutionBoundary:
         launch_decision: RuntimeLaunchSnapshot | None = None,
         compatibility_snapshot: RuntimeCompatibilitySnapshot | None = None,
     ) -> AgentRun | None:
-        if self.manifest is not None and runtime_plan is not None:
+        if (
+            self.manifest is not None
+            and runtime_plan is not None
+            and not self.manifest.development_compatibility_enabled
+        ):
             self.manifest.validate_runtime_plan(
                 runtime_plan,
                 caller="RuntimeExecutionBoundary.start_or_restore",
@@ -457,7 +464,10 @@ class RuntimeExecutionBoundary:
                 self.legacy_provider is not None
                 and run.plan.plan_id.startswith("legacy-runtime:")
             ):
-                if self.manifest is not None:
+                if (
+                    self.manifest is not None
+                    and not self.manifest.development_compatibility_enabled
+                ):
                     architecture_telemetry.increment(
                         "legacy_runtime_invocation_count"
                     )
