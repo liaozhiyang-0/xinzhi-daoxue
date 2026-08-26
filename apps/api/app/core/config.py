@@ -534,6 +534,9 @@ class Settings(BaseSettings):
     shadow_can_mutate: bool = False
     allow_legacy_test_only: bool = False
     circuit_visualization_mode: Literal["off", "shadow", "controlled"] = "off"
+    # The workspace can opt one task into the controlled renderer. The global
+    # mode remains off by default so ordinary tasks never schedule drawing.
+    circuit_visualization_frontend_enabled: bool = True
     # Deprecated Phase B compatibility switches; production code must use
     # planner_mode instead.
     planner_shadow_enabled: bool = False

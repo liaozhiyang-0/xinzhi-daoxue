@@ -74,9 +74,10 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "createMaterialManager" in script_text
     assert "createTaskTransport" in script_text
     assert (
-        "./ts/workspace-contracts.js?v=20260825-attachment-contract-v1"
+        "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v1"
         in script.text
     )
+    assert 'id="circuit-visualization-toggle"' in page.text
     assert "buildStudentTaskPayload" in contracts.text
     assert "id=\"preview-images\"" in page.text
     assert "20260825-answer-quality-v4" in page.text

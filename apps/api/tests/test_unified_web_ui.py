@@ -258,6 +258,14 @@ def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
     )
 
     assert 'id="circuit-artifact-panel"' in html
+    assert 'id="circuit-visualization-toggle"' in html
+    contracts = (
+        root / "apps/api/app/static/debug/ts/workspace-contracts.js"
+    ).read_text(encoding="utf-8")
+    assert (
+        'circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : "off"'
+        in contracts
+    )
     assert "function renderCircuitArtifact(structured = {})" in script
     assert "function safeCircuitSvg(svgText)" in script
     assert 'root.querySelectorAll("script, foreignObject")' in script

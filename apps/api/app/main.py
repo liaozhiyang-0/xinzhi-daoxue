@@ -181,7 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         enabled=True,
     )
     tool_registry = default_tool_registry(
-        circuit_render_enabled=app_settings.circuit_visualization_mode != "off"
+        circuit_render_enabled=(
+            app_settings.circuit_visualization_mode != "off"
+            or app_settings.circuit_visualization_frontend_enabled
+        )
     )
     graph_checkpointer = _create_graph_checkpointer(app_settings)
     graph_factory = GraphFactory(

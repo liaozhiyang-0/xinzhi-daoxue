@@ -18,6 +18,7 @@ from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.circuit_visualization import (
     decide_circuit_visualization,
     project_circuit_artifact,
+    resolve_circuit_visualization_mode,
     runtime_observation_from_tool,
 )
 from app.services.planner import PlannerService
@@ -83,6 +84,39 @@ def test_circuit_feature_mode_controls_shadow_and_runtime_schedule() -> None:
     assert off.decision == "SKIP"
     assert "CIRCUIT_IR_UNAVAILABLE" in unavailable.reason_codes
     assert not unavailable.should_schedule
+
+
+def test_workspace_toggle_resolves_controlled_mode_per_task() -> None:
+    request = _request(text="请画图", circuit_ir=_valid_circuit()).model_copy(
+        update={"options": {"circuit_visualization_mode": "controlled"}}
+    )
+
+    assert (
+        resolve_circuit_visualization_mode(
+            request,
+            configured_mode="off",
+            frontend_enabled=True,
+        )
+        == "controlled"
+    )
+    assert (
+        resolve_circuit_visualization_mode(
+            request.model_copy(
+                update={"options": {"circuit_visualization_mode": "off"}}
+            ),
+            configured_mode="controlled",
+            frontend_enabled=True,
+        )
+        == "off"
+    )
+    assert (
+        resolve_circuit_visualization_mode(
+            request,
+            configured_mode="off",
+            frontend_enabled=False,
+        )
+        == "off"
+    )
 
 
 def test_canonical_plan_binds_circuit_visualization_to_tool() -> None:

@@ -35,6 +35,7 @@ from app.services.capability_binding_registry import (
 from app.services.circuit_visualization import (
     CircuitVisualizationDecision,
     decide_circuit_visualization,
+    resolve_circuit_visualization_mode,
 )
 from app.services.experience_memory import ExperiencePlannerPrior
 from app.services.intent_plan import IntentPlanCompiler
@@ -648,7 +649,11 @@ class PlannerService:
     ) -> tuple[CanonicalPlan, CircuitVisualizationDecision]:
         decision = decide_circuit_visualization(
             request,
-            feature_mode=settings.circuit_visualization_mode,
+            feature_mode=resolve_circuit_visualization_mode(
+                request,
+                configured_mode=settings.circuit_visualization_mode,
+                frontend_enabled=settings.circuit_visualization_frontend_enabled,
+            ),
             course_id=route.course_id,
         )
         updated = canonical.model_copy(

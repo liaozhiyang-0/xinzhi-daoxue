@@ -1,6 +1,6 @@
 import { createMaterialManager } from "./ts/materials.js";
 import { createTaskTransport } from "./ts/task-transport.js";
-import { buildStudentTaskPayload } from "./ts/workspace-contracts.js?v=20260825-attachment-contract-v1";
+import { buildStudentTaskPayload } from "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v1";
 
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
@@ -2452,7 +2452,7 @@ const taskTransport = createTaskTransport({
 const waitForTask = (id, runSequence) => taskTransport.waitForTask(id, runSequence);
 
 function setBusy(busy) {
-  $("#send-button").disabled = busy; $("#stop-button").disabled = !busy; $("#question-input").disabled = busy; $("#student-attempt-input").disabled = busy; $("#teaching-mode").disabled = busy; $("#image-input").disabled = busy; $("#remove-image").disabled = busy;
+  $("#send-button").disabled = busy; $("#stop-button").disabled = !busy; $("#question-input").disabled = busy; $("#student-attempt-input").disabled = busy; $("#teaching-mode").disabled = busy; $("#image-input").disabled = busy; $("#remove-image").disabled = busy; $("#circuit-visualization-toggle").disabled = busy;
   $("#retry-task").disabled = busy;
 }
 
@@ -2573,6 +2573,7 @@ async function submit(event) {
       canonicalInput: canonical,
       materials,
       responseDepth: $("#depth-select").value,
+      circuitVisualizationEnabled: $("#circuit-visualization-toggle").checked,
       teachingMode,
       studentAttempt,
       learningFollowUp,

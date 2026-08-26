@@ -42,6 +42,22 @@ class CircuitVisualizationDecision(BaseModel):
         )
 
 
+def resolve_circuit_visualization_mode(
+    request: AgentRequest,
+    *,
+    configured_mode: CircuitVisualizationMode,
+    frontend_enabled: bool = True,
+) -> CircuitVisualizationMode:
+    """Resolve the per-task workspace switch without changing global policy."""
+
+    requested = request.options.get("circuit_visualization_mode")
+    if requested == "off":
+        return "off"
+    if requested == "controlled" and frontend_enabled:
+        return "controlled"
+    return configured_mode
+
+
 def decide_circuit_visualization(
     request: AgentRequest,
     *,

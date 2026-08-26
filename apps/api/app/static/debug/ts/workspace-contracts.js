@@ -9,10 +9,11 @@ function attachmentRef(file) {
         checksum_sha256: file.checksum_sha256,
     };
 }
-export function buildStudentTaskPayload({ sessionId, userId, userRole, courseId, intent, scenarioId, canonicalInput, materials, responseDepth, teachingMode, studentAttempt, learningFollowUp, requestId, researchAnalysis, }) {
+export function buildStudentTaskPayload({ sessionId, userId, userRole, courseId, intent, scenarioId, canonicalInput, materials, responseDepth, circuitVisualizationEnabled, teachingMode, studentAttempt, learningFollowUp, requestId, researchAnalysis, }) {
     const options = {
         request_id: requestId,
         response_depth: responseDepth,
+        circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : "off",
         teaching_mode: teachingMode,
         student_attempt: studentAttempt ? { raw_text: studentAttempt } : undefined,
         prefer_internal_agents: true,
