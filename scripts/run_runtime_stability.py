@@ -16,6 +16,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from app.evaluation.cache import (  # type: ignore[import-untyped]
     EvaluationCache,
@@ -244,14 +245,16 @@ def _record(
         and isinstance(stage.get("duration_ms"), (int, float))
     }
     slowest_stage = (
-        max(stage_durations, key=stage_durations.get) if stage_durations else None
+        max(stage_durations, key=lambda name: stage_durations[name])
+        if stage_durations
+        else None
     )
     gate_events = [
         event
         for event in runtime_timing.get("events", [])
         if isinstance(event, dict)
     ]
-    gate_decision = next(
+    gate_decision: dict[str, Any] = next(
         (
             event.get("details", {})
             for event in gate_events
@@ -879,16 +882,44 @@ def select_representatives(
     return selected
 
 
-def _failed_records(result: dict[str, Any]) -> list[dict[str, Any]]:
+def _result_records(result: dict[str, Any]) -> list[dict[str, Any]]:
     records = [
         item
         for item in result.get("records", [])
-        if isinstance(item, dict) and item.get("status") != "passed"
+        if isinstance(item, dict)
     ]
     representative_repeat = result.get("representative_repeat")
     if isinstance(representative_repeat, dict):
-        records.extend(_failed_records(representative_repeat))
+        records.extend(_result_records(representative_repeat))
     return records
+
+
+def _quality_failures(result: dict[str, Any]) -> list[dict[str, Any]]:
+    records = [
+        item
+        for item in _result_records(result)
+        if item.get("status") != "passed"
+    ]
+    return records
+
+
+def _operational_failures(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return task-chain failures, independent of provider answer quality.
+
+    Provider-free modes intentionally produce degraded or fallback answers.
+    Those are quality observations, not Runtime transport failures. A missing
+    terminal task, malformed timing envelope, or non-completed task remains a
+    hard stability failure.
+    """
+
+    return [
+        item
+        for item in _result_records(result)
+        if item.get("task_status") != "completed"
+        or not isinstance(item.get("runtime_timing"), dict)
+        or item.get("runtime_timing", {}).get("schema_version")
+        != "runtime_timing.v1"
+    ]
 
 
 async def run_mode(
@@ -993,22 +1024,44 @@ async def main() -> None:
         "raw_answers_stored": False,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    quality_failures = {
+        mode: len(_quality_failures(result))
+        for mode, result in results.items()
+        if _quality_failures(result)
+    }
+    operational_failures = {
+        mode: len(_operational_failures(result))
+        for mode, result in results.items()
+        if _operational_failures(result)
+    }
+    output["gate"] = {
+        "status": "failed" if operational_failures else "passed",
+        "scope": "runtime_protocol",
+        "operational_failures": operational_failures,
+        "quality_failures": quality_failures,
+        "quality_disposition": (
+            "informational_provider_free_mode"
+            if quality_failures
+            else "none"
+        ),
+    }
     args.output.write_text(
         json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"output={args.output}")
-    failures = {
-        mode: len(_failed_records(result))
-        for mode, result in results.items()
-        if _failed_records(result)
-    }
-    if failures:
+    if operational_failures:
         print(
             "runtime stability gate failed: "
-            + json.dumps(failures, ensure_ascii=False, sort_keys=True),
+            + json.dumps(operational_failures, ensure_ascii=False, sort_keys=True),
             file=sys.stderr,
         )
         raise SystemExit(1)
+    if quality_failures:
+        print(
+            "runtime protocol gate passed; provider-free quality failures recorded: "
+            + json.dumps(quality_failures, ensure_ascii=False, sort_keys=True),
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":
