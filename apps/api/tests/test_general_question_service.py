@@ -237,7 +237,7 @@ async def test_general_question_returns_model_answer_without_course_citation() -
     assert result.structured_result["model_execution"]["models"] == ["spark-x"]
     assert fake.calls[0]["task_type"] == "general_question_answer"
     assert fake.calls[0]["extra_options"] == {
-        "max_tokens": 4096,
+        "max_tokens": 2048,
         "response_depth": "standard",
     }
     system_prompt = fake.calls[0]["messages"][0]["content"]

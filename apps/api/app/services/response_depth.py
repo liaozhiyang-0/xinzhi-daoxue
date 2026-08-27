@@ -35,14 +35,17 @@ class ResponseDepthPolicy:
 _POLICIES: dict[str, dict[ResponseDepth, ResponseDepthPolicy]] = {
     "general_question": {
         ResponseDepth.BRIEF: ResponseDepthPolicy(
-            ResponseDepth.BRIEF, 2048, 0, 0, False, ("answer",)
+            ResponseDepth.BRIEF, 1024, 0, 0, False, ("answer",)
         ),
         ResponseDepth.STANDARD: ResponseDepthPolicy(
-            ResponseDepth.STANDARD, 4096, 0, 0, False, ("answer", "key_points")
+            # A normal question should not reserve a multi-thousand-token
+            # completion budget. Keep standard answers useful while leaving
+            # room for the 15-second interactive response target.
+            ResponseDepth.STANDARD, 2048, 0, 0, False, ("answer", "key_points")
         ),
         ResponseDepth.DEEP: ResponseDepthPolicy(
             ResponseDepth.DEEP,
-            6144,
+            4096,
             0,
             0,
             True,
@@ -51,11 +54,11 @@ _POLICIES: dict[str, dict[ResponseDepth, ResponseDepthPolicy]] = {
     },
     "knowledge_qa": {
         ResponseDepth.BRIEF: ResponseDepthPolicy(
-            ResponseDepth.BRIEF, 2048, 3, 2, False, ("conclusion", "evidence")
+            ResponseDepth.BRIEF, 1024, 3, 2, False, ("conclusion", "evidence")
         ),
         ResponseDepth.STANDARD: ResponseDepthPolicy(
             ResponseDepth.STANDARD,
-            4096,
+            2048,
             6,
             4,
             True,
@@ -63,7 +66,7 @@ _POLICIES: dict[str, dict[ResponseDepth, ResponseDepthPolicy]] = {
         ),
         ResponseDepth.DEEP: ResponseDepthPolicy(
             ResponseDepth.DEEP,
-            6144,
+            4096,
             10,
             8,
             True,
