@@ -5,7 +5,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
@@ -14,7 +14,7 @@ from app.agents import AgentRegistry  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 from app.courses import default_course_registry  # noqa: E402
 from app.evaluation.cache import EvaluationCache, evaluation_fingerprint  # noqa: E402
-from app.evaluation.contracts import EvaluationCase  # noqa: E402
+from app.evaluation.contracts import EvaluationCase, EvaluationMode  # noqa: E402
 from app.evaluation.loader import EvaluationCaseLoader  # noqa: E402
 from app.evaluation.reporting import (  # noqa: E402
     evaluation_case_attachment_manifest,
@@ -99,7 +99,7 @@ def validate_cases(
         raise ValueError("筛选后没有评测案例")
     registry = AgentRegistry()
     courses = default_course_registry()
-    model_registry = ModelRegistry(Settings(_env_file=None))
+    model_registry = ModelRegistry(Settings(_env_file=None))  # type: ignore[call-arg]
     errors = list(model_registry.errors)
     for case in selected:
         registry.get(case.expected_agent)
@@ -170,7 +170,7 @@ def evaluation_settings(*, live: bool) -> Settings:
         enable_qwen_vision_primary=False,
         enable_qwen_brief=False,
         rag_enabled=False,
-        _env_file=None,
+        _env_file=None,  # type: ignore[call-arg]
     )
 
 
@@ -184,7 +184,7 @@ async def run(args: argparse.Namespace) -> int:
         raise ValueError("评测案例校验失败，请先使用 --validate-only 查看具体错误")
     cases = list(raw_cases)
     case_source_root = CASE_ROOT / args.suite if args.suite else CASE_ROOT
-    mode = args.mode or ("live" if args.live else "offline")
+    mode = cast(EvaluationMode, args.mode or ("live" if args.live else "offline"))
     live = mode in {"live", "real_model"}
     app = create_app(evaluation_settings(live=live))
     cache = EvaluationCache(
@@ -199,6 +199,9 @@ async def run(args: argparse.Namespace) -> int:
         "suite": args.suite,
         "mode": mode,
     }
+    case_attachment_count = validation.get("case_attachment_count", 0)
+    if not isinstance(case_attachment_count, int):
+        raise ValueError("评测附件数量必须是整数")
     async with EvaluationRunner(
         app,
         mode=mode,
@@ -218,7 +221,7 @@ async def run(args: argparse.Namespace) -> int:
             case_attachment_manifest_sha256=str(
                 validation["case_attachment_manifest_sha256"]
             ),
-            case_attachment_count=int(validation["case_attachment_count"]),
+            case_attachment_count=case_attachment_count,
             case_attachment_root=case_source_root,
         )
     print(json.dumps(report.summary, ensure_ascii=False, indent=2))

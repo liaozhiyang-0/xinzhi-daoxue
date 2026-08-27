@@ -238,6 +238,7 @@ def _make_ct_case(index: int, category: str) -> BenchmarkCase:
 
 def _make_ae_case(index: int, category: str) -> BenchmarkCase:
     prefix = f"{category[:2]}{index}"
+    components: list[dict[str, Any]]
     if category == "diode":
         components = [
             {
@@ -359,7 +360,13 @@ def _make_ae_case(index: int, category: str) -> BenchmarkCase:
             "opamp_feedback" if category in {"feedback", "opamp"} else "opamp_inverting"
         )
     components.append({"id": f"g{prefix}", "type": "ground", "ports": {"g": "gnd"}})
-    net_ids = sorted({net for item in components for net in item["ports"].values()})
+    net_ids = sorted(
+        {
+            str(net)
+            for item in components
+            for net in item["ports"].values()
+        }
+    )
     return BenchmarkCase(
         "AE",
         category,
@@ -756,25 +763,35 @@ def run(iterations: int) -> dict[str, Any]:
     total_renders = 0
     for course, circuit, template in cases:
         options = CircuitRenderOptions(template=template)
+
+        def validation_operation(circuit: CircuitIR = circuit) -> Any:
+            return validate_circuit(circuit)
+
+        def layout_operation(
+            circuit: CircuitIR = circuit, template: str = template
+        ) -> Any:
+            return build_schematic_layout(circuit, template)
+
+        def render_operation(
+            circuit: CircuitIR = circuit, options: CircuitRenderOptions = options
+        ) -> Any:
+            return observation_from_result(circuit, render_circuit(circuit, options))
+
         timings.extend(
             [
                 measure(
                     f"{course}.validation",
-                    lambda circuit=circuit: validate_circuit(circuit),
+                    validation_operation,
                     iterations,
                 ),
                 measure(
                     f"{course}.layout",
-                    lambda circuit=circuit, template=template: build_schematic_layout(
-                        circuit, template
-                    ),
+                    layout_operation,
                     iterations,
                 ),
                 measure(
                     f"{course}.render_and_project",
-                    lambda circuit=circuit, options=options: observation_from_result(
-                        circuit, render_circuit(circuit, options)
-                    ),
+                    render_operation,
                     iterations,
                 ),
             ]

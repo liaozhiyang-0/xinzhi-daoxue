@@ -10,7 +10,11 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from audit_math_corpus import _formula_tokens, _iter_sources, inspect_formula
+from audit_math_corpus import (  # type: ignore[import-not-found]
+    _formula_tokens,
+    _iter_sources,
+    inspect_formula,
+)
 
 
 def _collect(source_root: Path) -> list[dict[str, object]]:
@@ -46,7 +50,8 @@ def _select(formulas: list[dict[str, object]]) -> list[dict[str, object]]:
             should_select = should_select or seen_env[(course, environment)] < 20
         if seen_course_risk[(course, risk)] < 3:
             should_select = True
-        if len(str(item.get("length", ""))) > 0 and int(item["length"]) > 1200:
+        length = item.get("length")
+        if isinstance(length, (int, float)) and length > 1200:
             should_select = True
         if should_select:
             selected.append(item)

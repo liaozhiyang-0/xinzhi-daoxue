@@ -18,6 +18,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 COURSES: dict[str, str] = {
     "CT": "电路理论",
@@ -317,16 +318,16 @@ def _formula_tokens(
             run_end = index + 1
             while run_end < len(text) and text[run_end] == "`":
                 run_end += 1
-            closer = text.find(text[index:run_end], run_end)
-            if closer >= 0:
-                protected.append({"start": index, "end": closer + run_end - index})
-                index = closer + run_end - index
+            code_closer = text.find(text[index:run_end], run_end)
+            if code_closer >= 0:
+                protected.append({"start": index, "end": code_closer + run_end - index})
+                index = code_closer + run_end - index
                 line_start = False
                 continue
         found: tuple[int, str, str] | None = None
-        for opener, closer, name in MATH_DELIMITERS:
+        for opener, math_closer, name in MATH_DELIMITERS:
             if text.startswith(opener, index) and not _is_escaped(text, index):
-                end = _find_unescaped(text, closer, index + len(opener))
+                end = _find_unescaped(text, math_closer, index + len(opener))
                 if end >= 0:
                     found = (end, name, text[index + len(opener) : end])
                     break
@@ -448,7 +449,7 @@ def _write_jsonl(path: Path, rows: Iterable[dict[str, object]]) -> None:
 
 
 def _report(
-    inventory: dict[str, object], formulas: list[Formula], source_root: Path
+    inventory: dict[str, Any], formulas: list[Formula], source_root: Path
 ) -> str:
     counts = inventory["formula_counts"]
     risk_counts = inventory["risk_counts"]
@@ -508,7 +509,7 @@ def _report(
     return "\n".join(lines)
 
 
-def audit(source_root: Path, output_root: Path) -> dict[str, object]:
+def audit(source_root: Path, output_root: Path) -> dict[str, Any]:
     formulas: list[Formula] = []
     source_shas: dict[str, str] = {}
     course_markdown_counts: Counter[str] = Counter()
@@ -543,7 +544,7 @@ def audit(source_root: Path, output_root: Path) -> dict[str, object]:
         if manifest_path.is_file()
         else 0
     )
-    inventory: dict[str, object] = {
+    inventory: dict[str, Any] = {
         "schema_version": "math_corpus_inventory.v1",
         "source_root": str(source_root),
         "markdown_count": sum(course_markdown_counts.values()),

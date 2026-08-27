@@ -44,7 +44,7 @@ def pct_delta(before: Any, after: Any) -> str:
     return f"{value:+.2f}%"
 
 
-def aggregate_fallbacks(payload: dict[str, Any]) -> dict[str, float | int]:
+def aggregate_fallbacks(payload: dict[str, Any]) -> dict[str, Any]:
     records = payload.get("records", [])
     count = len(records)
     fallback = sum(
@@ -115,7 +115,7 @@ def real_provider_stats(report: dict[str, Any]) -> dict[str, Any]:
             tool_id = str(call.get("tool_id", "unknown"))
             tool_ids[tool_id] = tool_ids.get(tool_id, 0) + 1
 
-    def summarize(values: list[float]) -> dict[str, float | int]:
+    def summarize(values: list[float]) -> dict[str, Any]:
         if not values:
             return {"count": 0, "p50_ms": None, "p95_ms": None, "max_ms": None}
         ordered = sorted(values)

@@ -8,6 +8,7 @@ import statistics
 import sys
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
@@ -20,7 +21,10 @@ from app.circuit import (  # noqa: E402
     validate_circuit,
 )
 from app.services.math_formatting_service import MathFormattingService  # noqa: E402
-from audit_math_corpus import _formula_tokens, _iter_sources  # noqa: E402
+from audit_math_corpus import (  # type: ignore[import-not-found]  # noqa: E402
+    _formula_tokens,
+    _iter_sources,
+)
 
 
 def percentile(values: list[float], quantile: float) -> float:
@@ -57,7 +61,12 @@ def run(source_root: Path, output_root: Path) -> dict[str, object]:
         / "fixtures"
         / "circuit_golden_cases.json"
     )
-    fixture_cases = json.loads(fixture_path.read_text(encoding="utf-8"))
+    fixture_payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if not isinstance(fixture_payload, list) or not all(
+        isinstance(item, dict) for item in fixture_payload
+    ):
+        raise ValueError("circuit fixture must be a list of objects")
+    fixture_cases: list[dict[str, Any]] = fixture_payload
     validation_ms: list[float] = []
     render_ms: list[float] = []
     svg_sizes: list[int] = []
@@ -75,7 +84,7 @@ def run(source_root: Path, output_root: Path) -> dict[str, object]:
         render_ms.append((perf_counter() - started) * 1000)
         svg_sizes.append(len(result.svg or ""))
 
-    baseline: dict[str, object] = {
+    baseline: dict[str, Any] = {
         "schema_version": "math_circuit_performance.v1",
         "source_root": str(source_root),
         "math_formula_count": len(formulas),

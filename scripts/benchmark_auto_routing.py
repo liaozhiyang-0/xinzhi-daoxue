@@ -12,7 +12,7 @@ API_ROOT = PROJECT_ROOT / "apps" / "api"
 sys.path.insert(0, str(API_ROOT))
 
 from app.agents import AgentRegistry, TaskRouter  # noqa: E402
-from app.contracts import AgentRequest  # noqa: E402
+from app.contracts import AgentRequest, Intent, Scene  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 
 
@@ -28,7 +28,7 @@ def main() -> int:
     )
     settings = Settings(
         app_env="test",
-        _env_file=None,
+        _env_file=None,  # type: ignore[call-arg]
     )
     router = TaskRouter(AgentRegistry(), settings)
     route_ms: list[float] = []
@@ -40,9 +40,9 @@ def main() -> int:
             request = AgentRequest(
                 session_id="benchmark-session",
                 user_id="benchmark-user",
-                scene="dispatch",
+                scene=Scene.DISPATCH,
                 course_id=str(case.get("course_hint", "AUTO")),
-                intent="unknown",
+                intent=Intent.UNKNOWN,
                 canonical_input={"text": case["user_input"]},
                 options=dict(case.get("session_context", {})),
             )

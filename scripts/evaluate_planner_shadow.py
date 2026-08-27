@@ -123,7 +123,7 @@ def evaluate(cases: list[dict[str, Any]]) -> dict[str, Any]:
         app_env="test",
         planner_shadow_enabled=True,
         planner_takeover_enabled=False,
-        _env_file=None,
+        _env_file=None,  # type: ignore[call-arg]
     )
     registry = AgentRegistry()
     router = TaskRouter(registry, settings=settings)

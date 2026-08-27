@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 def _rss_mb() -> float | None:
     try:
-        import psutil  # type: ignore[import-not-found]
+        import psutil  # type: ignore[import-untyped]
     except ImportError:
         return None
     return round(psutil.Process(os.getpid()).memory_info().rss / 1024**2, 3)

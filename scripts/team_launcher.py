@@ -566,11 +566,11 @@ def runtime_checks(
     """Collect actionable, non-secret checks for the local development stack."""
 
     environment_supplied = environment is not None
-    env = (
-        environment
-        if environment_supplied
-        else build_host_environment(parse_dotenv(ROOT / ".env"))
-    )
+    if environment_supplied:
+        assert environment is not None
+        env = environment
+    else:
+        env = build_host_environment(parse_dotenv(ROOT / ".env"))
     dotenv_present = (ROOT / ".env").is_file()
     docker_ok = shutil.which("docker") is not None and docker_engine_ready()
     python_ok, python_detail = python_environment_ready()

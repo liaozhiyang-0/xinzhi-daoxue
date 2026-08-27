@@ -17,7 +17,10 @@ for import_root in (API_ROOT, SCRIPTS_ROOT):
 from app.services.course_asset_review import (  # noqa: E402
     build_course_asset_readiness,
 )
-from audit_course_assets import DEFAULT_COURSES, build_report  # noqa: E402
+from audit_course_assets import (  # type: ignore[import-not-found]  # noqa: E402
+    DEFAULT_COURSES,
+    build_report,
+)
 
 CONSISTENCY_SCHEMA_VERSION = "course_asset_readiness_consistency.v1"
 

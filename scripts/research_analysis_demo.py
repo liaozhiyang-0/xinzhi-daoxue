@@ -148,10 +148,12 @@ def build_demo_requests(root: Path) -> list[tuple[str, ResearchAnalysisRequest, 
             output_root=root,
         ),
     ]
-    return [
-        (request.data_manifest.dataset_id, request, output)
-        for request, output in cases
-    ]
+    result: list[tuple[str, ResearchAnalysisRequest, Path]] = []
+    for request, output in cases:
+        if request.data_manifest is None:
+            raise RuntimeError("demo request is missing its data manifest")
+        result.append((request.data_manifest.dataset_id, request, output))
+    return result
 
 
 def run_demo(output_root: Path) -> dict[str, Any]:

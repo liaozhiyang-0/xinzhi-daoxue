@@ -67,7 +67,8 @@ def validate_pilot_request(
 
     dataset_check = _check_local_dataset(request)
     report["dataset_check"] = dataset_check
-    errors = list(report["errors"])
+    raw_errors = report.get("errors", [])
+    errors = list(raw_errors) if isinstance(raw_errors, list) else []
     if dataset_check["status"] != "passed":
         errors.append(str(dataset_check["error"]))
         report["valid"] = False
@@ -100,6 +101,9 @@ def _check_local_dataset(request: ResearchAnalysisRequest) -> dict[str, object]:
     result["checksum_match"] = checksum_match
     if not checksum_match:
         result["error"] = "pilot_dataset_checksum_mismatch"
+        return result
+    if manifest.format == "unknown":
+        result["error"] = "pilot_dataset_format_unknown"
         return result
     try:
         columns, rows = read_tabular_rows(path, manifest.format)

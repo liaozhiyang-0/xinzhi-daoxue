@@ -33,7 +33,7 @@ USER_ID = "synthetic-benchmark-user"
 async def run_benchmark() -> dict[str, Any]:
     with TemporaryDirectory(prefix="xzd-runtime-") as directory:
         root = Path(directory)
-        settings = Settings(
+        settings = Settings(  # type: ignore[call-arg]
             app_env="test",
             log_level="WARNING",
             test_database_url=f"sqlite+aiosqlite:///{root / 'runtime.db'}",

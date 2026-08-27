@@ -17,7 +17,9 @@ from app.orchestrator import XZDSupervisor  # noqa: E402
 def main() -> int:
     case_root = ROOT / "tests" / "regression" / "cases"
     registry = AgentRegistry()
-    settings = Settings(app_env="test", rag_enabled=False, _env_file=None)
+    settings = Settings(  # type: ignore[call-arg]
+        app_env="test", rag_enabled=False, _env_file=None
+    )
     supervisor = XZDSupervisor(
         registry,
         TaskRouter(registry, settings),
