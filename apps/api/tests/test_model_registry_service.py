@@ -32,6 +32,7 @@ class FakeProvider(BaseModelProvider):
         self._model = model
         self.outcomes = outcomes
         self.calls = 0
+        self.models: list[str] = []
 
     @property
     def configured(self) -> bool:
@@ -42,7 +43,7 @@ class FakeProvider(BaseModelProvider):
         return self._model
 
     async def generate_text(self, **kwargs: Any) -> ModelResponse:
-        del kwargs
+        self.models.append(str(kwargs.get("model", "")))
         self.calls += 1
         value = self.outcomes.pop(0)
         if isinstance(value, Exception):
@@ -138,7 +139,12 @@ def test_registry_loads_models_and_routes() -> None:
         "qwen_vision_primary",
         "qwen_vision_fast",
         "qwen_text_fast",
+        "qwen_brief",
     }
+    assert registry.get_model("qwen_vision_primary").model == "qwen3.8-max"
+    assert registry.get_model("qwen_vision_fast").model == "qwen3.8-flash"
+    assert registry.get_model("qwen_text_fast").model == "qwen3.8-flash"
+    assert registry.get_model("qwen_brief").model == "qwen3.7-flash"
     assert registry.get_route("knowledge_answer").primary == "qwen_text_fast"
     for task_type in (
         "course_classification",
@@ -178,6 +184,30 @@ def test_registry_loads_models_and_routes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_response_depth_selects_qwen_model_tiers() -> None:
+    settings = Settings(_env_file=None)
+    qwen = FakeProvider(
+        "dashscope",
+        "qwen3.8-flash",
+        [
+            response("dashscope", "qwen3.8-flash"),
+            response("dashscope", "qwen3.8-max"),
+            response("dashscope", "qwen3.7-flash"),
+        ],
+    )
+    gateway, _ = service(settings, FakeProvider("iflytek_spark", "spark-x", []), qwen)
+
+    for depth in ("standard", "deep", "brief"):
+        await gateway.generate_for_task(
+            "academic_problem_solving",
+            messages=[{"role": "user", "content": "q"}],
+            extra_options={"response_depth": depth},
+        )
+
+    assert qwen.models == ["qwen3.8-flash", "qwen3.8-max", "qwen3.7-flash"]
+
+
+@pytest.mark.asyncio
 async def test_rate_limit_retries_once() -> None:
     settings = Settings(model_max_retries=1, _env_file=None)
     spark = FakeProvider(
@@ -188,7 +218,7 @@ async def test_rate_limit_retries_once() -> None:
             response("iflytek_spark", "spark-x"),
         ],
     )
-    qwen = FakeProvider("dashscope", "qwen3.7-plus", [])
+    qwen = FakeProvider("dashscope", "qwen3.8-max", [])
     gateway, tracer = service(settings, spark, qwen)
 
     result = await gateway.generate_for_task(
@@ -210,8 +240,8 @@ async def test_authentication_does_not_retry_but_uses_fallback() -> None:
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, tracer = service(settings, spark, qwen)
 
@@ -229,8 +259,8 @@ async def test_timeout_retries_then_falls_back() -> None:
     spark = FakeProvider("iflytek_spark", "spark-x", [timeout, timeout])
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, _ = service(Settings(model_max_retries=1, _env_file=None), spark, qwen)
 
@@ -257,8 +287,8 @@ async def test_structured_output_error_does_not_call_fallback() -> None:
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
@@ -284,8 +314,8 @@ async def test_runtime_opt_in_allows_structured_output_fallback() -> None:
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
@@ -309,8 +339,8 @@ async def test_route_fallback_can_be_preferred_without_hardcoding_provider() -> 
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, _ = service(Settings(model_max_retries=0, _env_file=None), spark, qwen)
 
@@ -347,11 +377,11 @@ async def test_fallback_response_includes_failed_attempt_usage() -> None:
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
+        "qwen3.8-max",
         [
             response(
                 "dashscope",
-                "qwen3.7-plus",
+                "qwen3.8-max",
                 usage=ModelUsage(
                     prompt_tokens=3,
                     completion_tokens=2,
@@ -379,10 +409,10 @@ async def test_provider_unavailable_opens_short_lived_model_circuit() -> None:
     spark = FakeProvider("iflytek_spark", "spark-x", [unavailable])
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
+        "qwen3.8-max",
         [
-            response("dashscope", "qwen3.7-plus"),
-            response("dashscope", "qwen3.7-plus"),
+            response("dashscope", "qwen3.8-max"),
+            response("dashscope", "qwen3.8-max"),
         ],
     )
     gateway, _ = service(
@@ -415,8 +445,8 @@ async def test_preferred_route_alias_reuses_successful_fallback_model() -> None:
     )
     qwen = FakeProvider(
         "dashscope",
-        "qwen3.7-plus",
-        [response("dashscope", "qwen3.7-plus")],
+        "qwen3.8-max",
+        [response("dashscope", "qwen3.8-max")],
     )
     gateway, _ = service(Settings(_env_file=None), spark, qwen)
 

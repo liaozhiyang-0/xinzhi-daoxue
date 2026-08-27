@@ -125,6 +125,7 @@ async def run(args: argparse.Namespace) -> int:
                 settings.qwen_text_fast_model,
                 settings.qwen_vision_fast_model,
                 settings.qwen_vision_primary_model,
+                settings.qwen_brief_model,
             ):
                 rows.append(
                     await text_call(qwen, model, "QWEN_OK", {"enable_thinking": False})
@@ -134,6 +135,7 @@ async def run(args: argparse.Namespace) -> int:
             for model in (
                 settings.qwen_vision_fast_model,
                 settings.qwen_vision_primary_model,
+                settings.qwen_brief_model,
             ):
                 try:
                     response = await qwen.generate_multimodal(

@@ -33,7 +33,7 @@ def _runtime_identity(settings: Settings) -> dict[str, str]:
         "scenario_catalog_sha256": _file_digest(
             root / "config" / "scenarios.yaml"
         ),
-        "solver_ct_baseline": "SOLVER_CT_v1.0_frozen",
+        "academic_solver": "ACADEMIC_PROBLEM_SOLVER",
     }
 
 

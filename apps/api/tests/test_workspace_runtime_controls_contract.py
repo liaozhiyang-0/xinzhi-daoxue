@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -153,41 +152,3 @@ async def test_teacher_runtime_controls_can_project_learner_owned_task(
 
     assert projected is task
     get_task.assert_awaited_once_with(task.id)
-
-
-def test_workspace_markup_uses_public_runtime_control_projection() -> None:
-    root = Path(__file__).resolve().parents[3]
-    app = (root / "apps/web/src/app/App.tsx").read_text(encoding="utf-8")
-    tasks = (root / "apps/web/src/api/tasks.ts").read_text(encoding="utf-8")
-
-    assert "task-controls" in app
-    assert "runtimeControls.pause" in app
-    assert "runtimeControls.resume" in app
-    assert "runtimeControls.approve" in app
-    assert "runtimeControls.input" in app
-    assert "/runtime-controls" in tasks
-    assert "/pause" in tasks
-    assert "/resume" in tasks
-    assert "/approve" in tasks
-    assert "/input" in tasks
-    assert "/debug/execution" not in app
-
-
-def test_workspace_sse_reconnect_keeps_cursor_and_reconciles_controls() -> None:
-    root = Path(__file__).resolve().parents[3]
-    script = (root / "apps/web/src/task-transport.ts").read_text(encoding="utf-8")
-    error_block = script.split("events.onerror = () => {", 1)[1].split("};", 1)[0]
-
-    assert "Last-Event-ID" in error_block
-    assert "events.close()" not in error_block
-    assert "reconnectPollTimer = window.setInterval" in error_block
-    assert "refreshRuntimeTaskControls(id)" in error_block
-
-
-def test_workspace_reconciles_controls_while_sse_is_open() -> None:
-    root = Path(__file__).resolve().parents[3]
-    script = (root / "apps/web/src/task-transport.ts").read_text(encoding="utf-8")
-
-    assert "controlRefreshTimer: number | null" in script
-    assert "controlRefreshTimer = window.setInterval" in script
-    assert "clearInterval(controlRefreshTimer)" in script

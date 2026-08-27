@@ -50,7 +50,6 @@ WORKFLOW_MODES: dict[str, ExecutionMode] = {
     "ROUTER_01_FALLBACK_V1": ExecutionMode.LOCAL,
     "LEARN_01_KNOWLEDGE_QA_V1": ExecutionMode.LOCAL,
     "ACADEMIC_PROBLEM_SOLVER": ExecutionMode.LOCAL,
-    "SOLVER_CT_V1": ExecutionMode.LOCAL,
     "TEACH_01_LESSON_PREP_V1": ExecutionMode.LOCAL,
     "TEACH_02_ASSIGNMENT_REVIEW_V1": ExecutionMode.LOCAL,
     "RESEARCH_02_ACADEMIC_WRITING_V1": ExecutionMode.LOCAL,

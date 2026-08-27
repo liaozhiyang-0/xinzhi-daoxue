@@ -94,12 +94,45 @@ def _model_generation_recorded(
     )
 
 
+def _external_retrieval_diagnostic(external: dict[str, object]) -> str:
+    """Explain an empty external result without exposing provider internals."""
+
+    status = str(external.get("status", "unknown"))
+    provider_status = external.get("provider_status", {})
+    provider_parts: list[str] = []
+    if isinstance(provider_status, dict):
+        provider_parts = [
+            f"{name}: {state}"
+            for name, state in provider_status.items()
+            if str(name).strip() and str(state).strip()
+        ][:8]
+    warnings = external.get("warnings", [])
+    warning_parts = (
+        [str(item).strip()[:160] for item in warnings if str(item).strip()][:2]
+        if isinstance(warnings, list)
+        else []
+    )
+    if status == "disabled":
+        message = "外部检索未启用或当前任务没有可用的检索 provider。"
+    elif status == "failed":
+        message = "外部检索已执行，但没有形成可展示的合格证据。"
+    elif status == "partial":
+        message = "外部检索只完成了部分 provider，当前证据不足以形成稳定结论。"
+    else:
+        message = "外部检索已返回结果，但审核后没有可展示的合格证据。"
+    if provider_parts:
+        message += "接口状态：" + "；".join(provider_parts) + "。"
+    if warning_parts:
+        message += "处理说明：" + "；".join(warning_parts)
+    return message
+
+
 TASK_LABELS = {
     "GENERAL_QUESTION_V1": "通用问题解答",
     "GENERAL_MODEL_FALLBACK_V1": "通用模型回答",
     "LEARN_01_KNOWLEDGE_QA_V1": "知识问答",
     "LEARN_01_LOCAL_RETRIEVAL_V1": "知识问答",
-    "SOLVER_CT_V1": "电路解题",
+    "ACADEMIC_PROBLEM_SOLVER": "学科解题",
     "TEACH_01_LESSON_PREP_V1": "教案设计",
     "TEACH_02_ASSIGNMENT_REVIEW_V1": "作业批改",
     "RESEARCH_01_ACADEMIC_SEARCH_V1": "科研前沿检索与证据简报",
@@ -113,6 +146,7 @@ CAPABILITY_LABELS = {
     "learning.first_error_diagnosis": "作业首错诊断",
     "learning.path_plan": "个性化学习路径",
     "research.evidence_brief": "科研前沿检索与证据简报",
+    "knowledge.qa": "课程知识问答",
     "knowledge.govern": "学院知识库治理",
     "academic.solve": "学术题目求解",
     "vision.circuit_parse": "题图结构诊断",
@@ -217,6 +251,11 @@ def build_task_views(
     is_no_verified_evidence = (
         result.structured_result.get("answer_mode") == "no_verified_evidence"
     )
+    external_diagnostic = (
+        _external_retrieval_diagnostic(external_retrieval)
+        if is_local_research and is_no_verified_evidence and external_attempted
+        else ""
+    )
     is_external_search_result = bool(
         result.structured_result.get("external_search", False)
     )
@@ -292,6 +331,9 @@ def build_task_views(
             source_parts.append(f"会议 {conference_external_count}")
         source_summary = "外部证据 · " + " / ".join(source_parts)
         evidence_message = "已完成多源网络检索；右侧可查看来源摘要、检索时间和原文链接"
+    elif is_local_research and is_no_verified_evidence and external_diagnostic:
+        source_summary = "外部检索未形成可展示证据"
+        evidence_message = external_diagnostic
     elif is_local_research and is_no_verified_evidence:
         source_summary = "当前主题暂无可核验证据"
         evidence_message = ""
@@ -497,6 +539,8 @@ def build_task_views(
         if governance_model_required
         else "生成失败"
         if generation_failed
+        else "外部检索未形成证据"
+        if external_diagnostic
         else "资料不足，待补充"
         if generation_skipped_for_evidence
         else "回答未完整"

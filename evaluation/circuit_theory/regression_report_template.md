@@ -1,4 +1,4 @@
-# SOLVER_CT 回归报告
+# Academic Solver 电路理论回归报告
 
 - 运行日期：
 - 工作流版本：

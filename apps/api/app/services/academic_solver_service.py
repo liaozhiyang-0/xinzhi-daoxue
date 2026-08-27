@@ -570,6 +570,11 @@ class AcademicProblemSolverService:
                     # request a real JSON object so a natural-language summary
                     # cannot masquerade as a usable visual structure.
                     json_mode=True,
+                    extra_options={
+                        "response_depth": request.options.get(
+                            "response_depth", "standard"
+                        )
+                    },
                 )
         except TimeoutError:
             return (
@@ -636,7 +641,12 @@ class AcademicProblemSolverService:
                         images=list(prepared.images),
                         request_id=(str(request.options.get("request_id", "")) or None),
                         json_mode=True,
-                        extra_options={"_allow_route_fallback": False},
+                        extra_options={
+                            "_allow_route_fallback": False,
+                            "response_depth": request.options.get(
+                                "response_depth", "standard"
+                            ),
+                        },
                     )
                 retry_problem, retry_structure = self._merge_visual_extraction(
                     problem,
@@ -753,7 +763,12 @@ class AcademicProblemSolverService:
                                 str(request.options.get("request_id", "")) or None
                             ),
                             json_mode=True,
-                            extra_options={"_allow_route_fallback": index == 1},
+                            extra_options={
+                                "_allow_route_fallback": index == 1,
+                                "response_depth": request.options.get(
+                                    "response_depth", "standard"
+                                ),
+                            },
                         )
                 except TimeoutError:
                     return {
@@ -975,6 +990,9 @@ class AcademicProblemSolverService:
                             self._generation_limits()[2]
                         ),
                         "_allow_route_fallback": allow_route_fallback,
+                        "response_depth": request.options.get(
+                            "response_depth", "standard"
+                        ),
                     },
                 )
         except TimeoutError:
@@ -1106,6 +1124,7 @@ class AcademicProblemSolverService:
                     extra_options={
                         "max_tokens": max_tokens,
                         "timeout": configured_timeout_seconds,
+                        "response_depth": depth_policy.level.value,
                         **(
                             {}
                             if allow_route_fallback
@@ -1166,6 +1185,7 @@ class AcademicProblemSolverService:
                 continuation_options: dict[str, Any] = {
                     "max_tokens": max_tokens,
                     "timeout": configured_timeout_seconds,
+                    "response_depth": depth_policy.level.value,
                 }
                 successful_fallback_alias = response.raw_metadata.get("target_model")
                 if (
@@ -1720,13 +1740,9 @@ class AcademicProblemSolverService:
             return decision
         reason: FallbackReason | None = None
         stage = "generation"
-        explicit_legacy = bool(request.options.get("legacy_baseline_required"))
         model_status = str(model_execution.get("status", ""))
         error_type = str(model_execution.get("error_type", ""))
-        if explicit_legacy:
-            reason = FallbackReason.LEGACY_BASELINE_REQUIRED
-            stage = "request_policy"
-        elif (
+        if (
             result.execution_path == "HIGH_RISK"
             and model_status == "failed"
             and problem.can_continue

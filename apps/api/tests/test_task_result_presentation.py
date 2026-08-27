@@ -85,12 +85,12 @@ def test_result_presentation_exposes_model_provider_behind_runtime_adapter() -> 
             "vision_execution": {
                 "status": "completed",
                 "provider": "dashscope",
-                "model": "qwen3.7-plus",
+                "model": "qwen3.8-max",
             },
             "model_execution": {
                 "status": "completed",
                 "provider": "dashscope",
-                "model": "qwen3.7-plus",
+                "model": "qwen3.8-max",
             },
         },
     )
@@ -111,7 +111,7 @@ def test_result_presentation_exposes_model_provider_behind_runtime_adapter() -> 
     )
 
     assert presented.structured_result["generation_provider"] == "dashscope"
-    assert presented.structured_result["generation_model"] == "qwen3.7-plus"
+    assert presented.structured_result["generation_model"] == "qwen3.8-max"
     assert presented.structured_result["generation_provenance"]["providers"] == [
         "dashscope"
     ]

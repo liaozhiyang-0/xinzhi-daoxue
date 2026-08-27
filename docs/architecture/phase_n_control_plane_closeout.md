@@ -16,7 +16,7 @@ Unified Ingress
   → CanonicalPlan
   → RuntimeTaskEngine / PlanExecutor
   → verification / governance / human review
-  → result commit / SSE / React
+  → result commit / SSE / Student HTML
 ```
 
 `/api/v1/chat` 和 `/api/v1/tasks` 共享 `UnifiedRequestPreparationService`。`TaskRouter` 保留为 deterministic preflight 和旧请求兼容映射；它不再是 active 生产计划 owner。Planner 生成并持久化 `CanonicalPlan`，Runtime 只执行已验证的计划，不重新理解用户目标。
@@ -61,8 +61,8 @@ Unified Ingress
 - Task event sequence、SSE reconnect、terminal state；
 - `waiting_review` / `waiting_user`、pause/resume/approve/input；
 - AC-01 图片材料导入与不确定性披露；
-- React 三栏工作台、统一 Markdown/KaTeX 和 31 条数学 fixture；
-- `SOLVER_CT v1.0` 冻结基线的只读读取能力。
+- Legacy 三栏工作台、统一 Markdown/KaTeX 和数学回归夹具；
+- `ACADEMIC_PROBLEM_SOLVER` 的 CT CoursePack 与确定性校验能力。
 
 ## 5. 阶段验证
 
@@ -113,7 +113,7 @@ fallback_route_count
 
 - 没有宣称真实模型准确率；
 - 没有把 synthetic 案例结果当成真实用户结果；
-- 没有删除 `SOLVER_CT v1.0` 基线；
+- 已删除退役的 CT 专用 Solver 配置与代码；
 - 没有修改数据库 schema 或公开 Task/RAG/Tool 接口；
 - 没有把 Phase P 的组员 Pilot、失败归因和发布交接提前标记为完成。
 

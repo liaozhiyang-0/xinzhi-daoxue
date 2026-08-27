@@ -22,6 +22,7 @@ from app.runtime import (
     RuntimeDecision,
     RuntimeHandlerDescriptor,
     RuntimeHandlerRegistry,
+    RuntimeHandlerRegistryError,
     RuntimeNode,
     RuntimeNodeError,
     RuntimeNodeStatus,
@@ -552,6 +553,7 @@ class GeneralQuestionRuntimeService:
                                 "conversation_summary", ""
                             )
                         ),
+                        timing_options=request_for_attempt.options,
                     )
                     packet = retrieval_context.build(
                         retrieval,
@@ -641,7 +643,21 @@ class GeneralQuestionRuntimeService:
                 kwargs = raw_input.get("kwargs", raw_input)
                 if not isinstance(args, list) or not isinstance(kwargs, Mapping):
                     raise RuntimeNodeError("runtime_tool_input_call_shape_invalid")
-                output = tool_handler(*args, **dict(kwargs))
+                try:
+                    registry.validate_input(
+                        self._tool_handler_id(requested_tool_id), dict(kwargs)
+                    )
+                except RuntimeHandlerRegistryError as exc:
+                    raise RuntimeNodeError(exc.error_code, str(exc)) from exc
+                try:
+                    output = tool_handler(*args, **dict(kwargs))
+                except RuntimeNodeError:
+                    raise
+                except Exception as exc:
+                    raise RuntimeNodeError(
+                        "tool_execution_failed",
+                        f"{requested_tool_id}: {type(exc).__name__}",
+                    ) from exc
                 if inspect.isawaitable(output):
                     output = await output
                 options = dict(request_for_attempt.options)
@@ -682,6 +698,8 @@ class GeneralQuestionRuntimeService:
                 RuntimeHandlerDescriptor(
                     handler_id=self._tool_handler_id(requested_tool_id),
                     kind="tool",
+                    input_schema=tool_definition.input_schema,
+                    output_schema=tool_definition.output_schema,
                     requires_approval=tool_requires_approval,
                     side_effecting=tool_requires_approval,
                     replay_safe=(

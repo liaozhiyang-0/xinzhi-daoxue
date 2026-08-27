@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_task_engine_has_no_solver_agent_literal() -> None:
+def test_task_engine_has_no_agent_literal() -> None:
     source = (
         Path(__file__).parents[1]
         / "app"
@@ -9,7 +9,7 @@ def test_task_engine_has_no_solver_agent_literal() -> None:
         / "runtime_task_engine.py"
     ).read_text(encoding="utf-8")
 
-    assert "SOLVER_CT_V1" not in source
+    assert "ACADEMIC_PROBLEM_SOLVER" not in source
     assert "self.runtime_execution.execute" in source
 
 

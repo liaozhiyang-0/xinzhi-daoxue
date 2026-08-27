@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_lib
 import re
 from pathlib import Path
 
@@ -9,8 +10,10 @@ from app.contracts import AgentRequest, AgentResult, Intent
 from app.services.response_depth import policy_for
 from app.services.runtime_result_pipeline import RuntimeResultPipeline
 
-_SCENARIO_BLOCK = re.compile(r"  \{\n(?P<body>.*?)\n  \},", re.DOTALL)
-_FIELD = re.compile(r'^\s*(id|exampleInput|intent):\s*"(.*?)",?$', re.MULTILINE)
+_BUTTON_BLOCK = re.compile(r"<button\b(?P<body>.*?)</button>", re.DOTALL)
+_DATA_ATTRIBUTE = re.compile(
+    r'data-(?P<key>intent|prompt)="(?P<value>.*?)"', re.DOTALL
+)
 _EXPECTED_ROUTES = {
     "lesson_prep": ("TEACH_01_LESSON_PREP_V1", "lesson_prep"),
     "assignment_review": ("TEACH_02_ASSIGNMENT_REVIEW_V1", "assignment_review"),
@@ -29,12 +32,17 @@ _EXPECTED_ROUTES = {
 
 def _showcase_cases() -> dict[str, str]:
     root = Path(__file__).resolve().parents[3]
-    source = (root / "apps/web/src/demo/scenarios.ts").read_text(encoding="utf-8")
+    source = (root / "apps/api/app/static/debug/workspace.html").read_text(
+        encoding="utf-8"
+    )
     cases: dict[str, str] = {}
-    for match in _SCENARIO_BLOCK.finditer(source):
-        fields = {key: value for key, value in _FIELD.findall(match.group("body"))}
+    for match in _BUTTON_BLOCK.finditer(source):
+        fields = {
+            key: html_lib.unescape(value)
+            for key, value in _DATA_ATTRIBUTE.findall(match.group("body"))
+        }
         if fields.get("intent") in _EXPECTED_ROUTES:
-            cases[fields["intent"]] = fields["exampleInput"]
+            cases[fields["intent"]] = fields.get("prompt", "")
     return cases
 
 

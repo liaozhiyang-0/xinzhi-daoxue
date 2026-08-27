@@ -26,6 +26,7 @@ from app.services.rag_retrieval import RAGRetrievalService
 from app.services.response_depth import (
     ResponseDepthPolicy,
     depth_instruction,
+    output_constraint_instruction,
     policy_for,
 )
 from app.services.retrieval_context import RetrievalContextService
@@ -189,6 +190,9 @@ class KnowledgeQAService:
             )
             user_prompt = f"问题：{self._question(request)}\n\n课程证据：\n{context}"
             task_type = "knowledge_answer"
+        constraint = output_constraint_instruction(self._question(request))
+        if constraint:
+            system_prompt = f"{system_prompt}\n{constraint}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -203,14 +207,24 @@ class KnowledgeQAService:
                     messages=messages,
                     schema=LearningPathDraft,
                     request_id=str(request.options.get("request_id", "")) or None,
-                    extra_options={"max_tokens": policy.max_output_tokens},
+                    extra_options={
+                        "max_tokens": policy.max_output_tokens,
+                        "response_depth": request.options.get(
+                            "response_depth", "standard"
+                        ),
+                    },
                 )
             else:
                 generated = await model_service.generate_for_task(
                     task_type,
                     messages=messages,
                     request_id=str(request.options.get("request_id", "")) or None,
-                    extra_options={"max_tokens": policy.max_output_tokens},
+                    extra_options={
+                        "max_tokens": policy.max_output_tokens,
+                        "response_depth": request.options.get(
+                            "response_depth", "standard"
+                        ),
+                    },
                 )
         except Exception as exc:
             LOGGER.exception(
@@ -461,6 +475,7 @@ class KnowledgeQAService:
                     intent=request.intent.value,
                     target_agent_id=agent_id,
                     top_k=retrieval_limit,
+                    timing_options=request.options,
                 )
             except Exception as exc:
                 retrieval = self._local_lexical_search(

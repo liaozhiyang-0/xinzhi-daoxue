@@ -15,7 +15,7 @@ models:
 
   qwen_vision_primary:
     provider: dashscope
-    model: qwen3.7-plus
+    model: qwen3.8-max
     enabled_env: ENABLE_QWEN_VISION_PRIMARY
     modalities: [text, image, video]
     supports_streaming: true
@@ -30,7 +30,7 @@ models:
 
   qwen_vision_fast:
     provider: dashscope
-    model: qwen3.6-flash
+    model: qwen3.8-flash
     enabled_env: ENABLE_QWEN_VISION_FAST
     modalities: [text, image, video]
     supports_streaming: true
@@ -45,7 +45,7 @@ models:
 
   qwen_text_fast:
     provider: dashscope
-    model: qwen3.5-flash
+    model: qwen3.8-flash
     enabled_env: ENABLE_QWEN_TEXT_FAST
     modalities: [text]
     supports_streaming: true
@@ -55,4 +55,19 @@ models:
       temperature: 0.1
       max_tokens: 2048
       enable_thinking: false
+    timeout_seconds: 60
+
+  qwen_brief:
+    provider: dashscope
+    model: qwen3.7-flash
+    enabled_env: ENABLE_QWEN_BRIEF
+    modalities: [text, image, video]
+    supports_streaming: true
+    supports_tools: true
+    supports_json: true
+    default_options:
+      temperature: 0.1
+      max_tokens: 2048
+      enable_thinking: false
+      high_resolution: false
     timeout_seconds: 60

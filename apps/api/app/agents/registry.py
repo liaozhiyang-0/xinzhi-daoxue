@@ -66,7 +66,7 @@ VALID_PUBLICATION_STATUSES = {"published", "local"}
 VALID_VALIDATORS = {
     "generic",
     "learn_qa",
-    "solver_ct",
+    "academic_solver",
     "lesson_prep",
     "assignment_review",
     "academic_writing",
@@ -76,7 +76,7 @@ VALID_VALIDATORS = {
 VALID_RENDERERS = {
     "generic",
     "learn_qa",
-    "solver_ct",
+    "academic_solver",
     "lesson_prep",
     "assignment_review",
     "academic_writing",

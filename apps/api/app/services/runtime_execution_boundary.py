@@ -22,7 +22,7 @@ from app.contracts import (
     IntentExecutionPlan,
     RouteDecision,
 )
-from app.core.errors import NotConfiguredError
+from app.core.errors import NotConfiguredError, ProviderError
 from app.observability.architecture_telemetry import architecture_telemetry
 from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository
@@ -457,6 +457,16 @@ class RuntimeExecutionBoundary:
             plan=run.plan,
             caller="RuntimeExecutionBoundary.execute",
         )
+
+        # Keep the explicit development/test failure switch consistent across
+        # legacy Provider and registered business Runtime execution.  This is
+        # never enabled implicitly; it only applies to the existing Mock
+        # Provider mode and an explicit request option.
+        if (
+            self.legacy_provider is not None
+            and request.options.get("mock_force_failure") is True
+        ):
+            raise ProviderError("Mock Provider 按请求触发失败")
 
         service = self.business_registry.resolve(agent_id, request)
         if service is None:

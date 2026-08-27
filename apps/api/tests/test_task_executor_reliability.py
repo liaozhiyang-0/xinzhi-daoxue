@@ -52,7 +52,7 @@ def test_retry_respects_max_attempts(api) -> None:
         api.create_task(
             session["id"],
             options={
-                "debug_agent_id": "SOLVER_CT_V1",
+                "debug_agent_id": "ACADEMIC_PROBLEM_SOLVER",
                 "mock_force_failure": True,
                 "max_attempts": 1,
             },

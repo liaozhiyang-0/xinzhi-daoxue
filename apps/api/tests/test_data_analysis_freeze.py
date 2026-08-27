@@ -16,6 +16,13 @@ def test_data_analysis_capability_is_explicitly_frozen(client: TestClient) -> No
     assert feature["unavailable_reason"] == "data_analysis_frozen"
 
 
+def test_frozen_data_analysis_runtime_is_not_registered(
+    client: TestClient, app
+) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    assert app.state.task_engine.runtime_boundary.research_analysis is None
+
+
 def test_frozen_data_analysis_rejects_new_tasks(client: TestClient) -> None:
     session = client.post(
         "/api/v1/sessions",

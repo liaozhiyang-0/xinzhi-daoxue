@@ -160,7 +160,7 @@
     "expected_course_id": "DE"
   },
   {
-    "case_id": "SOLVER_CT_01",
+    "case_id": "ACADEMIC_SOLVER_CT_01",
     "user_input": "完整解答含受控源的一阶电路并列方程。",
     "session_context": {},
     "attachments": [],
@@ -176,7 +176,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_02",
+    "case_id": "ACADEMIC_SOLVER_CT_02",
     "user_input": "用节点电压法计算各支路电流。",
     "session_context": {},
     "attachments": [],
@@ -192,7 +192,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_03",
+    "case_id": "ACADEMIC_SOLVER_CT_03",
     "user_input": "用网孔电流法求数值。",
     "session_context": {},
     "attachments": [],
@@ -208,7 +208,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_04",
+    "case_id": "ACADEMIC_SOLVER_CT_04",
     "user_input": "计算RC电路的零输入响应。",
     "session_context": {},
     "attachments": [],
@@ -224,7 +224,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_05",
+    "case_id": "ACADEMIC_SOLVER_CT_05",
     "user_input": "求这个正弦稳态电路的相量响应。",
     "session_context": {},
     "attachments": [],
@@ -240,7 +240,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_06",
+    "case_id": "ACADEMIC_SOLVER_CT_06",
     "user_input": "列方程求戴维宁等效电阻。",
     "session_context": {},
     "attachments": [],
@@ -256,7 +256,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_07",
+    "case_id": "ACADEMIC_SOLVER_CT_07",
     "user_input": "完整解答这个二阶电路。",
     "session_context": {},
     "attachments": [],
@@ -272,7 +272,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_08",
+    "case_id": "ACADEMIC_SOLVER_CT_08",
     "user_input": "计算一个10V电源串联5欧电阻的回路电流。",
     "session_context": {},
     "attachments": [],
@@ -288,7 +288,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_09",
+    "case_id": "ACADEMIC_SOLVER_CT_09",
     "user_input": "求数值并说明电流参考方向。",
     "session_context": {},
     "attachments": [],
@@ -304,7 +304,7 @@
     "expected_course_id": "CT"
   },
   {
-    "case_id": "SOLVER_CT_10",
+    "case_id": "ACADEMIC_SOLVER_CT_10",
     "user_input": "识别图片中的电路并完整解答。",
     "session_context": {},
     "attachments": [

@@ -45,7 +45,7 @@ def test_provider_failure_marks_task_failed(api, client) -> None:
         session["id"],
         options={
             "mock_force_failure": True,
-            "debug_agent_id": "SOLVER_CT_V1",
+            "debug_agent_id": "ACADEMIC_PROBLEM_SOLVER",
         },
         user_role="admin",
     )
@@ -89,12 +89,18 @@ def test_follow_up_transfers_context_without_reusing_course_route(api, client) -
     second_payload["canonical_input"] = {
         "text": "那为什么服务器要回复 SYN+ACK？"
     }
+    second_payload["options"] = {
+        **first_payload["options"],
+        "source_task_id": first["id"],
+        "learning_action": "follow_up",
+    }
     second_response = client.post("/api/v1/tasks", json=second_payload)
     assert second_response.status_code == 202, second_response.text
     second = api.wait_for_task(second_response.json()["id"])
 
     assert second["agent_id"] == "GENERAL_QUESTION_V1"
     assert second["course_id"] == "UNKNOWN"
+    assert second["parent_task_id"] == first["id"]
     events = client.get(f"/api/v1/tasks/{second['id']}/events").json()
     route_event = next(
         item for item in events if item["event_type"] == "route.selected"
@@ -105,3 +111,24 @@ def test_follow_up_transfers_context_without_reusing_course_route(api, client) -
     assert route_event["event_data"]["data"]["course_id"] == "UNKNOWN"
     assert intent_event["event_data"]["data"]["intent"] == "general_qa"
     assert "conversation_context" not in second["input_content"]["options"]
+
+
+def test_follow_up_source_task_cannot_cross_sessions(api, client) -> None:
+    first_session = api.create_session()
+    first = api.create_task(first_session["id"])
+    first = api.wait_for_task(first["id"])
+    second_session = api.create_session()
+    payload = api.task_payload(
+        second_session["id"],
+        task_id="cross-session-follow-up",
+        intent="unknown",
+        options={
+            "source_task_id": first["id"],
+            "learning_action": "follow_up",
+        },
+    )
+
+    response = client.post("/api/v1/tasks", json=payload)
+
+    assert response.status_code == 422, response.text
+    assert "当前会话" in response.text

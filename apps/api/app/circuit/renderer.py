@@ -108,11 +108,13 @@ def _render_svg(
     options: CircuitRenderOptions,
 ) -> str:
     components = {item.id: item for item in circuit.components}
+    view_x, view_y, view_width, view_height = _content_view_box(layout)
     pieces = [
         (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{layout.width}" '
-            f'height="{layout.height}" '
-            f'viewBox="0 0 {layout.width} {layout.height}" role="img" '
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{view_width:.1f}" '
+            f'height="{view_height:.1f}" '
+            f'viewBox="{view_x:.1f} {view_y:.1f} {view_width:.1f} '
+            f'{view_height:.1f}" role="img" '
             f'aria-label="电路图，布局模板 {html.escape(layout.template)}">'
         ),
         "<title>专业电路图</title>",
@@ -135,7 +137,10 @@ def _render_svg(
         '<defs><marker id="circuit-arrow" markerWidth="8" markerHeight="8" '
         'refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" '
         'fill="#0f5b78"/></marker></defs>',
-        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        (
+            f'<rect x="{view_x:.1f}" y="{view_y:.1f}" '
+            f'width="{view_width:.1f}" height="{view_height:.1f}" fill="#ffffff"/>'
+        ),
     ]
     for wire in layout.wires:
         points = " ".join(f"{point.x:.1f},{point.y:.1f}" for point in wire.points)
@@ -191,6 +196,68 @@ def _render_svg(
         pieces.extend(_render_annotations(layout.annotations))
     pieces.append("</svg>")
     return "".join(pieces)
+
+
+def _content_view_box(layout: SchematicLayoutIR) -> tuple[float, float, float, float]:
+    """Return a padded view box around the actual drawing content.
+
+    Layout coordinates remain in the requested canvas, while the SVG viewport
+    is cropped to the content.  This keeps the public layout contract stable
+    and prevents a narrow schematic from being rendered as a tiny object in a
+    large empty 900x520 canvas.
+    """
+
+    left = float(layout.width)
+    top = float(layout.height)
+    right = 0.0
+    bottom = 0.0
+
+    def include_point(x: float, y: float) -> None:
+        nonlocal left, top, right, bottom
+        left = min(left, x)
+        top = min(top, y)
+        right = max(right, x)
+        bottom = max(bottom, y)
+
+    for placement in layout.placements:
+        box = placement.bounding_box
+        include_point(box.x, box.y)
+        include_point(box.x + box.width, box.y + box.height)
+    for wire in layout.wires:
+        for point in wire.points:
+            include_point(point.x, point.y)
+    for junction in layout.junctions:
+        include_point(junction.point.x - 4, junction.point.y - 4)
+        include_point(junction.point.x + 4, junction.point.y + 4)
+    for marker in layout.polarity_markers:
+        for point in (marker.positive_point, marker.negative_point):
+            include_point(point.x, point.y - 18)
+            include_point(point.x + 16, point.y + 4)
+    for arrow in layout.direction_arrows:
+        include_point(arrow.start.x - 4, arrow.start.y - 4)
+        include_point(arrow.end.x + 12, arrow.end.y + 4)
+    for label in layout.labels:
+        text_width = max(18.0, len(label.text) * 7.0)
+        if label.anchor == "middle":
+            label_left = label.point.x - text_width / 2
+        elif label.anchor == "end":
+            label_left = label.point.x - text_width
+        else:
+            label_left = label.point.x
+        include_point(label_left, label.point.y - 18)
+        include_point(label_left + text_width, label.point.y + 4)
+    for annotation in layout.annotations:
+        text_width = max(18.0, len(annotation.text) * 7.0)
+        include_point(annotation.point.x, annotation.point.y - 18)
+        include_point(annotation.point.x + text_width, annotation.point.y + 4)
+
+    padding = 28.0
+    return (
+        left - padding,
+        top - padding,
+        max(1.0, right - left + padding * 2),
+        max(1.0, bottom - top + padding * 2),
+    )
 
 
 def _try_schemdraw(circuit: CircuitIR, options: CircuitRenderOptions) -> str:

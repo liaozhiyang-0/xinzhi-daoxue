@@ -189,6 +189,8 @@ def test_workspace_shows_six_showcase_examples(client) -> None:
         'state.intentOverride || "unknown";'
         in script
     )
+    assert 'pendingLearningFollowUp = null;' in script
+    assert 'placeholder = "输入你的问题，或点击上方案例开始"' in script
     assert 'function taskQuestion(task)' in script
     assert '["实际提问", taskQuestion(task).slice(0, 800)]' in script
 
@@ -248,6 +250,19 @@ def test_workspace_clears_previous_answer_while_next_task_runs() -> None:
     assert "renderEvidence([], {});" in script
 
 
+def test_workspace_clears_submitted_question_before_network_work() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+    submit_start = script.index("async function submit(event)")
+    ensure_session = script.index("await ensureSession();", submit_start)
+    submit_prefix = script[submit_start:ensure_session]
+
+    assert '$("#question-input").value = "";' in submit_prefix
+    assert '$("#student-attempt-input").value = "";' in submit_prefix
+
+
 def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
     root = Path(__file__).resolve().parents[3]
     script = (root / "apps/api/app/static/debug/workspace.js").read_text(
@@ -266,15 +281,26 @@ def test_workspace_presents_circuit_artifact_separately_and_safely() -> None:
         root / "apps/api/app/static/debug/ts/workspace-contracts.js"
     ).read_text(encoding="utf-8")
     assert (
-        'circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : "off"'
+        'circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" '
+        ': undefined'
         in contracts
     )
     assert "function renderCircuitArtifact(structured = {})" in script
+    assert "function circuitArtifactIsImageOnly(structured = {})" in script
+    assert 'classList.toggle("circuit-render-only", circuitImageOnly)' in script
     assert "function safeCircuitSvg(svgText)" in script
+    assert "renderCircuitArtifact({});" in script
     assert 'root.querySelectorAll("script, foreignObject")' in script
     assert 'renderCircuitArtifact(structured);' in script
     assert 'structured.circuit_artifact' in script
     assert ".circuit-artifact-content {" in styles
+    assert "#answer-panel.circuit-render-only" in styles
+    assert "#answer-panel.circuit-render-only .circuit-artifact-heading" in styles
+    assert "width: calc(100% + clamp(24px, 10vw, 76px))" in styles
+    assert (
+        "#answer-panel.circuit-render-only { width: 100%; margin-inline: 0; }"
+        in styles
+    )
     assert "background: var(--bg-elevated)" in styles
     assert "color: var(--accent-hover)" in styles
 
@@ -399,6 +425,23 @@ def test_workspace_reports_external_evidence_count_in_answer_info() -> None:
         in script
     )
     assert 'externalEvidenceCount ? "外部证据" : "资料使用"' in script
+
+
+def test_workspace_surfaces_external_retrieval_provider_diagnostics() -> None:
+    root = Path(__file__).resolve().parents[3]
+    script = (root / "apps/api/app/static/debug/workspace.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function externalRetrievalDiagnostic(retrieval)" in script
+    assert "externalProviderStatusSummary(retrieval)" in script
+    assert "已启用备用检索：" in script
+    assert "论文相关性审核淘汰了全部候选结果。" in script
+    assert (
+        "renderEvidence(evidence, presentation, relatedImages, externalItems, "
+        "structured.external_retrieval)"
+        in script
+    )
 
 
 def test_workspace_cancelled_task_is_not_presented_as_completed() -> None:

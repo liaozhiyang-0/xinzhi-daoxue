@@ -14,7 +14,7 @@
 - 页面逻辑：`workspace.js`、`workspace-task-transport.js`、`workspace-materials.js`
 - 通用渲染：`ui-core.js`
 - 数学渲染：`vendor/katex/katex.min.js`
-- `apps/web` 只保留 TypeScript 合同、类型和传输辅助文件，没有 React/Vite 页面入口。
+- React/Vite 页面源树已删除；Legacy 工作区直接使用静态 JavaScript 与三个保留的模块化传输/材料合同。
 
 ## 2. 运行时证据
 

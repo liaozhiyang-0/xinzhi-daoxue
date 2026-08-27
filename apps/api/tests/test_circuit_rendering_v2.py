@@ -13,6 +13,7 @@ from app.circuit import (
     build_schematic_layout,
     render_circuit,
 )
+from app.circuit import layout as layout_module
 from app.circuit import renderer as renderer_module
 from app.circuit.contracts import PORT_CONTRACTS
 from app.circuit.renderer import _symbol_body
@@ -303,6 +304,30 @@ def test_layout_contract_is_deterministic_and_orthogonal() -> None:
             )
 
 
+def test_auto_divider_layout_keeps_ports_and_wires_aligned() -> None:
+    circuit = _golden_circuits()[1]
+    layout = build_schematic_layout(circuit)
+    port_points = {(port.point.x, port.point.y) for port in layout.ports}
+    body_boxes = [placement.bounding_box for placement in layout.placements]
+
+    assert layout.template == "divider"
+    assert all(
+        (wire.points[0].x, wire.points[0].y) in port_points
+        and (wire.points[-1].x, wire.points[-1].y) in port_points
+        for wire in layout.wires
+    )
+    assert all(
+        not layout_module._segment_hits_obstacle(first, second, body_boxes)
+        for wire in layout.wires
+        for first, second in zip(wire.points, wire.points[1:], strict=False)
+    )
+
+    result = render_circuit(circuit)
+    assert result.template == "divider"
+    assert result.svg is not None
+    assert 'viewBox="0 0 900 520"' not in result.svg
+
+
 def test_layout_contract_carries_reference_direction_and_annotation_layers() -> None:
     voltage_case = _golden_circuits()[0]
     layout = build_schematic_layout(voltage_case)
@@ -502,6 +527,10 @@ def test_large_circuits_stay_bounded_and_renderable(component_count: int) -> Non
     assert result.status in {"rendered", "degraded"}
     assert result.svg is not None
     assert result.professional_renderer_success is True
+
+
+def test_large_chain_does_not_use_small_circuit_divider_layout() -> None:
+    assert render_circuit(_large_chain(20)).template == "generic_orthogonal"
 
 
 def test_rendering_benchmark_has_50_cases_per_course_and_no_failed_renders() -> None:

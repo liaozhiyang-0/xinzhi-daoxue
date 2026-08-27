@@ -272,6 +272,18 @@ class EvaluationRunner:
             for key, value in case.task_options.items()
             if not key.startswith("_evaluation_")
         }
+        raw_turns = (case.structured_input or {}).get("turns")
+        conversation_turns = [
+            str(item).strip()
+            for item in raw_turns
+            if str(item).strip()
+        ] if isinstance(raw_turns, list) else []
+        initial_message = conversation_turns[0] if conversation_turns else case.message
+        structured_input = {
+            key: value
+            for key, value in case.structured_input.items()
+            if key != "turns"
+        }
         attachments = await self._build_evaluation_attachments(case)
         task: dict[str, Any] | None = None
         try:
@@ -284,11 +296,12 @@ class EvaluationRunner:
                 },
             )
             session_response.raise_for_status()
-            canonical = {"text": case.message, **case.structured_input}
+            canonical = {"text": initial_message, **structured_input}
+            session_id = session_response.json()["id"]
             task_response = await self.client.post(
                 "/api/v1/tasks",
                 json={
-                    "session_id": session_response.json()["id"],
+                    "session_id": session_id,
                     "user_id": "evaluation-user",
                     "user_role": "student",
                     "scene": "solving",
@@ -316,6 +329,42 @@ class EvaluationRunner:
                 )
                 response.raise_for_status()
                 task = response.json()
+            for turn_index, message in enumerate(conversation_turns[1:], 2):
+                turn_response = await self.client.post(
+                    "/api/v1/tasks",
+                    json={
+                        "session_id": session_id,
+                        "user_id": "evaluation-user",
+                        "user_role": "student",
+                        "scene": "solving",
+                        "course_id": case.course,
+                        "intent": "follow_up_question",
+                        "canonical_input": {"text": message},
+                        "attachments": [],
+                        "context_refs": [],
+                        "options": {
+                            "request_id": trace_id,
+                            "trace_id": trace_id,
+                            "input_type": "text",
+                            "evaluation_case_id": case.case_id,
+                            "evaluation_mode": self.mode,
+                            "evaluation_conversation_turn": turn_index,
+                            "evaluation_conversation_turn_count": len(
+                                conversation_turns
+                            ),
+                            **task_options,
+                        },
+                    },
+                )
+                turn_response.raise_for_status()
+                task = turn_response.json()
+                while task["status"] not in {"completed", "failed", "cancelled"}:
+                    await asyncio.sleep(0.02)
+                    response = await self.client.get(
+                        f"/api/v1/tasks/{task['id']}?user_id=evaluation-user"
+                    )
+                    response.raise_for_status()
+                    task = response.json()
             actions = evaluation_controls.get("_evaluation_follow_up_actions", [])
             for index, item in enumerate(actions if isinstance(actions, list) else []):
                 action = item if isinstance(item, str) else str(item.get("action", ""))
@@ -349,6 +398,14 @@ class EvaluationRunner:
                     403,
                     404,
                 }
+            task["_evaluation_session_reused"] = bool(
+                len(conversation_turns) > 1
+                or (isinstance(actions, list) and bool(actions))
+            )
+            task["_evaluation_turn_count"] = (
+                len(conversation_turns)
+                + (len(actions) if isinstance(actions, list) else 0)
+            )
             return task
         finally:
             if task is None:

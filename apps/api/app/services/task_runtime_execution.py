@@ -12,6 +12,7 @@ from app.contracts import (
     ExternalRetrievalResult,
 )
 from app.core.errors import NotConfiguredError, ProviderCancelledError
+from app.observability import ModelCallRecord, ModelTracer, RuntimeTimingTrace
 from app.runtime import (
     RuntimeNodeError,
     RuntimeRunStatus,
@@ -51,6 +52,7 @@ class TaskRuntimeExecutionService:
         *,
         plan_proposals_enabled: bool,
         reflection: ReflectionService | None = None,
+        model_tracer: ModelTracer | None = None,
     ) -> None:
         self.runtime_boundary = runtime_boundary
         self.runtime_hooks = runtime_hooks
@@ -59,6 +61,7 @@ class TaskRuntimeExecutionService:
         self.post_processing = post_processing
         self.plan_proposals_enabled = plan_proposals_enabled
         self.reflection = reflection
+        self.model_tracer = model_tracer
 
     async def execute(
         self,
@@ -71,6 +74,8 @@ class TaskRuntimeExecutionService:
                 "registered Agent Runtime execution was disabled"
             )
         request = self._with_upstream_elapsed(prepared.request, runner_started)
+        RuntimeTimingTrace.mark(request.options, "runtime_execute_start")
+        runtime_started = perf_counter()
         result = await self.runtime_boundary.execute(
             prepared.agent_id,
             request,
@@ -85,6 +90,11 @@ class TaskRuntimeExecutionService:
                 if self.plan_proposals_enabled
                 else None
             ),
+        )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "runtime_execute",
+            (perf_counter() - runtime_started) * 1000,
         )
         if prepared.runtime_run.status == RuntimeRunStatus.CANCELLED:
             # Keep Runtime cancellation on the task cancellation path instead
@@ -108,8 +118,88 @@ class TaskRuntimeExecutionService:
                 "course_id": request.course_id,
             }
         )
+        circuit_started = perf_counter()
         result = project_circuit_artifact(result, prepared.runtime_run)
+        circuit_elapsed_ms = (perf_counter() - circuit_started) * 1000
+        RuntimeTimingTrace.observe(
+            request.options, "circuit_render", circuit_elapsed_ms
+        )
+        RuntimeTimingTrace.record_tool_nodes(request.options, prepared.runtime_run)
+        knowledge_payload = result.structured_result.get("knowledge", {})
+        knowledge_hits = (
+            knowledge_payload.get("hits", [])
+            if isinstance(knowledge_payload, dict)
+            else []
+        )
+        rag_chars = sum(
+            len(str(hit.get("content", "")))
+            for hit in knowledge_hits
+            if isinstance(hit, dict)
+        )
+        tool_chars = sum(
+            len(str(call.get("result", "")))
+            for call in result.structured_result.get("tool_verification", [])
+            if isinstance(call, dict)
+        )
+        RuntimeTimingTrace.record_context_usage(
+            request.options,
+            rag_chars=rag_chars,
+            tool_chars=tool_chars,
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "rag_query_hash",
+            request.input_text(),
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "evidence_ids_hash",
+            result.citations
+            or result.structured_result.get("verified_evidence_ids", []),
+        )
+        model_records = self._model_records(request)
+        recorded_model_count = RuntimeTimingTrace.record_model_calls(
+            request.options, model_records
+        )
+        if recorded_model_count == 0:
+            RuntimeTimingTrace.increment(
+                request.options, "model_call_count", result.metrics.model_calls
+            )
+            RuntimeTimingTrace.observe(
+                request.options,
+                "model",
+                result.metrics.provider_latency_ms
+                or result.metrics.model_latency_ms
+                or 0,
+            )
+        else:
+            RuntimeTimingTrace.observe(
+                request.options,
+                "model",
+                sum(int(item.elapsed_ms) for item in model_records),
+            )
+        RuntimeTimingTrace.increment(
+            request.options, "tool_call_count", result.metrics.tool_calls
+        )
+        RuntimeTimingTrace.increment(
+            request.options, "rag_call_count", result.metrics.retrieval_calls
+        )
+        if recorded_model_count == 0:
+            RuntimeTimingTrace.increment(
+                request.options, "retry_count", result.metrics.retry_count
+            )
+            RuntimeTimingTrace.increment(
+                request.options,
+                "fallback_count",
+                result.metrics.fallback_count + int(result.fallback_used),
+            )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "rag",
+            result.metrics.retrieval_latency_ms or result.retrieval_latency_ms,
+        )
         validation_started = perf_counter()
+        RuntimeTimingTrace.mark(request.options, "quality_gate_start")
         await self.progress.append(
             request.task_id,
             prepared.agent_id,
@@ -127,7 +217,16 @@ class TaskRuntimeExecutionService:
             intent_plan=prepared.intent_plan,
             overall_route_metadata=prepared.route_metadata,
         )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "result_validation",
+            (perf_counter() - validation_started) * 1000,
+        )
+        answer_before_reflection = governed.result.answer
+        answer_changed = False
         if self.reflection is not None:
+            reflection_started = perf_counter()
+            RuntimeTimingTrace.mark(request.options, "reflection_start")
             reflected = await self.reflection.apply(
                 agent_id=prepared.agent_id,
                 request=request,
@@ -145,6 +244,35 @@ class TaskRuntimeExecutionService:
                 reflected.validation,
                 governed.routing,
             )
+            answer_changed = governed.result.answer != answer_before_reflection
+            RuntimeTimingTrace.observe(
+                request.options,
+                "reflection",
+                (perf_counter() - reflection_started) * 1000,
+            )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "quality_gate",
+            (perf_counter() - validation_started) * 1000,
+        )
+        RuntimeTimingTrace.mark(
+            request.options,
+            "quality_gate_decision",
+            details={
+                "result_status": governed.validation.result_status,
+                "response_usable": governed.validation.response_usable,
+                "answer_changed": answer_changed,
+            },
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "quality_gate_input_hash",
+            {
+                "agent_id": prepared.agent_id,
+                "validation": governed.validation.model_dump(mode="json"),
+                "status": governed.result.status.value,
+            },
+        )
         await self.progress.append(
             request.task_id,
             prepared.agent_id,
@@ -238,3 +366,19 @@ class TaskRuntimeExecutionService:
             perf_counter() - runner_started,
         )
         return request.model_copy(update={"options": options})
+
+    def _model_records(self, request: AgentRequest) -> list[ModelCallRecord]:
+        if self.model_tracer is None:
+            return []
+        trace_id = str(
+            request.options.get("request_id")
+            or request.options.get("trace_id")
+            or ""
+        )
+        if not trace_id:
+            return []
+        return [
+            record
+            for record in self.model_tracer.list()
+            if record.request_id == trace_id
+        ]

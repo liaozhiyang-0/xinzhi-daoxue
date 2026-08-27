@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts import AgentEvent, AgentEventType
@@ -11,7 +12,17 @@ from app.core.errors import NotFoundError
 from app.models import TaskEventModel, TaskModel
 from app.repositories import TaskRepository
 
-_EVENT_SEQUENCE_RETRIES = 3
+_EVENT_LOCK_RETRIES = 6
+_EVENT_LOCK_RETRY_DELAY_SECONDS = 0.05
+
+
+def _is_retryable_event_write_error(error: Exception) -> bool:
+    """Retry only transient event-write conflicts, not arbitrary SQL errors."""
+
+    return isinstance(error, IntegrityError) or (
+        isinstance(error, OperationalError)
+        and "database is locked" in str(error).casefold()
+    )
 
 
 async def append_task_event(
@@ -25,7 +36,7 @@ async def append_task_event(
     repository = TaskRepository(db)
     if await repository.get(task_id, for_update=True) is None:
         raise NotFoundError("任务不存在", details={"task_id": task_id})
-    for attempt in range(_EVENT_SEQUENCE_RETRIES):
+    for attempt in range(_EVENT_LOCK_RETRIES):
         sequence = await repository.next_event_sequence(task_id)
         event = AgentEvent(
             task_id=task_id,
@@ -49,9 +60,14 @@ async def append_task_event(
                         created_at=event.timestamp,
                     )
                 )
-        except IntegrityError:
-            if attempt == _EVENT_SEQUENCE_RETRIES - 1:
+        except (IntegrityError, OperationalError) as exc:
+            if (
+                not _is_retryable_event_write_error(exc)
+                or attempt == _EVENT_LOCK_RETRIES - 1
+            ):
                 raise
+            if isinstance(exc, OperationalError):
+                await asyncio.sleep(_EVENT_LOCK_RETRY_DELAY_SECONDS * (attempt + 1))
             continue
         return stored
 
@@ -75,7 +91,7 @@ async def append_task_events(
         task = await repository.get(task_id, for_update=True)
     if task is None:
         raise NotFoundError("任务不存在", details={"task_id": task_id})
-    for attempt in range(_EVENT_SEQUENCE_RETRIES):
+    for attempt in range(_EVENT_LOCK_RETRIES):
         try:
             async with db.begin_nested():
                 sequence = await repository.next_event_sequence(task_id)
@@ -100,9 +116,14 @@ async def append_task_events(
                             )
                         )
                     )
-        except IntegrityError:
-            if attempt == _EVENT_SEQUENCE_RETRIES - 1:
+        except (IntegrityError, OperationalError) as exc:
+            if (
+                not _is_retryable_event_write_error(exc)
+                or attempt == _EVENT_LOCK_RETRIES - 1
+            ):
                 raise
+            if isinstance(exc, OperationalError):
+                await asyncio.sleep(_EVENT_LOCK_RETRY_DELAY_SECONDS * (attempt + 1))
             continue
         return stored_events
 

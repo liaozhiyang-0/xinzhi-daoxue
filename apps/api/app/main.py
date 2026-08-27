@@ -338,6 +338,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime_handler_registry=runtime_handler_registry,
         development_mock_provider=development_mock_provider,
         task_leases=task_leases,
+        model_tracer=model_tracer,
     )
     production_manifest = ProductionExecutionManifest.build(
         planner_version=planner.VERSION,

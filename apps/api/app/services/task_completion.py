@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.agents import AgentDefinition
 from app.contracts import (
@@ -13,6 +15,7 @@ from app.contracts import (
 )
 from app.contracts.conversation import ConversationContextBundle
 from app.models import TaskModel, TaskStatus
+from app.observability import RuntimeTimingTrace
 from app.repositories import TaskRepository
 from app.runtime import AgentRun
 from app.services.task_failure_service import TaskFailureService
@@ -190,12 +193,26 @@ class TaskCompletionService:
         task.heartbeat_at = completed_at
         task.execution_owner = None
         task.lease_expires_at = None
+        RuntimeTimingTrace.mark(request.options, "session_commit_start")
+        task_commit_started = perf_counter()
+        session_commit_started = perf_counter()
         context_usage = await self.session_commit.commit(
             db,
             task=task,
             request=request,
             result=result,
             conversation_bundle=conversation_bundle,
+        )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "session_commit",
+            (perf_counter() - session_commit_started) * 1000,
+        )
+        RuntimeTimingTrace.mark(request.options, "result_commit_start")
+        result_commit_started = perf_counter()
+        RuntimeTimingTrace.mark(request.options, "task_completed")
+        result.structured_result["runtime_timing"] = RuntimeTimingTrace.snapshot(
+            request.options
         )
         await self.result_commit.commit(
             db,
@@ -211,6 +228,28 @@ class TaskCompletionService:
             total_latency_ms=total_latency_ms,
             context_usage=context_usage,
         )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "result_commit",
+            (perf_counter() - result_commit_started) * 1000,
+        )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "task_commit",
+            (perf_counter() - task_commit_started) * 1000,
+        )
+        if isinstance(task.result_content, dict):
+            structured = task.result_content.get("structured_result")
+            if not isinstance(structured, dict):
+                structured = {}
+            structured["runtime_timing"] = RuntimeTimingTrace.snapshot(
+                request.options
+            )
+            task.result_content = {
+                **task.result_content,
+                "structured_result": structured,
+            }
+            flag_modified(task, "result_content")
         return result
 
     @staticmethod

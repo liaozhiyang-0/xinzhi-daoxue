@@ -408,7 +408,10 @@ class TaskRouter:
             # daily-science question should remain on the general-answer
             # path. AUTO is the UI's opt-in for automatic academic routing.
             and request.course_id.upper().strip() in {"", "AUTO"}
-            and "course_unspecified_default_context" not in course_reasons
+            and (
+                "course_unspecified_default_context" not in course_reasons
+                or "session_continuity" in recognition.reason_codes
+            )
             and not solver_signal
         ):
             recognized_direct_intents.add(Intent.EXPLAIN_CONCEPT.value)

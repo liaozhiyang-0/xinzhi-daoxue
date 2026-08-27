@@ -150,6 +150,14 @@ async def _invoke(handler: Callable[..., Any], payload: Mapping[str, Any]) -> An
     return result
 
 
+def _call_arguments(payload: Mapping[str, Any]) -> tuple[list[Any], dict[str, Any]]:
+    args = payload.get("args", [])
+    kwargs = payload.get("kwargs", payload)
+    if not isinstance(args, list) or not isinstance(kwargs, Mapping):
+        raise RuntimeNodeError("node_input_call_shape_invalid")
+    return args, dict(kwargs)
+
+
 def register_tool_handlers(
     runtime_registry: RuntimeHandlerRegistry,
     tool_registry: ToolRegistry,
@@ -177,7 +185,11 @@ def register_tool_handlers(
         ) -> RuntimeObservation:
             payload = _node_input(run, node)
             try:
-                runtime_registry.validate_input(_handler_id, payload)
+                _, kwargs = _call_arguments(payload)
+            except RuntimeNodeError:
+                raise
+            try:
+                runtime_registry.validate_input(_handler_id, kwargs)
             except RuntimeHandlerRegistryError as exc:
                 if _tool_id == "circuit.render":
                     return runtime_observation_from_tool(
@@ -207,7 +219,10 @@ def register_tool_handlers(
                         result=None,
                         error=type(exc).__name__,
                     )
-                raise
+                raise RuntimeNodeError(
+                    "tool_execution_failed",
+                    f"{_tool_id}: {type(exc).__name__}",
+                ) from exc
             if _tool_id == "circuit.render":
                 safe_result = _safe_value(result)
                 return runtime_observation_from_tool(

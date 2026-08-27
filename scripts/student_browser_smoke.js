@@ -24,10 +24,16 @@ async function load(page, route) {
   }
   await page.locator("#app-sidebar .brand-lockup").waitFor();
 }
-async function ask(page, course, question) {
-  await page.locator("#course-select").selectOption(course);
+async function ask(page, question, capability = "") {
+  if (capability) {
+    const capabilityButton = page.locator(`[data-capability="${capability}"]`);
+    if (await capabilityButton.count()) await capabilityButton.click();
+  }
   await page.locator("#question-input").fill(question);
   await page.locator("#send-button").click();
+  await page.waitForFunction(
+    () => document.querySelector("#question-input").value === "",
+  );
   await page.waitForFunction(() => !document.querySelector("#send-button").disabled, null, { timeout: 120000 });
   await page.locator("#answer-panel").waitFor({ state: "visible" });
 }
@@ -44,9 +50,10 @@ async function ask(page, course, question) {
   const navigation = await page.evaluate(() => { const entry = performance.getEntriesByType("navigation")[0]; return { dom_content_loaded_ms: Math.round(entry.domContentLoadedEventEnd), load_ms: Math.round(entry.loadEventEnd), transfer_bytes: performance.getEntriesByType("resource").reduce((sum, item) => sum + (item.transferSize || 0), 0), request_count: performance.getEntriesByType("resource").length }; });
   await shot(page, "01-workspace-empty");
 
-  await ask(page, "CT", "为什么电容电压不能突变？");
+  await ask(page, "为什么电容电压不能突变？");
   await shot(page, "02-ct-knowledge-answer");
-  await page.locator("#answer-source-chip").click();
+  const sourceChip = page.locator("#answer-source-chip");
+  if (await sourceChip.count() && await sourceChip.isVisible()) await sourceChip.click();
   await shot(page, "03-context-evidence");
   const citation = page.locator("#answer-text .citation-link").first();
   if (await citation.count()) await citation.click(); else if (await page.locator(".evidence-card").count()) await page.locator(".evidence-card").first().click();
@@ -57,16 +64,15 @@ async function ask(page, course, question) {
   await page.locator('[data-context-tab="info"]').click();
   await shot(page, "06-answer-info");
 
-  await page.locator("#new-session").click(); await ask(page, "AE", "负反馈为什么能稳定增益？");
+  await page.locator("#new-session").click(); await ask(page, "负反馈为什么能稳定增益？");
   await shot(page, "07-ae-knowledge-answer");
-  await page.locator("#new-session").click(); await ask(page, "DE", "锁存器和触发器有什么区别？");
+  await page.locator("#new-session").click(); await ask(page, "锁存器和触发器有什么区别？");
   await shot(page, "08-de-knowledge-answer");
 
-  await page.locator("#new-session").click(); await ask(page, "CT", "请完整列方程并求解：一个10V电压源串联5Ω电阻，求回路电流。");
+  await page.locator("#new-session").click(); await ask(page, "请完整列方程并求解：一个10V电压源串联5Ω电阻，求回路电流。");
   await shot(page, "09-solver-text");
   if (imagePath && fs.existsSync(imagePath)) {
     await page.locator("#new-session").click();
-    await page.locator("#course-select").selectOption("CT");
     await page.locator("#question-input").fill("请解答图片中的电路题。");
     await page.locator("#image-input").setInputFiles({ name: "demo-circuit.png", mimeType: "image/png", buffer: fs.readFileSync(imagePath) });
     await page.locator("#image-preview").waitFor({ state: "visible" });

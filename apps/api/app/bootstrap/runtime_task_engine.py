@@ -6,6 +6,7 @@ from app.agents import AgentRegistry, TaskRouter
 from app.application.tasks import TaskLeaseManager
 from app.application.tasks.progress import TaskProgressReporter
 from app.courses import CourseRegistry
+from app.observability import ModelTracer
 from app.providers.base import AgentProvider
 from app.providers.retrieval.academic import AcademicSearchService
 from app.runtime import RuntimeHandlerRegistry, RuntimeSubagentRegistry
@@ -123,6 +124,7 @@ def build_runtime_task_engine(
     runtime_handler_registry: RuntimeHandlerRegistry | None = None,
     development_mock_provider: AgentProvider | None = None,
     task_leases: TaskLeaseManager | None = None,
+    model_tracer: ModelTracer | None = None,
 ) -> TaskRuntimeLifecycle:
     settings = knowledge_base.settings
     runtime_hooks = RuntimePersistenceHooks(session_factory)
@@ -286,7 +288,7 @@ def build_runtime_task_engine(
     )
     research_analysis = (
         ResearchAnalysisRuntimeService(internal_agents, enabled=True)
-        if internal_agents is not None
+        if internal_agents is not None and settings.data_analysis_enabled
         else None
     )
     runtime_lifecycle = RuntimeRunLifecycleService(
@@ -427,6 +429,7 @@ def build_runtime_task_engine(
                 post_processing,
                 plan_proposals_enabled=settings.agent_runtime_plan_proposals_enabled,
                 reflection=reflection,
+                model_tracer=model_tracer,
             ),
             task_leases=leases,
             external_retrieval_gateway=external_gateway,

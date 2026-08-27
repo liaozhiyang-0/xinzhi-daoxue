@@ -100,7 +100,7 @@ def test_running_mock_task_can_be_cancelled(api, client) -> None:
         session["id"],
         options={
             "mock_delay_seconds": 1.0,
-            "debug_agent_id": "SOLVER_CT_V1",
+            "debug_agent_id": "ACADEMIC_PROBLEM_SOLVER",
         },
         user_role="admin",
     )

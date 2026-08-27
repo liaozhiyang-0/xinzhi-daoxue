@@ -86,11 +86,14 @@ class Settings(BaseSettings):
         "eu-central-1",
         "us-east-1",
     ] = "cn-beijing"
-    qwen_vision_primary_model: str = "qwen3.7-plus"
-    qwen_vision_fast_model: str = "qwen3.6-flash"
-    qwen_text_fast_model: str = "qwen3.5-flash"
+    qwen_vision_primary_model: str = "qwen3.8-max"
+    qwen_vision_fast_model: str = "qwen3.8-flash"
+    qwen_text_fast_model: str = "qwen3.8-flash"
+    qwen_brief_model: str = "qwen3.7-flash"
     qwen_timeout_seconds: float = Field(default=90, gt=0, le=600)
     qwen_vision_high_resolution: bool = True
+    qwen_warmup_enabled: bool = True
+    qwen_warmup_timeout_seconds: float = Field(default=45, gt=0, le=120)
 
     # A single fast model call may refine the deterministic route before execution.
     # Overall Router is an explicit legacy compatibility switch after Phase B.
@@ -152,6 +155,7 @@ class Settings(BaseSettings):
     enable_qwen_text_fast: bool = True
     enable_qwen_vision_fast: bool = True
     enable_qwen_vision_primary: bool = True
+    enable_qwen_brief: bool = True
     enable_dual_model_verification: bool = True
     dual_model_min_risk_level: Literal["low", "medium", "high", "critical"] = "high"
     student_verification_model_enabled: bool = False
@@ -283,6 +287,7 @@ class Settings(BaseSettings):
     )
     research_knowledge_retention_days: int = Field(default=1095, ge=30, le=3650)
     research_knowledge_search_top_k: int = Field(default=8, ge=1, le=30)
+    research_knowledge_min_score: float = Field(default=0.58, ge=0, le=1)
 
     # LangGraph checkpoints are process-local until a durable saver is wired.
     # Keep the backend explicit so production cannot mistake memory for a
@@ -311,6 +316,7 @@ class Settings(BaseSettings):
     rag_sufficient_min_sources: int = Field(default=2, ge=1, le=10)
     rag_sufficient_min_score: float = Field(default=0.45, ge=0, le=1)
     rag_partial_min_score: float = Field(default=0.01, ge=0, le=1)
+    rag_min_retrieval_score: float = Field(default=0.65, ge=0, le=1)
 
     # External retrieval is available by default, but intent recognition must
     # still approve the request before any provider is contacted.
@@ -437,7 +443,6 @@ class Settings(BaseSettings):
     enable_local_knowledge_qa: bool = True
     # Product freeze: keep the data-analysis path reversible but unavailable.
     data_analysis_enabled: bool = False
-    enable_local_solver_ct: bool = False
 
     vision_enabled: bool = False
     vision_endpoint: str = ""

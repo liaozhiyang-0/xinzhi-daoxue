@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app.contracts import KnowledgeHit
@@ -85,6 +86,55 @@ def test_chinese_search_is_course_scoped_and_path_safe(tmp_path: Path) -> None:
     assert hits[0].source_ref.startswith("kb://CT/")
     assert str(tmp_path) not in hits[0].source_ref
     assert not service.search("戴维南等效电路", ["AE"], 3)
+
+
+def test_refresh_includes_active_published_course_material_chunks(
+    tmp_path: Path,
+) -> None:
+    service = build_service(tmp_path)
+    cache_path = (
+        service.settings.knowledge_index_path
+        / "cache"
+        / "course_material_chunks.jsonl"
+    )
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(
+            {
+                "chunk_id": "material-file-1-0",
+                "document_id": "file-1",
+                "document_checksum": "checksum-1",
+                "course_id": "CT",
+                "relative_path": "materials/file-1/lesson.txt",
+                "title": "动态课程材料",
+                "chapter": "动态课程材料",
+                "content_type": "course_material",
+                "text": "管理员发布的动态基尔霍夫电流定律资料",
+                "source_uri": "kb-material://CT/file-1#chunk-0",
+                "section_path": ["动态课程材料"],
+                "is_active": True,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    service.refresh()
+    hits = service.search("动态基尔霍夫电流定律", ["CT"], 3)
+
+    assert hits
+    assert hits[0].source_ref == "kb-material://CT/file-1#chunk-0"
+    assert hits[0].content_type == "course_material"
+
+    cache_path.write_text(
+        cache_path.read_text(encoding="utf-8").replace(
+            '"is_active": true', '"is_active": false'
+        ),
+        encoding="utf-8",
+    )
+    service.refresh()
+    assert not service.search("动态基尔霍夫电流定律", ["CT"], 3)
 
 
 def test_normalizes_node_terminology(tmp_path: Path) -> None:

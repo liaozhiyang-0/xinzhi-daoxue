@@ -379,6 +379,8 @@ class PlannerService:
             if route.intent in {"summarize_knowledge"}:
                 return "knowledge.govern"
             return "general_answer"
+        if capability_id == "course_knowledge":
+            return "knowledge.qa"
         return self.capability_bindings.canonicalize(capability_id)
 
     def _select_goal_skills(

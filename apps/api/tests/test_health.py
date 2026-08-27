@@ -26,8 +26,8 @@ def test_root_and_v1_health_expose_mock_and_model_runtime_separately(client) -> 
             "external_retrieval",
             "task_queue",
         }
-        assert payload["runtime_identity"]["solver_ct_baseline"] == (
-            "SOLVER_CT_v1.0_frozen"
+        assert payload["runtime_identity"]["academic_solver"] == (
+            "ACADEMIC_PROBLEM_SOLVER"
         )
         assert payload["configuration_status"] == "degraded"
         assert "active_agent_provider_mock" in payload["configuration_warnings"]

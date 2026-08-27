@@ -11,7 +11,6 @@ REMOVED_AGENT_IDS = {
 ACTIVE_BUSINESS_WORKFLOWS = {
     "GENERAL_QUESTION_V1",
     "ROUTER_01_FALLBACK_V1",
-    "SOLVER_CT_V1",
     "ACADEMIC_PROBLEM_SOLVER",
     "LEARN_01_KNOWLEDGE_QA_V1",
     "TEACH_01_LESSON_PREP_V1",
@@ -26,10 +25,11 @@ def test_active_registry_excludes_unpublished_legacy_agents() -> None:
     agent_ids = {item.agent_id for item in AgentRegistry().list_agents()}
 
     assert REMOVED_AGENT_IDS.isdisjoint(agent_ids)
+    assert "SOLVER_CT_V1" not in agent_ids
     assert ACTIVE_BUSINESS_WORKFLOWS <= agent_ids
     # The unified generic-model fallback is an active registry entry in
     # addition to the historical business workflow set.
-    assert len(agent_ids) == 13
+    assert len(agent_ids) == 12
 
 
 def test_removed_flow_settings_are_not_part_of_active_configuration() -> None:

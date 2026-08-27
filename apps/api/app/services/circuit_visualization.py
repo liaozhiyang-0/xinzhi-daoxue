@@ -21,6 +21,7 @@ from app.services.multimodal_policy import get_multimodal_capability_hint
 
 CircuitVisualizationMode = Literal["off", "shadow", "controlled"]
 CircuitDecision = Literal["SKIP", "OPTIONAL", "REQUIRED"]
+CircuitPresentationMode = Literal["standard", "image_only"]
 
 
 class CircuitVisualizationDecision(BaseModel):
@@ -66,6 +67,13 @@ def resolve_circuit_visualization_mode(
     if requested == "off":
         return "off"
     if requested == "controlled" and frontend_enabled:
+        return "controlled"
+    if (
+        configured_mode == "off"
+        and auto_enabled
+        and frontend_enabled
+        and get_multimodal_capability_hint(request).intent == "CIRCUIT_RENDER"
+    ):
         return "controlled"
     return configured_mode if auto_enabled else "off"
 
@@ -308,6 +316,23 @@ def runtime_observation_from_tool(
     )
 
 
+def _circuit_presentation_mode(run: AgentRun) -> CircuitPresentationMode:
+    """Keep the image-only surface scoped to explicit circuit-render tasks."""
+
+    try:
+        request = AgentRequest.model_validate(run.request_snapshot)
+    except (TypeError, ValueError):
+        return "standard"
+    return (
+        "image_only"
+        if (
+            request.options.get("circuit_visualization_mode") == "controlled"
+            or get_multimodal_capability_hint(request).intent == "CIRCUIT_RENDER"
+        )
+        else "standard"
+    )
+
+
 def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
     """Project the latest circuit observation into the formal task result."""
 
@@ -324,6 +349,7 @@ def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
     except ValueError:
         return result
     structured = dict(result.structured_result)
+    presentation_mode = _circuit_presentation_mode(run)
     structured["circuit_render_observation"] = render_observation.model_dump(
         mode="json"
     )
@@ -355,6 +381,7 @@ def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
                     "template": render_observation.template,
                     "width": render_observation.width,
                     "height": render_observation.height,
+                    "presentation_mode": presentation_mode,
                 },
             },
         )
@@ -385,6 +412,7 @@ def project_circuit_artifact(result: AgentResult, run: AgentRun) -> AgentResult:
                 "template": render_observation.template,
                 "width": render_observation.width,
                 "height": render_observation.height,
+                "presentation_mode": presentation_mode,
             },
         }
     structured["circuit_render_observation"] = render_observation.model_dump(

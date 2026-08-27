@@ -244,13 +244,37 @@ def test_multimodal_rrf_text_to_image_image_to_image_and_rerank(
     image_result = service.search(
         query_image=b"\x01",
         course_id="CT",
-        target_agent_id="SOLVER_CT_V1",
+        target_agent_id="ACADEMIC_PROBLEM_SOLVER",
     )
     assert image_result.query_modalities == ["image"]
     assert image_result.image_hits[0].image_id == "ct-image"
     assert image_result.hits[0].chunk_id == "ct-1"
     assert not service.search(query_text="电容", course_id="DE").hits
     service.close()
+
+
+def test_rag_filters_low_relevance_candidates_before_exposing_evidence(
+    tmp_path: Path,
+) -> None:
+    config = settings(tmp_path).model_copy(update={"rag_min_retrieval_score": 1.0})
+    store = store_for(config)
+    seed(store)
+    service = RAGRetrievalService(
+        config,
+        KnowledgeBaseService(config),
+        DeterministicFakeTextEmbeddingProvider(),
+        DeterministicFakeImageEmbeddingProvider(),
+        DeterministicFakeReranker(),
+        store,
+    )
+
+    result = service.search(query_text="电容电压", course_id="CT", include_images=False)
+
+    assert result.hits == []
+    assert "no_relevant_course_evidence" in result.warnings
+    assert result.trace["filtered_low_relevance"] >= 1
+    service.close()
+    store.close()
 
 
 def test_rag_rejects_stale_vectors_for_revoked_material(

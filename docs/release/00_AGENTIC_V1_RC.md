@@ -8,7 +8,7 @@
 | Branch | `agentic/phase-k-release-candidate` |
 | Base evidence | Phase F → G → H → I → J |
 | Provider policy | 本 RC 验收不执行无预算的真实付费 Provider |
-| Frozen baseline | `SOLVER_CT v1.0`；不得直接修改 |
+| Retired baseline | `SOLVER_CT v1.0` 仅作历史证据；当前电路题能力由 `ACADEMIC_PROBLEM_SOLVER` 承接 |
 | Release posture | **CONDITIONAL GO / not production release** |
 
 ## Version freeze ledger
@@ -23,7 +23,7 @@
 | Reflection | `repository_current` | conditional; no independent release ID |
 | Experience | `repository_current` | structural/conditional evidence only |
 | Evaluation | `phase_g_baseline.v1` + `phase_j_concurrency.v1` | reproducible evidence schemas |
-| Frozen CT Solver | `SOLVER_CT v1.0` / workflow `1.0.0` | frozen; not modified |
+| Retired CT Solver | `SOLVER_CT v1.0` / workflow `1.0.0` | historical evidence only; not an active route |
 
 The `repository_current` rows are intentionally not upgraded to invented semantic versions. They are release blockers for a production promotion, not hidden assumptions.
 

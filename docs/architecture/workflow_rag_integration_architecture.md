@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-任务链只执行一次检索，并把同一 `WorkflowContextBundle` 交给输入映射、Provider、引用校验和展示层。现有 `POST /api/v1/tasks`、Provider、知识库、索引及已发布 LEARN_01 / SOLVER_CT Flow 均保持不变。
+任务链只执行一次检索，并把同一 `WorkflowContextBundle` 交给输入映射、Provider、引用校验和展示层。现有 `POST /api/v1/tasks`、Provider、知识库、索引及已发布 LEARN_01 能力均保持不变；专业求解统一由 `ACADEMIC_PROBLEM_SOLVER` 承担。
 
 ```text
 AgentRequest
@@ -33,11 +33,11 @@ AgentRequest
 | `data_context_only` | 只允许结构化业务数据 | 标明数据上下文 |
 | `no_rag` | 不检索 | 不展示证据 |
 
-现有配置映射：LEARN_01 为 `grounded_generation`；SOLVER_CT 为 `method_reference`；`external_source_context` 映射为 `user_sources_only`；教学数据分析映射为 `data_context_only`。
+现有配置映射：LEARN_01 为 `grounded_generation`；`ACADEMIC_PROBLEM_SOLVER` 按 CoursePack 使用方法参考；`external_source_context` 映射为 `user_sources_only`；教学数据分析映射为 `data_context_only`。
 
 ## 兼容与安全
 
 - 旧结果字段保留，新字段放在 `structured_result.presentation`、`execution_summary`、`evidence_view` 和 `workflow_context`。
 - 学生端只消费 presentation、summary 与 evidence_view。
 - `/api/v1/debug/execution/{task_id}` 从已持久化任务和事件构建统一调试视图，并递归脱敏敏感键。
-- SOLVER_CT 的检索证据不会进入 `workflow_evidence_ids`，也不会被展示为云端答案依据。
+- 专业求解的检索证据不会冒充生成依据；只按统一证据合同进入结果展示。

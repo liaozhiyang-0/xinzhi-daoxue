@@ -21,7 +21,7 @@ def main() -> int:
         if definition.agent_id not in {
             "ROUTER_01_FALLBACK_V1",
             "LEARN_01_KNOWLEDGE_QA_V1",
-            "SOLVER_CT_V1",
+            "ACADEMIC_PROBLEM_SOLVER",
             "TEACH_01_LESSON_PREP_V1",
             "TEACH_02_ASSIGNMENT_REVIEW_V1",
             "RESEARCH_02_ACADEMIC_WRITING_V1",
@@ -60,6 +60,7 @@ def main() -> int:
                     settings.qwen_text_fast_model,
                     settings.qwen_vision_fast_model,
                     settings.qwen_vision_primary_model,
+                    settings.qwen_brief_model,
                 ],
             },
             "registry_valid": not model_registry.errors,

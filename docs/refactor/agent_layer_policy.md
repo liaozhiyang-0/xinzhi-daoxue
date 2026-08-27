@@ -17,7 +17,7 @@
 
 以下是应保留的稳定业务能力族：
 
-- `ACADEMIC_PROBLEM_SOLVER`：电子信息课程问题求解，包含现有 `SOLVER_CT v1.0` 兼容路径；
+- `ACADEMIC_PROBLEM_SOLVER`：电子信息课程问题求解，统一承接电路题能力；
 - `TEACHING`：教案、作业、教学反馈等教学能力族；
 - `KNOWLEDGE`：课程知识问答、检索增强和解释；
 - `RESEARCH`：学术检索、学术写作、数据分析和证据简报。
@@ -78,7 +78,7 @@ Public Capability
 
 ### FREEZE
 
-- `SOLVER_CT v1.0`；
+- 退役的 `SOLVER_CT v1.0` 历史标识及其专用控制面；
 - `OVERALL_ROUTER_LOCAL_V1` 及其他内部 Worker ID；
 - Public Agent 的现有 input/output/event contract。
 

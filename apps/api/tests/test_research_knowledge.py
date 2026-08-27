@@ -120,4 +120,8 @@ async def test_research_knowledge_reindexes_rows_after_vector_outage(
     restored = await service.search_evidence("flexible electronics")
     assert [item.evidence_id for item in restored] == ["openalex-reindex-1"]
     assert restored[0].title == "Flexible electronics evidence"
+    service.settings = service.settings.model_copy(
+        update={"research_knowledge_min_score": 0.95}
+    )
+    assert await service.search("flexible electronics") == []
     await engine.dispose()

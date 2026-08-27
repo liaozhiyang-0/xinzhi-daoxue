@@ -17,6 +17,6 @@
 3. 带题目、学生答案、rubric 和满分的批改文本：TEACH_02；强调建议分和人工复核；当前预期可能走 review fallback。
 4. 论文段落改写：RESEARCH_02；展示课程 RAG 关闭和引用边界。
 5. 数据分析方法请求：RESEARCH_03；无数据时显示 plan，不生成 p 值。
-6. 完整 CT 数值题：SOLVER_CT；在 Execution Debug 展示选择原因和最多一次重路由字段。
+6. 完整 CT 数值题：`ACADEMIC_PROBLEM_SOLVER`；在 Execution Debug 展示选择原因和最多一次重路由字段。
 
 每次完成后点击演示中心“读取最近真实执行”，展示真实 Trace。若要演示数据分析→写作流水线，明确输入“先给分析计划，再把计划写成方法段”，界面应显示两个阶段且不得把计划写成已完成结果。

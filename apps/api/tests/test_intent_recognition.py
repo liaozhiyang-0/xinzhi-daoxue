@@ -66,6 +66,24 @@ def test_recognizes_short_research_follow_up_from_session_context() -> None:
     assert decision.route_trace[0]["intent"] == "academic_search"
 
 
+def test_output_only_follow_up_keeps_previous_knowledge_intent() -> None:
+    task_request = request(
+        "直接给出公式，不要资料说明。",
+        options={
+            "previous_agent": "LEARN_01_KNOWLEDGE_QA_V1",
+            "previous_intent": "explain_concept",
+            "previous_answer_summary": "上一轮解释了电阻串联关系。",
+        },
+    ).model_copy(update={"course_id": "AUTO"})
+
+    result = IntentRecognitionService().recognize(task_request)
+    decision = TaskRouter(AgentRegistry()).route(task_request)
+
+    assert result.intent == "explain_concept"
+    assert "session_continuity" in result.reason_codes
+    assert decision.agent_id == "LEARN_01_KNOWLEDGE_QA_V1"
+
+
 def test_writing_request_with_source_restriction_is_not_research_search() -> None:
     result = IntentRecognitionService().recognize(
         request("帮我写一个论文摘要，来源仅限下面文字。")

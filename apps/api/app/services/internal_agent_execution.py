@@ -192,6 +192,10 @@ class InternalAgentExecutionService:
             ):
                 model_options = dict(model_options or {})
                 model_options["_prefer_route_fallback"] = True
+        model_options = dict(model_options or {})
+        model_options["response_depth"] = request.options.get(
+            "response_depth", "standard"
+        )
         internal = await self.hub.run_text(
             internal_id,
             input_text=self._input_text(request, context),
@@ -405,6 +409,11 @@ class InternalAgentExecutionService:
                 input_text=self._research_model_analysis_input(request),
                 request_id=str(request.options.get("request_id", "")) or None,
                 max_tokens=self._research_model_direct_max_tokens(),
+                extra_options={
+                    "response_depth": request.options.get(
+                        "response_depth", "standard"
+                    )
+                },
             )
             explanation = DataAnalysisExplanation.model_validate(
                 model_result.structured_result
@@ -665,6 +674,11 @@ class InternalAgentExecutionService:
                 ),
                 request_id=str(request.options.get("request_id", "")) or None,
                 max_tokens=self._research_model_assistance_max_tokens(),
+                extra_options={
+                    "response_depth": request.options.get(
+                        "response_depth", "standard"
+                    )
+                },
             )
             explanation = DataAnalysisExplanation.model_validate(
                 model_result.structured_result

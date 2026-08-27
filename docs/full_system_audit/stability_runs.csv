@@ -1,0 +1,9 @@
+run_id,scenario,iterations,observed,status,notes
+S-01,browser basic question,1,completed with stale artifact,fail,not a stability sample
+S-02,browser same-session follow-up,1,wrong topic and format,fail,P0 reproduction
+S-03,SSE reconnect,3 Last-Event-ID positions,ordered replay,pass,one task stream
+S-04,research cancel,1,terminal after about 51s,fail,slow cancellation convergence
+S-05,refresh restore,1,messages restored,pass,one session
+S-06,20+ repeated matrix,0,not executed,not_run,requires post-fix regression
+S-07,mobile viewport,0,not executed,not_run,static CSS only
+S-08,Docker restart/rebuild,0,not executed,not_run,existing services only observed

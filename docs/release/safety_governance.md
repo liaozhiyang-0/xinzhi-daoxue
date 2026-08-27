@@ -18,7 +18,7 @@
 
 - No real keys, student privacy or raw local Provider YAML are included.
 - No database migration or public API change is part of K.
-- `SOLVER_CT v1.0` is frozen and not modified.
+- Retired `SOLVER_CT v1.0` artifacts remain historical evidence only; active circuit solving uses `ACADEMIC_PROBLEM_SOLVER`.
 - No automatic merge, force push, production/canary activation or release tag is performed.
 
 ## Rollback

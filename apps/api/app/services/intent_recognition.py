@@ -410,10 +410,23 @@ class IntentRecognitionService:
             "\u66f4\u591a",
             "\u8fdb\u4e00\u6b65",
             "\u518d\u63d0\u4f9b",
+            "\u76f4\u63a5\u7ed9\u51fa",
+            "\u53ea\u7ed9",
+            "\u53ea\u8981",
+            "\u4e0d\u8981\u8d44\u6599",
+            "\u4e0d\u8981\u8bf4\u660e",
+            "\u4e0d\u8981\u89e3\u91ca",
+            "\u6362\u4e00\u79cd\u8bf4\u6cd5",
+            "\u7b80\u6d01\u56de\u7b54",
+            "\u53ea\u8f93\u51fa",
+            "\u7ed9\u51fa\u516c\u5f0f",
+            "\u516c\u5f0f\u5373\u53ef",
             "only",
             "more",
             "continue",
             "previous",
+            "just give",
+            "formula only",
         )
         if not self._has(text, continuation_markers):
             return None

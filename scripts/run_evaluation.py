@@ -168,6 +168,7 @@ def evaluation_settings(*, live: bool) -> Settings:
         enable_qwen_text_fast=False,
         enable_qwen_vision_fast=False,
         enable_qwen_vision_primary=False,
+        enable_qwen_brief=False,
         rag_enabled=False,
         _env_file=None,
     )

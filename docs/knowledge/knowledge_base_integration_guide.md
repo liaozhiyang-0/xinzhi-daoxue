@@ -140,9 +140,9 @@ multimodal_level = neural_multimodal_rag
 
 当前云端 LEARN 工作流仍为 planned/disabled，因此任务会降级到 `LEARN_01_LOCAL_RETRIEVAL_V1`。云端发布后只需启用现有注册项，不需要修改云端节点结构或增加 Provider。
 
-## 9. SOLVER_CT
+## 9. Academic solver
 
-`SOLVER_CT_V1` 云端工作流保持冻结：
+旧 `SOLVER_CT_V1` 云端工作流只保留为历史合同参考，当前解题统一进入 `ACADEMIC_PROBLEM_SOLVER`：
 
 - 纯文字解题最多检索 Top 2；
 - 只保留 `method`、`formula`、`concept`、`common_error` 类型证据；

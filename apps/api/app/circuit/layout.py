@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from statistics import median
 from typing import cast
 
 from app.circuit.contracts import CircuitComponent, CircuitIR
@@ -124,6 +123,8 @@ def classify_topology(circuit: CircuitIR, requested: str | None = None) -> str:
         return "logic_flow"
     if "opamp" in component_types:
         return "opamp_feedback"
+    if circuit.topology_hint == "bridge":
+        return "bridge"
     if component_types & {"bjt", "mosfet"}:
         return "transistor_stage"
     resistors = sum(component.type == "resistor" for component in circuit.components)
@@ -132,7 +133,20 @@ def classify_topology(circuit: CircuitIR, requested: str | None = None) -> str:
         net.kind == "reference" or net.id.casefold() in {"gnd", "ground", "0"}
         for net in circuit.nets
     )
-    if resistors >= 2 and has_reference:
+    simple_divider_types = {
+        "resistor",
+        "capacitor",
+        "inductor",
+        "voltage_source",
+        "current_source",
+        "ground",
+    }
+    if (
+        resistors >= 2
+        and has_reference
+        and len(circuit.components) <= 6
+        and component_types <= simple_divider_types
+    ):
         return "divider"
     return "generic_orthogonal"
 
@@ -200,12 +214,30 @@ def _place_components(
     visible = [item for item in components if item.type != "ground"]
     placements: list[SchematicPlacement] = []
     if template == "divider":
-        x = width / 2
-        step = max(78.0, min(112.0, (height - 130) / max(1, len(visible))))
-        for index, component in enumerate(visible):
-            placements.append(_placement(component, x, 60 + index * step, 90))
+        source = next(
+            (
+                item
+                for item in visible
+                if item.type in {"voltage_source", "current_source"}
+            ),
+            visible[0] if visible else None,
+        )
+        branch = [item for item in visible if item is not source]
+        source_x = max(110.0, width * 0.24)
+        branch_x = min(width - 150.0, width * 0.68)
+        center_y = height * 0.5
+        if source is not None:
+            placements.append(_placement(source, source_x, center_y, 90))
+        step = max(84.0, min(168.0, (height - 170.0) / max(1, len(branch) - 1)))
+        branch_top = center_y - step * max(0, len(branch) - 1) / 2
+        for index, component in enumerate(branch):
+            placements.append(
+                _placement(component, branch_x, branch_top + index * step, 90)
+            )
         for index, component in enumerate(ground):
-            placements.append(_placement(component, x, height - 48 - index * 40, 0))
+            placements.append(
+                _placement(component, branch_x, height - 48 - index * 40, 0)
+            )
         return placements
     if template == "parallel":
         step = max(110.0, min(180.0, (width - 160) / max(1, len(visible))))
@@ -213,6 +245,41 @@ def _place_components(
             placements.append(_placement(component, 80 + index * step, height / 2, 90))
         for index, component in enumerate(ground):
             placements.append(_placement(component, 80, height - 55 - index * 36, 0))
+        return placements
+    if template == "bridge":
+        by_id = {item.id: item for item in visible}
+        bridge_positions = {
+            "R1": (width * 0.36, height * 0.30, 90),
+            "R3": (width * 0.36, height * 0.70, 90),
+            "R2": (width * 0.64, height * 0.30, 90),
+            "R4": (width * 0.64, height * 0.70, 90),
+            "R5": (width * 0.50, height * 0.50, 0),
+        }
+        source = next(
+            (
+                item
+                for item in visible
+                if item.type in {"voltage_source", "current_source"}
+            ),
+            None,
+        )
+        if source is not None:
+            placements.append(_placement(source, width * 0.18, height * 0.50, 90))
+        placed_ids = {source.id} if source is not None else set()
+        for component_id, (x, y, rotation) in bridge_positions.items():
+            bridge_component = by_id.get(component_id)
+            if bridge_component is not None:
+                placements.append(_placement(bridge_component, x, y, rotation))
+                placed_ids.add(component_id)
+        remaining = [item for item in visible if item.id not in placed_ids]
+        for index, component in enumerate(remaining):
+            placements.append(
+                _placement(component, width * 0.50, 100 + index * 90, 0)
+            )
+        for index, component in enumerate(ground):
+            placements.append(
+                _placement(component, width * 0.50, height - 48 - index * 40, 0)
+            )
         return placements
     if template in {"opamp_inverting", "opamp_noninverting", "opamp_feedback"}:
         opamp = next((item for item in visible if item.type == "opamp"), None)
@@ -351,18 +418,15 @@ def _port_offset(
     elif component_type in _LOGIC_TYPES:
         base = _logic_port_offset(port)
     elif component_type in _TWO_TERMINAL_TYPES:
-        if rotation in {90, 270}:
-            base = (
-                (0.0, -34.0, "up")
-                if port in {"p", "a", "cp", "p1"}
-                else (0.0, 34.0, "down")
-            )
-        else:
-            base = (
-                (-34.0, 0.0, "left")
-                if port in {"p", "a", "cp", "p1"}
-                else (34.0, 0.0, "right")
-            )
+        # The renderer rotates the symbol group exactly once.  Keep the
+        # terminal in the symbol's local horizontal coordinate system here;
+        # applying the rotation a second time moves vertical terminals back
+        # onto the horizontal axis and makes every wire appear offset.
+        base = (
+            (-34.0, 0.0, "left")
+            if port in {"p", "a", "cp", "p1"}
+            else (34.0, 0.0, "right")
+        )
     elif len(port) == 1:
         base = (-38.0, 0.0, "left")
     else:
@@ -424,55 +488,34 @@ def _route_nets(
         if len(net_ports) < 2:
             continue
         anchor = net_ports[0]
-        if len(net_ports) == 2:
-            points = _route_pair(
-                anchor.point, net_ports[1].point, obstacles, width, height
-            )
-            wires.append(SchematicWire(net_id=net_id, points=points))
+        if len(net_ports) > 2:
+            # A median bus can run through an unrelated symbol (the classic
+            # failure for a divider's ground return).  A routed star keeps
+            # every branch attached to a real terminal and lets _route_pair
+            # choose an obstacle-free orthogonal path.
+            connected = [anchor]
+            junctions.append(SchematicJunction(net_id=net_id, point=anchor.point))
+            for item in net_ports[1:]:
+                parent = min(
+                    connected,
+                    key=lambda candidate: abs(candidate.point.x - item.point.x)
+                    + abs(candidate.point.y - item.point.y),
+                )
+                points = _route_pair(
+                    parent.point, item.point, obstacles, width, height
+                )
+                wires.append(
+                    SchematicWire(net_id=net_id, points=points, junction=True)
+                )
+                connected.append(item)
+                junctions.append(SchematicJunction(net_id=net_id, point=item.point))
             continue
-        horizontal_bus = (
-            max(item.point.x for item in net_ports)
-            - min(item.point.x for item in net_ports)
-        ) >= (
-            max(item.point.y for item in net_ports)
-            - min(item.point.y for item in net_ports)
+        points = _route_pair(
+            anchor.point, net_ports[1].point, obstacles, width, height
         )
-        if horizontal_bus:
-            bus_y = _grid(median(item.point.y for item in net_ports))
-            bus_start = SchematicPoint(
-                x=min(item.point.x for item in net_ports), y=bus_y
-            )
-            bus_end = SchematicPoint(x=max(item.point.x for item in net_ports), y=bus_y)
-            wires.append(
-                SchematicWire(net_id=net_id, points=[bus_start, bus_end], junction=True)
-            )
-            for item in net_ports:
-                point = SchematicPoint(x=item.point.x, y=bus_y)
-                if point.y != item.point.y:
-                    wires.append(
-                        SchematicWire(
-                            net_id=net_id, points=[item.point, point], junction=True
-                        )
-                    )
-                junctions.append(SchematicJunction(net_id=net_id, point=point))
-        else:
-            bus_x = _grid(median(item.point.x for item in net_ports))
-            bus_start = SchematicPoint(
-                x=bus_x, y=min(item.point.y for item in net_ports)
-            )
-            bus_end = SchematicPoint(x=bus_x, y=max(item.point.y for item in net_ports))
-            wires.append(
-                SchematicWire(net_id=net_id, points=[bus_start, bus_end], junction=True)
-            )
-            for item in net_ports:
-                point = SchematicPoint(x=bus_x, y=item.point.y)
-                if point.x != item.point.x:
-                    wires.append(
-                        SchematicWire(
-                            net_id=net_id, points=[item.point, point], junction=True
-                        )
-                    )
-                junctions.append(SchematicJunction(net_id=net_id, point=point))
+        wires.append(
+            SchematicWire(net_id=net_id, points=points, junction=False)
+        )
     return _dedupe_wires(wires), _dedupe_junctions(junctions)
 
 
@@ -483,12 +526,16 @@ def _route_pair(
     width: int,
     height: int,
 ) -> list[SchematicPoint]:
+    candidates: list[list[SchematicPoint]] = []
     if first.x == second.x or first.y == second.y:
-        return [first, second]
-    candidates = [
-        [first, SchematicPoint(x=second.x, y=first.y), second],
-        [first, SchematicPoint(x=first.x, y=second.y), second],
-    ]
+        candidates.append([first, second])
+    else:
+        candidates.extend(
+            [
+                [first, SchematicPoint(x=second.x, y=first.y), second],
+                [first, SchematicPoint(x=first.x, y=second.y), second],
+            ]
+        )
     for offset in (24.0, -24.0, 48.0, -48.0):
         candidates.extend(
             [
@@ -521,9 +568,11 @@ def _segment_hits_obstacle(
     if first.x != second.x and first.y != second.y:
         return True
     for box in obstacles:
-        expanded = SchematicBoundingBox(
-            x=box.x - 8, y=box.y - 8, width=box.width + 16, height=box.height + 16
-        )
+        # Bounding boxes describe the symbol body, not its terminal stubs.
+        # Expanding them here incorrectly rejects the first segment leaving a
+        # port (the port is intentionally one unit outside the body) and
+        # forces the router to choose visibly misaligned detours.
+        expanded = box
         if first.x == second.x:
             if expanded.x < first.x < expanded.x + expanded.width and _interval_overlap(
                 first.y, second.y, expanded.y, expanded.y + expanded.height
@@ -603,31 +652,8 @@ def _place_labels(
                     kind="net",
                 )
             )
-    for annotation in circuit.annotations:
-        # Arrow annotations have a dedicated direction-arrow layer.  Keep
-        # their explanatory text in SchematicAnnotation so the SVG contains
-        # one semantic label instead of duplicating it in both layers.
-        if annotation.kind == "arrow":
-            continue
-        target = next(
-            (item for item in placements if item.component_id == annotation.target_id),
-            None,
-        )
-        point = (
-            SchematicPoint(x=target.x, y=target.y - 72)
-            if target
-            else SchematicPoint(x=24, y=24 + len(labels) * 16)
-        )
-        labels.append(
-            SchematicLabel(
-                text=annotation.text,
-                point=point,
-                anchor="start",
-                target_id=annotation.target_id,
-                priority=4,
-                kind="annotation",
-            )
-        )
+    # Annotations have their own semantic layer and must not also be emitted
+    # as labels; doing both renders the same text twice at the same position.
     return labels
 
 
@@ -730,11 +756,20 @@ def _place_annotations(
     result: list[SchematicAnnotation] = []
     for index, annotation in enumerate(circuit.annotations):
         target = placement_by_id.get(annotation.target_id or "")
-        point = (
-            SchematicPoint(x=target.x, y=target.y - 72)
-            if target is not None
-            else SchematicPoint(x=24, y=24 + index * 18)
-        )
+        if target is not None and circuit.topology_hint == "bridge":
+            # Keep the long bridge output note above the top rail, where it
+            # cannot collide with the R5 symbol or the A/B branch wires.
+            text_width = max(18.0, len(annotation.text) * 7.0)
+            point = SchematicPoint(
+                x=target.x - text_width / 2,
+                y=52,
+            )
+        else:
+            point = (
+                SchematicPoint(x=target.x, y=target.y - 72)
+                if target is not None
+                else SchematicPoint(x=24, y=24 + index * 18)
+            )
         kind: AnnotationKind = "equation" if annotation.kind == "equation" else "text"
         result.append(
             SchematicAnnotation(
@@ -830,7 +865,3 @@ def _simplify_points(points: list[SchematicPoint]) -> list[SchematicPoint]:
                 continue
         result.append(point)
     return result
-
-
-def _grid(value: float, spacing: float = 10.0) -> float:
-    return round(value / spacing) * spacing

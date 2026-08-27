@@ -30,7 +30,6 @@ class FallbackReason(StrEnum):
     PRIMARY_MODEL_TIMEOUT = "primary_model_timeout"
     PRIMARY_MODEL_ERROR = "primary_model_error"
     HIGH_RISK_PROBLEM = "high_risk_problem"
-    LEGACY_BASELINE_REQUIRED = "legacy_baseline_required"
 
 
 class AcademicProblem(BaseModel):
@@ -306,8 +305,8 @@ class SolverResult(BaseModel):
     """Unified solver result while retaining the stable v1 response fields.
 
     ``final_answer`` intentionally remains text because it is consumed by the
-    current API, Workspace and the frozen SOLVER_CT_V1 adapter. New consumers
-    should prefer ``final_answer_detail`` for machine-readable output.
+    current API and Workspace. New consumers should prefer
+    ``final_answer_detail`` for machine-readable output.
     """
 
     model_config = ConfigDict(extra="forbid")

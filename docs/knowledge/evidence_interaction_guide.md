@@ -6,7 +6,7 @@
 
 - `cited`：证据进入 grounded 工作流，且 S 编号通过 CitationValidator。
 - `supplementary`：候选可供补充阅读，但不得称为回答依据。
-- `method_reference`：SOLVER_CT 的公式、方法或易错点参考；与题目解答分开。
+- `method_reference`：Academic Solver 的公式、方法或易错点参考；与题目解答分开。
 
 正文 S 编号只定位当前任务已有数据，不调用检索接口。损坏或非 `kb-image://` URI 不渲染。相关图片标题沿用证据标题或原 caption。
 

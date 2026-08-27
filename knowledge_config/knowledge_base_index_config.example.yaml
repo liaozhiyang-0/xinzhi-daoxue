@@ -38,7 +38,7 @@ retrieval:
   minimum_score: 0.35
   maximum_hits_per_document: 2
   learn_01_top_k: 3
-  solver_ct_top_k: 2
+  academic_solver_top_k: 3
 
 images:
   strategy: context_text_plus_metadata_plus_parent_document

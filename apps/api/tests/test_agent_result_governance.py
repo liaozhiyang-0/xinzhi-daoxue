@@ -255,14 +255,14 @@ def test_learning_result_with_sufficient_evidence_requires_citations() -> None:
 
 
 def test_solver_result_requires_an_independent_final_answer_field() -> None:
-    definition = AgentRegistry().get("SOLVER_CT_V1")
+    definition = AgentRegistry().get("ACADEMIC_PROBLEM_SOLVER")
     result = AgentResult(
         agent_id=definition.agent_id,
         provider="local",
         answer="推导过程完成，但最终数值需要补充。",
         structured_result={"steps": ["step-1"]},
     )
-    req = request().model_copy(update={"intent": "solver_ct"})
+    req = request().model_copy(update={"intent": "solve_problem"})
 
     validation = AgentResultValidatorRegistry().validate(definition, result, req, None)
 
@@ -393,7 +393,7 @@ def test_six_business_agents_have_specific_validator_and_renderer() -> None:
     registry = AgentRegistry()
     agent_ids = {
         "LEARN_01_KNOWLEDGE_QA_V1",
-        "SOLVER_CT_V1",
+        "ACADEMIC_PROBLEM_SOLVER",
         "TEACH_01_LESSON_PREP_V1",
         "TEACH_02_ASSIGNMENT_REVIEW_V1",
         "RESEARCH_02_ACADEMIC_WRITING_V1",

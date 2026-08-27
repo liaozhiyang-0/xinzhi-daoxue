@@ -47,7 +47,7 @@
     "reflection": {"version": "repository_current", "evidence": ["apps/api/app/services/reflection_policy.py", "apps/api/app/services/reflection_service.py", "apps/api/app/services/reflection_evaluation.py"]},
     "experience": {"version": "repository_current", "evidence": ["apps/api/app/services/experience_memory.py", "apps/api/app/services/memory_service.py", "apps/api/app/repositories/experience_memory.py"]},
     "evaluation": {"version": "evaluation_record.v1; evaluation_case_catalog.v1; evaluation_case_source_files.v1; evaluation_case_attachments.v1", "evidence": ["apps/api/app/evaluation/contracts.py", "apps/api/app/evaluation/runner.py", "apps/api/app/evaluation/reporting.py"]},
-    "frozen_solver_baseline": {"version": "SOLVER_CT v1.0 / workflow 1.0.0", "evidence": ["agent_configs/workflows/solver_ct_v1.yaml"]}
+    "academic_solver": {"version": "ACADEMIC_PROBLEM_SOLVER", "evidence": ["agent_configs/registry.yaml", "apps/api/app/services/academic_solver_service.py"]}
   },
   "provider_and_model": {
     "test_mode": "offline",

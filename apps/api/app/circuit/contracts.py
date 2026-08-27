@@ -193,7 +193,10 @@ class ValidationReport(BaseModel):
 class CircuitRenderOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    template: str = "generic_left_to_right"
+    # ``None`` lets the layout classifier choose a topology-aware template.
+    # Callers that need a stable legacy arrangement can still pass an
+    # explicit template name.
+    template: str | None = None
     width: int = Field(default=900, ge=320, le=4000)
     height: int = Field(default=520, ge=180, le=2400)
     include_values: bool = True

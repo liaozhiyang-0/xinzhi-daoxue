@@ -301,7 +301,10 @@ async def test_runtime_internal_agent_enables_structured_fallback() -> None:
 
     await executor.run("TEACH_01_LESSON_PREP_V1", runtime_request)
 
-    assert hub.extra_options == {"_allow_structured_fallback": True}
+    assert hub.extra_options == {
+        "_allow_structured_fallback": True,
+        "response_depth": "standard",
+    }
 
 
 @pytest.mark.asyncio
@@ -325,6 +328,7 @@ async def test_lesson_runtime_replan_prefers_configured_route_fallback() -> None
     assert hub.extra_options == {
         "_allow_structured_fallback": True,
         "_prefer_route_fallback": True,
+        "response_depth": "standard",
     }
 
 
@@ -349,6 +353,7 @@ async def test_academic_writing_replan_prefers_route_fallback() -> None:
     assert hub.extra_options == {
         "_allow_structured_fallback": True,
         "_prefer_route_fallback": True,
+        "response_depth": "standard",
     }
 
 
@@ -441,7 +446,7 @@ def test_internal_agent_availability_is_sanitized() -> None:
     executor, _ = service()
 
     assert executor.available("TEACH_01_LESSON_PREP_V1") is True
-    assert executor.available("SOLVER_CT_V1") is False
+    assert executor.available("ACADEMIC_PROBLEM_SOLVER") is False
 
 
 @pytest.mark.asyncio

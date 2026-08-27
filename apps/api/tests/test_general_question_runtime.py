@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -17,6 +18,7 @@ from app.runtime import (
     AgentRun,
     RuntimeBudget,
     RuntimeEvaluationCase,
+    RuntimeNodeError,
     RuntimeNodeStatus,
     RuntimeObservation,
     RuntimeRunSuspended,
@@ -520,6 +522,43 @@ def test_general_runtime_requires_approval_for_non_replay_safe_tool() -> None:
     assert run.nodes["general.tool"].observation.facts["output"] == {
         "accepted": "approved input"
     }
+
+
+def test_general_runtime_applies_registered_tool_schema_before_invocation() -> None:
+    tool_registry = default_tool_registry()
+    fake = FakeInternalAgents([make_result()])
+    service = GeneralQuestionRuntimeService(
+        fake,  # type: ignore[arg-type]
+        enabled=True,
+        tool_registry=tool_registry,
+    )
+    request = make_request().model_copy(
+        update={
+            "options": {
+                "general_question_runtime": {
+                    "execute": True,
+                    "tool_id": "calculator",
+                    "tool_input": {},
+                }
+            }
+        }
+    )
+    run = AgentRun(
+        run_id="run-general-tool-schema",
+        task_id=request.task_id,
+        goal="tool schema validation",
+        plan=service.build_plan(request),
+    )
+
+    with pytest.raises(RuntimeNodeError, match="node_input_schema_required"):
+        asyncio.run(service.run(request, run))
+
+    assert run.status.value == "failed"
+    assert any(
+        state.error_code == "node_input_schema_required"
+        for state in run.nodes.values()
+    )
+    assert fake.calls == 0
 
 
 def test_general_runtime_requires_explicit_runtime_option() -> None:

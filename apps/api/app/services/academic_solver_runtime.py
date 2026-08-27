@@ -1,8 +1,7 @@
-"""Runtime adapter for the frozen academic solver baseline.
+"""Runtime adapter for the unified academic solver.
 
 The adapter owns durable observe/retrieve/act/verify control while delegating
-the actual solver graph to ``InternalAgentExecutionService``. It deliberately
-does not modify the SOLVER_CT v1.0 implementation or its source YAML.
+the actual solver graph to ``InternalAgentExecutionService``.
 """
 
 from __future__ import annotations

@@ -35,7 +35,8 @@ _SOURCE_ASSIGNMENT = re.compile(
     re.IGNORECASE,
 )
 _VALUE_BEFORE_SOURCE = re.compile(
-    rf"(?P<value>{_VALUE})\s*(?P<kind>电压源|电流源|电源|voltage\s+source|current\s+source|voltage\s+supply)",
+    rf"(?P<value>{_VALUE})\s*(?:理想|ideal\s+)?"
+    r"(?P<kind>电压源|电流源|电源|voltage\s+source|current\s+source|voltage\s+supply)",
     re.IGNORECASE,
 )
 
@@ -81,7 +82,8 @@ def circuit_ir_from_text(text: str) -> CircuitIR | None:
     """Parse one explicit, bounded textbook topology from text.
 
     Supported forms intentionally stay narrow: a single independent source
-    followed by explicitly valued R/C/L components in series or parallel.
+    followed by explicitly valued R/C/L components in series, parallel, or a
+    bounded five-resistor bridge.
     A reference node is added deterministically.  Natural-language circuit
     questions without complete values or an explicit topology are rejected.
     """
@@ -113,6 +115,8 @@ def circuit_ir_from_text(text: str) -> CircuitIR | None:
         ],
         key=lambda item: item[2],
     )
+    if topology == "bridge":
+        return _bridge_circuit_from_text(source, specs, text)
     components: list[CircuitComponent] = [
         CircuitComponent(
             id=source[0],
@@ -311,11 +315,103 @@ def _parse_source(text: str) -> tuple[str, str, str] | None:
 
 def _topology_kind(text: str) -> str | None:
     normalized = text.casefold()
+    if any(marker in normalized for marker in ("桥式", "桥臂", "惠斯通", "bridge")):
+        return "bridge"
     if any(marker in normalized for marker in ("并联", "parallel")):
         return "parallel"
     if any(marker in normalized for marker in ("串联", "series", "分压", "divider")):
         return "series"
     return None
+
+
+def _bridge_circuit_from_text(
+    source: tuple[str, str, str],
+    specs: list[tuple[str, str, int]],
+    text: str,
+) -> CircuitIR | None:
+    """Build only an explicit five-resistor Wheatstone bridge."""
+
+    expected_ids = {"R1", "R2", "R3", "R4", "R5"}
+    if source[1] != "voltage_source" or {item[0] for item in specs} != expected_ids:
+        return None
+    normalized = re.sub(r"[\s，。,:：;；()（）\-—→+]+", "", text.casefold())
+
+    def has_edge(left: str, component_id: str, right: str) -> bool:
+        return bool(
+            re.search(
+                rf"{left}.{{0,24}}{component_id.casefold()}.{{0,24}}{right}",
+                normalized,
+            )
+        )
+
+    if not all(
+        (
+            has_edge("vin", "R1", "a"),
+            has_edge("a", "R3", "gnd"),
+            has_edge("vin", "R2", "b"),
+            has_edge("b", "R4", "gnd"),
+            has_edge("a", "R5", "b") or has_edge("b", "R5", "a"),
+        )
+    ):
+        return None
+
+    values = {component_id: value for component_id, value, _ in specs}
+    components = [
+        CircuitComponent(
+            id=source[0],
+            type=source[1],
+            ports={"p": "vin", "n": "gnd"},
+            value=source[2],
+            label=source[0],
+        ),
+        CircuitComponent(
+            id="R1", type="resistor", ports={"p": "vin", "n": "a"},
+            value=values["R1"], label="R1"
+        ),
+        CircuitComponent(
+            id="R3", type="resistor", ports={"p": "a", "n": "gnd"},
+            value=values["R3"], label="R3"
+        ),
+        CircuitComponent(
+            id="R2", type="resistor", ports={"p": "vin", "n": "b"},
+            value=values["R2"], label="R2"
+        ),
+        CircuitComponent(
+            id="R4", type="resistor", ports={"p": "b", "n": "gnd"},
+            value=values["R4"], label="R4"
+        ),
+        CircuitComponent(
+            id="R5", type="resistor", ports={"p": "a", "n": "b"},
+            value=values["R5"], label="R5"
+        ),
+        CircuitComponent(id="GND", type="ground", ports={"g": "gnd"}, label="GND"),
+    ]
+    circuit = CircuitIR(
+        components=components,
+        nets=[
+            CircuitNet(id="vin", label="Vin", kind="power"),
+            CircuitNet(id="a", label="A", kind="signal"),
+            CircuitNet(id="b", label="B", kind="signal"),
+            CircuitNet(id="gnd", label="GND", kind="reference"),
+        ],
+        annotations=[
+            CircuitAnnotation(
+                kind="text",
+                text="Vout = VA − VB  (+A / −B)",
+                target_id="R5",
+            )
+        ],
+        assumptions=["仅依据题干明确给出的五个电阻、节点和连接关系建立桥式拓扑"],
+        provenance={
+            "source_type": "text",
+            "parser": "circuit_text_bridge_v1",
+            "trusted": True,
+            "source_excerpt": text.strip()[:1000],
+        },
+        topology_hint="bridge",
+    )
+    report = validate_circuit(circuit)
+    return circuit if report.status == "validated" else None
 
 
 def _output_component_id(text: str, specs: list[tuple[str, str, int]]) -> str | None:

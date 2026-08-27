@@ -20,6 +20,7 @@ from app.contracts.conversation import ConversationContextBundle
 from app.contracts.planner import CanonicalPlan
 from app.core.errors import NotConfiguredError
 from app.models import TaskStatus
+from app.observability import RuntimeTimingTrace
 from app.observability.architecture_telemetry import architecture_telemetry
 from app.providers.base import AgentProvider
 from app.repositories import AgentRunRepository, TaskRepository
@@ -152,6 +153,7 @@ class TaskRuntimePreparationService:
                 )
             )
             request = AgentRequest.model_validate(request_payload)
+            RuntimeTimingTrace.mark(request.options, "request_preparation_end")
             launch_decision = RuntimeLaunchDecision(
                 agent_id=task.agent_id,
                 mode=RuntimeLaunchMode.DEFAULT,
@@ -194,6 +196,52 @@ class TaskRuntimePreparationService:
             )
             request = preparation.request
             decision = preparation.decision
+            RuntimeTimingTrace.observe(
+                request.options,
+                "routing",
+                (perf_counter() - route_stage_started) * 1000,
+            )
+            context_bundle = preparation.conversation_bundle
+            RuntimeTimingTrace.observe(
+                request.options,
+                "context_build",
+                (
+                    context_bundle.build_latency_ms
+                    if context_bundle is not None
+                    else 0
+                ),
+            )
+            if context_bundle is not None:
+                RuntimeTimingTrace.record_context_usage(
+                    request.options,
+                    conversation_chars=sum(
+                        len(item.content_text)
+                        for item in (
+                            *context_bundle.recent_messages,
+                            *context_bundle.relevant_earlier_messages,
+                        )
+                    ),
+                    memory_chars=sum(
+                        len(str(item.get("content", "")))
+                        for item in context_bundle.active_memories
+                        if isinstance(item, dict)
+                    ),
+                )
+            RuntimeTimingTrace.fingerprint(
+                request.options,
+                "prepared_input_hash",
+                {
+                    "canonical_input": request.canonical_input,
+                    "attachments": [
+                        {
+                            "file_id": item.file_id,
+                            "checksum_sha256": item.checksum_sha256 or "",
+                            "content_type": item.content_type,
+                        }
+                        for item in request.attachments
+                    ],
+                },
+            )
             # Route refinement may replace the creation-time intent plan;
             # always read the plan from the final immutable request envelope.
             intent_plan = self._intent_plan_from_request(request)
@@ -360,6 +408,17 @@ class TaskRuntimePreparationService:
                     source="legacy_compatibility",
                     reason="registered_agent_runtime_plan_pending",
                 )
+            RuntimeTimingTrace.fingerprint(
+                request.options,
+                "plan_hash",
+                runtime_plan.model_dump(mode="json"),
+            )
+            if preparation.conversation_bundle is not None:
+                RuntimeTimingTrace.fingerprint(
+                    request.options,
+                    "context_hash",
+                    preparation.conversation_bundle.model_dump(mode="json"),
+                )
             if (
                 self.manifest is not None
                 and not self.manifest.development_compatibility_enabled
@@ -382,6 +441,7 @@ class TaskRuntimePreparationService:
             )
             if runtime_run is None:
                 raise NotConfiguredError("registered Agent Runtime is unavailable")
+            RuntimeTimingTrace.set_run_id(request.options, runtime_run.run_id)
             task.input_content = with_runtime_run_id(
                 task.input_content,
                 runtime_run.run_id,

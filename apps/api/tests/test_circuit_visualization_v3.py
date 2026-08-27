@@ -111,6 +111,14 @@ def test_workspace_toggle_resolves_controlled_mode_per_task() -> None:
     )
     assert (
         resolve_circuit_visualization_mode(
+            _request(text="请画图：这个分压电路", circuit_ir=_valid_circuit()),
+            configured_mode="off",
+            auto_enabled=True,
+        )
+        == "controlled"
+    )
+    assert (
+        resolve_circuit_visualization_mode(
             request,
             configured_mode="off",
             frontend_enabled=False,
@@ -339,6 +347,56 @@ def test_rendered_observation_projects_to_a_circuit_svg_artifact() -> None:
     assert projected.artifacts[0].artifact_type.value == "circuit_svg"
     assert projected.structured_result["circuit_artifact"]["type"] == "circuit_svg"
     assert projected.structured_result["circuit_artifact"]["svg"] == "<svg />"
+
+
+def test_explicit_circuit_render_projects_image_only_presentation_mode() -> None:
+    observation = runtime_observation_from_tool(
+        node_id="circuit.visualize",
+        execution_key="run:circuit.visualize:image-only",
+        circuit_payload={},
+        result={
+            "status": "rendered",
+            "svg": "<svg />",
+            "artifact_ref": None,
+            "validation_state": "validated",
+            "warnings": [],
+            "validation": {"status": "validated", "issues": [], "warnings": []},
+            "render_latency_ms": 1.0,
+            "renderer": "professional_svg",
+        },
+    )
+    request = _request(text="请画出这个典型分压电路")
+    request = request.model_copy(
+        update={"options": {"circuit_visualization_mode": "controlled"}}
+    )
+    run = AgentRun(
+        run_id="run-v3-image-only",
+        task_id="task-v3-image-only",
+        goal="draw",
+        plan=AgentRunPlan(
+            plan_id="plan-v3-image-only",
+            goal="draw",
+            nodes=[
+                RuntimeNode(
+                    node_id="circuit.visualize",
+                    node_type="tool",
+                    handler_id="tool.circuit.render",
+                )
+            ],
+        ),
+        request_snapshot=request.model_dump(mode="json"),
+        observations=[observation],
+    )
+    result = AgentResult(agent_id="ACADEMIC_PROBLEM_SOLVER", provider="test")
+
+    projected = project_circuit_artifact(result, run)
+
+    assert (
+        projected.structured_result["circuit_artifact"]["metadata"][
+            "presentation_mode"
+        ]
+        == "image_only"
+    )
 
 
 def test_circuit_tool_is_opt_in_at_registry_composition_root() -> None:

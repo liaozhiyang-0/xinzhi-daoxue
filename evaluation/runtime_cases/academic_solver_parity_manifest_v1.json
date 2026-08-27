@@ -13,7 +13,7 @@
   },
   "case_profiles": [
     {
-      "case_id": "solver_ct_text_basic",
+      "case_id": "academic_solver_ct_text_basic",
       "profile": "text_basic",
       "required_handlers": [
         "academic.solver.observe",
@@ -22,7 +22,7 @@
       ]
     },
     {
-      "case_id": "solver_ct_text_retrieval",
+      "case_id": "academic_solver_ct_text_retrieval",
       "profile": "text_with_retrieval",
       "required_handlers": [
         "academic.solver.observe",
@@ -32,7 +32,7 @@
       ]
     },
     {
-      "case_id": "solver_ct_image",
+      "case_id": "academic_solver_ct_image",
       "profile": "image_input",
       "required_handlers": [
         "academic.solver.observe",
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "case_id": "solver_ct_review",
+      "case_id": "academic_solver_ct_review",
       "profile": "student_answer_review",
       "required_handlers": [
         "academic.solver.observe",
@@ -50,7 +50,7 @@
       ]
     },
     {
-      "case_id": "solver_ct_verify",
+      "case_id": "academic_solver_ct_verify",
       "profile": "student_answer_verify",
       "required_handlers": [
         "academic.solver.observe",
@@ -59,7 +59,7 @@
       ]
     },
     {
-      "case_id": "solver_ct_high_risk",
+      "case_id": "academic_solver_ct_high_risk",
       "profile": "high_risk_validation",
       "required_handlers": [
         "academic.solver.observe",

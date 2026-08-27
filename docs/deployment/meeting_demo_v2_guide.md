@@ -7,7 +7,7 @@
 .\.venv\Scripts\python.exe scripts\demo_cli.py preflight --base-url http://127.0.0.1:8000
 ```
 
-先检查 API、索引、LEARN Flow 和 SOLVER_CT Flow。真实云端演示会消耗额度，截图回归与真实云端回归分开执行。
+先检查 API、索引、LEARN Flow 和 `ACADEMIC_PROBLEM_SOLVER` 本地能力。真实云端演示会消耗额度，截图回归与真实云端回归分开执行。
 
 ## 四条故事线
 

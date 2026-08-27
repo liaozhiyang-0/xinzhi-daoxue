@@ -128,6 +128,7 @@ class ExternalRetrievalExecutionService:
                 max_rounds = max(1, min(policy.max_iterations, 5))
                 round_results: list[ExternalRetrievalResult] = []
                 used_queries: set[str] = set()
+                fallback_attempted: set[str] = set()
                 previous_retrieval = request.options.get("previous_external_retrieval")
                 if isinstance(
                     previous_retrieval, dict
@@ -212,6 +213,85 @@ class ExternalRetrievalExecutionService:
                                 plan.excluded_concepts if plan is not None else ()
                             ),
                         )
+                    fallback_provider_names = getattr(
+                        self.external_search, "fallback_provider_names", None
+                    )
+                    if not round_result.items and callable(fallback_provider_names):
+                        fallback_names = tuple(
+                            name
+                            for name in fallback_provider_names(
+                                provider_names=policy.providers,
+                                source_scopes=policy.source_scopes,
+                            )
+                            if name not in round_result.provider_status
+                            and name not in fallback_attempted
+                        )
+                        if fallback_names:
+                            fallback_attempted.update(fallback_names)
+                            if callable(search_many):
+                                fallback_result = await search_many(
+                                    query,
+                                    query_variants=query_variants,
+                                    limit=display_limit,
+                                    provider_names=fallback_names,
+                                    source_scopes=policy.source_scopes,
+                                    freshness_days=freshness_days,
+                                    prefer_high_citation=prefer_high_citation,
+                                    retrieval_trace_id=retrieval_trace_id,
+                                )
+                            else:
+                                fallback_result = await self.external_search.search(
+                                    query,
+                                    normalized_query=query_variants[0],
+                                    limit=display_limit,
+                                    provider_names=fallback_names,
+                                    source_scopes=policy.source_scopes,
+                                    freshness_days=freshness_days,
+                                    retrieval_trace_id=retrieval_trace_id,
+                            )
+                            if self.external_paper_reviewer is not None:
+                                fallback_result = await (
+                                    self.external_paper_reviewer.review(
+                                        query,
+                                        fallback_result,
+                                        request_id=str(
+                                            request.options.get("request_id", "")
+                                        ),
+                                        allow_non_academic=isinstance(
+                                            request.options.get("research_intent"), dict
+                                        ),
+                                        allow_degraded=allow_degraded_review,
+                                        required_concepts=(
+                                            plan.required_concepts
+                                            if plan is not None
+                                            else ()
+                                        ),
+                                        excluded_concepts=(
+                                            plan.excluded_concepts
+                                            if plan is not None
+                                            else ()
+                                        ),
+                                    )
+                                )
+                            fallback_result = fallback_result.model_copy(
+                                update={
+                                    "warnings": [
+                                        (
+                                            "fallback providers invoked after "
+                                            "primary evidence review"
+                                        ),
+                                        *fallback_result.warnings,
+                                    ][:20]
+                                }
+                            )
+                            round_result = merge_academic_results(
+                                [round_result, fallback_result],
+                                query=query,
+                                limit=display_limit,
+                                prefer_high_citation=prefer_high_citation,
+                                search_round=search_round,
+                                retrieval_trace_id=retrieval_trace_id,
+                            )
                     round_result = round_result.model_copy(
                         update={"search_round": search_round}
                     )

@@ -13,7 +13,7 @@ export function buildStudentTaskPayload({ sessionId, userId, userRole, courseId,
     const options = {
         request_id: requestId,
         response_depth: responseDepth,
-        circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : "off",
+        circuit_visualization_mode: circuitVisualizationEnabled ? "controlled" : undefined,
         teaching_mode: teachingMode,
         student_attempt: studentAttempt ? { raw_text: studentAttempt } : undefined,
         prefer_internal_agents: true,

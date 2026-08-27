@@ -667,6 +667,20 @@ async def test_academic_search_service_stops_after_satisfied_provider_tier() -> 
     assert calls == {"first": 1, "fallback": 0}
 
 
+async def test_academic_search_service_exposes_remaining_fallback_tiers() -> None:
+    class Provider:
+        def __init__(self, name: str) -> None:
+            self.provider_name = name
+
+    service = AcademicSearchService(
+        [Provider("primary"), Provider("fallback"), Provider("last-resort")],
+        cache_size=0,
+        provider_tiers=(("primary",), ("fallback",), ("last-resort",)),
+    )
+
+    assert service.fallback_provider_names() == ("fallback", "last-resort")
+
+
 async def test_academic_search_many_covers_all_variants_before_review() -> None:
     calls: list[str] = []
 

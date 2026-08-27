@@ -11,7 +11,7 @@
 | Agent | 必需 | 可选材料 | Runtime 输入 |
 |---|---|---|---|
 | LEARN | question, course_id, intent, request_id | retrieved_context, previous summaries, response_depth | 既有多字段契约 |
-| SOLVER_CT | text | 单张 PNG/JPEG | 冻结 `AGENT_USER_INPUT`、`USER_INPUT_image` |
+| ACADEMIC_PROBLEM_SOLVER | text | PNG/JPEG/PDF 等受支持附件 | 统一 `workflow_prompt` 与附件元数据 |
 | TEACH_01 | workflow_prompt, course_id | topic, student_level, class_duration, lesson_count, goals, prerequisites, resources, constraints, response_depth | `AGENT_USER_INPUT`、`course_id`、`retrieved_context`、`request_id` |
 | TEACH_02 | workflow_prompt | assignment_text, student_answer, reference_answer, rubric, maximum_score, teacher_requirements | `AGENT_USER_INPUT` |
 | RESEARCH_02 | workflow_prompt | writing_task, document_type, audience, venue, source_text, trusted_sources, citation_context, style, language | `AGENT_USER_INPUT` |
@@ -24,7 +24,7 @@ Router 所需候选信息位于请求 options 中，并被确定性封装进 Rou
 
 `RequestMaterialExtractor` 优先读取 JSON、显式标题、Markdown 标题和“字段：值”段落，支持教案、批改、写作和数据分析字段。失败时保留完整原文并给出 warning，不把指令误作学生答案，也不凭空补 rubric、结果或引用。
 
-- 图片：仅 SOLVER_CT 接受一张 PNG/JPEG。
+- 图片：由 `ACADEMIC_PROBLEM_SOLVER` 按课程与输入契约处理。
 - TXT/MD/CSV/JSON：前端安全读取不超过 2 MB 的文本并附带元数据；CSV 只形成真实文本摘要，不宣称已执行统计。
 - PDF：仅保存附件并提示粘贴关键文字；不宣称已全面解析。
 - 本地附件路径不会作为底层 Provider 图片字段发送。
@@ -34,5 +34,4 @@ Router 所需候选信息位于请求 options 中，并被确定性封装进 Rou
 ```powershell
 .\.venv\Scripts\python.exe scripts\validate_config.py
 .\.venv\Scripts\python.exe scripts\validate_completed_workflows.py
-.\.venv\Scripts\python.exe scripts\validate_completed_workflows.py --live --agent RESEARCH_03_DATA_ANALYSIS_V1
 ```

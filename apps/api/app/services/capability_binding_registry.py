@@ -73,8 +73,12 @@ def default_capability_binding_registry() -> CapabilityBindingRegistry:
             CapabilityBinding(
                 "knowledge.govern",
                 "LEARN_01_KNOWLEDGE_QA_V1",
-                aliases=("course_knowledge",),
                 skill_ids=("KNOWLEDGE.ASSET_REVIEW",),
+            ),
+            CapabilityBinding(
+                "knowledge.qa",
+                "LEARN_01_KNOWLEDGE_QA_V1",
+                aliases=("course_knowledge",),
             ),
             CapabilityBinding(
                 "academic.solve",

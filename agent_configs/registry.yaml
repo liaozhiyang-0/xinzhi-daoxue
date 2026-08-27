@@ -112,7 +112,7 @@ agents:
     capabilities:
       user_roles: [student, teacher, researcher]
       courses: [CT, AE, DE, SS, DSP, COMM, RF, EM, INFO, EMBEDDED, IC]
-      intents: [solve_problem]
+      intents: [solve_problem, check_user_solution, verify_answer]
       input_modes:
         [text, single_image, text_and_single_image, multi_image, text_and_multi_image]
       supports_session_context: true
@@ -135,59 +135,8 @@ agents:
       type: none
       handler: no_fallback
       trigger_on: []
-    validator_type: generic
-    renderer_type: generic
-
-  SOLVER_CT_V1:
-    display_name: 电路理论求解
-    version: "1.0"
-    schema_version: "1"
-    scene: learning
-    provider:
-      type: local
-      timeout_seconds: 300
-      max_retries: 0
-      parser_type: json
-      output_schema: solver_ct_v1
-    enabled: true
-    publication_status: published
-    route_when_unconfigured: true
-    mode: local_graph
-    execution_mode: local
-    local_handler: app.agents.solver_ct.local_graph.LocalCircuitSolverGraph
-    priority: 90
-    task_families: [ACADEMIC_SOLVING]
-    graph_name: academic_problem_solver
-    input_mapping:
-      AGENT_USER_INPUT: {source: text, transform: string, max_length: 12000}
-      USER_INPUT_image: {source: image, transform: string}
-    capabilities:
-      user_roles: [student, teacher]
-      courses: [CT]
-      intents: [solve_problem]
-      input_modes: [text, single_image, text_and_single_image]
-      supports_session_context: false
-      supports_images: true
-    input_contract:
-      required: [text]
-      optional: [image]
-    retrieval_policy:
-      enabled: true
-      policy_name: solver_ct_method_reference
-      mode: method_only_rag
-      course_required: true
-      text_top_k: 2
-      image_top_k: 2
-      reranker: off
-      allowed_content_types: [method, formula, concept, common_error]
-      context_max_chars: 2000
-      generation_injection: false
-    fallback:
-      type: none
-      handler: no_fallback
-      trigger_on: []
-    validator_type: solver_ct
-    renderer_type: solver_ct
+    validator_type: academic_solver
+    renderer_type: academic_solver
 
   LEARN_01_KNOWLEDGE_QA_V1:
     display_name: 课程知识问答
@@ -632,7 +581,7 @@ agents:
       external:
         enabled: true
         source_scopes: [academic, web]
-        providers: [openalex, crossref, arxiv, searxng, aliyun_iqs, bocha, tavily, news_rss]
+        providers: [openalex, crossref, arxiv, semantic_scholar, cnki, web_json, searxng, aliyun_iqs, bocha, tavily, brave, serpapi, news_rss]
         max_results: 8
         max_fetches: 4
         max_iterations: 2

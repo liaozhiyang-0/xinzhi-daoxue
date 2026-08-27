@@ -85,6 +85,27 @@ class ToolRegistry:
 
 def default_tool_registry(*, circuit_render_enabled: bool = False) -> ToolRegistry:
     registry = ToolRegistry()
+    calculator_input = {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"],
+    }
+    equation_input = {
+        "type": "object",
+        "properties": {
+            "equations": {"type": "array"},
+            "symbols": {"type": "array"},
+        },
+        "required": ["equations", "symbols"],
+    }
+    unit_input = {
+        "type": "object",
+        "properties": {
+            "left": {"type": "string"},
+            "right": {"type": "string"},
+        },
+        "required": ["left", "right"],
+    }
     active: dict[str, tuple[Callable[..., Any], set[str]]] = {
         "calculator": (calculate, {"algebra", "complex_numbers"}),
         "sympy_solver": (
@@ -96,12 +117,19 @@ def default_tool_registry(*, circuit_render_enabled: bool = False) -> ToolRegist
         "unit_checker": (check_unit_compatibility, {"unit_validation"}),
     }
     for tool_id, (handler, capabilities) in active.items():
+        input_schema = (
+            calculator_input
+            if tool_id in {"calculator", "complex_number_tool"}
+            else equation_input
+            if tool_id in {"sympy_solver", "linear_equation_solver"}
+            else unit_input
+        )
         registry.register(
             ToolDefinition(
                 tool_id,
                 tool_id,
                 frozenset(capabilities),
-                {"type": "object"},
+                input_schema,
                 {"type": "object"},
             ),
             handler,

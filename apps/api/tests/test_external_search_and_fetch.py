@@ -127,6 +127,12 @@ def test_academic_search_follow_up_understands_short_continuation() -> None:
         previous_agent="RESEARCH_01_ACADEMIC_SEARCH_V1",
         previous_answer_summary="上一轮已经完成科研前沿检索并返回论文证据。",
     )
+    assert is_academic_search_follow_up(
+        "再给我找一些高引用量的这一领域的论文",
+        previous_agent="RESEARCH_01_ACADEMIC_SEARCH_V1",
+        previous_answer_summary="上一轮已经完成科研前沿检索并返回论文证据。",
+        previous_query="低功耗边缘设备神经网络模型压缩量化编译器优化",
+    )
 
 
 def _item(url: str = "https://example.org/paper") -> ExternalEvidenceItem:

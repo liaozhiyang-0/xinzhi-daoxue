@@ -1,0 +1,55 @@
+{
+  "audit_date": "2026-08-26/27",
+  "scope": "Current working-tree files visible to the deterministic repository catalog; ignored user data, course originals, databases, indexes and local runtime artifacts are classified separately and are not treated as deletable source",
+  "before_cleanup_snapshot": {
+    "publishable_file_count": 1850,
+    "publishable_bytes": 29683372,
+    "frontend_implementations": 2,
+    "frontend_build_systems": 2,
+    "note": "Snapshot recorded before the cleanup batch; includes the pre-existing working tree state."
+  },
+  "after_cleanup_worktree_scan": {
+    "publishable_file_count": 1995,
+    "publishable_bytes": 37162029,
+    "tracked_index_file_count": 1771,
+    "tracked_existing_file_count": 1529,
+    "tracked_deleted_pending_count": 242,
+    "history_file_count_at_measurement": 120,
+    "api_app_python_file_count": 362,
+    "service_python_file_count": 171,
+    "api_app_python_line_count": 97793,
+    "docs_markdown_file_count": 591,
+    "frontend_implementations": 1,
+    "frontend_build_systems": 1,
+    "api_core_entrypoints": 2,
+    "active_agent_count": 12,
+    "runtime_available_agent_count": 11,
+    "active_scenario_count": 9,
+    "legacy_runtime_module_count": 0,
+    "compatibility_layer_count": 2,
+    "tracked_cache_count": 0,
+    "evaluation_case_count": 561,
+    "note": "The count is not a direct delta: the working tree contains pre-existing non-ignored user/audit files and history moves are represented at their new paths."
+  },
+  "removed_exact_surfaces": {
+    "apps_web_files": 40,
+    "react_build_files": 62,
+    "unused_static_typescript_files": 11,
+    "openapi_types_generator": 1,
+    "react_workspace_route_and_mount": true,
+    "root_reproducible_caches": [".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage"]
+  },
+  "preserved_runtime_modules": [
+    "apps/api/app/static/debug/ts/materials.js",
+    "apps/api/app/static/debug/ts/task-transport.js",
+    "apps/api/app/static/debug/ts/workspace-contracts.js"
+  ],
+  "frozen_but_preserved": [
+    "RESEARCH_03_DATA_ANALYSIS_V1",
+    "evaluation/cache",
+    "evaluation/reports",
+    "真实测试题",
+    "course originals",
+    "database migrations"
+  ]
+}

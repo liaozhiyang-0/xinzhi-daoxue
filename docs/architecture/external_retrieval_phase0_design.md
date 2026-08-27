@@ -3,7 +3,7 @@
 ## 目标
 
 本阶段只定义网络检索的稳定边界，不接入学生端任务执行链，不修改
-`SOLVER_CT v1.0` 冻结基线，也不在 Agent 内部直接创建 HTTP Client。
+不恢复已退役的 CT 专用 Solver，也不在 Agent 内部直接创建 HTTP Client。
 
 外部资料与课程本地知识使用不同的契约：本地资料继续使用
 `KnowledgeHit`、`kb://` 和现有 RAG 链；论文、网页和用户指定的外部来源使用
@@ -79,6 +79,6 @@ AgentRequest
 ## 非目标
 
 - 本阶段不新增数据库表。
-- 本阶段不修改 `SOLVER_CT_V1`、`SOLVER_CT v1.0` 或本地 Runtime Provider。
+- 本阶段不恢复退役 Solver，也不改变本地 Runtime Provider。
 - 本阶段不引入第二套 Agent Runtime。
 - 本阶段不实现通用网页抓取、全文下载或自动知识库写入。

@@ -59,12 +59,21 @@ def test_runtime_timeout_is_bounded_and_local_context_defaults_on() -> None:
     assert settings.knowledge_enabled is True
     assert settings.agent_runtime_semantic_evidence == ""
     assert settings.legacy_hash_embedding_enabled is False
+    assert settings.qwen_warmup_enabled is True
+    assert settings.qwen_warmup_timeout_seconds == 45
 
     with pytest.raises(ValidationError):
         Settings(
             app_env="test",
             _env_file=None,
             workflow_default_timeout_seconds=601,
+        )
+
+    with pytest.raises(ValidationError):
+        Settings(
+            app_env="test",
+            _env_file=None,
+            qwen_warmup_timeout_seconds=0,
         )
 
 

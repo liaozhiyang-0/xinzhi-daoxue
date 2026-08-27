@@ -44,7 +44,7 @@ POST /api/v1/tasks
 | Agent | 模式 | 注入规则 |
 |---|---|---|
 | LEARN | `text_rag` / grounded generation | 课程证据进入生成并校验引用 |
-| SOLVER_CT | `method_only_rag` | 仅方法参考，不冒充生成依据 |
+| ACADEMIC_PROBLEM_SOLVER | CoursePack 方法参考 | 仅作为可核验方法证据，不冒充生成依据 |
 | TEACH_01 | `multimodal_rag` | 课程概念、方法、例题进入教案上下文 |
 | TEACH_02 | `text_rag` / reference only | 方法和常见错误可参考；评分以 rubric 为准 |
 | RESEARCH_02 | `external_source_context` | 仅用户可信来源，课程 RAG 关闭 |

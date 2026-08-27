@@ -2,7 +2,7 @@
 
 第一阶段在既有 `POST /api/v1/tasks`、TaskRunner、`ACADEMIC_PROBLEM_SOLVER`、
 RAG、会话消息和 SSE 链路上增加教学元数据，不建立第二套任务或求解系统。
-`SOLVER_CT_V1` 仍是冻结的云端基线与回退，本阶段没有修改它。
+专业求解统一由 `ACADEMIC_PROBLEM_SOLVER` 提供，本阶段不创建独立课程 Solver。
 
 ## 执行位置
 

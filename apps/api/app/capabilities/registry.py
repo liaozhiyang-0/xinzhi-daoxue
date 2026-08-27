@@ -54,6 +54,7 @@ def default_capability_registry() -> CapabilityRegistry:
         "academic_writing": ("学术写作兼容能力", ()),
         "citation_check": ("引用检查兼容能力", ()),
         "knowledge.govern": ("知识资产治理", ()),
+        "knowledge.qa": ("课程知识问答", ()),
         "academic.solve": ("学术问题求解", ()),
         "vision.circuit_parse": ("电路图像解析", ()),
         "circuit.visualize": ("电路可视化", ("circuit.render",)),

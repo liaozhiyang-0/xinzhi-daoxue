@@ -5,5 +5,5 @@
 - 本地 Mock Provider 用于测试和离线验证。
 - 已发布 Agent 才允许在配置完整且获得授权的情况下执行真实调用。
 - 原始星辰 YAML 只允许位于 `.local_inputs/`，公共材料不得包含凭据或原始私有配置。
-- 冻结 `SOLVER_CT v1.0`/`SOLVER_CT_V1` 不做功能改写。
+- 退役 `SOLVER_CT v1.0`/`SOLVER_CT_V1` 不作为功能实现；专业求解统一通过 `ACADEMIC_PROBLEM_SOLVER`。
 - 模型、RAG、Agent、工具和课程资产版本应以运行报告中的指纹和配置快照为准。

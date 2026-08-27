@@ -144,6 +144,58 @@ def test_runtime_adapters_register_and_execute_existing_capabilities() -> None:
     )
 
 
+def test_default_tools_publish_required_input_contracts() -> None:
+    tools = default_tool_registry()
+
+    assert tools.describe("calculator").input_schema["required"] == [
+        "expression"
+    ]
+    assert tools.describe("sympy_solver").input_schema["required"] == [
+        "equations",
+        "symbols",
+    ]
+    assert tools.describe("unit_checker").input_schema["required"] == [
+        "left",
+        "right",
+    ]
+
+
+def test_runtime_tool_schema_validates_call_kwargs_and_normalizes_errors() -> None:
+    registry = build_runtime_handler_registry(default_tool_registry(), FakeProvider())
+    invalid_run = make_run(
+        RuntimeNode(
+            node_id="calculator",
+            node_type="tool",
+            handler_id="tool.calculator",
+            timeout_ms=10_000,
+        ),
+        control_data={"node_inputs": {"calculator": {}}},
+    )
+
+    asyncio.run(PlanExecutor(registry).execute(invalid_run))
+
+    assert invalid_run.status.value == "failed"
+    assert invalid_run.nodes["calculator"].error_code == (
+        "node_input_schema_required"
+    )
+
+    failed_run = make_run(
+        RuntimeNode(
+            node_id="calculator",
+            node_type="tool",
+            handler_id="tool.calculator",
+            timeout_ms=10_000,
+        ),
+        control_data={
+            "node_inputs": {"calculator": {"expression": "not valid"}}
+        },
+    )
+    asyncio.run(PlanExecutor(registry).execute(failed_run))
+
+    assert failed_run.status.value == "failed"
+    assert failed_run.nodes["calculator"].error_code == "tool_execution_failed"
+
+
 def test_runtime_tool_descriptors_preserve_schema_and_execution_policy() -> None:
     tools = ToolRegistry()
     tools.register(

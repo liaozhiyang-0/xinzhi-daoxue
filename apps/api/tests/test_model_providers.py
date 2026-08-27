@@ -182,7 +182,7 @@ async def test_qwen_single_and_multi_image_preserve_order_and_resolution() -> No
     multi = await provider.generate_multimodal(
         prompt="compare",
         images=[image, image],
-        model="qwen3.7-plus",
+        model="qwen3.8-max",
         high_resolution=True,
     )
 

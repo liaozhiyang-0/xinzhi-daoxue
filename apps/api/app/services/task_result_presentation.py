@@ -14,6 +14,7 @@ from app.contracts import (
     EvidenceViewItem,
     WorkflowContextBundle,
 )
+from app.observability import RuntimeTimingTrace
 from app.services.agent_result_governance import BusinessResultRendererRegistry
 from app.services.formula_output_contract import evaluate_formula_output_contract
 from app.services.math_formatting_service import MathFormattingService
@@ -48,6 +49,8 @@ class TaskResultPresentationService:
             definition, result, validation
         )
         self._attach_presentation_profile(result, request)
+        math_started = perf_counter()
+        RuntimeTimingTrace.mark(request.options, "math_postprocess_start")
         math_source = dict(result.structured_result)
         math_source["answer_text"] = result.answer
         math_content = self.math_formatting.build_from_structured_result(math_source)
@@ -88,6 +91,11 @@ class TaskResultPresentationService:
             result.structured_result["math_debug"] = (
                 self.math_formatting.debug_summary(math_content)
             )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "math_postprocess",
+            (perf_counter() - math_started) * 1000,
+        )
         for artifact in result.artifacts:
             if "answer" in artifact.content:
                 artifact.content["answer"] = math_content.markdown
@@ -95,6 +103,7 @@ class TaskResultPresentationService:
                 artifact.content["answer_text"] = math_content.markdown
             artifact.content["math_content"] = math_content.model_dump(mode="json")
         presentation_started = perf_counter()
+        RuntimeTimingTrace.mark(request.options, "presentation_start")
         presentation, execution_summary, evidence_view = build_task_views(
             definition=definition,
             result=result,
@@ -122,6 +131,19 @@ class TaskResultPresentationService:
                     bundle.model_dump(mode="json") if bundle is not None else None
                 ),
             }
+        )
+        RuntimeTimingTrace.observe(
+            request.options,
+            "presentation",
+            (perf_counter() - presentation_started) * 1000,
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "presentation_hash",
+            {
+                "presentation": presentation.model_dump(mode="json"),
+                "execution_summary": execution_summary.model_dump(mode="json"),
+            },
         )
         if "knowledge" not in result.structured_result:
             hits = [

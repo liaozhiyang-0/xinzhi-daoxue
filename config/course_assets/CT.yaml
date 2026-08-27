@@ -4,14 +4,14 @@ runtime_loaded: false
 runtime_source: "apps/api/app/courses/registry.py"
 runtime_course_pack_status: "implemented"
 runtime_solver_entrypoint: "ACADEMIC_PROBLEM_SOLVER"
-frozen_fallback_reference: "SOLVER_CT_V1"
+frozen_fallback_reference: null
 sources:
   skills: "config/skills/CT.yaml"
   reviewed_error_pool: "config/error_pool/CT.yaml"
   error_pool_proposals: "config/error_pool/proposals/CT.yaml"
   knowledge_manifest: "knowledge_indexes/knowledge_base_manifest.jsonl"
   evaluation_cases: "evaluation/cases"
-compatibility_yaml: "agent_configs/course_packs/course_ct_v1.yaml"
+compatibility_yaml: null
 verification_rule_evidence:
   schema_version: "verification_rule_evidence.v1"
   validator_id: "ct_deterministic_v1"

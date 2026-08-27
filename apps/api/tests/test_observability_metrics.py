@@ -31,7 +31,7 @@ def test_model_snapshot_counts_metrics() -> None:
             trace_id="t2",
             request_id="r2",
             provider="dashscope",
-            model="qwen3.7-plus",
+            model="qwen3.8-max",
             task_type="academic_problem_solving",
             start_time=tracer.now(),
             elapsed_ms=20,

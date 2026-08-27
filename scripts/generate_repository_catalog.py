@@ -228,9 +228,15 @@ def describe(path: Path, output: Path) -> str:
     else:
         description = "仓库配置、资产或占位文件。"
 
-    if relative.startswith("archive_legacy/"):
+    if _is_historical_path(relative):
         return f"历史隔离：{description} 不参与活动运行链。"
     return description
+
+
+def _is_historical_path(relative: str) -> bool:
+    """Return whether a publishable path is explicitly history-only."""
+
+    return relative.startswith(("archive_legacy/", "docs/history/"))
 
 
 def render(files: list[Path], output: Path) -> str:
@@ -244,8 +250,10 @@ def render(files: list[Path], output: Path) -> str:
         parent = path.relative_to(PROJECT_ROOT).parent.as_posix()
         directories[parent].append(path)
 
-    active_count = sum(path.parts[0] != "archive_legacy" for path in relative_paths)
-    archive_count = sum(path.parts[0] == "archive_legacy" for path in relative_paths)
+    active_count = sum(
+        not _is_historical_path(path.as_posix()) for path in relative_paths
+    )
+    archive_count = len(relative_paths) - active_count
 
     lines = [
         "# 仓库逐文件目录（自动生成）",
@@ -313,7 +321,7 @@ def render(files: list[Path], output: Path) -> str:
             key=lambda item: item.name.casefold(),
         ):
             relative = path.relative_to(PROJECT_ROOT).as_posix()
-            status = "历史隔离" if relative.startswith("archive_legacy/") else "活动"
+            status = "历史隔离" if _is_historical_path(relative) else "活动"
             lines.append(
                 f"| `{path.name}` | {status} | {describe(path, output)} |"
             )

@@ -6,6 +6,7 @@ from app.circuit.semantic import circuit_ir_from_text
 from app.contracts import AgentRequest, GoalContract
 from app.contracts.planner import PlannerBudget
 from app.core.config import Settings
+from app.services.circuit_visualization import resolve_circuit_visualization_mode
 from app.services.multimodal_policy import (
     enrich_multimodal_request,
     get_multimodal_capability_hint,
@@ -111,18 +112,26 @@ class UnifiedRequestPreparationService:
         if request.attachments or request.canonical_input.get("circuit_ir"):
             return request
         hint = get_multimodal_capability_hint(request)
-        requested_mode = request.options.get("circuit_visualization_mode")
         configured_mode = (
             self.settings.circuit_visualization_mode if self.settings else "off"
         )
+        frontend_enabled = (
+            self.settings.circuit_visualization_frontend_enabled
+            if self.settings
+            else True
+        )
         render_enabled = self.settings.circuit_render_enabled if self.settings else True
         auto_enabled = self.settings.circuit_render_auto if self.settings else True
+        resolved_mode = resolve_circuit_visualization_mode(
+            request,
+            configured_mode=configured_mode,
+            frontend_enabled=frontend_enabled,
+            render_enabled=render_enabled,
+            auto_enabled=auto_enabled,
+        )
         if (
             not hint.circuit_ir_requested
-            or not (
-                requested_mode in {"controlled", "shadow"}
-                or (configured_mode in {"controlled", "shadow"} and auto_enabled)
-            )
+            or resolved_mode == "off"
             or not render_enabled
         ):
             return request

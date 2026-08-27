@@ -22,6 +22,7 @@ from app.services.research_knowledge import ResearchKnowledgeService
 from app.services.task_executor import TaskExecutor
 
 logger = logging.getLogger(__name__)
+QWEN_WARMUP_PROMPT = "只回复 OK"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,7 @@ def build_app_lifespan(
 
         research_maintenance_task: asyncio.Task[None] | None = None
         deferred_startup_task: asyncio.Task[None] | None = None
+        qwen_warmup_task: asyncio.Task[None] | None = None
         if resources.settings.app_env == "test":
             async with resources.engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
@@ -57,16 +59,32 @@ def build_app_lifespan(
                 "status": "skipped",
                 "reason": "test_environment_or_disabled",
             }
+            app.state.qwen_warmup = {
+                "status": "skipped",
+                "reason": "test_environment",
+            }
             await _recover_tasks(resources.task_executor)
         else:
             app.state.rag_warmup = {
                 "status": "deferred",
                 "reason": "fast_startup",
             }
+            app.state.qwen_warmup = {
+                "status": "deferred",
+                "reason": "fast_startup",
+            }
 
             async def deferred_startup() -> None:
-                nonlocal research_maintenance_task
+                nonlocal qwen_warmup_task, research_maintenance_task
                 await asyncio.sleep(0)
+                qwen_warmup_task = asyncio.create_task(
+                    _warm_qwen(
+                        app,
+                        resources.model_service,
+                        resources.settings,
+                    ),
+                    name="xzd-qwen-model-warmup",
+                )
                 if resources.settings.research_knowledge_maintenance_enabled:
                     try:
                         await resources.research_knowledge.maintain()
@@ -97,6 +115,7 @@ def build_app_lifespan(
             yield
         finally:
             await _cancel_task(deferred_startup_task)
+            await _cancel_task(qwen_warmup_task)
             await _cancel_task(research_maintenance_task)
             await resources.task_executor.shutdown()
             await resources.context_cache.close()
@@ -150,6 +169,58 @@ async def _warm_rag(app: FastAPI, rag_retrieval: RAGRetrievalService) -> None:
     except Exception:
         logger.exception("rag_model_warmup_failed_deferred")
         app.state.rag_warmup = {
+            "status": "failed",
+            "reason": "deferred_warmup_error",
+        }
+
+
+async def _warm_qwen(app: FastAPI, model_service: ModelService, settings: Any) -> None:
+    if not settings.qwen_warmup_enabled:
+        app.state.qwen_warmup = {
+            "status": "skipped",
+            "reason": "disabled",
+        }
+        return
+
+    preflight = model_service.preflight("general_question_answer", modality="text")
+    if "qwen_text_fast" not in preflight.usable_aliases:
+        app.state.qwen_warmup = {
+            "status": "skipped",
+            "reason": "qwen_text_fast_unavailable",
+        }
+        return
+
+    logger.info("qwen_model_warmup_started_deferred model_alias=qwen_text_fast")
+    try:
+        response = await asyncio.wait_for(
+            model_service.generate_for_task(
+                "general_question_answer",
+                messages=[{"role": "user", "content": QWEN_WARMUP_PROMPT}],
+                request_id="startup_qwen_warmup",
+                extra_options={
+                    "max_tokens": 4,
+                    "temperature": 0,
+                    "response_depth": "standard",
+                    "_allow_route_fallback": False,
+                },
+            ),
+            timeout=float(settings.qwen_warmup_timeout_seconds),
+        )
+        app.state.qwen_warmup = {
+            "status": "completed",
+            "model": response.model,
+            "elapsed_ms": response.elapsed_ms,
+        }
+        logger.info(
+            "qwen_model_warmup_completed model=%s elapsed_ms=%s",
+            response.model,
+            response.elapsed_ms,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("qwen_model_warmup_failed_deferred")
+        app.state.qwen_warmup = {
             "status": "failed",
             "reason": "deferred_warmup_error",
         }

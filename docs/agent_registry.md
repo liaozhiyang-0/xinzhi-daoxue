@@ -13,18 +13,20 @@
 |---|---|
 | GENERAL_QUESTION_V1 | local |
 | ROUTER_01_FALLBACK_V1 | local |
+| ACADEMIC_PROBLEM_SOLVER | local |
 | LEARN_01_KNOWLEDGE_QA_V1 | local |
-| SOLVER_CT_V1 | local |
 | TEACH_01_LESSON_PREP_V1 | local |
 | TEACH_02_ASSIGNMENT_REVIEW_V1 | local |
+| RESEARCH_01_ACADEMIC_SEARCH_V1 | local |
 | RESEARCH_02_ACADEMIC_WRITING_V1 | local |
 | RESEARCH_03_DATA_ANALYSIS_V1 | local |
+| GENERAL_MODEL_FALLBACK_V1 | local |
 
 `GENERAL_QUESTION_V1` 是日常通用问题和低置信文本请求的本地模型能力。没有课程领域线索、但带有“为什么、是什么、作用、区别”等明确常识问句时会直接进入该模块；其他专用业务 Agent 无法可靠确定时，也可作为最后一级本地能力。它按本地模型路由执行，模型不可用时进入确定性安全后备；不伪造课程资料引用。日常问题直接输出简洁自然语言并严格遵守用户的字数、受众和格式限制；模型输出达到长度上限时最多自动续写一次。
 
 ## 内部从属 Agent Hub
 
-`InternalAgentHub` 是七个主要工作流之下的模型能力层，不是第二套路由器。它复用现有 `POST /api/v1/tasks`、TaskRunner、SSE 和检索上下文，当前注册 9 个内部 Agent：
+`InternalAgentHub` 是统一顶层工作流之下的模型能力层，不是第二套路由器。它复用现有 `POST /api/v1/tasks`、Runtime、SSE 和检索上下文，当前注册 9 个内部 Agent：
 
 | 内部 Agent | 任务 | 主链路 |
 |---|---|---|
@@ -40,6 +42,6 @@
 
 两段链的 Token 和耗时会合并计入一次内部 Agent 结果。结构校验失败不会自动切换模型再次生成，避免缺少业务字段时产生无上限重复调用；只有网络、限流和服务暂时不可用等 Provider 故障才按统一 ModelService 策略回退。
 
-开发态可通过 `GET /api/v1/internal-agents` 查看注册项、模型路由和配置状态。该接口只读取本地配置，不发送模型请求。内部 Agent 保持 `subordinate_only`，不会直接注册为学生端顶层工作流；其中备课、作业初审、学术写作和数据分析已通过 `InternalAgentExecutionService` 适配到四个既有工作流。备课会接收同一次任务生成的本地 RAG 上下文；作业初审只把检索结果作为参考证据展示，不把答案注入批改输入，避免资料反向污染学生作答判断。
+开发态可通过 `GET /api/v1/internal-agents` 查看注册项、模型路由和配置状态。该接口只读取本地配置，不发送模型请求。内部 Agent 保持 `subordinate_only`，不会直接注册为学生端顶层工作流；其中备课、作业初审和学术写作已通过 `InternalAgentExecutionService` 适配到既有工作流，数据分析当前由配置显式冻结，不进入 Runtime 服务注册。备课会接收同一次任务生成的本地 RAG 上下文；作业初审只把检索结果作为参考证据展示，不把答案注入批改输入，避免资料反向污染学生作答判断。
 
 学生端 `/student` 与 `/workspace` 只展示“能力、知识增强、资料使用、检查状态”等产品语义，不展示 Provider、敏感配置或原始 Agent ID。管理员仍可使用 `/debug`、`GET /api/v1/workflows` 和 Execution Debug 检查本地 Runtime 链路。内部模型不可用时，后端按注册表进入安全后备，但不会把实现细节暴露到学生界面。

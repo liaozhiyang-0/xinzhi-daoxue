@@ -6,6 +6,9 @@ from app.contracts import AgentRequest, Intent, Scene, UserRole
 from app.core.config import Settings
 from app.courses import default_course_registry
 from app.runtime import RuntimeHandlerDescriptor, RuntimeHandlerRegistry
+from app.services.capability_binding_registry import (
+    default_capability_binding_registry,
+)
 from app.services.planner import PlannerService
 from app.services.scenario_catalog import ScenarioCatalog
 from app.services.skill_binding import SkillBindingService
@@ -52,6 +55,24 @@ def test_authoritative_planner_owns_canonical_capability_without_route_mutation(
     assert output.canonical_plan.nodes[0].target_id != route.agent_id
     assert output.route.route_revision == route.route_revision
     assert output.canonical_plan.capability_bindings[0].handler_id == route.agent_id
+
+
+def test_course_knowledge_is_bound_to_qa_not_governance() -> None:
+    request = AgentRequest(
+        session_id="planner-knowledge-qa",
+        user_id="planner-knowledge-qa",
+        scene=Scene.LEARNING,
+        course_id="CT",
+        intent=Intent.EXPLAIN_CONCEPT,
+        canonical_input={"text": "解释电阻串联时总电阻的公式。"},
+    )
+    route = TaskRouter(AgentRegistry(), Settings(app_env="test")).route(request)
+    planner = PlannerService()
+    bindings = default_capability_binding_registry()
+
+    assert planner._canonical_capability("course_knowledge", route) == "knowledge.qa"
+    assert bindings.get("knowledge.qa").handler_id == route.agent_id
+    assert bindings.get("course_knowledge").capability_id == "knowledge.qa"
 
 
 def test_authoritative_planner_binds_an_approved_domain_skill_to_runtime() -> None:

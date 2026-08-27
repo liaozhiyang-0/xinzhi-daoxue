@@ -1,7 +1,7 @@
 {
   "benchmark_id": "BENCHMARK_CT_V1",
   "course_id": "CT",
-  "solver_id": "SOLVER_CT_V1",
+  "solver_id": "ACADEMIC_PROBLEM_SOLVER",
   "version": "1.0.0",
   "case_groups": {
     "easy": ["cases/easy/CT_EASY_001.sample.json"],

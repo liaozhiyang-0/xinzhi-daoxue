@@ -37,6 +37,37 @@ def test_explicit_text_divider_becomes_valid_renderable_circuit_ir() -> None:
     assert "Vout" in result.svg
 
 
+def test_explicit_text_bridge_becomes_valid_renderable_circuit_ir() -> None:
+    text = (
+        "请画出并分析一个桥式电阻网络。12 V 理想电压源正极接节点 Vin，负极接 GND。"
+        "Vin 通过 R1=2 kΩ 接节点 A；节点 A 通过 R3=4 kΩ 接 GND；"
+        "Vin 通过 R2=3 kΩ 接节点 B；节点 B 通过 R4=5 kΩ 接 GND；"
+        "节点 A 与节点 B 之间连接桥臂电阻 R5=6 kΩ；输出电压定义为 Vout=VA−VB。"
+    )
+    circuit = circuit_ir_from_text(text)
+
+    assert circuit is not None
+    assert circuit.topology_hint == "bridge"
+    assert circuit.provenance["parser"] == "circuit_text_bridge_v1"
+    assert [(item.id, item.ports) for item in circuit.components] == [
+        ("V1", {"p": "vin", "n": "gnd"}),
+        ("R1", {"p": "vin", "n": "a"}),
+        ("R3", {"p": "a", "n": "gnd"}),
+        ("R2", {"p": "vin", "n": "b"}),
+        ("R4", {"p": "b", "n": "gnd"}),
+        ("R5", {"p": "a", "n": "b"}),
+        ("GND", {"g": "gnd"}),
+    ]
+    result = render_circuit(circuit)
+    assert result.status == "rendered"
+    assert result.template == "bridge"
+    assert result.svg is not None
+    assert result.svg.count('data-component-id="') == 7
+    assert 'data-wire-net="a"' in result.svg
+    assert 'data-wire-net="b"' in result.svg
+    assert "Vout = VA" in result.svg
+
+
 def test_text_adapter_refuses_missing_value_or_topology() -> None:
     assert circuit_ir_from_text("请分析这个电路：V1=5V，R1 和 R2") is None
     assert circuit_ir_from_text("请分析：5V 电源、R1=1k、R2=2k") is None
@@ -61,6 +92,27 @@ def test_text_adapter_is_available_only_when_rendering_is_enabled() -> None:
         Settings(circuit_render_enabled=False, _env_file=None)
     ).attach(request)
     assert "circuit_ir" not in disabled.canonical_input
+
+
+def test_explicit_draw_request_auto_enables_text_renderer_without_toggle() -> None:
+    request = AgentRequest(
+        session_id="semantic-session-auto",
+        user_id="semantic-user",
+        canonical_input={
+            "text": "请绘制典型分压电路：5V 电源串联 R1=1k 和 R2=2k，输出取 R2 两端"
+        },
+    )
+
+    prepared = UnifiedRequestPreparationService(Settings(_env_file=None)).attach(
+        request
+    )
+
+    circuit = extract_circuit_ir(prepared)
+    assert circuit is not None
+    assert prepared.options["circuit_ir_source"] == "text:circuit_text_v1"
+    assert decide_circuit_visualization(
+        prepared, feature_mode="controlled", course_id="CT"
+    ).should_schedule
 
 
 def test_controlled_toggle_triggers_circuit_intent_for_plain_draw_wording() -> None:

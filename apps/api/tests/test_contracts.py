@@ -15,7 +15,7 @@ def test_agent_request_and_result_serialization() -> None:
     assert restored_request.attachments == []
 
     result = AgentResult(
-        agent_id="SOLVER_CT_V1",
+        agent_id="ACADEMIC_PROBLEM_SOLVER",
         provider="mock",
         metrics=RunMetrics(latency_ms=10),
     )

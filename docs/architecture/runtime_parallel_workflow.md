@@ -149,7 +149,7 @@ Provider: not-run | mock-only | authorized-real-run
 交付提交: <完成后填写 hash>
 ```
 
-声明必须同时说明“不会修改什么”。例如，前端任务应写明“不修改 `task_runner.py`、Provider、migration 和 Runtime 状态机”；Runtime 任务应写明“不修改 `SOLVER_CT v1.0`、原始 YAML 和真实凭据”。
+声明必须同时说明“不会修改什么”。例如，界面任务应写明“不修改任务执行器、Provider、migration 和 Runtime 状态机”；Runtime 任务应写明“不恢复退役 Solver、原始输入和真实凭据”。
 
 `write_scope` 描述本任务允许触及的范围，`disjoint_write_set` 描述本进程在当前并行波次实际独占的范围；后者必须是其他并行任务范围的严格不相交集合。若两个声明有任何路径重叠，即使只是同一目录下的不同意图，也必须改为共享锁并串行执行。
 
@@ -215,9 +215,9 @@ evidence 时仍必须保持 fail-closed。readiness、Mock、synthetic contract 
 - 新增 Agent 必须复用 Local Runtime、ModelService 和统一 Provider 边界，不创建旁路 HTTP client，不硬编码凭据。
 - 子 Agent 必须有深度、预算、父子 Run 关系和结果 schema；不能通过任意 Python、URL 或未注册 handler 执行。
 
-### 5.5 SOLVER_CT 冻结边界
+### 5.5 专业求解边界
 
-- `SOLVER_CT v1.0` / `SOLVER_CT_V1` 是冻结基线，只能读取、适配和做 parity/hash 校验。
+- `ACADEMIC_PROBLEM_SOLVER` 是当前专业求解入口；退役 CT 专用 Solver 不属于活动执行面。
 - 历史基线原始输入只允许出现在 `.local_inputs/`，不得进入公共仓库、评测 artifact、日志或截图。
 - 任何涉及 Solver 的任务都必须附带 freeze 检查；若 hash、字段映射、文字/单图片工作流或 Provider 链发生意外变化，立即停止并回滚该任务。
 - “通过 Mock”不能证明冻结 Solver 的历史等价性，也不能替代真实模型质量验收。
@@ -378,7 +378,7 @@ git diff --check
 
 出现任一条件，当前 Agent 必须停止修改并升级给主集成 Agent：
 
-- 需要修改 `SOLVER_CT v1.0`、`SOLVER_CT_V1` 或其冻结来源；
+- 需要恢复退役 CT 专用 Solver 或其历史来源；
 - 发现真实 API key、Bearer token、历史原始输入或学生隐私进入代码、日志、fixture、trace、artifact 或文档；
 - 任务创建路径将直接执行 Provider、工具、RAG 或子 Agent，可能破坏非阻塞约束；
 - 要绕过 Task/SSE/Provider 边界、绕过 Agent readiness 或把未发布 Agent 当作可执行；

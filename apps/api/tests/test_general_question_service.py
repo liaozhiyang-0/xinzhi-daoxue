@@ -236,7 +236,10 @@ async def test_general_question_returns_model_answer_without_course_citation() -
     ]
     assert result.structured_result["model_execution"]["models"] == ["spark-x"]
     assert fake.calls[0]["task_type"] == "general_question_answer"
-    assert fake.calls[0]["extra_options"] == {"max_tokens": 4096}
+    assert fake.calls[0]["extra_options"] == {
+        "max_tokens": 4096,
+        "response_depth": "standard",
+    }
     system_prompt = fake.calls[0]["messages"][0]["content"]
     assert "日常常识、生活、语言和一般科普问题直接给出简洁答案" in system_prompt
     assert "严格遵守用户提出的字数、受众、语气、格式" in system_prompt
@@ -310,7 +313,10 @@ async def test_direct_model_fallback_prompt_requires_a_real_answer() -> None:
     assert "上游部分专业回答" in user_prompt
     assert "负载最大功率" in user_prompt
     assert fake.calls[0]["task_type"] == "academic_direct_answer"
-    assert fake.calls[0]["extra_options"] == {"max_tokens": 2048}
+    assert fake.calls[0]["extra_options"] == {
+        "max_tokens": 2048,
+        "response_depth": "standard",
+    }
 
 
 @pytest.mark.asyncio
@@ -384,7 +390,10 @@ async def test_general_question_continues_once_after_token_limit() -> None:
     assert result.metrics.input_tokens == 40
     assert result.metrics.output_tokens == 60
     assert result.structured_result["model_execution"]["output_status"] == "completed"
-    assert fake.calls[1]["extra_options"] == {"max_tokens": 2048}
+    assert fake.calls[1]["extra_options"] == {
+        "max_tokens": 2048,
+        "response_depth": "standard",
+    }
 
 
 @pytest.mark.asyncio

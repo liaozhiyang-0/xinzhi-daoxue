@@ -4,7 +4,7 @@
 
 统一调用链为：正式任务 API → `TaskRequestContext` → `TaskRouter` → `AgentExecutionPlan` → 现有 `RAGRetrievalService` → `AgentInputMapper` → Local Runtime / ModelService → `WorkflowOutputParserRegistry` → Citation/格式校验 → `AgentResult` 兼容响应 → Agent 级 fallback。
 
-可直接复用的模块是 `AgentRegistry`、`TaskRouter`、`TaskRunner`、`RAGRetrievalService`、`RetrievalContextService`、`CitationValidator`、事件/Trace 和正式任务 API。原有专用逻辑包括 Router 对 `SOLVER_CT_V1` 的名称判断、TaskCreation 对 CHECK→SOLVER 的提示词判断、TaskRunner 对 `learning_qa` 的检索注入与 fallback 判断，以及 Provider 内部的 LEARN 行协议解析。
+可直接复用的模块是 `AgentRegistry`、`TaskRouter`、Runtime Task Engine、`RAGRetrievalService`、`RetrievalContextService`、事件/Trace 和正式任务 API。当前专业求解通过 `ACADEMIC_PROBLEM_SOLVER` 与 CoursePack 选择规则，不再依赖 CT 专用 Agent 名称判断或旧 CHECK→SOLVER 提示词分支。
 
 本次把这些判断分别迁移为 `route_when_unconfigured`、`fallback.instruction_prefix`、`retrieval_policy.generation_injection`、`fallback.handler` 和 Parser Registry。保留的旧字段只用于兼容加载，计划在 registry schema v2 稳定后、下一个主版本移除。
 

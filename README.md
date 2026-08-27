@@ -4,7 +4,7 @@
 
 需要继续修改代码时，先阅读 [代码级开发手册](docs/developer_code_navigation.md)。它按 API、任务执行、路由、Solver、RAG、模型、学习闭环、数据库、前端、评测和测试梳理了真实调用链，并提供常见微调任务的入口索引。逐个文件的职责见 [仓库逐文件目录](docs/repository_file_catalog.md)。
 
-专业求解入口现统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。`SOLVER_CT_V1` 仅作为冻结历史基线只读保留，不参与当前本地 Runtime 路由。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_consolidation_audit.md`。
+专业求解入口统一为 `ACADEMIC_PROBLEM_SOLVER`：Supervisor 先识别任务族与课程，再由同一个 AcademicProblemSolverGraph 加载 CT/AE/DE/SS CoursePack、共享 CapabilityPack 与确定性工具。电路理论不再保留独立 Solver。详细设计见 `docs/universal_academic_solver.md` 与 `docs/architecture_slimming/01_cleanup_record.md`。
 
 教学闭环在同一任务链上支持 `direct_answer`、`guided_learning` 和 `check_my_work`：后台复用 `SolutionPacketV1`，以有限规则生成 `VerificationReportV1`、H0—H2 提示和单个理解检查，并由后端强制过滤学习模式的完整答案；`review` 仍为 `foundation_only`。刷新可恢复当前提示与问题，主动切换完整解答不会重复运行 Solver。它不是全题型首错系统，复杂推导明确进入 `manual_review`，也不会自动更新 mastery。详见 [第一阶段基础能力](docs/architecture/teaching_foundation_phase1.md) 与 [第二阶段有限诊断和分级辅导](docs/architecture/teaching_loop_phase2.md)。
 
@@ -26,7 +26,7 @@
 
 `doctor` 只读检查 Python 虚拟环境、Docker、固定命名的 PostgreSQL/Redis/MinIO/Qdrant、端口占用和 API 状态；`repair` 只启动本项目自有容器、执行增量迁移并恢复单实例 API。它不会执行 `docker compose down`、删除数据卷、接管未知端口进程或打印密钥。若 `.venv` 损坏，旧环境会先保存在 `.codex-tmp/venv-backups/`，再尝试重建。
 
-日常使用无需重复输入命令：双击仓库根目录的 `打开芯智导学.cmd` 即可。它会复用统一启动器，在服务就绪后自动打开中性首页 `http://127.0.0.1:8000/`，不会自动进入 React 工作台；React 工作台仅在显式访问 `/workspace` 时打开。如果服务已经运行，则只打开首页，不会再启动一套重复进程。这个入口默认不执行本地 Runtime外部服务 Preflight。
+日常使用无需重复输入命令：双击仓库根目录的 `打开芯智导学.cmd` 即可。它会复用统一启动器，在服务就绪后自动打开中性首页 `http://127.0.0.1:8000/`；学生工作区通过 `/workspace` 或 `/student` 进入。如果服务已经运行，则只打开首页，不会再启动一套重复进程。这个入口默认不执行本地 Runtime 外部服务 Preflight。
 
 `start` 会自动创建 `.venv` 和本机 `.env`、安装缺少的依赖、启动 PostgreSQL/Redis/MinIO/Qdrant、执行增量迁移并启动 Web。它不会覆盖已有 `.env`，也不会打印 Key 或 Secret。
 
@@ -80,7 +80,7 @@ API 与任务编排：Python 3.11+ / FastAPI / 非阻塞 TaskExecutionCoordinato
 ## Phase N v2：当前生产控制面
 
 ```text
-React / chat / tasks
+Student HTML / chat compatibility / tasks
   → UnifiedRequestPreparationService
   → GoalContract
   → TaskRouter deterministic preflight
@@ -89,18 +89,18 @@ React / chat / tasks
   → CanonicalPlan
   → RuntimeTaskEngine / PlanExecutor
   → RAG / Tool / Model / Verification
-  → Governance / Result / SSE / React
+  → Governance / Result / SSE / Student HTML
 ```
 
 `TaskRouter` 只负责输入和可用性预检；`scenario_catalog` 只提供案例 metadata、约束和证据策略。六案例仍通过统一展示合同渲染，不新增固定 Agent 页面。收口证据见
-[Phase N 控制面收口](docs/architecture/phase_n_control_plane_closeout.md) 和
-[N8 takeover 评估](docs/architecture/phase_n8_takeover_evaluation.md)。
+[Phase N 控制面收口](docs/architecture/phase_n_control_plane_closeout.md)；旧 N8
+takeover 评估已归档到 `docs/history/frontend-react/architecture/`。
 
 早期 Spring Boot、MySQL、Vue3 和 MaaS 微调方案已经移除。仓库只保留当前 FastAPI 多智能体平台、检索评测、运行文档与本地课程资料入口。
 
 ## 数学公式渲染
 
-任务结果保留兼容 `answer`/`answer_text`，并可携带结构化 `math_content`。后端在最终输出阶段统一规范化 `$...$` 与 `$$...$$`，优先使用结构化公式字段；前端复用唯一的本地 KaTeX 渲染链，非法公式会降级显示原始 LaTeX，代码、URL、日期和 JSON 不参与转换。协议、安全边界、扩展方式与验收样本见 [数学公式渲染链路](docs/math_rendering_pipeline.md)。
+任务结果保留兼容 `answer`/`answer_text`，并可携带结构化 `math_content`。后端在最终输出阶段统一规范化 `$...$` 与 `$$...$$`，优先使用结构化公式字段；学生工作区复用唯一的本地 KaTeX 渲染链，非法公式会降级显示原始 LaTeX，代码、URL、日期和 JSON 不参与转换。协议、安全边界、扩展方式与验收样本见 [数学公式渲染链路](docs/math_rendering_pipeline.md)。
 
 ## 渐进式本地编排
 
@@ -139,7 +139,7 @@ DASHSCOPE_API_KEY=
 
 `IFLYTEK_SPARK_API_KEY` 填写讯飞 Spark-X2 HTTP APIPassword（或控制台要求的 AK:SK 形式）；`DASHSCOPE_API_KEY` 填写阿里云百炼 API Key。使用百炼业务空间专属地址时才需要额外设置 `DASHSCOPE_WORKSPACE_ID`，并可显式覆盖 `DASHSCOPE_BASE_URL`。
 
-模型角色：`spark-x` 负责复杂推理与 RAG 答案生成；`qwen3.7-plus` 负责复杂图片/电路图；`qwen3.6-flash` 负责快速视觉任务；`qwen3.5-flash` 负责分类、改写与结构化任务。配置与真实连通性检查：
+模型角色：标准回答与视觉路径统一使用 `qwen3.8-flash`；前端选择“深入”时使用 `qwen3.8-max`；选择“简要”时使用 `qwen3.7-flash`；`spark-x` 仍负责复杂推理与 RAG 答案生成。配置与真实连通性检查：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\smoke_test_models.py --config-only
@@ -156,20 +156,19 @@ DASHSCOPE_API_KEY=
 
 ## 已完成阶段
 
-- 阶段 0：冻结 `SOLVER_CT_V1` 基线、节点清单、发布检查和回归评测结构。
+- 阶段 0：建立电路理论课程包、节点清单、发布检查和回归评测结构。
 - 阶段 1：建立 FastAPI、统一 Agent 合同、Mock Provider、数据库、文件存储和 Docker Compose。
 - 阶段 1.5：实现 HTTP 202、非阻塞任务协调、递增事件 sequence、SSE 重连、取消、重试和本地调试页。
 - 阶段 1.6：增加配置驱动的 AgentRegistry/TaskRouter、路由持久化、三课程检索元数据、v1/v2 评测闭环、RetrievalContextPacket 和 `LEARN_01_KNOWLEDGE_QA_V1`。
-- 阶段 2.1：固化 `SOLVER_CT_V1` 的讯飞本地 Runtime `stream=false` 文字/单图片调用、统一回答字段，并将 `/debug` 更新为一页式演示界面。
+- 阶段 2.1：固化统一学科解题 Runtime 的文字/图片调用、统一回答字段，并将 `/debug` 更新为一页式演示界面。
 - 阶段 2.2：统一注册 dispatch、learning、teaching、research、infrastructure 场景；所有本地 Runtime Agent 复用一个 Provider 和注册表输入映射，计划态工作流不阻塞启动。
 
 ## 当前能力边界
 
-- CT `solve_problem` 路由到 `SOLVER_CT_V1` 的本地 Runtime；只有显式选择 Mock Provider 的开发配置才会产生 Mock 结果。
+- CT `solve_problem`、`check_user_solution` 和 `verify_answer` 统一路由到 `ACADEMIC_PROBLEM_SOLVER`；只有显式选择 Mock Provider 的开发配置才会产生 Mock 结果。
 - 本地 Runtime上游当前支持同步文字和单图片调用，不支持多图片、PDF 或上游流式调用。
-- CT 的 `check_user_solution` 和 `verify_answer` 直接复用冻结的 `SOLVER_CT_V1`；已移除从未发布的中间计划态 Agent，避免无效降级和额外配置。
 - CT/AE/DE/SS/DSP/COMM 的学习类意图统一进入带本地 RAG 的 `LEARN_01_KNOWLEDGE_QA_V1`；本地检索失败时返回明确的降级状态，不伪装成已完成答案。
-- 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的本地调度兜底；兜底不可用时返回 `unresolved`，不会自动送入 `SOLVER_CT_V1`。
+- 模糊、UNKNOWN、低置信或未匹配输入仅允许进入一次受验证的本地调度兜底；兜底不可用时返回 `unresolved`，不会绕过路由进入其他隐藏 Solver。
 - 本地 `ACADEMIC_PROBLEM_SOLVER` 支持有序多图：简单图片批次先拼接为一张组合图，复杂批次逐图识别、汇总后再解题；PDF、空输入及 Agent 未声明的输入组合仍返回明确错误。
 
 ## 本地知识库
@@ -195,8 +194,7 @@ DASHSCOPE_API_KEY=
 
 | course_id | intent | agent_id | 状态 |
 |---|---|---|---|
-| CT | `solve_problem` | `SOLVER_CT_V1` | selected / local Runtime 或 Mock |
-| CT | `check_user_solution`、`verify_answer` | `SOLVER_CT_V1` | selected / local Runtime 或明确 Mock |
+| CT | `solve_problem`、`check_user_solution`、`verify_answer` | `ACADEMIC_PROBLEM_SOLVER` | selected / local Runtime 或 Mock |
 | CT、AE、DE、SS、DSP、COMM | 学习类意图 | `LEARN_01_KNOWLEDGE_QA_V1` | selected / local RAG + Runtime |
 | AE、DE | `solve_problem` | `UNRESOLVED` | unresolved，不使用 CT Solver |
 | 其他组合 | `ROUTER_01_FALLBACK_V1` 或 `UNRESOLVED` | local_fallback / unresolved |
@@ -312,7 +310,7 @@ git diff --check
 ## 当前架构与历史隔离
 
 - 当前本地编排架构：`docs/local_orchestration_architecture.md`
-- 迁移审计：`docs/architecture_migration_audit.md`
+- 收缩与迁移审计：`docs/architecture_slimming/01_cleanup_record.md`
 - Agent 注册表：`docs/agent_registry.md`
 - 模型 API 配置：`docs/model_api_configuration.md`
 - 历史阶段快照：`archive_legacy/docs/`，不参与运行、测试或 Docker 构建。
@@ -327,7 +325,7 @@ git diff --check
 
 平台现已在原有 `POST /api/v1/tasks` 单一执行链上支持消息级历史、多轮上下文、
 会话标题/搜索/归档、WorkingState、Token 预算、版本化摘要、Redis/内存上下文
-缓存和显式长期记忆。自动记忆默认关闭，`SOLVER_CT_V1` 与本地 Runtime默认授权策略未变。
+缓存和显式长期记忆。自动记忆默认关闭，统一学科解题 Runtime 继续复用现有授权策略。
 
 架构与部署说明：
 

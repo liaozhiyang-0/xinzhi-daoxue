@@ -290,9 +290,8 @@ async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
     workspace = await client.get("/workspace")
     workspace.raise_for_status()
     html = workspace.text
-    # The certified product surface is the legacy workspace.  Keep this
-    # harness aligned with `/workspace`; an old React asset assertion would
-    # turn a healthy release into a false infrastructure failure.
+    # The certified product surface is the student workspace. Keep this
+    # harness aligned with `/workspace` and its current static assets.
     asset_paths = (
         "/debug-assets/vendor/katex/katex.min.js",
         "/debug-assets/ui-core.js",

@@ -12,6 +12,6 @@
 
 1. 多图与 PDF 的提取结果尚未写入主任务上下文；当前 `/chat` 会安全本地回退。
 2. 专用讯飞 Vision 传输字段尚未完成真实协议验证，Provider 不会猜测调用。
-3. 本地 Solver 尚未替代 `SOLVER_CT_V1`，且 `ENABLE_LOCAL_SOLVER_CT=false`。
+3. 电路题能力已统一归入当前 `ACADEMIC_PROBLEM_SOLVER`；旧 `SOLVER_CT_V1` 及其专用开关属于退役历史资产，不再作为活动执行路径。
 4. 本地知识问答的真实星火质量、延迟和引用遵循性尚未使用当前凭据验收。
 5. SS/DSP/COMM/RF/EM/INFO/EMBEDDED/IC 只有统一编码，尚无本地课程语料或专用 Agent。

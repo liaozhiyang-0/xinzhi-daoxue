@@ -40,6 +40,7 @@ from app.dependencies import (
     get_provider,
 )
 from app.models import AgentRunModel, TaskModel, TaskStatus
+from app.observability import RuntimeTimingTrace, timed_stage
 from app.providers.base import AgentProvider
 from app.repositories import (
     AgentRunRepository,
@@ -194,6 +195,16 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     provider: AgentProvider = Depends(get_provider),
 ) -> TaskRead:
+    timing_options = dict(data.options)
+    request_id = str(timing_options.get("request_id") or data.task_id)
+    trace_id = str(timing_options.get("trace_id") or request_id)
+    RuntimeTimingTrace.begin(
+        timing_options,
+        task_id=data.task_id,
+        request_id=request_id,
+        trace_id=trace_id,
+    )
+    data = data.model_copy(update={"options": timing_options})
     updates: dict[str, object] = {"user_id": effective_user_id(principal, data.user_id)}
     if principal.has_identity:
         try:
@@ -205,7 +216,8 @@ async def create_task(
         data = data.model_copy(
             update={"options": {**data.options, "_planner_preflight": True}}
         )
-    data = _bind_auto_scenario(data)
+    with timed_stage(data.options, "request_preparation"):
+        data = _bind_auto_scenario(data)
     if (
         data.intent.value == "data_analysis"
         and not request.app.state.settings.data_analysis_enabled
@@ -216,34 +228,39 @@ async def create_task(
         )
     # Bind scenarios after principal attribution so a transient request role
     # cannot affect scenario selection before the Task boundary normalizes it.
-    try:
-        data = request.app.state.scenario_catalog.enrich_legacy_request(data)
-    except ScenarioCatalogError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    data = await _hydrate_document_attachments(data, principal, db, request)
-    session = await SessionRepository(db).get_for_user(data.session_id, data.user_id)
-    if session is not None:
-        # Routing must see the durable session continuity state.  Previously
-        # this projection happened only inside TaskCreationService, after the
-        # route had already been selected, so short follow-ups lost the prior
-        # agent and external-evidence context.
-        data = SessionContextService(request.app.state.settings).apply(session, data)
-        bundle = await request.app.state.context_assembly.assemble(
-            db,
-            session_id=data.session_id,
-            user_id=data.user_id,
-            current_message_id=None,
-            course_id=(
-                session.course_id
-                if data.course_id.upper() in {"", "AUTO", "UNKNOWN"}
-                else data.course_id
-            ),
-            task_family=data.intent.value,
-            agent_id="router",
+    with timed_stage(data.options, "request_preparation"):
+        try:
+            data = request.app.state.scenario_catalog.enrich_legacy_request(data)
+        except ScenarioCatalogError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        data = await _hydrate_document_attachments(data, principal, db, request)
+        session = await SessionRepository(db).get_for_user(
+            data.session_id, data.user_id
         )
-        data = _with_conversation_context(data, bundle)
-    data = UnifiedRequestPreparationService().attach(data)
-    decision = request.app.state.task_router.route(data)
+        if session is not None:
+            # Routing must see the durable session continuity state. Previously
+            # this projection happened only inside TaskCreationService, after
+            # the route had already been selected.
+            data = SessionContextService(request.app.state.settings).apply(
+                session, data
+            )
+            bundle = await request.app.state.context_assembly.assemble(
+                db,
+                session_id=data.session_id,
+                user_id=data.user_id,
+                current_message_id=None,
+                course_id=(
+                    session.course_id
+                    if data.course_id.upper() in {"", "AUTO", "UNKNOWN"}
+                    else data.course_id
+                ),
+                task_family=data.intent.value,
+                agent_id="router",
+            )
+            data = _with_conversation_context(data, bundle)
+        data = UnifiedRequestPreparationService().attach(data)
+    with timed_stage(data.options, "routing"):
+        decision = request.app.state.task_router.route(data)
     if (
         decision.agent_id == "RESEARCH_03_DATA_ANALYSIS_V1"
         and not request.app.state.settings.data_analysis_enabled

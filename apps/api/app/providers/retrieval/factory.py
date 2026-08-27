@@ -119,6 +119,23 @@ class DeferredAcademicSearchService(AcademicSearchService):
             prefer_high_citation=prefer_high_citation,
         )
 
+    def fallback_provider_names(
+        self,
+        *,
+        provider_names: Sequence[str] | None = None,
+        source_scopes: Sequence[ExternalSourceScope] | None = None,
+    ) -> tuple[str, ...]:
+        if self._service is None:
+            return tuple(
+                name
+                for name in self._provider_names
+                if name.casefold() not in {"openalex", "crossref", "arxiv"}
+            )
+        return self._service.fallback_provider_names(
+            provider_names=provider_names,
+            source_scopes=source_scopes,
+        )
+
     def health(self) -> dict[str, object]:
         if self._service is not None:
             return self._service.health()
@@ -333,8 +350,10 @@ def _build_external_search_service(settings: Settings) -> AcademicSearchService:
         max_query_variants=settings.external_retrieval_max_query_variants,
         provider_tiers=(
             ("openalex", "crossref", "arxiv"),
+            ("semantic_scholar", "cnki"),
             ("searxng",),
-            ("aliyun_iqs", "bocha", "tavily"),
+            ("web_json",),
+            ("aliyun_iqs", "bocha", "tavily", "brave", "serpapi"),
             ("news_rss",),
         ),
         owned_clients=(shared_client,),

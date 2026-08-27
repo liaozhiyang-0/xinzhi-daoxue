@@ -1,0 +1,81 @@
+{
+  "schema_version": "model_call_stats.v1",
+  "retention": "bounded metadata only; no raw prompts or answers",
+  "local_modes": {
+    "local_mock": {
+      "case_runs": 150,
+      "model_calls_total": 0,
+      "tool_calls_total": 39,
+      "rag_calls_total": 106,
+      "stage_model": {
+        "count": 148,
+        "p50_ms": 0.0,
+        "p90_ms": 0.0,
+        "p95_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "metadata_only": true,
+      "model_identity_retained": false
+    },
+    "local_deterministic": {
+      "case_runs": 150,
+      "model_calls_total": 0,
+      "tool_calls_total": 39,
+      "rag_calls_total": 107,
+      "stage_model": {
+        "count": 148,
+        "p50_ms": 0.0,
+        "p90_ms": 0.0,
+        "p95_ms": 0.0,
+        "max_ms": 0.0,
+        "mean_ms": 0.0
+      },
+      "metadata_only": true,
+      "model_identity_retained": false
+    }
+  },
+  "real_provider": {
+    "mode": "real_model",
+    "suite": "expanded_benchmark_v2",
+    "case_count": 48,
+    "status_counts": {
+      "passed": 48
+    },
+    "provider_call_counts": {
+      "dashscope": 46
+    },
+    "model_call_counts": {
+      "qwen3.7-plus": 6,
+      "qwen3.6-flash": 40
+    },
+    "task_type_counts": {
+      "academic_image_extraction": 3,
+      "academic_problem_solving": 3,
+      "academic_problem_solving_simple": 40
+    },
+    "model_status_counts": {
+      "completed": 46
+    },
+    "model_calls_total": 46,
+    "tool_calls_total": 43,
+    "tool_id_counts": {
+      "linear_equation_solver": 43
+    },
+    "model_elapsed_ms": {
+      "count": 46,
+      "p50_ms": 5914.0,
+      "p95_ms": 10632.0,
+      "max_ms": 15963.0
+    },
+    "token_totals": {
+      "prompt": 29799,
+      "completion": 23937,
+      "total": 53736
+    },
+    "metadata_only": true,
+    "raw_prompts_stored": false,
+    "raw_answers_stored": false,
+    "source_run_id": "eval_run_9c5303e24bf74e80a302d0472b787387"
+  }
+}

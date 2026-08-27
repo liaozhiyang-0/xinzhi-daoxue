@@ -85,7 +85,6 @@ def default_course_registry() -> CourseRegistry:
                 "controlled_source": ("受控源",),
             },
             status="implemented",
-            fallback=CourseFallbackConfig("SOLVER_CT_V1", True),
             verification_rules=(
                 "kcl_kvl_consistency",
                 "reference_direction",

@@ -97,7 +97,7 @@ class FakeModelService:
         )
         return ModelResponse(
             provider="dashscope",
-            model="qwen3.7-plus",
+            model="qwen3.8-max",
             content=content,
             usage=ModelUsage(prompt_tokens=20, completion_tokens=30, total_tokens=50),
             elapsed_ms=25,
@@ -284,7 +284,7 @@ async def test_circuit_vision_agent_uses_schema_and_image_route() -> None:
     )
 
     assert result.structured_result["recognized_text"] == ["2Ω"]
-    assert result.model == "qwen3.7-plus"
+    assert result.model == "qwen3.8-max"
     assert "JSON Schema" in service.calls[0]["prompt"]
     assert service.calls[0]["high_resolution"] is False
 

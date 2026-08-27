@@ -16,7 +16,7 @@ POST /api/v1/tasks
 
 `direct_answer`、`guided_learning`、`check_my_work` 正式可用；`review`
 仍为 `foundation_only`。教学服务是既有求解结果的适配与过滤层，不创建第二个
-TaskRunner、Session、Memory、路由器或 Solver。`SOLVER_CT_V1` 保持冻结。
+TaskRunner、Session、Memory、路由器或 `ACADEMIC_PROBLEM_SOLVER` 的统一任务边界。
 
 `direct_answer` 不执行学生核对或提示策略，额外模型调用为 0。学习与检查模式在
 后台保留完整 `SolutionPacketV1`，学生可见结果必须先经过后端披露过滤。

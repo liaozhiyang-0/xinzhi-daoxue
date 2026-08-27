@@ -45,7 +45,7 @@ class AgentResultValidatorRegistry:
         self._validators: dict[str, Validator] = {
             "generic": self._generic,
             "learn_qa": self._learn,
-            "solver_ct": self._solver,
+            "academic_solver": self._academic_solver,
             "lesson_prep": self._lesson,
             "assignment_review": self._assignment,
             "academic_writing": self._writing,
@@ -177,7 +177,7 @@ class AgentResultValidatorRegistry:
         )
 
     @staticmethod
-    def _solver(
+    def _academic_solver(
         result: AgentResult,
         request: AgentRequest,
         bundle: WorkflowContextBundle | None,
@@ -478,7 +478,7 @@ class BusinessResultRendererRegistry:
             ("evidence", "资料依据"),
             ("review_boundary", "人工复核边界"),
         ),
-        "solver_ct": (
+        "academic_solver": (
             ("problem_summary", "题目摘要"),
             ("key_equations", "关键方程"),
             ("steps", "分步解答"),

@@ -255,8 +255,6 @@ def test_frozen_data_analysis_cannot_reach_runtime_or_legacy(api, app) -> None:
         "RESEARCH_03_DATA_ANALYSIS_V1=default"
     )
     runner.runtime_lifecycle.enabled = True
-    assert runner.research_analysis_runtime is not None
-    runner.research_analysis_runtime.enabled = True
 
     async def forbidden_provider_call(*_: object, **__: object) -> None:
         raise AssertionError("failed default Runtime must not invoke Legacy Provider")

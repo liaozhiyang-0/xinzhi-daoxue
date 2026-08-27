@@ -208,7 +208,12 @@ class ResearchFrontierService:
                 input_text=prompt,
                 request_id=str(request.options.get("request_id", request.task_id)),
                 max_tokens=5000,
-                extra_options={"_allow_route_fallback": True},
+                extra_options={
+                    "_allow_route_fallback": True,
+                    "response_depth": request.options.get(
+                        "response_depth", "standard"
+                    ),
+                },
             )
             brief = ResearchBriefDraft.model_validate(internal.structured_result)
             brief = self._sanitize_brief(brief, evidence)
@@ -617,7 +622,12 @@ class ResearchFrontierService:
                 input_text=json.dumps(payload, ensure_ascii=False),
                 request_id=str(request.options.get("request_id", request.task_id)),
                 max_tokens=4200,
-                extra_options={"_allow_route_fallback": True},
+                extra_options={
+                    "_allow_route_fallback": True,
+                    "response_depth": request.options.get(
+                        "response_depth", "standard"
+                    ),
+                },
             )
             brief = ResearchBriefDraft.model_validate(internal.structured_result)
             brief = brief.model_copy(

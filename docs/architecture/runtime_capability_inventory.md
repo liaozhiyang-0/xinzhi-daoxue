@@ -40,7 +40,7 @@
 | LearningProgressRuntime 的 ID、计划节点、请求快照和审批 | `apps/api/app/services/learning_progress_runtime.py:51-153` |
 | 两类学习动作及领域字段 | `apps/api/app/contracts/learning.py:373-409` |
 | `AgentRequest` 的 Task/Provider 基础协议 | `apps/api/app/contracts/agent.py:235-254` |
-| SOLVER_CT v1.0 冻结约束 | `docs/baseline/solver_ct_v1.0_baseline.md:1-18`；`AGENTS.md` 项目规则 |
+| 退役 CT 专用 Solver | `docs/history/retired-solver-ct/baseline/solver_ct_v1.0_baseline.md`；`AGENTS.md` 项目规则 |
 
 ## 3. 两条入口的边界
 
@@ -88,7 +88,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 | `DISPATCH_LOCAL_FAST_V1` | 路由快速分发，`routing_only` | 否 | readiness 可列出，但无业务 Runtime 计划 | 路由基础设施，不应直接迁移为业务 Agent |
 | `ROUTER_01_FALLBACK_V1` | `XZDSupervisor`，`routing_only` | 否 | readiness 可列出，但无业务 Runtime 计划 | 路由基础设施，不应作为业务 Runtime 节点执行 |
 | `ACADEMIC_PROBLEM_SOLVER` | 本地图与 Solver 适配 | 是：`AcademicSolverRuntimeService` | 是，受 launch policy/release gate 约束 | 已进入 Task Runtime |
-| `SOLVER_CT_V1` | 冻结 CT 历史基线，只读审计 | 否 | 作为 Agent 状态存在，但不纳入当前 Runtime 路由 | **冻结，不修改、不重写、不接学习动作** |
+| `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 统一专业求解 | 是 | 当前 Runtime 业务服务 | 通过 CoursePack 与 Skill/Tool 扩展 |
 | `LEARN_01_KNOWLEDGE_QA_V1` | Local Runtime/本地知识问答 | 是：本地知识问答 Runtime | readiness 与 Runtime plan 已接通 | 当前统一走本地执行边界 |
 | `LEARN_01_LOCAL_RETRIEVAL_V1` | 本地检索/知识问答 | 是：`KnowledgeQARuntimeService` | 是 | 已进入 Task Runtime，但与 Provider QA ID 分离 |
 | `GENERAL_QUESTION_V1` | 本地一般问题服务 | 是：`GeneralQuestionRuntimeService` | 是 | 已进入 Task Runtime |
@@ -172,7 +172,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 **验收**：
 
 - Agent Registry ID、Learning Runtime ID、Task API、Learning API 和来源路径均可逐项追溯；
-- `SOLVER_CT v1.0`、其原始 YAML 和现有 Task/SSE 合同没有变更；
+- 退役 CT 专用 Solver 的原始 YAML/代码已移除，现有 Task/SSE 合同保持稳定；
 - 测试能证明学习动作仍由 `LearningActionRequest` 接收，且没有通过 `AgentRequest` 路由进入 Task。
 
 ### 阶段 1：建立跨域能力描述，不迁移执行
@@ -225,7 +225,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 
 ### 阶段 5：逐项减少 TaskRunner/学习 Legacy 分支
 
-**范围**：以 capability 为单位迁移，而不是整体重写。每项能力只有在 Runtime 默认路径稳定后，才减少对应 Legacy 分支；`SOLVER_CT_V1` 始终排除在本阶段之外。
+**范围**：以 capability 为单位迁移，而不是整体重写。每项能力只有在 Runtime 默认路径稳定后，才减少对应 Legacy 分支；退役的 CT 专用 Solver 不再作为迁移目标。
 
 **验收**：
 
@@ -239,7 +239,7 @@ Teaching 和 LearningProgress Runtime 已经复用了 `AgentRun`、Runtime plan/
 - 不把 `LearningActionRequest` 塞入 `AgentRequest.options`，不把学习动作伪装成聊天任务，不用 `source_task_id` 代替学习领域身份/幂等校验。
 - 不因 Teaching/LearningProgress 已创建 `AgentRun` 就把它们标成已进入统一 `RuntimeBusinessRegistry` 或统一 Agent readiness。
 - 不在 TaskRunner 中直接执行学习 Provider；学习 Runtime 的领域副作用仍由 LearningLoop 及其注入的领域执行器承担。
-- 不修改 `SOLVER_CT v1.0`、`SOLVER_CT_V1` 的冻结实现、历史原始输入或真实凭据；只能做只读适配与 hash/parity 验证。
+- 不恢复已退役的 CT 专用 Solver、历史原始输入或真实凭据；专业求解统一走 `ACADEMIC_PROBLEM_SOLVER`。
 - 不用一次成功的本地 Mock 或单条 trace 宣称完成迁移；必须有授权、可复现、成对、版本绑定的结构与语义证据。
 
 ## 9. 维护规则

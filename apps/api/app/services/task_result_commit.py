@@ -173,6 +173,7 @@ class TaskResultCommitService:
                 "route_confidence": routing.get("route_confidence", 1.0),
                 "target_agent_id": agent_id,
                 "fallback_used": routing.get("fallback_used", False),
+                "content_available": bool(result.answer.strip()),
             },
         )
         await append_task_event(

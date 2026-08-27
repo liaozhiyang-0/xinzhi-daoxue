@@ -126,12 +126,16 @@ def _check_agent_status(base_url: str, checks: list[tuple[str, bool, str]]) -> N
             else []
         )
         solver: dict[str, object] = next(
-            (item for item in registered if "SOLVER_CT" in str(item.get("agent_id"))),
+            (
+                item
+                for item in registered
+                if item.get("agent_id") == "ACADEMIC_PROBLEM_SOLVER"
+            ),
             {},
         )
         checks.append(
             (
-                "SOLVER_CT Runtime",
+                "Academic Solver Runtime",
                 bool(solver.get("configured")),
                 "configured" if solver.get("configured") else "not configured",
             )

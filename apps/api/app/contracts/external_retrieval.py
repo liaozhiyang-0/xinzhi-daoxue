@@ -42,7 +42,7 @@ class ExternalRetrievalPolicy(BaseModel):
 
     enabled: bool = False
     source_scopes: list[ExternalSourceScope] = Field(default_factory=list)
-    providers: list[str] = Field(default_factory=list, max_length=8)
+    providers: list[str] = Field(default_factory=list, max_length=16)
     max_results: int = Field(default=8, ge=1, le=50)
     max_fetches: int = Field(default=4, ge=0, le=20)
     max_iterations: int = Field(default=2, ge=1, le=3)

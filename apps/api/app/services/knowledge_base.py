@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 import unicodedata
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from threading import RLock
@@ -150,6 +151,12 @@ class KnowledgeBaseService:
         self._token_index: dict[str, set[str]] = {}
         self._normalized_titles: dict[str, str] = {}
         self._image_context_tokens: dict[str, Counter[str]] = {}
+        self._search_cache: OrderedDict[
+            tuple[str, tuple[str, ...], int], RetrievalResult
+        ] = OrderedDict()
+        self._search_cache_limit = max(
+            0, min(512, int(settings.context_cache_max_entries))
+        )
         self._metadata = {
             course_id: self._load_metadata(course_id) for course_id in COURSE_NAMES
         }
@@ -178,6 +185,20 @@ class KnowledgeBaseService:
                     )
                 )
 
+            material_chunks, material_documents = self._index_course_materials()
+            chunks.extend(material_chunks)
+            if material_chunks:
+                status_by_course = {
+                    status.course_id.value: status for status in statuses
+                }
+                for course_id, status in status_by_course.items():
+                    status.document_count += material_documents.get(course_id, 0)
+                    status.chunk_count += sum(
+                        1
+                        for chunk in material_chunks
+                        if chunk.course_id.value == course_id
+                    )
+
             frequencies: Counter[str] = Counter()
             token_index: defaultdict[str, set[str]] = defaultdict(set)
             for chunk in chunks:
@@ -189,6 +210,7 @@ class KnowledgeBaseService:
             self._token_index = dict(token_index)
             self._normalized_titles = {}
             self._image_context_tokens = {}
+            self._search_cache.clear()
             self._average_length = (
                 sum(chunk.token_count for chunk in chunks) / len(chunks)
                 if chunks
@@ -266,6 +288,16 @@ class KnowledgeBaseService:
         query_tokens = Counter(tokenize(expanded))
         limit = top_k or self.settings.knowledge_default_top_k
         warnings: list[str] = []
+        cache_key = (expanded, tuple(selected), limit)
+        with self._lock:
+            cached = self._search_cache.get(cache_key)
+            if cached is not None:
+                self._search_cache.move_to_end(cache_key)
+                return cached.model_copy(
+                    update={
+                        "latency_ms": max(0, round((perf_counter() - started) * 1000))
+                    }
+                )
         if not query_tokens:
             warnings.append("查询标准化后没有可检索词项")
             return RetrievalResult(
@@ -316,7 +348,7 @@ class KnowledgeBaseService:
                 warnings.append("检索置信度较低，请核对章节与原始资料")
         else:
             warnings.append("本地词项检索未命中满足最低分阈值的片段")
-        return RetrievalResult(
+        result = RetrievalResult(
             query=query,
             normalized_query=expanded,
             course_ids=selected,
@@ -330,6 +362,13 @@ class KnowledgeBaseService:
             warnings=warnings,
             latency_ms=max(0, round((perf_counter() - started) * 1000)),
         )
+        if self._search_cache_limit:
+            with self._lock:
+                self._search_cache[cache_key] = result
+                self._search_cache.move_to_end(cache_key)
+                while len(self._search_cache) > self._search_cache_limit:
+                    self._search_cache.popitem(last=False)
+        return result
 
     def expand_query(self, normalized_query: str, course_ids: list[str]) -> str:
         expansions: list[str] = [normalized_query]
@@ -559,6 +598,115 @@ class KnowledgeBaseService:
                 )
         message = f"跳过 {skipped} 个不可读或超限文件" if skipped else None
         return chunks, document_count, message
+
+    def _index_course_materials(
+        self,
+    ) -> tuple[list[IndexedChunk], dict[str, int]]:
+        """Load active published uploads from the durable material projection.
+
+        The material manifest is intentionally separate from the read-only
+        Markdown libraries.  It is still part of the same lexical search
+        surface after an explicit manifest sync and knowledge-base refresh.
+        Malformed rows are ignored so one bad upload cannot prevent the local
+        libraries from loading.
+        """
+
+        if not self.settings.knowledge_enabled:
+            return [], {}
+        cache_path = (
+            self.settings.knowledge_index_path
+            / "cache"
+            / "course_material_chunks.jsonl"
+        )
+        try:
+            rows = cache_path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError):
+            return [], {}
+
+        chunks: list[IndexedChunk] = []
+        documents_by_course: defaultdict[str, set[str]] = defaultdict(set)
+        for raw_row in rows:
+            if not raw_row.strip():
+                continue
+            try:
+                row = json.loads(raw_row)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("is_active", True) is not True:
+                continue
+
+            course_value = str(row.get("course_id", "")).strip().upper()
+            chunk_id = str(row.get("chunk_id", "")).strip()
+            document_id = str(row.get("document_id", "")).strip()
+            content = str(row.get("text", "")).strip()
+            if (
+                course_value not in COURSE_NAMES
+                or not chunk_id
+                or not document_id
+                or not content
+            ):
+                continue
+
+            try:
+                course_id = KnowledgeCourseId(course_value)
+            except ValueError:
+                continue
+            title = str(row.get("title", "")).strip() or "未命名课程材料"
+            chapter = str(row.get("chapter", "")).strip() or title
+            section_path = row.get("section_path", [])
+            section = (
+                str(section_path[-1]).strip()
+                if isinstance(section_path, list) and section_path
+                else chapter
+            )
+            document_path = str(row.get("relative_path", "")).strip()
+            source_ref = str(row.get("source_uri", "")).strip()
+            if not document_path or not source_ref:
+                continue
+
+            related_images: list[RelatedImage] = []
+            raw_images = row.get("related_images", [])
+            if isinstance(raw_images, list):
+                for raw_image in raw_images:
+                    if not isinstance(raw_image, dict):
+                        continue
+                    try:
+                        related_images.append(RelatedImage.model_validate(raw_image))
+                    except ValueError:
+                        continue
+
+            baseline_tokens = Counter(tokenize(f"{title} {content}"))
+            if not baseline_tokens:
+                continue
+            chunks.append(
+                IndexedChunk(
+                    chunk_id=chunk_id,
+                    document_id=document_id,
+                    course_id=course_id,
+                    course_name=COURSE_NAMES[course_value],
+                    chapter=chapter,
+                    section=section,
+                    document_path=document_path,
+                    title=title,
+                    content_type=str(row.get("content_type", "course_material")),
+                    content=content,
+                    source_ref=source_ref,
+                    document_checksum=str(row.get("document_checksum", "")),
+                    tokens=baseline_tokens,
+                    title_tokens=Counter(tokenize(title)),
+                    content_tokens=Counter(tokenize(content)),
+                    filename_tokens=Counter(tokenize(Path(document_path).stem)),
+                    token_count=sum(baseline_tokens.values()),
+                    normalized_content=normalize_query(content),
+                    excluded_v2=False,
+                    related_images=tuple(related_images),
+                )
+            )
+            documents_by_course[course_value].add(document_id)
+        return chunks, {
+            course_id: len(document_ids)
+            for course_id, document_ids in documents_by_course.items()
+        }
 
     @staticmethod
     def _apply_approved_corrections(

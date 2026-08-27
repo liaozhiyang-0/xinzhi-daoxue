@@ -767,7 +767,7 @@ def api_ready(base_url: str) -> bool:
 
 
 def frontend_build_ready(base_url: str) -> bool:
-    """Return whether the running service serves the current frontend build."""
+    """Return whether the running service serves the current student UI."""
 
     try:
         with urlopen(f"{base_url}/workspace", timeout=2) as response:  # noqa: S310
@@ -776,7 +776,6 @@ def frontend_build_ready(base_url: str) -> bool:
             'class="workspace-page"' in html
             and 'id="student-form"' in html
             and "/debug-assets/workspace.js" in html
-            and "/react-assets/assets/index-" not in html
         )
     except (URLError, TimeoutError, OSError, UnicodeError):
         return False
@@ -1040,8 +1039,7 @@ def owned_api_pids(port: int) -> list[int]:
 
 
 def open_workspace(base_url: str) -> bool:
-    # Keep the automatic launcher on the neutral product home.  The React
-    # workspace remains available only when the user explicitly opens it.
+    # Keep the automatic launcher on the neutral product home.
     url = f"{base_url.rstrip('/')}/"
     try:
         opened = webbrowser.open(url, new=2)

@@ -1,0 +1,10 @@
+sample,stage,duration_ms,source,notes
+browser-series-resistor,end_to_end,12000,manual browser timing,one sample only
+task_562,knowledge.execute,3254,task events,one task
+task_562,end_to_end,4500,manual API polling,approximate one task
+rag,warmup_total,83258,knowledge health,initial process warmup; CPU
+rag,warmup_text,63089,knowledge health,initial process warmup; CPU
+rag,warmup_image,20169,knowledge health,initial process warmup; CPU
+metrics,recent_task_p95,65715,prometheus snapshot,includes historical and audit tasks
+metrics,queue_pending,0,prometheus snapshot,gauge at observation time
+debug-task-562,waterfall_total,0,debug execution,contradicts observed node/end-to-end time

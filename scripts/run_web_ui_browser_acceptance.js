@@ -60,7 +60,13 @@ async function stopServer() {
     if (preflight.status !== 0) throw new Error("demo preflight failed");
     const result = spawnSync(process.execPath, [path.join(root, "scripts", "student_browser_smoke.js")], {
       cwd: root, windowsHide: true, stdio: "inherit",
-      env: { ...process.env, XINZHI_BROWSER_BASE_URL: baseURL, XINZHI_BROWSER_TEST_IMAGE: path.join(root, "docs", "reviews", "web_ui_baseline", "student-before.png") },
+      env: {
+        ...process.env,
+        XINZHI_BROWSER_BASE_URL: baseURL,
+        XINZHI_BROWSER_TEST_IMAGE:
+          process.env.XINZHI_BROWSER_TEST_IMAGE
+          || path.join(root, "docs", "reviews", "web_ui_baseline", "student-before.png"),
+      },
     });
     process.exitCode = result.status ?? 1;
   } finally {

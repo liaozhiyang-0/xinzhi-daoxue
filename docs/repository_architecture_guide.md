@@ -86,7 +86,7 @@ flowchart LR
 
 ### 3.4 多学科求解
 
-`ACADEMIC_PROBLEM_SOLVER` 是 CT（电路理论）、AE（模拟电子技术）、DE（数字电子技术）和 SS（信号与系统）的统一入口。Supervisor 选择课程包，GraphFactory 创建同一求解图，图内按需调用模型与确定性工具。`SOLVER_CT_V1` 作为冻结的历史基线只读保留，不作为当前本地 Runtime 的外部回退。
+`ACADEMIC_PROBLEM_SOLVER` 是 CT（电路理论）、AE（模拟电子技术）、DE（数字电子技术）和 SS（信号与系统）的统一入口。Supervisor 选择课程包，GraphFactory 创建同一求解图，图内按需调用模型与确定性工具。退役的 CT 专用 Solver 配置与代码已移除，不参与当前本地 Runtime 路由。
 
 ### 3.5 本地 RAG
 
@@ -111,7 +111,7 @@ flowchart LR
 | 学生简化入口 | 活动 | `/student` → `workspace.*` | 支持文字、多图、历史与证据展示。 |
 | 通用随机问答 | 活动 | `GENERAL_QUESTION_V1` | 不要求命中课程路由；统一使用本地 Runtime。 |
 | 多学科专业求解 | 活动 | `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 共享图，不伪造缺失题设。 |
-| 电路冻结基线 | 保留 | `SOLVER_CT_V1` | 只读历史审计基线，不参与当前运行时路由。 |
+| 电路专业求解 | 保留 | `ACADEMIC_PROBLEM_SOLVER` + CT CoursePack | 当前统一专业求解入口。 |
 | 教学任务 | 活动 | 备课、作业初审内部 Agent | 复用任务上下文与本地资料。 |
 | 学习问答 | 活动 | Knowledge QA / Local Retrieval | 明确区分课程证据、方法参考和无资料回答。 |
 | 有限诊断与分级辅导 | 活动 | TeachingPlanner / Verification / Hint / Disclosure | 三模式；H0—H2；复杂过程转人工复核，不自动评分。 |
@@ -246,9 +246,9 @@ archive_legacy/apps/api/app/services/task_service.py
 - `integrations/__init__.py`：明确的可扩展集成边界。
 - `apps/worker/README.md`：记录未来拆分边界，不启动第二运行时。
 - Alembic migration：即使逻辑已被新版本覆盖也必须保留，不能修改历史迁移。
-- `SOLVER_CT_V1`：冻结历史基线，按仓库规则原样保留，不作为当前执行能力。
+- 退役 CT 专用 Solver：代码、配置和活动注册项已移除；历史报告只作审计资料。
 
-隔离详情和判据见 [旧文件与功能清理记录](legacy_cleanup_report.md)。
+隔离详情和判据见 [架构收缩记录](architecture_slimming/01_cleanup_record.md)。
 
 ## 9. 启动与验证
 
@@ -301,7 +301,7 @@ archive_legacy/apps/api/app/services/task_service.py
 
 ## 11. 学习质量闭环与可靠执行扩展
 
-本轮仍以 `POST /api/v1/tasks` 为唯一模型与 Agent 执行入口。在共享 `AcademicProblemSolverGraph` 末端增加确定性 `SolverQualityGateService`，以统一 `SolverResult` 保存结构化最终答案、验证、知识证据与质量门结论；CoursePack 只声明课程特有校验规则，不复制 Solver 图。`SOLVER_CT_V1` 的冻结代码、Prompt 与节点均未修改。
+本轮仍以 `POST /api/v1/tasks` 为唯一模型与 Agent 执行入口。在共享 `AcademicProblemSolverGraph` 末端增加确定性 `SolverQualityGateService`，以统一 `SolverResult` 保存结构化最终答案、验证、知识证据与质量门结论；CoursePack 只声明课程特有校验规则，不复制 Solver 图。
 
 知识层由只读扫描器生成带 `document_version`、相对来源、内容哈希和活动状态的 manifest。内容变化产生新版本和新 chunk id，旧版本及旧 chunk 进入非活动历史；RAG 只装载活动 chunk，失败的向量构建不覆盖上一次成功状态。
 

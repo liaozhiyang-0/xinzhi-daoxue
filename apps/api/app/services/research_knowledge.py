@@ -199,11 +199,16 @@ class ResearchKnowledgeService:
                 self.text_embedding.dimension,
             )
             vector = await asyncio.to_thread(self.text_embedding.embed_query, query)
-            return await asyncio.to_thread(
+            hits = await asyncio.to_thread(
                 self.vector_store.search_research,
                 vector,
                 limit=limit or self.settings.research_knowledge_search_top_k,
             )
+            return [
+                hit
+                for hit in hits
+                if hit.score >= self.settings.research_knowledge_min_score
+            ]
         except Exception:
             logger.warning("research_vector_search_failed", exc_info=True)
             return []

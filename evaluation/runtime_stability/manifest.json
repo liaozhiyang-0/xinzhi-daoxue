@@ -1,0 +1,25 @@
+{
+  "schema_version": "runtime_stability.v1",
+  "source_root": "evaluation/cases",
+  "case_file": "evaluation/runtime_stability/cases.json",
+  "target_total": 150,
+  "categories": {
+    "general": 16,
+    "knowledge": 36,
+    "solver": 36,
+    "multimodal": 16,
+    "research": 10,
+    "multi_turn": 12,
+    "boundary": 24
+  },
+  "repetitions": {
+    "representative_cases": 3,
+    "representative_case_target": 48
+  },
+  "cases": [],
+  "notes": [
+    "Synthetic and publishable only; not an official quality score.",
+    "Data analysis cases are excluded because RESEARCH_03 is frozen.",
+    "Existing source cases are selected before generated synthetic variants."
+  ]
+}

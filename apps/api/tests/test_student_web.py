@@ -44,6 +44,7 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     )
 
     assert page.status_code == 200
+    assert client.get("/workspace-react").status_code == 404
     assert page.headers["cache-control"] == "no-store, max-age=0"
     assert "id=\"mode-control\"" not in page.text
     for capability in (
@@ -74,13 +75,13 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "createMaterialManager" in script_text
     assert "createTaskTransport" in script_text
     assert (
-        "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v1"
+        "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v2"
         in script.text
     )
     assert 'id="circuit-visualization-toggle"' in page.text
     assert "buildStudentTaskPayload" in contracts.text
     assert "id=\"preview-images\"" in page.text
-    assert "20260825-answer-quality-v4" in page.text
+    assert "20260827-retrieval-diagnostics-fallback-v1" in page.text
     assert "function openEvidenceDocument(item)" in script.text
     assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
     assert "documentPageState.controller?.abort()" in script.text

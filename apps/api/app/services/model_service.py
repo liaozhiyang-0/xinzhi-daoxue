@@ -9,7 +9,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from app.contracts import ImageInput, ModelResponse, ModelStreamEvent, ModelUsage
+from app.contracts import (
+    ImageInput,
+    ModelResponse,
+    ModelStreamEvent,
+    ModelUsage,
+    ResponseDepth,
+)
 from app.core.config import Settings
 from app.core.errors import (
     AuthenticationError,
@@ -23,7 +29,8 @@ from app.core.errors import (
 from app.observability import ModelCallRecord, ModelTracer
 from app.providers.llm import BaseModelProvider
 from app.services.agent_runtime import ProviderCircuitBreaker
-from app.services.model_registry import ModelDefinition, ModelRegistry
+from app.services.model_registry import ModelDefinition, ModelRegistry, ModelRoute
+from app.services.response_depth import resolve_response_depth
 
 T = TypeVar("T", bound=ModelResponse)
 
@@ -263,8 +270,13 @@ class ModelService:
         extra_options: dict[str, Any] | None = None,
     ) -> AsyncIterator[ModelStreamEvent]:
         route = self.registry.get_route(task_type)
-        definition, provider = self._resolve(route.primary)
-        options = self._options(definition, route.options, extra_options)
+        call_options = dict(extra_options or {})
+        response_depth = call_options.pop("response_depth", None)
+        alias = self._response_depth_alias(
+            route, response_depth, vision=False
+        ) or route.primary
+        definition, provider = self._resolve(alias)
+        options = self._options(definition, route.options, call_options)
         async with self._global, self._provider_limit(definition.provider):
             async for event in provider.stream_text(
                 messages=messages,
@@ -323,6 +335,7 @@ class ModelService:
     ) -> ModelResponse:
         route = self.registry.get_route(task_type)
         call_options = dict(extra_options or {})
+        response_depth = call_options.pop("response_depth", None)
         allow_route_fallback = bool(call_options.pop("_allow_route_fallback", True))
         allow_structured_fallback = bool(
             call_options.pop("_allow_structured_fallback", False)
@@ -353,10 +366,19 @@ class ModelService:
                 route.primary if allow_route_fallback else None,
             ]
         else:
-            aliases = [
-                route.primary,
-                route.fallback if allow_route_fallback else None,
-            ]
+            depth_alias = self._response_depth_alias(
+                route, response_depth, vision=vision
+            )
+            if depth_alias is None:
+                aliases = [
+                    route.primary,
+                    route.fallback if allow_route_fallback else None,
+                ]
+            else:
+                aliases = [depth_alias]
+                if allow_route_fallback:
+                    aliases.extend((route.primary, route.fallback))
+        aliases = list(dict.fromkeys(item for item in aliases if item))
         last_error: ModelProviderError | None = None
         failed_usage: ModelUsage | None = None
         for index, alias in enumerate(item for item in aliases if item):
@@ -542,6 +564,36 @@ class ModelService:
                 model=definition.model,
             )
         return definition, provider
+
+    def _response_depth_alias(
+        self,
+        route: ModelRoute,
+        raw_depth: Any,
+        *,
+        vision: bool,
+    ) -> str | None:
+        """Map the user-facing depth to the configured Qwen model tier."""
+
+        try:
+            primary = self.registry.get_model(route.primary)
+        except KeyError:
+            return None
+        if primary.provider != "dashscope":
+            return None
+
+        depth = resolve_response_depth({"response_depth": raw_depth})
+        alias = {
+            ResponseDepth.BRIEF: "qwen_brief",
+            ResponseDepth.STANDARD: (
+                "qwen_vision_fast" if vision else "qwen_text_fast"
+            ),
+            ResponseDepth.DEEP: "qwen_vision_primary",
+        }[depth]
+        try:
+            self.registry.get_model(alias)
+        except KeyError:
+            return None
+        return alias
 
     def _provider_limit(self, provider: str) -> asyncio.Semaphore:
         return self._provider_limits.setdefault(provider, asyncio.Semaphore(1))

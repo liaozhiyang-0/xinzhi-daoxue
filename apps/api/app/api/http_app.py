@@ -8,7 +8,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import health as health_endpoint
@@ -22,7 +22,6 @@ from app.dependencies import require_admin
 logger = logging.getLogger(__name__)
 
 DEBUG_ROOT = Path(__file__).resolve().parents[1] / "static" / "debug"
-REACT_ROOT = DEBUG_ROOT / "react"
 QUESTION_BANK_IMAGE_ROOT = PROJECT_ROOT / "evaluation" / "cache" / "storage"
 ANALOG_OPAMP_IMAGE_NAME = "模电测试集_图2.1.1_运算放大器电路.jpg"
 CASE6_DEMO_IMAGE = (
@@ -85,11 +84,6 @@ def configure_http_app(app: FastAPI) -> None:
         "/debug-assets",
         StaticFiles(directory=DEBUG_ROOT),
         name="debug-assets",
-    )
-    app.mount(
-        "/react-assets",
-        StaticFiles(directory=REACT_ROOT, check_dir=False),
-        name="react-assets",
     )
     _register_page_routes(app)
     _register_request_middleware(app)
@@ -164,15 +158,6 @@ def _register_page_routes(app: FastAPI) -> None:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
-    @app.get("/workspace-react", include_in_schema=False, tags=["student"])
-    async def react_workspace_page(request: Request) -> RedirectResponse:
-        if not (REACT_ROOT / "index.html").exists():
-            raise HTTPException(
-                status_code=503,
-                detail="React Workspace build is not available",
-            )
-        return _workspace_redirect(request)
-
     @app.get(
         "/debug/execution",
         include_in_schema=True,
@@ -199,12 +184,6 @@ def _register_page_routes(app: FastAPI) -> None:
     )
     async def demo_page() -> FileResponse:
         return FileResponse(DEBUG_ROOT / "demo.html")
-
-
-def _workspace_redirect(request: Request) -> RedirectResponse:
-    query = f"?{request.url.query}" if request.url.query else ""
-    return RedirectResponse(url=f"/workspace{query}", status_code=307)
-
 
 def _register_request_middleware(app: FastAPI) -> None:
     @app.middleware("http")

@@ -9,13 +9,13 @@ POST /api/v1/tasks
 → TaskCreationService（user message + task）
 → TaskExecutor
 → TaskRunner（ConversationContextBundle + 现有 RAG）
-→ Local Runtime / Model / SOLVER_CT_V1
+→ Local Runtime / Model / ACADEMIC_PROBLEM_SOLVER
 → TaskPresentation
 → assistant message + WorkingState + Summary + metrics
 ```
 
 `POST /api/v1/chat` 仍是适配器。实现没有新增 TaskRunner、模型入口、队列、
-顶层 Agent 或学习掌握度数据库，也没有修改冻结的 `SOLVER_CT_V1`。当前任务链
+顶层 Agent 或学习掌握度数据库，也没有创建第二套执行链。当前任务链
 只允许本地 Runtime，远程工作流不再属于运行时配置。
 
 ## 数据职责

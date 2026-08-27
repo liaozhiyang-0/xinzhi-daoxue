@@ -155,6 +155,15 @@ def _require_material_manager(request: Request, principal: Principal) -> None:
         raise HTTPException(status_code=403, detail="需要教师或管理员权限")
 
 
+def _require_knowledge_admin(request: Request, principal: Principal) -> None:
+    """Protect publication-state changes when authentication is enabled."""
+
+    if not request.app.state.settings.auth_required:
+        return
+    if not principal.authenticated or principal.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+
 def _effective_material_index_status(request: Request, item: FileModel) -> str:
     persisted = item.knowledge_index_status
     state_path = (
@@ -714,7 +723,7 @@ async def sync_course_material_manifest(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> KnowledgeMaterialManifestRead:
-    _require_material_manager(request, principal)
+    _require_knowledge_admin(request, principal)
     result = await build_course_material_manifest(
         db,
         request.app.state.settings.knowledge_index_path,
@@ -740,7 +749,7 @@ async def publish_course_material(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> KnowledgeMaterialRead:
-    _require_material_manager(request, principal)
+    _require_knowledge_admin(request, principal)
     item = await db.get(FileModel, file_id)
     if item is None or item.purpose != "course_material":
         raise HTTPException(status_code=404, detail="课程资料不存在")
@@ -869,7 +878,7 @@ async def withdraw_course_material(
     principal: Principal = Depends(get_current_principal),
     db: AsyncSession = Depends(get_db),
 ) -> KnowledgeMaterialRead:
-    _require_material_manager(request, principal)
+    _require_knowledge_admin(request, principal)
     item = await db.get(FileModel, file_id)
     if item is None or item.purpose != "course_material":
         raise HTTPException(status_code=404, detail="课程资料不存在")
@@ -1246,8 +1255,10 @@ async def benchmark_summary(request: Request) -> dict[str, Any]:
 @router.post("/reload", response_model=list[KnowledgeSourceStatus])
 async def reload_knowledge(
     request: Request,
+    principal: Principal = Depends(get_current_principal),
     knowledge_base: KnowledgeBaseService = Depends(get_knowledge_base),
 ) -> list[KnowledgeSourceStatus]:
+    _require_knowledge_admin(request, principal)
     if request.app.state.settings.app_env == "production":
         return await asyncio.to_thread(knowledge_base.source_statuses)
     return await asyncio.to_thread(knowledge_base.refresh)

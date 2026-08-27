@@ -300,6 +300,86 @@ async def test_external_retrieval_execution_filters_cross_discipline_evidence() 
 
 
 @pytest.mark.asyncio
+async def test_external_retrieval_uses_fallback_after_primary_review_rejects_all(
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    class FakeSearch:
+        def fallback_provider_names(
+            self, **_: object
+        ) -> tuple[str, ...]:
+            return ("fallback",)
+
+        async def search_many(
+            self,
+            query: str,
+            *,
+            provider_names: list[str] | tuple[str, ...] | None = None,
+            **_: object,
+        ) -> ExternalRetrievalResult:
+            names = tuple(provider_names or ())
+            calls.append(names)
+            return _external_result(query).model_copy(
+                update={"provider_status": {names[0]: "completed"}}
+            )
+
+    class RejectPrimaryReview:
+        async def review(
+            self,
+            _query: str,
+            result: ExternalRetrievalResult,
+            **_: object,
+        ) -> ExternalRetrievalResult:
+            if "primary" in result.provider_status:
+                return result.model_copy(
+                    update={
+                        "items": [],
+                        "status": "failed",
+                        "review_status": "rejected",
+                        "approved_count": 0,
+                        "warnings": ["primary evidence rejected"],
+                    }
+                )
+            return result.model_copy(
+                update={
+                    "status": "completed",
+                    "review_status": "approved",
+                    "approved_count": len(result.items),
+                }
+            )
+
+    service = ExternalRetrievalExecutionService(
+        settings=Settings(app_env="test", _env_file=None),  # type: ignore[call-arg]
+        external_search=FakeSearch(),  # type: ignore[arg-type]
+        external_fetcher=None,
+        external_paper_reviewer=RejectPrimaryReview(),  # type: ignore[arg-type]
+        external_search_planner=None,
+    )
+    request = AgentRequest(
+        task_id="external-fallback-task",
+        session_id="external-fallback-session",
+        user_id="external-fallback-user",
+        canonical_input={"text": "latest agent planning papers"},
+    )
+    policy = ExternalRetrievalPolicy(
+        enabled=True,
+        source_scopes=[ExternalSourceScope.ACADEMIC],
+        providers=["primary", "fallback"],
+        max_iterations=1,
+    )
+
+    result = await service.retrieve(request, policy, allow_degraded_review=True)
+
+    assert calls == [("primary", "fallback"), ("fallback",)]
+    assert result.status == "completed"
+    assert result.provider_status == {
+        "primary": "completed",
+        "fallback": "completed",
+    }
+    assert "fallback providers invoked after primary evidence review" in result.warnings
+
+
+@pytest.mark.asyncio
 async def test_external_research_runtime_executes_intent_fetch_answer_verify() -> None:
     calls = 0
 

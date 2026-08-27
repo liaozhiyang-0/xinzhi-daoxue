@@ -74,7 +74,7 @@ flowchart LR
 - 当前 `LocalTaskExecutor` 包装 `TaskExecutionCoordinator`；`QueueTaskExecutor` 只负责发布任务，Worker 端复用同一 coordinator 与 lease manager。
 - 学生端只提交自然语言和附件，Agent 选择属于自动路由；手动 Agent 选择只用于调试。
 - 本地 RAG 是证据、上下文和解释性层，不是另一套问答系统。
-- `SOLVER_CT_V1` 是冻结的历史基线与只读审计资产，不参与当前 Runtime 路由。
+- `ACADEMIC_PROBLEM_SOLVER` 是当前统一专业求解入口；退役的 CT 专用 Solver 不参与当前 Runtime 路由。
 - 业务任务统一走本地 Runtime；历史 `allow_cloud` 字段在入口被丢弃，不能启用远程路径。
 
 ### 6a. Phase N v2 控制面
@@ -301,7 +301,7 @@ API 层随后调用 `app.state.task_executor.submit(task_id)`。Local executor �
 | Agent | 用途 | 默认路径 |
 |---|---|---|
 | `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 专业问题求解 | 本地多学科 Solver。 |
-| `SOLVER_CT_V1` | CT 冻结历史基线 | 只读审计，不参与当前路由。 |
+| `ACADEMIC_PROBLEM_SOLVER` | CT/AE/DE/SS 统一专业求解 | 通过 CoursePack 选择课程规则与能力。 |
 | `LEARN_01_KNOWLEDGE_QA_V1` | 课程知识问答 | 本地 RAG 与 Local Runtime。 |
 | `LEARN_01_LOCAL_RETRIEVAL_V1` | 纯本地检索降级 | 不调用云端。 |
 | `GENERAL_QUESTION_V1` | 随机/通用问题 | 无课程线索的明确常识问句直接使用 Spark；低置信文本也可进入该本地模块。 |
@@ -362,7 +362,7 @@ Graph 根据问题风险、课程包状态和输入完整性选择 FAST、STANDA
 3. 确认 Agent registry 的 `course_ids` 和 routing rules；
 4. 增加课程级 Solver、路由、质量门和边界评测；
 5. 如果有知识库，再添加 `knowledge_config/courses`、同义词和索引配置；
-6. 不让新课程错误回退到 `SOLVER_CT_V1`。
+6. 不让新课程依赖已退役的 CT 专用 Solver；统一接入 `ACADEMIC_PROBLEM_SOLVER`。
 
 ## 9. 本地知识库与 RAG
 
@@ -506,13 +506,13 @@ flowchart LR
 
 ## 13. 前端
 
-正式学生工作台使用 `apps/web/` 中的 React/Vite 源码，并由 FastAPI 提供构建产物；调试、管理和系统页面仍位于 `apps/api/app/static/debug/`。
+正式学生工作台使用 FastAPI 托管的原生 HTML/CSS/JavaScript；调试、管理和系统页面同样位于 `apps/api/app/static/debug/`。
 
 | 页面 URL | HTML/JS | 用途 |
 |---|---|---|
 | `/` | `home.html` | 能力入口导航。 |
-| `/workspace` | `apps/web/src/` + `static/debug/react/` | 正式学生工作台、历史、SSE、证据和学习动作。 |
-| `/student` | 重定向到 `/workspace` | 兼容旧书签，不再提供旧静态学生页面。 |
+| `/workspace` | `static/debug/workspace.html` + `workspace.js` | 正式学生工作台、会话、SSE、证据和学习动作。 |
+| `/student` | `static/debug/workspace.html` | 与 `/workspace` 共用页面。 |
 | `/debug`、`/demo` | `demo.html` + `demo.js` | 演示与调试任务。 |
 | `/debug/agents` | `agents.html` + `agents.js` | Agent 注册和合同调试。 |
 | `/debug/rag`、`/debug/execution` | `execution.html` + `execution.js` | RAG/任务瀑布和聚合指标。 |
@@ -808,7 +808,7 @@ git diff --check
 - 证据/状态：`learning_outcome.py`、`learning_loop.py`
 - 延迟再测：`retest_plans.py`、`practice_generation.py`
 - API：`app/api/v1/learning.py`
-- Workspace：`apps/web/src/`、`apps/api/app/static/debug/react/`
+- Workspace：`apps/api/app/static/debug/workspace.html`、`apps/api/app/static/debug/workspace.js`
 - 配置：`config/learning_mastery.yaml`
 - 案例：`evaluation/cases/teaching_loop_phase3/`
 # Agent Runtime Foundation 导航
@@ -823,6 +823,6 @@ git diff --check
 - 记忆：`app/repositories/memories.py`、`app/services/memory_service.py`
 - API：`app/api/v1/sessions.py`、`app/api/v1/memories.py`
 - 执行链接入：`task_creation_service.py`、`application/tasks/coordinator.py`、`runtime_task_engine.py`
-- Workspace：`apps/web/src/`、`app/static/debug/react/`
+- Workspace：`app/static/debug/workspace.html`、`app/static/debug/workspace.js`
 - migration：`20260723_0006_agent_runtime_foundation.py`
 - 专项测试：`tests/test_agent_runtime_foundation.py`

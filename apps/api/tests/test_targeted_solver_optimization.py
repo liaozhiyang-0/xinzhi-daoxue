@@ -195,23 +195,20 @@ def test_fallback_count_is_limited_and_loop_is_rejected() -> None:
     tracker = FallbackTracker(max_fallbacks=1)
     tracker.start("ACADEMIC_PROBLEM_SOLVER")
 
-    assert tracker.request(
+    assert not tracker.request(
         source_agent="ACADEMIC_PROBLEM_SOLVER",
-        target_agent="SOLVER_CT_V1",
+        target_agent="ACADEMIC_PROBLEM_SOLVER",
         reason=FallbackReason.HIGH_RISK_PROBLEM,
         stage="professional_fallback",
     )
-    assert tracker.count == 1
+    assert tracker.count == 0
     assert not tracker.request(
-        source_agent="SOLVER_CT_V1",
+        source_agent="ACADEMIC_PROBLEM_SOLVER",
         target_agent="ACADEMIC_PROBLEM_SOLVER",
         reason=FallbackReason.PRIMARY_MODEL_ERROR,
         stage="loop_attempt",
     )
-    assert tracker.route_path == [
-        "ACADEMIC_PROBLEM_SOLVER",
-        "SOLVER_CT_V1",
-    ]
+    assert tracker.route_path == ["ACADEMIC_PROBLEM_SOLVER"]
 
 
 @pytest.mark.parametrize(

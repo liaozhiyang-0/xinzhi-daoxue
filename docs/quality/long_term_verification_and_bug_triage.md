@@ -12,10 +12,10 @@
 1. 代码、配置、数据库迁移和 API 合同回归；
 2. Agent Runtime 的任务生命周期、节点顺序、重试、暂停、恢复和 SSE 重连问题；
 3. Provider、RAG、工具、降级和敏感信息边界问题；
-4. 前端/后端接口不一致、演示边界漂移和提交材料不一致；
+4. 学生 HTML 界面/后端接口不一致、演示边界漂移和提交材料不一致；
 5. 真实 Provider 误调用、Mock/合成结果冒充真实结果的问题。
 
-默认所有检查离线、Mock 或 dry-run。不得修改冻结的 SOLVER_CT v1.0 或 SOLVER_CT_V1，不得写入密钥、学生隐私或历史基线原始输入。
+默认所有检查离线、Mock 或 dry-run。不得恢复或绕过已退役的 SOLVER_CT v1.0 / SOLVER_CT_V1 专用执行路径，不得写入密钥、学生隐私或历史基线原始输入。
 
 ## 统一位置与记录原则
 
@@ -45,7 +45,7 @@
 
     .\.venv\Scripts\python.exe -m pytest apps/api/tests/test_contracts.py apps/api/tests/test_task_creation_is_non_blocking.py apps/api/tests/test_task_state_transitions.py apps/api/tests/test_sse_event_order.py apps/api/tests/test_sse_reconnect.py apps/api/tests/test_task_router.py apps/api/tests/test_agent_registry.py -q --no-cov
 
-必须验证：任务创建非阻塞；Provider 不在路由内同步执行；SSE sequence 单调且可重连；未注册/未发布/未配置 Agent 不得执行；SOLVER_CT_V1 输入和 Provider 链路不漂移。
+必须验证：任务创建非阻塞；Provider 不在路由内同步执行；SSE sequence 单调且可重连；未注册/未发布/未配置 Agent 不得执行；当前 `ACADEMIC_PROBLEM_SOLVER` 输入和 Provider 链路不漂移。
 
 ### L2：Runtime 改造后的专题回归
 
@@ -157,6 +157,6 @@ observed → triaged → in_progress → fixed_pending_verification → verified
 3. 将所有失败写入台账，证据放入 .local_outputs/quality/。
 4. 只修复 owner 明确分配且 conflict_risk 已确认的条目。
 5. 对每个修复增加回归验证并更新 verification_command。
-6. 不修改 SOLVER_CT v1.0、SOLVER_CT_V1、.local_inputs/、真实凭据和其他进程未交接的文件。
+6. 不恢复退役 SOLVER_CT 专用路径，不修改 `.local_inputs/`、真实凭据和其他进程未交接的文件。
 7. 最终报告列出：Bug ID、修改文件、执行命令、通过/失败/跳过、未解决风险和下一轮建议。
 

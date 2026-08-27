@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.contracts.intent import IntentExecutionPlan
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.models import TaskModel, TaskStatus
+from app.observability import RuntimeTimingTrace
 from app.repositories import FileRepository, SessionRepository, TaskRepository
 from app.services.canonical_plan_adapter import CanonicalPlanAdapter
 from app.services.conversation_message_service import ConversationMessageService
@@ -108,6 +110,55 @@ class TaskCreationService:
             )
         return None
 
+    async def _resolve_parent_task_id(
+        self,
+        request: AgentRequest,
+        parent_task_id: str | None,
+    ) -> str | None:
+        """Validate the task that an explicit user follow-up refers to.
+
+        The workspace sends ``source_task_id`` as a continuation hint.  It is
+        only promoted to a durable parent link for the explicit follow-up
+        action; arbitrary request metadata must not silently rewrite the
+        conversation graph.  Ownership and session checks keep the hint from
+        becoming a cross-user context injection primitive.
+        """
+
+        candidate = str(parent_task_id or "").strip()
+        if not candidate and request.options.get("learning_action") == "follow_up":
+            candidate = str(request.options.get("source_task_id") or "").strip()
+        if not candidate:
+            return None
+        if candidate == request.task_id:
+            raise ConflictError(
+                "任务不能引用自身作为追问来源",
+                details={"source_task_id": candidate},
+            )
+        parent = await self.repository.get(candidate)
+        if parent is None or parent.user_id != request.user_id:
+            raise NotFoundError(
+                "追问引用的原任务不存在",
+                details={"source_task_id": candidate},
+            )
+        if parent.session_id != request.session_id:
+            raise ValidationAppError(
+                "追问来源必须属于当前会话",
+                details={"source_task_id": candidate},
+            )
+        if parent.status not in {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }:
+            raise ConflictError(
+                "原任务尚未结束，暂时不能继续追问",
+                details={
+                    "source_task_id": candidate,
+                    "status": parent.status.value,
+                },
+            )
+        return parent.id
+
     async def create_queued(
         self,
         request: AgentRequest,
@@ -117,6 +168,8 @@ class TaskCreationService:
         attempt: int = 1,
         existing_user_message_id: str | None = None,
     ) -> TaskModel:
+        RuntimeTimingTrace.mark(request.options, "task_creation_start")
+        preparation_started = perf_counter()
         teaching_options, _, _ = normalize_teaching_options(request.options)
         request = request.model_copy(update={"options": teaching_options})
         request = self._with_route_context(request, route)
@@ -128,9 +181,34 @@ class TaskCreationService:
                 "任务引用的会话不存在",
                 details={"session_id": request.session_id},
             )
+        parent_task_id = await self._resolve_parent_task_id(
+            request, parent_task_id
+        )
         request = SessionContextService(self.settings).apply(session, request)
         request = self.goal_preparation.attach(request)
+        RuntimeTimingTrace.observe(
+            request.options,
+            "request_preparation",
+            (perf_counter() - preparation_started) * 1000,
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "prepared_input_hash",
+            {
+                "canonical_input": request.canonical_input,
+                "attachments": [
+                    {
+                        "file_id": item.file_id,
+                        "checksum_sha256": item.checksum_sha256 or "",
+                        "content_type": item.content_type,
+                    }
+                    for item in request.attachments
+                ],
+            },
+        )
         planner_snapshot: PlannerSnapshot | None = None
+        planner_started = perf_counter()
+        RuntimeTimingTrace.mark(request.options, "planner_start")
         planner_mode = self.planner.production_mode(self.settings, request)
         if planner_mode in {"controlled", "active"}:
             try:
@@ -193,6 +271,16 @@ class TaskCreationService:
                         error_type=type(exc).__name__,
                     )
         request = self._with_intent_plan(request, intent_plan)
+        RuntimeTimingTrace.observe(
+            request.options,
+            "planner",
+            (perf_counter() - planner_started) * 1000,
+        )
+        RuntimeTimingTrace.fingerprint(
+            request.options,
+            "plan_hash",
+            intent_plan.model_dump(mode="json"),
+        )
         if planner_snapshot is not None:
             request = self._with_planner_snapshot(request, planner_snapshot)
         idempotency_key = str(request.options.get("idempotency_key", "")).strip()

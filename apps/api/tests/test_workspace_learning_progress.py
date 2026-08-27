@@ -18,7 +18,6 @@ def test_workspace_exposes_current_task_and_evidence_controls(api) -> None:
         'id="context-evidence"',
     ):
         assert text in html
-    assert "/react-assets/assets/index-" not in html
     assert "renderEvidence(" in script
     assert "retryCurrentTask" in script
     assert "尝试历史" not in html

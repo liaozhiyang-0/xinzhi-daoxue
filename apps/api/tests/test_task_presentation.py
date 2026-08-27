@@ -136,7 +136,7 @@ def test_agent_rag_modes_preserve_learn_and_solver_boundaries() -> None:
         == "grounded_generation"
     )
     assert (
-        registry.get("SOLVER_CT_V1").retrieval_policy.interaction_mode
+        registry.get("ACADEMIC_PROBLEM_SOLVER").retrieval_policy.interaction_mode
         == "method_reference"
     )
 
@@ -364,8 +364,9 @@ def test_runtime_core_retrieval_summary_populates_evidence_view() -> None:
     assert evidence[0].entered_workflow is True
 
 
-def test_solver_evidence_is_labeled_method_reference_not_answer_basis() -> None:
-    definition = AgentRegistry().get("SOLVER_CT_V1")
+def test_academic_solver_evidence_is_labeled_method_reference_not_answer_basis(
+) -> None:
+    definition = AgentRegistry().get("ACADEMIC_PROBLEM_SOLVER")
     result = AgentResult(
         agent_id=definition.agent_id,
         provider="local",
@@ -600,6 +601,41 @@ def test_research_presentation_distinguishes_failed_external_search() -> None:
 
     assert presentation.source_summary == "外部检索未形成可展示证据"
     assert "已执行论文、报道等外部检索" in presentation.evidence_message
+
+
+def test_research_presentation_exposes_provider_failure_details() -> None:
+    definition = AgentRegistry().get("RESEARCH_01_ACADEMIC_SEARCH_V1")
+    result = AgentResult(
+        agent_id=definition.agent_id,
+        provider="local_agent",
+        course_id="CT",
+        intent="academic_search",
+        answer="当前没有获得可核验的外部科研证据。",
+        structured_result={
+            "answer_mode": "no_verified_evidence",
+            "external_retrieval": {
+                "status": "failed",
+                "provider_status": {
+                    "openalex": "timeout",
+                    "searxng": "completed",
+                    "tavily": "rate_limited",
+                },
+                "warnings": ["paper review rejected all model decisions"],
+            },
+        },
+    )
+
+    presentation, _, _ = build_task_views(
+        definition=definition,
+        result=result,
+        bundle=None,
+        routing={},
+        timings={},
+    )
+
+    assert presentation.status_label == "外部检索未形成证据"
+    assert "接口状态" in presentation.evidence_message
+    assert "paper review rejected all model decisions" in presentation.evidence_message
 
 
 def test_research_presentation_keeps_local_answer_when_external_evidence_is_empty(

@@ -928,19 +928,9 @@ class AcademicSearchService:
                     "cache_hit": True,
                 }
             )
-        allowed = (
-            {name.casefold() for name in provider_names} if provider_names else None
-        )
-        allowed_scopes = set(source_scopes) if source_scopes else None
-        providers = tuple(
-            provider
-            for provider in self.providers
-            if (allowed is None or provider.provider_name.casefold() in allowed)
-            and (
-                allowed_scopes is None
-                or getattr(provider, "source_scope", ExternalSourceScope.ACADEMIC)
-                in allowed_scopes
-            )
+        providers = self._eligible_providers(
+            provider_names=provider_names,
+            source_scopes=source_scopes,
         )
         if not providers:
             result = ExternalRetrievalResult(
@@ -1039,11 +1029,8 @@ class AcademicSearchService:
         scopes: list[ExternalSourceScope] = []
         for provider, response in zip(called_providers, responses, strict=True):
             if isinstance(response, BaseException):
-                provider_status[provider.provider_name] = (
-                    "rate_limited"
-                    if isinstance(response, AcademicProviderError)
-                    and "rate_limited" in str(response)
-                    else "failed"
+                provider_status[provider.provider_name] = _provider_failure_status(
+                    response
                 )
                 if isinstance(response, AcademicProviderError):
                     warnings.append(str(response))
@@ -1162,6 +1149,54 @@ class AcademicSearchService:
                 if (remaining := self._cooldown_remaining(name)) > 0
             },
         }
+
+    def fallback_provider_names(
+        self,
+        *,
+        provider_names: Sequence[str] | None = None,
+        source_scopes: Sequence[ExternalSourceScope] | None = None,
+    ) -> tuple[str, ...]:
+        """Return configured providers after the primary tier.
+
+        The normal search path stops once it has enough raw candidates. The
+        research review happens after that point, so a primary tier can still
+        produce candidates that are all rejected later. This method lets the
+        caller retry only the remaining configured tiers in that case.
+        """
+
+        providers = self._eligible_providers(
+            provider_names=provider_names,
+            source_scopes=source_scopes,
+        )
+        groups = self._provider_groups(providers)
+        return tuple(
+            provider.provider_name
+            for group in groups[1:]
+            for provider in group
+        )
+
+    def _eligible_providers(
+        self,
+        *,
+        provider_names: Sequence[str] | None,
+        source_scopes: Sequence[ExternalSourceScope] | None,
+    ) -> tuple[AcademicSearchProvider, ...]:
+        allowed = (
+            {name.casefold() for name in provider_names}
+            if provider_names
+            else None
+        )
+        allowed_scopes = set(source_scopes) if source_scopes else None
+        return tuple(
+            provider
+            for provider in self.providers
+            if (allowed is None or provider.provider_name.casefold() in allowed)
+            and (
+                allowed_scopes is None
+                or getattr(provider, "source_scope", ExternalSourceScope.ACADEMIC)
+                in allowed_scopes
+            )
+        )
 
     def _provider_groups(
         self, providers: Sequence[AcademicSearchProvider]
@@ -1463,6 +1498,24 @@ def merge_academic_results(
         search_queries=queries[:6],
         search_round=search_round,
     )
+
+
+def _provider_failure_status(error: BaseException) -> str:
+    """Keep the small set of provider failure reasons visible to callers."""
+
+    if not isinstance(error, AcademicProviderError):
+        return "failed"
+    message = str(error).casefold()
+    for marker in (
+        "rate_limited",
+        "timeout",
+        "request_failed",
+        "invalid_json",
+        "invalid_xml",
+    ):
+        if marker in message:
+            return marker
+    return "failed"
 
 
 def _text(element: ElementTree.Element, name: str) -> str:

@@ -7,7 +7,11 @@ from app.core.config import Settings
 def test_agent_registry_loads_local_learning_agents() -> None:
     registry = AgentRegistry()
 
-    assert registry.get("SOLVER_CT_V1").publication_status == "published"
+    academic = registry.get("ACADEMIC_PROBLEM_SOLVER")
+    assert academic.publication_status == "local"
+    assert {"solve_problem", "check_user_solution", "verify_answer"}.issubset(
+        academic.capabilities.intents
+    )
     learner = registry.get("LEARN_01_KNOWLEDGE_QA_V1")
     assert learner.provider == "local"
     assert learner.fallback_agent_id == "LEARN_01_LOCAL_RETRIEVAL_V1"
@@ -23,7 +27,7 @@ def test_agent_registry_loads_local_learning_agents() -> None:
 def test_registry_lifecycle_blocks_runtime_and_unconfigured_route() -> None:
     registry = AgentRegistry()
     settings = Settings(_env_file=None)
-    agent_id = "SOLVER_CT_V1"
+    agent_id = "ACADEMIC_PROBLEM_SOLVER"
     original = registry.get(agent_id)
 
     registry._agents[agent_id] = replace(original, enabled=False)
@@ -60,12 +64,12 @@ def test_disabled_and_unpublished_agents_are_not_configured_or_runtime_available
     assert registry.allows_unconfigured_route(original.agent_id) is False
 
 
-def test_solver_ct_keeps_published_local_route_contract() -> None:
+def test_academic_solver_keeps_local_route_contract() -> None:
     registry = AgentRegistry()
 
-    assert registry.is_execution_eligible("SOLVER_CT_V1") is True
-    assert registry.has_local_execution_contract("SOLVER_CT_V1") is True
-    assert registry.allows_unconfigured_route("SOLVER_CT_V1") is True
+    assert registry.is_execution_eligible("ACADEMIC_PROBLEM_SOLVER") is True
+    assert registry.has_local_execution_contract("ACADEMIC_PROBLEM_SOLVER") is True
+    assert registry.allows_unconfigured_route("ACADEMIC_PROBLEM_SOLVER") is True
 
 
 def test_teaching_retrieval_keeps_unclassified_textbook_chunks_available() -> None:

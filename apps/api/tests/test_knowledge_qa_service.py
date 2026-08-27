@@ -5,6 +5,7 @@ from typing import Any
 from app.contracts import AgentRequest, ModelResponse, RetrievalResult
 from app.contracts.learning import LearningPathDraft
 from app.services.knowledge_qa_service import DISCLAIMER, KnowledgeQAService
+from app.services.response_depth import output_constraint_instruction
 from app.services.retrieval_context import RetrievalContextService
 
 from tests.knowledge_test_utils import make_service
@@ -77,6 +78,13 @@ class _RecordingModelService:
             ),
             elapsed_ms=1,
         )
+
+
+def test_output_constraint_instruction_captures_direct_formula_follow_up() -> None:
+    instruction = output_constraint_instruction("直接给出公式，不要资料说明。")
+
+    assert "只输出可直接使用的公式" in instruction
+    assert "不要附加资料说明" in instruction
 
 
 def test_knowledge_output_normalizes_math_but_preserves_verilog_monitor(

@@ -203,7 +203,6 @@ def test_research_analysis_runtime_plan_only_fails_closed_before_legacy_generati
     """Frozen data analysis rejects new work before Runtime or Legacy runs."""
 
     app.state.task_engine.runtime_lifecycle.enabled = True
-    assert app.state.task_engine.runtime_boundary.research_analysis is not None
     session = api.create_session()
     question = (
         "Compare treatment and control outcome scores and report the effect "
@@ -249,7 +248,6 @@ def test_research_analysis_runtime_completes_through_task_boundary(
     pytest.skip("RESEARCH_03 is frozen closed before Runtime task creation")
 
     app.state.task_engine.runtime_lifecycle.enabled = True
-    assert app.state.task_engine.runtime_boundary.research_analysis is not None
     assert app.state.internal_agent_execution is not None
     calls = 0
 

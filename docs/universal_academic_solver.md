@@ -17,7 +17,7 @@ flowchart TD
     J --> L[STANDARD]
     J --> M[HIGH_RISK]
     J --> N[CONDITIONAL]
-    F -->|CT 高风险回退配置| O[SOLVER_CT_V1 云端基线]
+    F -->|课程规则与风险策略| O[本地条件化结果或安全失败]
     K --> P[AcademicSolutionResult]
     L --> P
     M --> P
@@ -34,7 +34,7 @@ LangGraph 存在时由 `StateGraph(XZDGraphState)` 编译；依赖未安装时�
 - STANDARD：一般专业题。
 - HIGH_RISK：多图、来源冲突、代码或低置信度累积达到阈值。
 - CONDITIONAL：关键字段缺失，或课程仅有配置骨架。
-- FALLBACK：运行时不可恢复失败；CT 可指向 SOLVER_CT_V1。
+- FALLBACK：运行时不可恢复失败；按课程包返回条件化结果或安全失败。
 
 路径由 Python 规则和 CoursePack 状态确定，不由模型单独决定。TaskRunner 只检索一次并注入 RetrievalContextPacket。图优先使用共享确定性工具；验证只产生一致性状态和风险，不重新生成完整答案。信息不足时返回缺失字段、假设和置信度，不补造事实。
 

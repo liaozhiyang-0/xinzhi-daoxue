@@ -35,9 +35,21 @@ Key 为空不会阻止服务启动。对应 Provider 显示为 `unconfigured`，
 | 别名 | Provider / model | 用途 |
 |---|---|---|
 | `spark_reasoner` | `iflytek_spark / spark-x` | 复杂推理、课程问答、电路规划、审校 |
-| `qwen_vision_primary` | `dashscope / qwen3.7-plus` | 电路图、多图、公式、表格、扫描件 |
-| `qwen_vision_fast` | `dashscope / qwen3.6-flash` | 普通图片与快速视觉回退 |
-| `qwen_text_fast` | `dashscope / qwen3.5-flash` | 分类、改写、摘要、JSON |
+| `qwen_vision_primary` | `dashscope / qwen3.8-max` | “深入”回答；复杂图片/电路图、多图、公式、表格、扫描件 |
+| `qwen_vision_fast` | `dashscope / qwen3.8-flash` | 标准视觉路径 |
+| `qwen_text_fast` | `dashscope / qwen3.8-flash` | 标准文本路径：分类、改写、摘要、JSON |
+| `qwen_brief` | `dashscope / qwen3.7-flash` | “简要”回答的文本与视觉路径 |
+
+前端的 `response_depth` 统一映射为：`brief -> qwen3.7-flash`、`standard -> qwen3.8-flash`、`deep -> qwen3.8-max`。映射在 `ModelService` 集中处理，业务 Agent 仍只调用统一 Provider 链；模型不可用时保留既有路由回退。`qwen3.8-flash` 需在当前百炼账号的模型目录中确认可用，配置检查不会发送真实请求。
+
+服务在非测试环境启动后会在后台用固定短问题“只回复 OK”预热一次 `qwen3.8-flash`，不阻塞 API 启动，也不使用路由回退。可通过以下配置关闭或限制等待时间：
+
+```env
+QWEN_WARMUP_ENABLED=true
+QWEN_WARMUP_TIMEOUT_SECONDS=45
+```
+
+预热按进程执行一次；多 Worker 或自动重载会各自产生一次调用，因此会消耗少量额度。状态可从 `app.state.qwen_warmup` 查看，失败不会阻止服务启动。
 
 注册表声明模型能力，任务路由声明主模型、回退和可选校验模型。Provider 内没有业务路由。
 
@@ -92,7 +104,7 @@ GET /api/v1/internal-agents
 
 案例位于 `evaluation/model_agents/cases.yaml`。脱敏报告写入 Git 忽略的 `local_storage/evaluations/model_agents_*.json`，只包含状态、模型、耗时、Token、请求 ID 和输出字段名，不保存完整提示词、答案或图片。`--max-total-tokens` 会在案例之间停止后续调用；单个请求的输入 Token 由 Provider 计量，因此最后一个案例可能使总量略微超过阈值。
 
-Spark 驱动的结构化内部 Agent 使用两段链：Spark 生成业务草稿，Qwen3.5 将草稿归一为 Pydantic JSON。报告中的 Token、耗时和模型名称（例如 `spark-x->qwen3.5-flash`）覆盖两个阶段，不能只按第二阶段估算费用。
+Spark 驱动的结构化内部 Agent 使用两段链：Spark 生成业务草稿，Qwen3.8 Flash 将草稿归一为 Pydantic JSON。报告中的 Token、耗时和模型名称（例如 `spark-x->qwen3.8-flash`）覆盖两个阶段，不能只按第二阶段估算费用。
 
 ## 图片处理边界
 

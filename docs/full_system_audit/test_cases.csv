@@ -1,0 +1,19 @@
+case_id,area,entry,input_or_action,observed_result,severity,status
+B-01,browser,/workspace,open page,"200; three-pane workspace; guest mode",P2,pass
+B-02,browser,/workspace,click new session,"six showcase cards; input available",P2,pass
+B-03,browser,/workspace,series-resistor question,"completed in about 12s; answer core correct; stale circuit artifact and irrelevant evidence visible",P1,fail
+B-04,context,/workspace,same-session formula-only follow-up,"unrelated KCL/KVL explanation; format and topic not preserved",P0,fail
+B-05,browser,/workspace,reload current session,"messages and failed answer restored",P2,pass
+API-01,api,/api/v1/chat,simple series-resistor question,"202 accepted then runtime_node_error; result null",P1,fail
+API-02,api,/api/v1/tasks,explain_concept simple question,"route Agent and Planner capability disagree; validation insufficient",P1,fail
+API-03,sse,/api/v1/tasks/{id}/stream,Last-Event-ID 0/10/16,"ordered replay reached terminal event",P2,pass
+API-04,task-control,/api/v1/tasks/{id}/cancel,cancel research task,"running >40s; cancelled after about 51s",P1,fail
+API-05,readiness,/api/v1/scenarios/readiness,inspect all scenarios,"9 exposed scenarios production_ready=false",P1,fail
+FILE-01,file,/api/v1/files,upload existing README.txt,"201; extraction ready; one chunk",P2,pass
+FILE-02,file,/api/v1/files/{id}/content,omit user_id,"422 validation error",P2,fail
+RAG-01,rag,/api/v1/knowledge/search,known CT query,"relevant course hits",P2,pass
+RAG-02,rag,/api/v1/knowledge/rag-search,random nonexistent term,"three unrelated hits; no warnings",P1,fail
+RES-01,research,/api/v1/research/knowledge/search,known medical-imaging query,"candidate papers returned",P2,pass
+RES-02,research,/api/v1/research/knowledge/search,random nonexistent term,"five unrelated candidates; no warnings",P1,fail
+OPS-01,health,/health and metrics,health snapshot,"dependencies ready; models live=false; historical metrics present",P2,partial
+QA-01,quality,CLI,config/sensitive/drift/Ruff/Mypy/TS,"all completed checks passed",P2,pass

@@ -6,7 +6,7 @@
 - Docker 编排文件为根目录 `docker-compose.yml`，可先用 `docker compose config --quiet` 做静态配置检查。本轮未启动 Docker 容器，因此不记录容器健康、吞吐或部署成功结论。
 - 认证开启时，业务身份由会话账号覆盖请求中的 `user_id`；教师/管理员可访问教师工作台、资料复核、评测和反馈统计，学生只能提交和查看自己的学习任务。
 - 教师资料支持发布、拒绝和审计状态；任务反馈统计不返回用户 ID。
-- 课程复制/新增遵循 `docs/course_pack_design.md` 与 `docs/implementation/skill_registry.md`：新增课程声明 CoursePack、技能和知识目录，不复制冻结求解图，也不把新课程路由到 `SOLVER_CT_V1`。
+- 课程复制/新增遵循 `docs/course_pack_design.md` 与 `docs/implementation/skill_registry.md`：新增课程声明 CoursePack、技能和知识目录，不复制求解图，统一接入 `ACADEMIC_PROBLEM_SOLVER`。
 
 ## 数据与删除边界
 

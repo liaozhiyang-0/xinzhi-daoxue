@@ -67,9 +67,9 @@ async def upload_file(
     )
     if purpose == "course_material":
         if settings.auth_required and (
-            not principal.authenticated or principal.role not in {"teacher", "admin"}
+            not principal.authenticated or principal.role != "admin"
         ):
-            raise HTTPException(status_code=403, detail="需要教师或管理员权限")
+            raise HTTPException(status_code=403, detail="需要管理员权限")
         if not all(
             (
                 normalized_course_id,

@@ -19,7 +19,7 @@ POST /api/v1/tasks
 
 生产代码不包含哈希、随机或固定测试向量。测试确定性 Provider 只存在于 `apps/api/tests/rag_fakes.py`。模型或 Qdrant 失败时返回 degraded/failed，并保留 BM25 结果，不会伪装为神经网络检索成功。
 
-`SOLVER_CT_V1` 的原始输入合同属于冻结历史资产，不再作为当前业务执行路径。本地仍检索 method/formula/concept/common_error 供日志和界面查看，当前求解统一由本地 Runtime 处理。
+`SOLVER_CT_V1` 的原始输入合同属于退役历史资产，不再作为当前业务执行路径。本地仍检索 method/formula/concept/common_error 供日志和界面查看，当前求解统一由 `ACADEMIC_PROBLEM_SOLVER` 的本地 Runtime 处理。
 
 ## 2. 安装
 

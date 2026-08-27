@@ -4,7 +4,7 @@ CoursePack 是课程规则包，不是 Agent，也不持有或调用 ModelServic
 
 | 课程 | 状态 | 题型范围 | 回退 |
 |---|---|---|---|
-| CT | implemented | KCL/KVL、节点、网孔、定理、一二阶、相量、功率、受控源、互感、二端口、频响 | 高风险可指向 SOLVER_CT_V1 |
+| CT | implemented | KCL/KVL、节点、网孔、定理、一二阶、相量、功率、受控源、互感、二端口、频响 | ACADEMIC_PROBLEM_SOLVER 的高风险本地校验 |
 | AE | basic | 二极管、BJT/MOS 工作点、小信号、反馈、频响、运放、波形电路 | 本地条件化结果 |
 | DE | basic | 编码、逻辑化简、组合/时序、触发器、计数器、状态机、Verilog | 本地条件化结果 |
 | SS | basic | 连续/离散信号、系统性质、卷积、Fourier/Laplace/Z、频域 | 本地条件化结果 |

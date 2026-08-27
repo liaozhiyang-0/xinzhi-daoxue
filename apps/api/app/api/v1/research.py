@@ -40,6 +40,7 @@ async def research_knowledge_search(
             {"evidence_id": hit.item_id, "score": hit.score, **hit.payload}
             for hit in hits
         ],
+        "warnings": [] if hits else ["no_relevant_research_evidence"],
     }
 
 
@@ -49,4 +50,3 @@ async def maintain_research_knowledge(
     _principal: Principal = Depends(get_current_principal),
 ) -> dict[str, Any]:
     return await service.maintain()
-

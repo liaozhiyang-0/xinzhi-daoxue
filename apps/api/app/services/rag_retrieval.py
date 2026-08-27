@@ -4,6 +4,7 @@ import hashlib
 import logging
 import math
 from collections import OrderedDict, defaultdict
+from collections.abc import MutableMapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.contracts import KnowledgeHit, RelatedImage, RetrievalResult
 from app.contracts.knowledge import KnowledgeCourseId
 from app.core.config import Settings
 from app.knowledge_catalog import KNOWLEDGE_COURSE_NAMES
+from app.observability import RuntimeTimingTrace
 from app.services.course_material_manifest import (
     REVOCATION_STATE_UNAVAILABLE,
     material_id_from_source_ref,
@@ -61,14 +63,14 @@ def policy_for(
             include_images=bool(configured_image_top_k),
             allow_generation_injection=bool(allow_generation_injection),
         )
-    if agent_id == "SOLVER_CT_V1":
+    if agent_id == "ACADEMIC_PROBLEM_SOLVER":
         return RetrievalPolicy(
-            name="solver_method_reference",
-            text_top_k=min(2, configured_top_k),
+            name="academic_solver_domain_context",
+            text_top_k=min(3, configured_top_k),
             image_top_k=2,
             content_types=("method", "formula", "concept", "common_error"),
             include_images=True,
-            allow_generation_injection=False,
+            allow_generation_injection=True,
         )
     defaults = {
         "explain_concept": (
@@ -250,14 +252,26 @@ class RAGRetrievalService:
         image_top_k: int | None = None,
         allow_generation_injection: bool | None = None,
         local_budget_ms: int | None = None,
+        timing_options: MutableMapping[str, Any] | None = None,
     ) -> RetrievalResult:
         started = perf_counter()
+        if timing_options is not None:
+            RuntimeTimingTrace.mark(timing_options, "rag_retrieval_start")
         trace_id = f"rag_{uuid4().hex}"
+        rewrite_started = perf_counter()
+        if timing_options is not None:
+            RuntimeTimingTrace.mark(timing_options, "rag_query_rewrite_start")
         normalized, rewrite_rules = rewrite_retrieval_query(
             query_text,
             course_id=course_id,
             conversation_summary=session_context,
         )
+        if timing_options is not None:
+            RuntimeTimingTrace.observe(
+                timing_options,
+                "rag_query_rewrite",
+                (perf_counter() - rewrite_started) * 1000,
+            )
         modalities = ["text"] if normalized else []
         if query_image is not None:
             modalities.append("image")
@@ -272,7 +286,7 @@ class RAGRetrievalService:
                 for hit in sparse.hits
                 if not content_types or hit.content_type in content_types
             ]
-            return sparse.model_copy(
+            result = sparse.model_copy(
                 update={
                     "hits": filtered_hits,
                     "rag_status": "disabled",
@@ -284,6 +298,13 @@ class RAGRetrievalService:
                     "latency_ms": int((perf_counter() - started) * 1000),
                 }
             )
+            if timing_options is not None:
+                RuntimeTimingTrace.observe(
+                    timing_options,
+                    "rag_retrieval",
+                    (perf_counter() - started) * 1000,
+                )
+            return result
         policy = policy_for(
             agent_id=target_agent_id,
             intent=intent,
@@ -325,7 +346,7 @@ class RAGRetrievalService:
                 {"cache_hit": True, "query_rewrite_rules": rewrite_rules}
             )
             self._metrics["rag_result_cache_hit_total"] += 1
-            return cached.model_copy(
+            result = cached.model_copy(
                 update={
                     "query": query_text,
                     "normalized_query": normalized,
@@ -335,6 +356,13 @@ class RAGRetrievalService:
                 },
                 deep=True,
             )
+            if timing_options is not None:
+                RuntimeTimingTrace.observe(
+                    timing_options,
+                    "rag_retrieval",
+                    (perf_counter() - started) * 1000,
+                )
+            return result
         warnings: list[str] = []
         if image_cold_skipped:
             warnings.append("optional_image_skipped:cold_model_local_budget")
@@ -369,6 +397,14 @@ class RAGRetrievalService:
             )
 
         dense_hits: list[VectorSearchHit] = []
+        vector_started = perf_counter()
+        image_started = (
+            perf_counter() if include_images or query_image is not None else None
+        )
+        if timing_options is not None:
+            RuntimeTimingTrace.mark(timing_options, "rag_vector_search_start")
+            if image_started is not None:
+                RuntimeTimingTrace.mark(timing_options, "rag_image_retrieval_start")
         try:
             health = self.vector_store.health(
                 expected_text_dimension=self.text_provider.health().dimension,
@@ -453,18 +489,50 @@ class RAGRetrievalService:
                 course_id,
                 type(exc).__name__,
             )
+        finally:
+            if timing_options is not None:
+                RuntimeTimingTrace.observe(
+                    timing_options,
+                    "rag_vector_search",
+                    (perf_counter() - vector_started) * 1000,
+                )
+                if image_started is not None:
+                    RuntimeTimingTrace.observe(
+                        timing_options,
+                        "rag_image_retrieval",
+                        (perf_counter() - image_started) * 1000,
+                    )
 
         sparse_hits: list[KnowledgeHit] = []
         if sparse_future is not None:
+            sparse_started = perf_counter()
+            if timing_options is not None:
+                RuntimeTimingTrace.mark(timing_options, "rag_bm25_start")
             try:
                 sparse_hits = sparse_future.result()
             except Exception as exc:
                 warnings.append(f"sparse_degraded:{type(exc).__name__}")
+            finally:
+                if timing_options is not None:
+                    RuntimeTimingTrace.observe(
+                        timing_options,
+                        "rag_bm25",
+                        (perf_counter() - sparse_started) * 1000,
+                    )
             trace["sparse_candidates"] = len(sparse_hits)
             self._add_sparse(candidates, sparse_hits)
             trace["bm25"] = [self._hit_summary(hit) for hit in sparse_hits[:10]]
 
+        rrf_started = perf_counter()
+        if timing_options is not None:
+            RuntimeTimingTrace.mark(timing_options, "rag_rrf_start")
         self._rrf(candidates, normalized)
+        if timing_options is not None:
+            RuntimeTimingTrace.observe(
+                timing_options,
+                "rag_rrf",
+                (perf_counter() - rrf_started) * 1000,
+            )
         revoked_chunk_ids, revoked_material_ids = self._revoked_material_state()
         if revoked_chunk_ids or revoked_material_ids:
             before_count = len(candidates)
@@ -519,6 +587,9 @@ class RAGRetrievalService:
             "executed": should_rerank,
         }
         if self.settings.reranker_enabled and should_rerank and normalized and ordered:
+            rerank_started = perf_counter()
+            if timing_options is not None:
+                RuntimeTimingTrace.mark(timing_options, "rag_rerank_start")
             try:
                 rerank_items = ordered[: self.settings.reranker_top_n]
                 with self._reranker_semaphore:
@@ -536,16 +607,46 @@ class RAGRetrievalService:
             except Exception as exc:
                 reranker_status = "failed"
                 warnings.append(f"reranker_degraded:{type(exc).__name__}")
-        final_hits = [self._finalize(item) for item in ordered[: policy.text_top_k]]
+            finally:
+                if timing_options is not None:
+                    RuntimeTimingTrace.observe(
+                        timing_options,
+                        "rag_rerank",
+                        (perf_counter() - rerank_started) * 1000,
+                    )
+        evidence_started = perf_counter()
+        if timing_options is not None:
+            RuntimeTimingTrace.mark(timing_options, "rag_evidence_build_start")
+        ranked_candidates = ordered[: policy.text_top_k]
+        final_hits = [
+            self._finalize(item)
+            for item in ranked_candidates
+            if self._final_score(item) >= self.settings.rag_min_retrieval_score
+        ]
+        filtered_low_relevance = len(ranked_candidates) - len(final_hits)
+        if filtered_low_relevance:
+            warnings.append(
+                f"low_relevance_course_evidence_filtered:{filtered_low_relevance}"
+            )
+        if ranked_candidates and not final_hits:
+            warnings.append("no_relevant_course_evidence")
         final_images = self._final_images(
             image_channels,
             limit=min(policy.image_top_k, self.settings.rag_final_image_k),
         )
         trace["image_candidates"] = len(image_channels)
         trace["final_text_evidence"] = len(final_hits)
+        trace["relevance_min_score"] = self.settings.rag_min_retrieval_score
+        trace["filtered_low_relevance"] = filtered_low_relevance
         trace["final_images"] = len(final_images)
         trace["images"] = [item.model_dump(mode="json") for item in final_images]
         trace["final"] = [item.model_dump(mode="json") for item in final_hits]
+        if timing_options is not None:
+            RuntimeTimingTrace.observe(
+                timing_options,
+                "rag_evidence_build",
+                (perf_counter() - evidence_started) * 1000,
+            )
         confidence = self._confidence(final_hits)
         rag_status = "ready" if dense_ok and vector_ok and image_ok else "degraded"
         if optional_degraded:
@@ -595,6 +696,12 @@ class RAGRetrievalService:
         )
         if not optional_degraded:
             self._result_cache_put(cache_key, result)
+        if timing_options is not None:
+            RuntimeTimingTrace.observe(
+                timing_options,
+                "rag_retrieval",
+                (perf_counter() - started) * 1000,
+            )
         return result
 
     def health(self) -> dict[str, Any]:

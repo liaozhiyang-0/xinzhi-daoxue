@@ -1,6 +1,6 @@
 import { createMaterialManager } from "./ts/materials.js";
 import { createTaskTransport } from "./ts/task-transport.js";
-import { buildStudentTaskPayload } from "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v1";
+import { buildStudentTaskPayload } from "./ts/workspace-contracts.js?v=20260826-circuit-toggle-v2";
 
 const { $, all, api, el, initIdentityGate, initShell, renderMarkdown, toast } = XinzhiUI;
 const params = new URLSearchParams(location.search);
@@ -22,7 +22,25 @@ const externalProviderLabels = {
   semantic_scholar: "Semantic Scholar",
   cnki: "中国知网",
   web_json: "网页检索",
+  tavily: "Tavily",
+  brave: "Brave",
+  serpapi: "SerpApi",
+  searxng: "SearXNG",
+  aliyun_iqs: "阿里云 IQS",
+  bocha: "Bocha",
+  news_rss: "Google News RSS",
 };
+const externalProviderStatusLabels = {
+  completed: "已返回",
+  partial: "部分返回",
+  failed: "失败",
+  rate_limited: "被限流",
+  timeout: "超时",
+  request_failed: "连接失败",
+  invalid_json: "返回格式错误",
+  invalid_xml: "返回格式错误",
+};
+const primaryAcademicProviders = new Set(["openalex", "crossref", "arxiv"]);
 const taskLabels = {
   explain_concept: "知识理解与关联",
   general_qa: "综合知识支持",
@@ -1203,6 +1221,58 @@ function externalItemsForDisplay(structured) {
   return normalizedExternalItems(retrieval.length ? retrieval : view);
 }
 
+function externalProviderStatusSummary(retrieval) {
+  const statuses = retrieval?.provider_status;
+  if (!statuses || typeof statuses !== "object") return "未执行";
+  const entries = Object.entries(statuses).filter(([name, status]) => name && status);
+  if (!entries.length) return "未记录接口状态";
+  return entries.map(([name, status]) => (
+    (externalProviderLabels[name] || name) + " · "
+    + (externalProviderStatusLabels[status] || status)
+  )).join("；");
+}
+
+function externalWarningLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.includes("rate_limited")) return "接口触发限流，已尝试其他检索源。";
+  if (text.includes("timeout")) return "接口或论文审核服务超时。";
+  if (text.includes("request_failed")) return "接口连接失败。";
+  if (text.includes("no records returned")) return "该接口没有返回记录。";
+  if (text.includes("missing publication date")) return "候选论文缺少发布日期，无法核验时间范围。";
+  if (text.includes("outside relative date window")) return "候选论文超出请求的时间范围。";
+  if (text.includes("missing abstract")) return "候选论文缺少摘要，无法完成证据审核。";
+  if (text.includes("topic mismatch")) return "候选结果与问题主题不匹配，已被剔除。";
+  if (text.includes("paper review unavailable")) return "论文相关性审核不可用，结果需要人工核验。";
+  if (text.includes("paper review rejected all")) return "论文相关性审核淘汰了全部候选结果。";
+  return text.slice(0, 180);
+}
+
+function externalRetrievalDiagnostic(retrieval) {
+  if (!retrieval || typeof retrieval !== "object") return null;
+  const status = String(retrieval.status || "");
+  const items = Array.isArray(retrieval.items) ? retrieval.items : [];
+  const statuses = retrieval.provider_status && typeof retrieval.provider_status === "object"
+    ? Object.entries(retrieval.provider_status).filter(([name, value]) => name && value)
+    : [];
+  const fallbackEntries = statuses.filter(([name]) => !primaryAcademicProviders.has(String(name).toLowerCase()));
+  const warnings = Array.isArray(retrieval.warnings)
+    ? retrieval.warnings.map(externalWarningLabel).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).slice(0, 3)
+    : [];
+  const hasProblem = !items.length && ["failed", "disabled", "partial"].includes(status);
+  if (!hasProblem && !fallbackEntries.length && !warnings.length) return null;
+  let text = hasProblem
+    ? status === "disabled"
+      ? "外部检索未启用或没有可用的检索接口。"
+      : status === "partial"
+        ? "外部检索只完成了部分接口，当前证据可能不完整。"
+        : "外部检索已执行，但审核后没有形成可展示的合格证据。"
+    : "已启用备用检索：" + fallbackEntries.map(([name]) => externalProviderLabels[name] || name).join("、") + "。";
+  if (statuses.length) text += " 接口状态：" + externalProviderStatusSummary(retrieval) + "。";
+  if (warnings.length) text += " 处理说明：" + warnings.join("；");
+  return { status: hasProblem ? "warning" : "", text };
+}
+
 function externalEvidenceDateLabel(item) {
   const explicit = String(item.date_label || "").trim();
   if (explicit) return explicit;
@@ -1292,14 +1362,15 @@ function evidenceRelatedImages(evidence, candidates) {
   ).values()];
 }
 
-function renderEvidence(items, presentation, relatedImages = [], externalItems = []) {
+function renderEvidence(items, presentation, relatedImages = [], externalItems = [], externalRetrieval = {}) {
   state.evidence = items || [];
   $("#source-summary").textContent = `参考课程资料 ${state.evidence.length}`;
   const cards = state.evidence.map(evidenceCard);
   const imageCard = relatedImageCard(relatedImages);
   if (imageCard) cards.push(imageCard);
   const external = renderExternalPapers(externalItems);
-  $("#context-evidence").replaceChildren(...(cards.length || external ? [...(external ? [external] : []), ...cards] : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的资料依据" }), el("p", { text: presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
+  const diagnostic = externalRetrievalDiagnostic(externalRetrieval);
+  $("#context-evidence").replaceChildren(...(cards.length || external ? [...(external ? [external] : []), ...cards] : [el("div", { class: "context-empty" }, [el("strong", { text: "本次没有可展示的资料依据" }), el("p", { text: diagnostic?.text || presentation?.evidence_message || "系统不会把未使用的候选资料显示为回答依据。" })]) ]));
 }
 
 function renderProcess(steps = []) {
@@ -1422,6 +1493,9 @@ function renderContextUsage(result = {}) {
 function renderInfo(task, result, summary, presentation, renderMs = 0) {
   const structured = result.structured_result || {};
   const externalEvidenceCount = externalItemsForDisplay(result.structured_result).length;
+  const externalRetrieval = structured.external_retrieval && typeof structured.external_retrieval === "object"
+    ? structured.external_retrieval
+    : {};
   const scenarioReview = result.structured_result?.scenario_evidence_review || {};
   const scenarioReviewStatus = scenarioReview.status === "approved"
     ? "证据审查通过"
@@ -1453,6 +1527,7 @@ function renderInfo(task, result, summary, presentation, renderMs = 0) {
         ? `${externalEvidenceCount} 条`
         : `${summary.used_evidence_count || 0} / ${summary.evidence_count || 0} 条`,
     ],
+    ["检索接口", externalRetrieval.status || externalRetrieval.provider_status ? externalProviderStatusSummary(externalRetrieval) : "未执行"],
     ["结果检查", summary.citation_status === "passed" ? "通过" : summary.citation_status === "failed" ? "需要复核" : "已完成结构检查"],
     ["场景证据审查", scenarioReviewStatus],
     ["答案质量", presentation.answer_quality_status === "checked" ? "已检查" : presentation.requires_review ? "需要复核" : "未检查"],
@@ -1913,18 +1988,21 @@ function rememberRuntimeRun(taskId, result = {}) {
 function renderResult(task) {
   const renderStarted = performance.now();
   const result = task.result_content || {}; const structured = result.structured_result || {};
+  const circuitImageOnly = circuitArtifactIsImageOnly(structured);
   const presentation = presentationFor(task, result);
   const summary = structured.execution_summary || {};
   const evidence = structured.evidence_view || [];
   const externalItems = externalItemsForDisplay(structured);
-  state.lastAnswer = displayAnswer(task, result);
+  state.lastAnswer = circuitImageOnly ? "" : displayAnswer(task, result);
   state.currentTask = task;
   updateAutoDetection(taskQuestion(task), structured.teaching?.student_attempt_present ? "provided" : "");
   renderRetryAction(task);
   prepareTaskFeedback(task);
   rememberRuntimeRun(task.id, result);
   void refreshRuntimeTaskControls(task.id);
-  $("#answer-panel").hidden = false;
+  const answerPanel = $("#answer-panel");
+  answerPanel.hidden = false;
+  answerPanel.classList.toggle("circuit-render-only", circuitImageOnly);
   $("#answer-status").textContent = presentation.status_label || "已完成";
   $("#answer-title").textContent = presentation.title;
   $("#answer-source-chip").textContent = presentation.source_summary;
@@ -1942,7 +2020,9 @@ function renderResult(task) {
     text: presentation.answer_quality_message,
   });
   if (presentation.fallback_message) notices.push({ status: "warning", text: presentation.fallback_message });
-  if (presentation.evidence_message) notices.push({ status: "", text: presentation.evidence_message });
+  const externalDiagnostic = externalRetrievalDiagnostic(structured.external_retrieval);
+  if (externalDiagnostic) notices.push(externalDiagnostic);
+  else if (presentation.evidence_message) notices.push({ status: "", text: presentation.evidence_message });
   const scenarioReview = structured.scenario_evidence_review || {};
   if (["pending_manual_review", "needs_manual_review"].includes(scenarioReview.status)) {
     notices.push({
@@ -1978,7 +2058,7 @@ function renderResult(task) {
   const finalSteps = state.liveProcessSteps.size
     ? [...state.liveProcessSteps.values()]
     : executionSteps;
-  renderEvidence(evidence, presentation, relatedImages, externalItems); renderProcess(finalSteps);
+  renderEvidence(evidence, presentation, relatedImages, externalItems, structured.external_retrieval); renderProcess(finalSteps);
   renderContextUsage(result);
   const renderMs = performance.now() - renderStarted; localStorage.setItem("xinzhi_last_render_ms", renderMs.toFixed(1));
   renderInfo(task, result, summary, presentation, renderMs);
@@ -2432,6 +2512,18 @@ function bindCircuitArtifactZoom() {
   });
 }
 
+function circuitArtifactIsImageOnly(structured = {}) {
+  const artifact = structured.circuit_artifact;
+  return Boolean(
+    artifact
+      && typeof artifact === "object"
+      && artifact.metadata?.presentation_mode === "image_only"
+      && artifact.status !== "failed"
+      && typeof artifact.svg === "string"
+      && artifact.svg.trim(),
+  );
+}
+
 function renderCircuitArtifact(structured = {}) {
   const panel = $("#circuit-artifact-panel");
   const content = $("#circuit-artifact-content");
@@ -2440,6 +2532,7 @@ function renderCircuitArtifact(structured = {}) {
   bindCircuitArtifactZoom();
   circuitArtifactZoom = 1;
   panel.hidden = !artifact || typeof artifact !== "object";
+  panel.dataset.presentation = "standard";
   content.replaceChildren();
   warningList.replaceChildren();
   if (panel.hidden) return;
@@ -2453,6 +2546,7 @@ function renderCircuitArtifact(structured = {}) {
 
   const svg = safeCircuitSvg(artifact.svg);
   if (svg && status !== "failed") {
+    if (circuitArtifactIsImageOnly(structured)) panel.dataset.presentation = "image-only";
     content.append(svg);
     applyCircuitArtifactZoom();
   } else {
@@ -2492,6 +2586,8 @@ function setBusy(busy) {
 
 function markAnswerPending() {
   state.lastAnswer = "";
+  $("#answer-panel").classList.remove("circuit-render-only");
+  renderCircuitArtifact({});
   renderMarkdown($("#answer-text"), "");
   $("#answer-notices").replaceChildren();
   renderBusinessView({}, "", {});
@@ -2575,6 +2671,9 @@ async function submit(event) {
   const requestedIntent = learningFollowUp?.intent || state.intentOverride || "unknown";
   const selectedFiles = selectedMaterialFiles();
   if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
+  $("#question-input").value = "";
+  $("#student-attempt-input").value = "";
+  autoGrow();
   updateAutoDetection(question, studentAttempt);
   state.lastQuestion = question; state.activeMemoryIds.clear(); setBusy(true);
   markAnswerPending();
@@ -2621,7 +2720,7 @@ async function submit(event) {
     const finishedTask = await waitForTask(task.id, runSequence);
     if (!finishedTask || runSequence !== state.runSequence || state.cancelRequested) return;
     renderResult(finishedTask); await loadSessionList();
-    $("#question-input").value = ""; $("#student-attempt-input").value = ""; autoGrow(); clearImage();
+    clearImage();
   } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
   finally { if (runSequence === state.runSequence) { state.taskId = ""; setBusy(false); } }
 }
@@ -2810,6 +2909,8 @@ window.addEventListener("DOMContentLoaded", () => {
   if (innerWidth <= 1180 && !document.body.classList.contains("presentation-mode")) setContextOpen(false);
   all("[data-prompt]").forEach((button) => button.addEventListener("click", async () => {
     $("#question-input").value = button.dataset.prompt;
+    pendingLearningFollowUp = null;
+    $("#question-input").placeholder = "输入你的问题，或点击上方案例开始";
     state.activeCourse = button.dataset.course || "AUTO";
     $("#course-select").value = state.activeCourse;
     state.intentOverride = button.dataset.intent || "";

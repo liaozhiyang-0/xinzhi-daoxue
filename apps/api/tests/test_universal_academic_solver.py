@@ -494,7 +494,7 @@ def test_ct_equation_uses_deterministic_shared_tool() -> None:
     assert result.tool_verification[0]["tool_id"] == "linear_equation_solver"
 
 
-def test_ct_high_risk_path_exposes_frozen_cloud_baseline_target() -> None:
+def test_ct_high_risk_path_has_no_legacy_fallback_target() -> None:
     result = graph().run(
         AcademicProblem(
             course="CT",
@@ -506,7 +506,7 @@ def test_ct_high_risk_path_exposes_frozen_cloud_baseline_target() -> None:
     )
 
     assert result.execution_path == "HIGH_RISK"
-    assert result.fallback_target == "SOLVER_CT_V1"
+    assert result.fallback_target is None
     assert result.fallback_used is False
 
 
@@ -931,7 +931,12 @@ async def test_solver_continues_when_model_reaches_output_limit() -> None:
     assert execution["finish_reasons"] == ["length", "stop"]
     assert result.metrics.model_calls == 2
     assert all(
-        call["extra_options"] == {"max_tokens": 4096, "timeout": 180.0}
+        call["extra_options"]
+        == {
+            "max_tokens": 4096,
+            "timeout": 180.0,
+            "response_depth": "standard",
+        }
         for call in model_service.calls
     )
     assert execution["timeout_seconds_per_call"] == 180.0
@@ -943,7 +948,7 @@ async def test_solver_continuation_reuses_successful_route_fallback() -> None:
         [
             ModelResponse(
                 provider="dashscope",
-                model="qwen3.7-plus",
+                model="qwen3.8-max",
                 content="第一部分。\n\n$$ y_",
                 elapsed_ms=5,
                 finish_reason="length",
@@ -954,7 +959,7 @@ async def test_solver_continuation_reuses_successful_route_fallback() -> None:
             ),
             ModelResponse(
                 provider="dashscope",
-                model="qwen3.7-plus",
+                model="qwen3.8-max",
                 content="$$y=1$$\n\n其余部分完成。",
                 elapsed_ms=7,
                 finish_reason="stop",
@@ -979,6 +984,7 @@ async def test_solver_continuation_reuses_successful_route_fallback() -> None:
     assert model_service.calls[1]["extra_options"] == {
         "max_tokens": 4096,
         "timeout": 180.0,
+        "response_depth": "standard",
         "_preferred_route_alias": "qwen_vision_primary",
         "_allow_route_fallback": False,
     }
@@ -1107,12 +1113,3 @@ def test_architecture_has_one_graph_state_and_no_direct_model_in_course_packs() 
     )
     assert "AsyncOpenAI" not in course_source
     assert "ModelService(" not in course_source
-
-
-def test_legacy_solver_is_an_adapter_not_a_second_core() -> None:
-    path = Path(__file__).parents[1] / "app" / "agents" / "solver_ct" / "local_graph.py"
-    source = path.read_text(encoding="utf-8")
-
-    assert "AcademicProblemSolverGraph" in source
-    assert "class CircuitSolverState" not in source
-    assert "StateGraph" not in source

@@ -5,31 +5,6 @@ on:
   pull_request:
 
 jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - name: Install dependencies
-        run: npm --prefix apps/web ci
-      - name: TypeScript typecheck
-        run: npm --prefix apps/web run typecheck
-      - name: Frontend build
-        run: npm --prefix apps/web run build
-      - name: Frontend smoke test
-        run: npm --prefix apps/web run smoke
-      - name: Upload frontend artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build
-          path: apps/api/app/static/debug/react/
-          if-no-files-found: ignore
-
   test:
     runs-on: ubuntu-latest
     env:
@@ -68,10 +43,6 @@ jobs:
           python scripts/evaluate_runtime_plan_proposals.py "$RUNNER_TEMP/runtime-plan-proposals.json" --require-canary-eligible
       - name: Export OpenAPI
         run: python scripts/export_openapi.py
-      - name: Generate TypeScript API types
-        run: python scripts/generate_openapi_types.py
-      - name: TypeScript contract drift check
-        run: git diff --exit-code apps/web/src/api-types.ts docs/api/openapi.json
       - name: Validate configuration
         run: python scripts/validate_config.py
       - name: Audit course assets

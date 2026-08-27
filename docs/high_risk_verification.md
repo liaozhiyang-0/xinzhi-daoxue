@@ -28,5 +28,5 @@ issue；不得要求次模型重新完整解题。次模型返回只登记为非
 
 高严重度来源冲突、关键条件缺失或确定性工具失败会设置
 `requires_fallback=true`。CT CoursePack 仍只通过原有 TaskRunner/AgentRegistry
-配置决定是否调用 `SOLVER_CT_V1`；未配置或调用失败时保留本地条件化结果和问题
+配置决定是否启用对应本地能力；未配置或调用失败时保留 `ACADEMIC_PROBLEM_SOLVER` 的条件化结果和问题
 报告，不伪造云端校验成功。

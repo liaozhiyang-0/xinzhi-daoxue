@@ -343,7 +343,7 @@ def test_context_rejects_legacy_summary_when_source_message_is_withdrawn(
                 current_message_id=None,
                 course_id="CT",
                 task_family="solving",
-                agent_id="solver_ct",
+                agent_id="ACADEMIC_PROBLEM_SOLVER",
             )
             return bundle.session_summary
 
@@ -420,7 +420,7 @@ def test_context_keeps_latest_summary_for_active_course_after_course_switch(
                 current_message_id=None,
                 course_id="CT",
                 task_family="solving",
-                agent_id="solver_ct",
+                agent_id="ACADEMIC_PROBLEM_SOLVER",
             )
             return bundle.session_summary, bundle.summary_id, bundle.summary_version
 
