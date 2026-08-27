@@ -87,6 +87,7 @@ const state = {
   sessionId: localStorage.getItem("xinzhi_student_session") || "",
   userId: localStorage.getItem("xinzhi_student_user") || `student_${crypto.randomUUID()}`,
   taskId: "",
+  submitInFlight: false,
   activeCourse: "AUTO",
   lastQuestion: "",
   lastAnswer: "",
@@ -399,6 +400,7 @@ function resetConversation() {
   state.activeTaskWait?.cancel();
   state.activeTaskWait = null;
   state.taskId = "";
+  state.submitInFlight = false;
   state.cancelRequested = false;
   setBusy(false);
   // A fresh/switched session must not inherit unsent materials from the
@@ -2656,7 +2658,8 @@ function markAnswerCancelled() {
 }
 
 async function submit(event) {
-  event.preventDefault(); if (state.taskId) return;
+  event.preventDefault(); if (state.taskId || state.submitInFlight) return;
+  state.submitInFlight = true;
   await identityReady;
   const runSequence = state.runSequence + 1;
   state.runSequence = runSequence;
@@ -2670,7 +2673,11 @@ async function submit(event) {
   const requestedCourse = learningFollowUp?.course_id || state.activeCourse || "AUTO";
   const requestedIntent = learningFollowUp?.intent || state.intentOverride || "unknown";
   const selectedFiles = selectedMaterialFiles();
-  if (!question && !selectedFiles.length) { $("#form-error").textContent = "请输入题目或上传材料"; return; }
+  if (!question && !selectedFiles.length) {
+    $("#form-error").textContent = "请输入题目或上传材料";
+    state.submitInFlight = false;
+    return;
+  }
   $("#question-input").value = "";
   $("#student-attempt-input").value = "";
   autoGrow();
@@ -2722,7 +2729,13 @@ async function submit(event) {
     renderResult(finishedTask); await loadSessionList();
     clearImage();
   } catch (error) { $("#form-error").textContent = `${error.message}。请检查本地服务后重试。`; }
-  finally { if (runSequence === state.runSequence) { state.taskId = ""; setBusy(false); } }
+  finally {
+    if (runSequence === state.runSequence) {
+      state.taskId = "";
+      state.submitInFlight = false;
+      setBusy(false);
+    }
+  }
 }
 
 function revokeMaterialPreviews() {
@@ -2970,6 +2983,7 @@ window.addEventListener("DOMContentLoaded", () => {
     state.activeTaskWait?.cancel();
     state.activeTaskWait = null;
     state.taskId = "";
+    state.submitInFlight = false;
     setBusy(false);
     markAnswerCancelled();
     $("#form-error").textContent = "已立即停止当前等待，正在后台提交取消请求…";

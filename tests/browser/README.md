@@ -12,7 +12,8 @@ scenario matrix in `scripts/student_browser_smoke.js` covers workspace loading,
 natural-language submission, SSE completion, input/button restoration, session
 creation, evidence interaction, text/image attachments, the explicit frozen
 data-analysis boundary, execution debug, presentation/mobile/dark views, and
-browser page errors. Keep API-delay, provider-timeout, SSE-disconnect, 500/503,
-and rapid-submit cases in the server-level harness; they should be added there
-when the test server exposes deterministic fault injection rather than being
-silently treated as a successful browser result.
+browser page errors. `workspace_failure.spec.js` additionally simulates API
+delay, provider-style 504, server 500/503, first-SSE disconnect/reconnect,
+attachment upload, session restore, and rapid consecutive submission. These
+checks run against the same isolated test server and are reported separately
+from the successful-response smoke.

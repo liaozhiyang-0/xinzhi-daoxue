@@ -69,6 +69,12 @@ async function stopServer() {
       },
     });
     process.exitCode = result.status ?? 1;
+    if (process.exitCode !== 0) throw new Error("workspace smoke failed");
+    const failureResult = spawnSync(process.execPath, [path.join(root, "tests", "browser", "workspace_failure.spec.js")], {
+      cwd: root, windowsHide: true, stdio: "inherit",
+      env: { ...process.env, XINZHI_BROWSER_BASE_URL: baseURL },
+    });
+    process.exitCode = failureResult.status ?? 1;
   } finally {
     await stopServer();
   }

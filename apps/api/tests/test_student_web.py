@@ -96,6 +96,8 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert "historyRequestSequence" in script.text
     assert "renderedAssistantTaskIds" in script.text
     assert "state.activeTaskWait" in script_text
+    assert "submitInFlight" in script.text
+    assert "state.taskId || state.submitInFlight" in script.text
     assert "runSequence !== state.runSequence" in script.text
     assert (
         "attachments: materials.map((item) => attachmentRef(item.uploaded))"
