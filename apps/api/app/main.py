@@ -65,6 +65,7 @@ from app.services.rag_runtime import (
     create_text_embedding_provider,
     create_vector_store,
 )
+from app.services.research_analysis_runtime import ResearchAnalysisRuntimeService
 from app.services.research_frontier_service import ResearchFrontierService
 from app.services.research_knowledge import ResearchKnowledgeService
 from app.services.retrieval_context import (
@@ -382,16 +383,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for service in task_engine.runtime_boundary.business_registry.services()
         if getattr(service, "agent_id", "") != "*"
     )
+    agent_versions = {
+        definition.agent_id: definition.version
+        for definition in agent_registry.list_agents()
+    }
     runtime_capability_descriptors = descriptors_from_task_runtime_services(
         task_runtime_services,
-        agent_versions={
-            definition.agent_id: definition.version
-            for definition in agent_registry.list_agents()
-        },
+        agent_versions=agent_versions,
     ) + descriptors_from_learning_loop_services(
         teaching_interaction=teaching_interaction_runtime,
         learning_progress=learning_progress_runtime,
     )
+    if not app_settings.data_analysis_enabled and internal_agent_execution is not None:
+        # Keep the frozen capability visible to readiness/reporting consumers
+        # without registering an executable service in the Runtime boundary.
+        frozen_research_analysis = ResearchAnalysisRuntimeService(
+            internal_agent_execution,
+            enabled=False,
+        )
+        runtime_capability_descriptors += descriptors_from_task_runtime_services(
+            (frozen_research_analysis,),
+            agent_versions=agent_versions,
+        )
     runtime_agent_readiness = RuntimeAgentReadinessService(
         agent_registry,
         task_engine.runtime_boundary.business_registry,

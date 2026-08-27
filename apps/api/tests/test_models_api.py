@@ -3,7 +3,14 @@ def test_models_api_reports_unconfigured_without_live_calls(client) -> None:
     health = client.get("/api/v1/models/health?live=false")
 
     assert response.status_code == 200
-    assert len(response.json()["models"]) == 4
+    assert len(response.json()["models"]) == 5
+    assert {item["alias"] for item in response.json()["models"]} == {
+        "spark_reasoner",
+        "qwen_vision_fast",
+        "qwen_vision_primary",
+        "qwen_text_fast",
+        "qwen_brief",
+    }
     assert {item["configured"] for item in response.json()["models"]} == {False}
     assert health.status_code == 200
     assert health.json()["live"] is False

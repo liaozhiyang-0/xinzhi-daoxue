@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.tasks.query import TaskQueryService
@@ -10,7 +11,7 @@ from app.contracts.api import (
 )
 from app.contracts.conversation import ConversationMessage, SessionSummaryRead
 from app.dependencies import effective_user_id, get_current_principal, get_db
-from app.models import TaskModel
+from app.models import ConversationMessageModel, TaskModel
 from app.repositories import ConversationRepository, RuntimeContextRepository
 from app.services.auth_service import Principal
 from app.services.conversation_message_service import ConversationMessageService
@@ -201,6 +202,7 @@ def _history_item(
     task: TaskModel,
     *,
     revoked_material_ids: set[str] | None = None,
+    additional_source_refs: list[str] | None = None,
 ) -> SessionTaskHistoryItem:
     canonical = task.input_content.get("canonical_input", {})
     if not isinstance(canonical, dict):
@@ -222,7 +224,14 @@ def _history_item(
     revocation_notice = (
         structured_data.get("revocation_notice")
     )
-    raw_refs = collect_material_source_refs(task.result_content)
+    raw_refs = list(
+        dict.fromkeys(
+            [
+                *collect_material_source_refs(task.result_content),
+                *(additional_source_refs or []),
+            ]
+        )
+    )
     raw_revoked = any(
         REVOCATION_STATE_UNAVAILABLE in (revoked_material_ids or set())
         or material_id_from_source_ref(ref) in (revoked_material_ids or set())
@@ -365,7 +374,34 @@ async def list_session_tasks(
     revoked_material_ids = load_revoked_material_ids(
         request.app.state.settings.knowledge_index_path
     )
+    task_ids = [task.id for task in tasks]
+    assistant_refs_by_task: dict[str, list[str]] = {}
+    if task_ids:
+        messages = list(
+            (
+                await db.scalars(
+                    select(ConversationMessageModel).where(
+                        ConversationMessageModel.source_task_id.in_(task_ids),
+                        ConversationMessageModel.role == "assistant",
+                    )
+                )
+            ).all()
+        )
+        assistant_refs_by_task = {
+            message.source_task_id: collect_material_source_refs(
+                {
+                    "metadata": message.metadata_data,
+                    "content_data": message.content_data,
+                }
+            )
+            for message in messages
+            if message.source_task_id
+        }
     return [
-        _history_item(task, revoked_material_ids=revoked_material_ids)
+        _history_item(
+            task,
+            revoked_material_ids=revoked_material_ids,
+            additional_source_refs=assistant_refs_by_task.get(task.id),
+        )
         for task in tasks
     ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from copy import deepcopy
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -129,6 +130,11 @@ def task_read(
     if requester_user_id is not None and task.user_id != requester_user_id:
         raise NotFoundError("任务不存在")
     model = TaskRead.model_validate(task)
+    # Pydantic's attribute validation can retain nested JSON references from
+    # the ORM entity.  Public projection filters must never mutate persistence
+    # state while preparing a response.
+    model.input_content = deepcopy(model.input_content)
+    model.result_content = deepcopy(model.result_content)
     payload = dict(model.input_content)
     options = dict(payload.get("options") or {})
     for key in (

@@ -284,6 +284,14 @@ async def get_chat_result(
 async def capabilities(request: Request) -> dict[str, Any]:
     settings = request.app.state.settings
     internal = request.app.state.internal_agent_execution
+
+    def agent_available(agent_id: str) -> bool:
+        """Expose an executable local or explicitly allowed development path."""
+
+        if internal.available(agent_id):
+            return True
+        return request.app.state.development_mock_provider.is_allowed(agent_id)
+
     return {
         "supervisor": "XZD_SUPERVISOR",
         "courses": [item.value for item in CourseCode],
@@ -291,7 +299,7 @@ async def capabilities(request: Request) -> dict[str, Any]:
         "intents": [item.value for item in OrchestrationIntent],
         "input_types": ["text", "image", "pdf", "mixed"],
         "local_knowledge_qa": settings.enable_local_knowledge_qa,
-        "academic_problem_solver": internal.available("ACADEMIC_PROBLEM_SOLVER"),
+        "academic_problem_solver": agent_available("ACADEMIC_PROBLEM_SOLVER"),
         "course_packs": [
             item.summary() for item in request.app.state.course_registry.list_packs()
         ],
@@ -359,37 +367,37 @@ async def capabilities(request: Request) -> dict[str, Any]:
             {
                 "id": "solve_problem",
                 "label": "学科问题求解",
-                "available": internal.available("ACADEMIC_PROBLEM_SOLVER"),
+                "available": agent_available("ACADEMIC_PROBLEM_SOLVER"),
                 "knowledge_enhanced": True,
             },
             {
                 "id": "academic_problem_solving",
                 "label": "多学科专业问题求解",
-                "available": internal.available("ACADEMIC_PROBLEM_SOLVER"),
+                "available": agent_available("ACADEMIC_PROBLEM_SOLVER"),
                 "knowledge_enhanced": True,
             },
             {
                 "id": "lesson_prep",
                 "label": "教案设计",
-                "available": internal.available("TEACH_01_LESSON_PREP_V1"),
+                "available": agent_available("TEACH_01_LESSON_PREP_V1"),
                 "knowledge_enhanced": True,
             },
             {
                 "id": "assignment_review",
                 "label": "作业初审",
-                "available": internal.available("TEACH_02_ASSIGNMENT_REVIEW_V1"),
+                "available": agent_available("TEACH_02_ASSIGNMENT_REVIEW_V1"),
                 "knowledge_enhanced": True,
             },
             {
                 "id": "academic_writing",
                 "label": "学术写作",
-                "available": internal.available("RESEARCH_02_ACADEMIC_WRITING_V1"),
+                "available": agent_available("RESEARCH_02_ACADEMIC_WRITING_V1"),
                 "knowledge_enhanced": False,
             },
             {
                 "id": "academic_search",
                 "label": "科研前沿检索",
-                "available": internal.available("RESEARCH_01_ACADEMIC_SEARCH_V1"),
+                "available": agent_available("RESEARCH_01_ACADEMIC_SEARCH_V1"),
                 "knowledge_enhanced": False,
             },
             {

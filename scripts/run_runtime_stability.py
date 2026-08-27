@@ -879,6 +879,18 @@ def select_representatives(
     return selected
 
 
+def _failed_records(result: dict[str, Any]) -> list[dict[str, Any]]:
+    records = [
+        item
+        for item in result.get("records", [])
+        if isinstance(item, dict) and item.get("status") != "passed"
+    ]
+    representative_repeat = result.get("representative_repeat")
+    if isinstance(representative_repeat, dict):
+        records.extend(_failed_records(representative_repeat))
+    return records
+
+
 async def run_mode(
     mode: str,
     cases: list[EvaluationCase],
@@ -985,6 +997,18 @@ async def main() -> None:
         json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(f"output={args.output}")
+    failures = {
+        mode: len(_failed_records(result))
+        for mode, result in results.items()
+        if _failed_records(result)
+    }
+    if failures:
+        print(
+            "runtime stability gate failed: "
+            + json.dumps(failures, ensure_ascii=False, sort_keys=True),
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

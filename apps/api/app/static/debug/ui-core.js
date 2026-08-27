@@ -2,6 +2,7 @@
   "use strict";
 
   const cache = new Map();
+  let identityControlRequest = 0;
   const statusLabels = {
     ready: "正常", running: "运行中", success: "成功", completed: "完成",
     partial: "部分完成", degraded: "降级运行", planned: "开发中", mock: "开发模拟",
@@ -161,16 +162,22 @@
     localStorage.setItem("xinzhi_sidebar_collapsed", String(document.body.classList.contains("sidebar-collapsed")));
   }
 
-  async function loadIdentityControl(target) {
+  async function loadIdentityControl(target, knownIdentity = null) {
+    const requestId = ++identityControlRequest;
+    const isCurrent = () => requestId === identityControlRequest && target.isConnected;
     const renderLogin = () => {
+      if (!isCurrent()) return;
       updateNavVisibility({ guest: true });
       target.replaceChildren(
         el("a", { class: "identity-link", href: `/login?next=${encodeURIComponent(location.pathname + location.search)}`, text: "登录 / 注册" }),
       );
     };
     try {
-      const identity = await api("/api/v1/auth/me");
-      const isGuest = identity.guest === true || identity.role === "guest";
+      const identity = knownIdentity || await api("/api/v1/auth/me");
+      if (!isCurrent()) return;
+      const isGuest = identity.guest === true
+        || identity.role === "guest"
+        || (!identity.role && !identity.login && Boolean(identity.user_id));
       updateNavVisibility({ ...identity, guest: isGuest });
       const label = isGuest ? "游客模式" : (identity.display_name || identity.login || "已登录");
       const content = [el("span", { class: "identity-label", text: label })];
@@ -200,6 +207,9 @@
       const right = el("div", { class: "topbar-actions" });
       const identityControl = el("div", { class: "identity-control", "aria-label": "当前身份" });
       right.append(identityControl);
+      window.addEventListener("xinzhi:identity-ready", (event) => {
+        void loadIdentityControl(identityControl, event.detail || null);
+      });
       void loadIdentityControl(identityControl);
       if (context) right.append(el("span", { class: "topbar-context", text: context }));
       if (new URLSearchParams(location.search).get("presentation") === "1") {
@@ -860,9 +870,15 @@
   }
 
   async function initIdentityGate({ next = "/student" } = {}) {
+    const publishIdentity = (value) => {
+      window.dispatchEvent(new CustomEvent("xinzhi:identity-ready", { detail: value }));
+    };
     let identity = null;
     try { identity = await api("/api/v1/auth/me"); } catch (_error) { identity = null; }
-    if (identity) return identity;
+    if (identity) {
+      publishIdentity(identity);
+      return identity;
+    }
 
     const target = next.startsWith("/") ? next : "/student";
     const overlay = el("section", { class: "identity-gate", role: "dialog", "aria-modal": "true", "aria-labelledby": "identity-gate-title" }, [
@@ -888,6 +904,7 @@
       try {
         identity = await api("/api/v1/auth/guest", { method: "POST" });
         overlay.remove();
+        publishIdentity(identity);
         resolveIdentity(identity);
         return identity;
       } catch (error) {
