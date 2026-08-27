@@ -81,12 +81,15 @@ def test_student_page_uses_unified_task_and_event_apis(client) -> None:
     assert 'id="circuit-visualization-toggle"' in page.text
     assert "buildStudentTaskPayload" in contracts.text
     assert "id=\"preview-images\"" in page.text
-    assert "20260827-retrieval-diagnostics-fallback-v1" in page.text
+    assert "20260827-answer-dedup-v1" in page.text
     assert "function openEvidenceDocument(item)" in script.text
     assert "function loadEvidenceDocumentPage(item, offset = null)" in script.text
     assert "documentPageState.controller?.abort()" in script.text
     assert "initializeResizablePanels()" in script.text
     assert "businessSectionAlreadyInAnswer" in script.text
+    assert "businessDuplicateVariants" in script.text
+    assert "academicSolverDuplicateSections" in script.text
+    assert "businessSectionIsCoveredByAnswer" in script.text
     assert "function messageStatusText(status)" in script.text
     assert "renderMarkdown(heading" in script.text
     assert "renderInline(heading" not in script.text

@@ -2285,12 +2285,50 @@ function businessContentValues(value) {
   return value == null ? [] : [String(value)];
 }
 
+function businessDuplicateVariants(value) {
+  const text = String(value == null ? "" : value).toLowerCase().trim();
+  if (!text) return [];
+  const plain = text
+    .replace(/\\(?:cdot|times|ast)\b/g, "*")
+    .replace(/\\(?:text|mathrm|operatorname)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/\\[a-z]+/g, "")
+    .replace(/[\\$`*_{}#[\]<>]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[×⋅·]/g, "*");
+  const compactMath = plain.replace(/([a-z0-9])\*([a-z0-9])/g, "$1$2");
+  return [...new Set([plain, compactMath].filter((item) => item.length >= 4))];
+}
+
 function businessSectionAlreadyInAnswer(answer, section) {
-  const normalizedAnswer = String(answer || "").replace(/\s+/g, " ").trim();
+  const answerVariants = businessDuplicateVariants(answer);
   const values = businessContentValues(section.content)
-    .map((value) => value.replace(/\s+/g, " ").trim())
-    .filter((value) => value.length >= 4);
-  return values.length > 0 && values.every((value) => normalizedAnswer.includes(value));
+    .map(businessDuplicateVariants)
+    .filter((variants) => variants.length > 0);
+  return values.length > 0 && values.every((variants) =>
+    variants.some((value) => answerVariants.some((candidate) => candidate.includes(value)))
+  );
+}
+
+const academicSolverDuplicateSections = new Set([
+  "problem_summary",
+  "key_equations",
+  "steps",
+  "final_answer",
+  "assumptions",
+]);
+
+function academicSolverHasCanonicalAnswer(answer) {
+  const text = String(answer || "").trim();
+  if (text.length < 120) return false;
+  const headings = text.match(/^#{2,4}\s+.+$/gm) || [];
+  return headings.length >= 2 || /(?:最终答案|结论汇总|关键推导|求解步骤)/.test(text);
+}
+
+function businessSectionIsCoveredByAnswer(view, answer, section) {
+  if (businessSectionAlreadyInAnswer(answer, section)) return true;
+  return view.renderer_type === "academic_solver"
+    && academicSolverHasCanonicalAnswer(answer)
+    && academicSolverDuplicateSections.has(section.key);
 }
 
 function businessValueText(key, value) {
@@ -2434,7 +2472,7 @@ function renderBusinessView(view, answer = "", structured = {}) {
     }
     // Some local agents intentionally return both a readable Markdown answer
     // and a structured business view. Keep one representation in the UI.
-    return !businessSectionAlreadyInAnswer(answer, section);
+    return !businessSectionIsCoveredByAnswer(view, answer, section);
   });
   sections.forEach((section) => {
     const card = el("section", { class: `business-section business-${section.key}` });
