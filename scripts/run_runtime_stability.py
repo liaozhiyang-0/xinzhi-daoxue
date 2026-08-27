@@ -39,6 +39,9 @@ CASE_ATTACHMENT_ROOT = ROOT / "evaluation" / "cases"
 CACHE_ROOT = ROOT / "evaluation" / "cache"
 DEFAULT_OUTPUT = ROOT / "docs" / "runtime_hardening" / "runtime_baseline.json"
 MODES = ("local_mock", "local_deterministic")
+GENERAL_LATENCY_BUDGET_MS = 15_000
+COMPLEX_LATENCY_BUDGET_MS = 60_000
+COMPLEX_CATEGORIES = frozenset({"multi_turn", "multimodal", "research", "solver"})
 
 
 def parse_args() -> argparse.Namespace:
@@ -315,6 +318,15 @@ def _record(
             if token in str(warning).casefold()
         }
     )
+    latency_class = (
+        "complex" if category in COMPLEX_CATEGORIES else "general"
+    )
+    latency_budget_ms = (
+        COMPLEX_LATENCY_BUDGET_MS
+        if latency_class == "complex"
+        else GENERAL_LATENCY_BUDGET_MS
+    )
+    ttft_ms = sse_projection.get("ttft_ms")
     return {
         "case_id": case.case_id,
         "category": category,
@@ -389,6 +401,15 @@ def _record(
         "task_status": str(task.get("status", "")),
         "scenario": category,
         "ttft_ms": sse_projection.get("ttft_ms"),
+        "latency_budget": {
+            "class": latency_class,
+            "budget_ms": latency_budget_ms,
+            "total_passed": float(result.elapsed_ms) <= latency_budget_ms,
+            "ttft_passed": (
+                ttft_ms is None or float(ttft_ms) <= latency_budget_ms
+            ),
+            "measurement_scope": "provider_free_runtime_chain",
+        },
         "slowest_stage": slowest_stage,
         "gate_observation": {
             "triggered": bool(stages.get("quality_gate")),
@@ -597,6 +618,41 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     )
     gate_changed = sum(item.get("answer_changed") is True for item in gate_observations)
 
+    latency_budgets: dict[str, list[dict[str, Any]]] = {}
+    for item in records:
+        budget = item.get("latency_budget")
+        if isinstance(budget, dict):
+            latency_budgets.setdefault(
+                str(budget.get("class", "unknown")), []
+            ).append(item)
+
+    latency_budget_metrics: dict[str, Any] = {}
+    for latency_class, items in sorted(latency_budgets.items()):
+        budget_values = [
+            item.get("latency_budget", {}).get("budget_ms")
+            for item in items
+            if isinstance(item.get("latency_budget", {}).get("budget_ms"), (int, float))
+        ]
+        passed = sum(
+            item.get("latency_budget", {}).get("total_passed") is True
+            for item in items
+        )
+        latency_budget_metrics[latency_class] = {
+            "budget_ms": budget_values[0] if budget_values else None,
+            "count": len(items),
+            "passed": passed,
+            "failed": len(items) - passed,
+            "pass_rate": round(passed / len(items), 6) if items else 0.0,
+            "latency_ms": latency_summary(values(items)),
+            "ttft_ms": latency_summary(
+                [
+                    float(item["ttft_ms"])
+                    for item in items
+                    if isinstance(item.get("ttft_ms"), (int, float))
+                ]
+            ),
+        }
+
     def stage_metric_values(name: str) -> list[float]:
         return [
             float(
@@ -729,6 +785,7 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
             round(unexpected_degradation_count / len(records), 6) if records else 0.0
         ),
         "degradation_signal_counts": degradation_signal_counts,
+        "latency_budgets": latency_budget_metrics,
     }
 
 
@@ -922,6 +979,15 @@ def _operational_failures(result: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _latency_failures(result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in _result_records(result)
+        if isinstance(item.get("latency_budget"), dict)
+        and item["latency_budget"].get("total_passed") is False
+    ]
+
+
 async def run_mode(
     mode: str,
     cases: list[EvaluationCase],
@@ -948,6 +1014,11 @@ async def run_mode(
         use_cache=False,
     ) as runner:
         runner._case_attachment_root = CASE_ATTACHMENT_ROOT
+        # Offline stability measures execution latency, not one-time index
+        # construction. Prepare the lexical corpus once before the first case,
+        # matching the production startup warmup path.
+        if settings.knowledge_enabled:
+            await asyncio.to_thread(runner.app.state.knowledge_base.refresh)
         selected = (
             select_representatives(cases, categories, representative_count)
             if representative_only
@@ -1034,10 +1105,16 @@ async def main() -> None:
         for mode, result in results.items()
         if _operational_failures(result)
     }
+    latency_failures = {
+        mode: len(_latency_failures(result))
+        for mode, result in results.items()
+        if _latency_failures(result)
+    }
     output["gate"] = {
-        "status": "failed" if operational_failures else "passed",
-        "scope": "runtime_protocol",
+        "status": "failed" if operational_failures or latency_failures else "passed",
+        "scope": "runtime_protocol_and_latency_budget",
         "operational_failures": operational_failures,
+        "latency_failures": latency_failures,
         "quality_failures": quality_failures,
         "quality_disposition": (
             "informational_provider_free_mode"
@@ -1053,6 +1130,13 @@ async def main() -> None:
         print(
             "runtime stability gate failed: "
             + json.dumps(operational_failures, ensure_ascii=False, sort_keys=True),
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    if latency_failures:
+        print(
+            "runtime latency budget gate failed: "
+            + json.dumps(latency_failures, ensure_ascii=False, sort_keys=True),
             file=sys.stderr,
         )
         raise SystemExit(1)

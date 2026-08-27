@@ -13,6 +13,7 @@ from app.application.container import ApplicationContainer
 from app.database.base import Base
 from app.services.context_cache import ContextAssemblyCache
 from app.services.external_retrieval import ExternalContentFetcher
+from app.services.knowledge_base import KnowledgeBaseService
 from app.services.model_service import ModelService
 from app.services.production_execution_manifest import (
     ExecutionSurfaceError,
@@ -73,6 +74,15 @@ def build_app_lifespan(
                 "status": "deferred",
                 "reason": "fast_startup",
             }
+
+            if (
+                resources.settings.knowledge_enabled
+                and resources.settings.knowledge_warmup_on_startup
+            ):
+                await _warm_knowledge_base(
+                    app,
+                    resources.container.knowledge_base,
+                )
 
             async def deferred_startup() -> None:
                 nonlocal qwen_warmup_task, research_maintenance_task
@@ -171,6 +181,38 @@ async def _warm_rag(app: FastAPI, rag_retrieval: RAGRetrievalService) -> None:
         app.state.rag_warmup = {
             "status": "failed",
             "reason": "deferred_warmup_error",
+        }
+
+
+async def _warm_knowledge_base(
+    app: FastAPI,
+    knowledge_base: KnowledgeBaseService,
+) -> None:
+    """Load the lexical index before production requests can race the scan."""
+
+    logger.info("knowledge_base_warmup_started")
+    started = asyncio.get_running_loop().time()
+    try:
+        statuses = await asyncio.to_thread(knowledge_base.refresh)
+        app.state.knowledge_warmup = {
+            "status": "ready",
+            "elapsed_ms": int(
+                (asyncio.get_running_loop().time() - started) * 1000
+            ),
+            "document_count": sum(item.document_count for item in statuses),
+            "chunk_count": sum(item.chunk_count for item in statuses),
+        }
+        logger.info(
+            "knowledge_base_warmup_completed elapsed_ms=%s documents=%s chunks=%s",
+            app.state.knowledge_warmup["elapsed_ms"],
+            app.state.knowledge_warmup["document_count"],
+            app.state.knowledge_warmup["chunk_count"],
+        )
+    except Exception:
+        logger.exception("knowledge_base_warmup_failed")
+        app.state.knowledge_warmup = {
+            "status": "failed",
+            "reason": "startup_warmup_error",
         }
 
 

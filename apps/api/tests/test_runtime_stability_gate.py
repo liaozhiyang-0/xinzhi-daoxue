@@ -1,4 +1,8 @@
-from scripts.run_runtime_stability import _operational_failures, _quality_failures
+from scripts.run_runtime_stability import (
+    _latency_failures,
+    _operational_failures,
+    _quality_failures,
+)
 
 
 def _record(*, status: str = "passed", task_status: str = "completed") -> dict:
@@ -32,3 +36,20 @@ def test_representative_repeat_is_included_in_both_diagnostics() -> None:
 
     assert len(_quality_failures(result)) == 1
     assert len(_operational_failures(result)) == 1
+
+
+def test_latency_budget_failure_is_a_hard_gate_failure() -> None:
+    result = {
+        "records": [
+            {
+                **_record(),
+                "latency_budget": {
+                    "class": "general",
+                    "budget_ms": 15_000,
+                    "total_passed": False,
+                },
+            }
+        ]
+    }
+
+    assert len(_latency_failures(result)) == 1

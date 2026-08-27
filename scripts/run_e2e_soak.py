@@ -33,6 +33,17 @@ TERMINAL_STATUSES = {
     "waiting_input",
 }
 LOGGER = logging.getLogger("xzd.e2e_soak")
+GENERAL_LATENCY_BUDGET_SECONDS = 15.0
+COMPLEX_LATENCY_BUDGET_SECONDS = 60.0
+COMPLEX_CASES = frozenset(
+    {
+        "lesson_preparation",
+        "assignment_review",
+        "research_initial",
+        "research_follow_up",
+        "topic_switch",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -143,6 +154,12 @@ def _structured(task: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _latency_budget(case_name: str) -> tuple[str, float]:
+    if case_name in COMPLEX_CASES:
+        return "complex", COMPLEX_LATENCY_BUDGET_SECONDS
+    return "general", GENERAL_LATENCY_BUDGET_SECONDS
+
+
 async def _wait_task(
     client: httpx.AsyncClient, task_id: str, timeout_seconds: float
 ) -> dict[str, Any]:
@@ -229,6 +246,12 @@ def _task_record(name: str, task: dict[str, Any]) -> dict[str, Any]:
     structured = _structured(task)
     external = structured.get("external_retrieval")
     external = external if isinstance(external, dict) else {}
+    latency_class, latency_budget_seconds = _latency_budget(name)
+    elapsed_seconds = task.get("elapsed_seconds")
+    latency_passed = (
+        isinstance(elapsed_seconds, (int, float))
+        and float(elapsed_seconds) <= latency_budget_seconds
+    )
     return {
         "case": name,
         "task_id": task.get("id"),
@@ -239,7 +262,13 @@ def _task_record(name: str, task: dict[str, Any]) -> dict[str, Any]:
         "submission_error": task.get("submission_error"),
         "agent_id": task.get("agent_id"),
         "intent": task.get("intent"),
-        "elapsed_seconds": task.get("elapsed_seconds"),
+        "elapsed_seconds": elapsed_seconds,
+        "latency_budget": {
+            "class": latency_class,
+            "budget_seconds": latency_budget_seconds,
+            "passed": latency_passed,
+            "measurement_scope": "live_http_task_chain",
+        },
         "answer_length": len(_answer(task)),
         "external_status": external.get("status"),
         "external_provider_status": (
@@ -282,6 +311,15 @@ def _validate_case(case: SoakCase, task: dict[str, Any]) -> list[str]:
     if not any(token in agent_id for token in case.expected_agent_tokens):
         errors.append(f"unexpected_agent={agent_id}")
     return errors
+
+
+def _validate_latency(record: dict[str, Any]) -> list[str]:
+    budget = record.get("latency_budget")
+    if not isinstance(budget, dict) or budget.get("passed") is not False:
+        return []
+    return [
+        f"latency_budget_exceeded:{budget.get('class')}:{record.get('elapsed_seconds')}s"
+    ]
 
 
 async def _check_surface(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -345,6 +383,11 @@ async def _run_cycle(
             cycle_record["failures"].extend(
                 f"{case.name}:{item}" for item in _validate_case(case, task)
             )
+            cycle_record["failures"].extend(
+                f"{case.name}:{item}" for item in _validate_latency(
+                    cycle_record["tasks"][-1]
+                )
+            )
         except Exception as exc:  # noqa: BLE001 - soak must continue after one case
             cycle_record["failures"].append(f"{case.name}:{type(exc).__name__}:{exc}")
 
@@ -359,6 +402,10 @@ async def _run_cycle(
             )
             first_record = _task_record("research_initial", first)
             cycle_record["tasks"].append(first_record)
+            cycle_record["failures"].extend(
+                f"research_initial:{item}"
+                for item in _validate_latency(first_record)
+            )
             if first.get("status") != "completed":
                 cycle_record["failures"].append("research_initial:incomplete")
             first_answer = _answer(first)
@@ -422,6 +469,10 @@ async def _run_cycle(
                     _task_record("research_follow_up", follow_up)
                 )
                 follow_up_record = cycle_record["tasks"][-1]
+                cycle_record["failures"].extend(
+                    f"research_follow_up:{item}"
+                    for item in _validate_latency(follow_up_record)
+                )
                 if follow_up.get("status") != "completed":
                     cycle_record["failures"].append("research_follow_up:incomplete")
                 if first_record["external_items"] > 0 and follow_up_record[
@@ -456,6 +507,10 @@ async def _run_cycle(
                     user_id=user_id,
                 )
                 cycle_record["tasks"].append(_task_record("topic_switch", switched))
+                cycle_record["failures"].extend(
+                    f"topic_switch:{item}"
+                    for item in _validate_latency(cycle_record["tasks"][-1])
+                )
                 switched_answer = _answer(switched).casefold()
                 if switched.get("status") != "completed":
                     cycle_record["failures"].append("topic_switch:incomplete")

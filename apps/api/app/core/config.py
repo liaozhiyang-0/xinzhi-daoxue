@@ -202,6 +202,9 @@ class Settings(BaseSettings):
     sse_heartbeat_seconds: float = Field(default=10.0, gt=0)
 
     knowledge_enabled: bool = True
+    # Build the lexical index before production traffic is accepted so the
+    # first user query does not pay the full corpus scan cost.
+    knowledge_warmup_on_startup: bool = True
     knowledge_ct_path: Path = PROJECT_ROOT / "电路理论"
     knowledge_ae_path: Path = PROJECT_ROOT / "模电"
     knowledge_de_path: Path = PROJECT_ROOT / "数电"

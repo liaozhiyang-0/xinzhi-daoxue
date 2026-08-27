@@ -426,8 +426,13 @@ class KnowledgeBaseService:
         return best_bonus
 
     def _ensure_loaded(self) -> None:
-        if not self._loaded:
-            self.refresh()
+        if self._loaded:
+            return
+        # Serialize the first load.  Without the second check under the lock,
+        # concurrent first requests can each scan the entire course corpus.
+        with self._lock:
+            if not self._loaded:
+                self.refresh()
 
     def _load_metadata(self, course_id: str) -> CourseMetadata:
         root = self.settings.knowledge_config_path

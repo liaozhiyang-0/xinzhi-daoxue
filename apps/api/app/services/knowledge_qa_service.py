@@ -132,6 +132,22 @@ class KnowledgeQAService:
             not execution.context.evidence and not model_synthesis_required
         ):
             return execution
+        preflight = getattr(model_service, "preflight", None)
+        if callable(preflight):
+            route = preflight("knowledge_answer")
+            if not route.available:
+                execution.result.warnings.append(
+                    f"model_generation_unavailable:{route.reason}"
+                )
+                if model_synthesis_required:
+                    return self._model_synthesis_required(
+                        execution,
+                        "model_route_unavailable",
+                        learning_path=learning_path,
+                    )
+                execution.result.fallback_used = True
+                execution.result.fallback_reason = "model_route_unavailable"
+                return execution
         policy = policy_for(request.options, "knowledge_qa")
         context = execution.context.to_retrieved_context()
         evidence_context = (
