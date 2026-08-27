@@ -582,13 +582,23 @@ class ModelService:
             return None
 
         depth = resolve_response_depth({"response_depth": raw_depth})
-        alias = {
-            ResponseDepth.BRIEF: "qwen_brief",
-            ResponseDepth.STANDARD: (
-                "qwen_vision_fast" if vision else "qwen_text_fast"
-            ),
-            ResponseDepth.DEEP: "qwen_vision_primary",
-        }[depth]
+        if (
+            depth is ResponseDepth.STANDARD
+            and not vision
+            and route.task_type in {"general_question_answer", "knowledge_answer"}
+        ):
+            # Interactive answers are latency-sensitive. Prefer the brief
+            # Qwen tier for the standard UI depth; the configured route
+            # primary remains available as a fallback below.
+            alias = "qwen_brief"
+        else:
+            alias = {
+                ResponseDepth.BRIEF: "qwen_brief",
+                ResponseDepth.STANDARD: (
+                    "qwen_vision_fast" if vision else "qwen_text_fast"
+                ),
+                ResponseDepth.DEEP: "qwen_vision_primary",
+            }[depth]
         try:
             self.registry.get_model(alias)
         except KeyError:
