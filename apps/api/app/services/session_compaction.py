@@ -41,7 +41,9 @@ class ConversationMemoryExtraction(BaseModel):
     # Older/local memory prompts sometimes return a mapping for entities or
     # facts. Accept it here so compatibility normalization can run instead of
     # degrading the whole memory update before normalization is reached.
-    key_entities: list[str] | dict[str, object] = Field(default_factory=list)
+    key_entities: list[object] | dict[str, object] = Field(
+        default_factory=list, max_length=12
+    )
     goals_and_questions: list[str] = Field(default_factory=list, max_length=8)
     unfinished_business: list[str] = Field(default_factory=list, max_length=8)
     follow_up_hints: list[str] = Field(default_factory=list, max_length=8)
@@ -317,10 +319,27 @@ class SessionCompactionService:
         )
 
     @staticmethod
-    def _coerce_items(value: list[str] | dict[str, object]) -> list[str]:
+    def _coerce_items(value: list[object] | dict[str, object]) -> list[str]:
         if isinstance(value, dict):
             return [f"{key}: {item}" for key, item in value.items()][:12]
-        return value[:12]
+        items: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+            elif isinstance(item, dict):
+                name = str(item.get("name", "")).strip()
+                detail = str(
+                    item.get("description")
+                    or item.get("value")
+                    or item.get("context")
+                    or ""
+                ).strip()
+                text = f"{name}: {detail}" if name and detail else name or detail
+            else:
+                text = ""
+            if text:
+                items.append(text)
+        return items[:12]
 
     @staticmethod
     def _structured(

@@ -17,7 +17,10 @@ from app.models.entities import utc_now
 from app.repositories.runtime_context import RuntimeContextRepository
 from app.services.context_assembly import ContextAssemblyService
 from app.services.conversation_message_service import ConversationMessageService
-from app.services.session_compaction import SessionCompactionService
+from app.services.session_compaction import (
+    ConversationMemoryExtraction,
+    SessionCompactionService,
+)
 from app.services.session_context import SessionContextService
 
 
@@ -44,6 +47,25 @@ def _continuity_request(text: str, intent: Intent = Intent.GENERAL_QA) -> AgentR
         intent=intent,
         canonical_input={"text": text},
     )
+
+
+def test_memory_extraction_normalizes_entity_objects() -> None:
+    extraction = ConversationMemoryExtraction.model_validate(
+        {
+            "summary": "用户在学习运算放大器。",
+            "key_entities": [
+                {"name": "虚短", "description": "V+ = V-"},
+                {"name": "饱和", "context": "输出受电源轨限制"},
+            ],
+        }
+    )
+
+    normalized = SessionCompactionService._normalize_compatibility_fields(extraction)
+
+    assert normalized.key_facts == [
+        "虚短: V+ = V-",
+        "饱和: 输出受电源轨限制",
+    ]
 
 
 def test_session_context_withholds_unreviewed_external_evidence(settings) -> None:
