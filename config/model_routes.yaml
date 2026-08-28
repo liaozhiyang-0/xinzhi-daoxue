@@ -121,7 +121,7 @@ routes:
     fallback: qwen_vision_primary
     options: {temperature: 0.1, max_tokens: 2800}
   academic_writing:
-    primary: qwen_vision_primary
+    primary: qwen_brief
     fallback: qwen_text_fast
     max_retries: 0
     fallback_on_timeout: false
