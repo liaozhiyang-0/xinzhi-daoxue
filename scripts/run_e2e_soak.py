@@ -529,7 +529,16 @@ async def _run_cycle(
 
 async def run(args: argparse.Namespace) -> int:
     args.log.parent.mkdir(parents=True, exist_ok=True)
-    timeout = httpx.Timeout(30.0, connect=5.0)
+    # A single transport request must not expire before the product's
+    # complex-answer budget. Task polling still has its own bounded deadline.
+    request_timeout_seconds = max(
+        30.0,
+        min(
+            float(args.poll_timeout_seconds),
+            COMPLEX_LATENCY_BUDGET_SECONDS + 5.0,
+        ),
+    )
+    timeout = httpx.Timeout(request_timeout_seconds, connect=5.0)
     limits = httpx.Limits(max_connections=4, max_keepalive_connections=2)
     started = time.monotonic()
     cycle = 0
