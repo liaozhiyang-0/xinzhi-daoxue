@@ -643,9 +643,17 @@ class GeneralQuestionRuntimeService:
                 kwargs = raw_input.get("kwargs", raw_input)
                 if not isinstance(args, list) or not isinstance(kwargs, Mapping):
                     raise RuntimeNodeError("runtime_tool_input_call_shape_invalid")
+                validation_payload = dict(kwargs)
+                if (
+                    requested_tool_id == "circuit.render"
+                    and not validation_payload
+                    and len(args) == 1
+                    and isinstance(args[0], Mapping)
+                ):
+                    validation_payload = dict(args[0])
                 try:
                     registry.validate_input(
-                        self._tool_handler_id(requested_tool_id), dict(kwargs)
+                        self._tool_handler_id(requested_tool_id), validation_payload
                     )
                 except RuntimeHandlerRegistryError as exc:
                     raise RuntimeNodeError(exc.error_code, str(exc)) from exc

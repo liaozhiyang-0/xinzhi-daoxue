@@ -46,15 +46,76 @@ def _showcase_cases() -> dict[str, str]:
     return cases
 
 
-def _request(text: str, **options: object) -> AgentRequest:
+def _request(
+    text: str,
+    *,
+    course_id: str = "AUTO",
+    intent: Intent = Intent.UNKNOWN,
+    **options: object,
+) -> AgentRequest:
     return AgentRequest(
         session_id="showcase-matrix",
         user_id="showcase-matrix-user",
         scene="dispatch",
-        course_id="AUTO",
-        intent=Intent.UNKNOWN,
+        course_id=course_id,
+        intent=intent,
         canonical_input={"text": text},
         options=dict(options),
+    )
+
+
+def test_workspace_includes_knowledge_qa_and_circuit_visualization_cases() -> None:
+    root = Path(__file__).resolve().parents[3]
+    source = (root / "apps/api/app/static/debug/workspace.html").read_text(
+        encoding="utf-8"
+    )
+    buttons = {
+        html_lib.unescape(match.group("capability")): match.group(0)
+        for match in re.finditer(
+            r'<button\b(?=[^>]*data-capability="(?P<capability>[^"]+)")[^>]*>',
+            source,
+        )
+    }
+    knowledge = buttons["course_qa"]
+    circuit = [
+        match.group(0)
+        for match in re.finditer(
+            r'<button\b(?=[^>]*data-capability="solve_problem")[^>]*data-circuit-visualization="true"[^>]*>',
+            source,
+        )
+    ]
+    assert 'data-intent="explain_concept"' in knowledge
+    assert 'data-course="CT"' in knowledge
+    assert len(re.findall(r"data-prompt=\"[^\"]+\"", knowledge)) == 1
+    assert len(circuit) == 1
+    assert 'data-intent="solve_problem"' in circuit[0]
+    assert 'data-course="CT"' in circuit[0]
+
+
+def test_added_showcase_requests_keep_their_backend_routes() -> None:
+    knowledge = TaskRouter(AgentRegistry()).route(
+        _request(
+            "我在复习电路理论时总搞不清楚电容为什么不能突然改变电压。",
+            course_id="CT",
+            intent=Intent.EXPLAIN_CONCEPT,
+            allow_cloud=False,
+        )
+    )
+    circuit = TaskRouter(AgentRegistry()).route(
+        _request(
+            "请画出 12 V 电压源、R1=2 kΩ 和 R2=4 kΩ 串联分压电路，输出取 R2 两端。",
+            course_id="CT",
+            intent=Intent.SOLVE_PROBLEM,
+            allow_cloud=False,
+        )
+    )
+    assert (knowledge.agent_id, knowledge.intent) == (
+        "LEARN_01_KNOWLEDGE_QA_V1",
+        "explain_concept",
+    )
+    assert (circuit.agent_id, circuit.intent) == (
+        "ACADEMIC_PROBLEM_SOLVER",
+        "solve_problem",
     )
 
 

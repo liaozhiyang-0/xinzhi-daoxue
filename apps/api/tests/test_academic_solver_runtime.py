@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+from app.circuit import CircuitIR
 from app.contracts import (
     AgentRequest,
     AgentResult,
@@ -22,6 +23,7 @@ from app.runtime import (
 )
 from app.services.academic_solver_runtime import AcademicSolverRuntimeService
 from app.services.retrieval_context import RetrievalContextService
+from app.tools import default_tool_registry
 
 
 class FakeSolverAgents:
@@ -109,6 +111,74 @@ def test_academic_solver_runtime_wraps_the_frozen_solver_boundary() -> None:
     assert run.nodes["solver.execute"].status == RuntimeNodeStatus.SUCCEEDED
     assert run.nodes["solver.verify"].status == RuntimeNodeStatus.SUCCEEDED
     assert run.budget.model_calls == 1
+
+
+def test_academic_solver_runtime_executes_controlled_circuit_render() -> None:
+    fake = FakeSolverAgents([make_result()])
+    circuit = CircuitIR.model_validate(
+        {
+            "components": [
+                {
+                    "id": "r1",
+                    "type": "resistor",
+                    "ports": {"p": "in", "n": "out"},
+                    "value": "2k",
+                },
+                {
+                    "id": "r2",
+                    "type": "resistor",
+                    "ports": {"p": "out", "n": "gnd"},
+                    "value": "4k",
+                },
+                {
+                    "id": "gnd",
+                    "type": "ground",
+                    "ports": {"g": "gnd"},
+                },
+            ],
+            "nets": [{"id": "in"}, {"id": "out"}, {"id": "gnd"}],
+        }
+    )
+    request = make_request().model_copy(
+        update={
+            "canonical_input": {
+                "text": "请画出这个分压电路",
+                "circuit_ir": circuit.model_dump(mode="json"),
+            },
+            "options": {
+                "academic_solver_runtime": {"execute": True},
+                "_canonical_plan": {
+                    "circuit_visualization": {
+                        "decision": "REQUIRED",
+                        "feature_mode": "controlled",
+                        "blocked": False,
+                    }
+                },
+            },
+        }
+    )
+    service = AcademicSolverRuntimeService(
+        fake,
+        enabled=True,  # type: ignore[arg-type]
+        tool_registry=default_tool_registry(circuit_render_enabled=True),
+    )
+    run = AgentRun(
+        run_id="run-solver-circuit-render",
+        task_id=request.task_id,
+        goal="render the circuit",
+        plan=service.build_plan(request),
+    )
+
+    result = asyncio.run(service.run(request, run))
+
+    assert result.status == AgentResultStatus.COMPLETED
+    assert fake.calls == 1
+    assert run.nodes["solver.tool"].status == RuntimeNodeStatus.SUCCEEDED
+    observation = run.nodes["solver.tool"].observation
+    assert observation is not None
+    render = observation.facts["circuit_render_observation"]
+    assert render["status"] in {"rendered", "degraded"}
+    assert render["svg"]
 
 
 def test_academic_solver_runtime_can_disable_provider_replay() -> None:

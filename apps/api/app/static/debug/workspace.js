@@ -2965,6 +2965,7 @@ window.addEventListener("DOMContentLoaded", () => {
     state.activeCourse = button.dataset.course || "AUTO";
     $("#course-select").value = state.activeCourse;
     state.intentOverride = button.dataset.intent || "";
+    $("#circuit-visualization-toggle").checked = button.dataset.circuitVisualization === "true";
     state.activeScenarioPrompt = button.dataset.prompt || "";
     state.activeScenarioId = button.dataset.scenarioId
       || showcaseScenarioByCapability[button.dataset.capability]

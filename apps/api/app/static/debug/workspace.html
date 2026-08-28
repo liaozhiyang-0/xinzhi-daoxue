@@ -48,9 +48,11 @@
             <button type="button" data-capability="lesson_prep" data-intent="lesson_prep" data-prompt="我下周第一次给大二学生讲节点电压法，但他们总把参考点和电流方向弄混。只有一节课的话，我应该怎么讲？能帮我顺一下课堂安排，再给几道由浅入深的练习吗？" data-course="CT"><span class="capability-state">教师智能备课</span><strong>教师智能备课</strong><small>生成目标、课堂流程、分层练习、资料依据和教师复核点</small></button>
             <button type="button" data-capability="assignment_review" data-intent="assignment_review" data-prompt="这道电路题学生最后算成了 12V，我总觉得他中间有一步就错了。能帮我看看他是从哪一步开始出问题的吗？题目是两个节点的直流电阻网络，用节点电压法求电压，最好再给我一道类似的小题检查一下。" data-course="CT"><span class="capability-state">作业诊断</span><strong>作业批改与首错诊断</strong><small>定位首错、保留正确步骤、给出分层提示和验证题</small></button>
             <button type="button" data-capability="student_learning_path" data-intent="learning_advice" data-prompt="我最近做电路理论题总在节点电压法这里丢分，电阻串并联反而还行。你能不能按我每天二十分钟左右的时间，帮我安排一周复习，最后告诉我怎么判断自己是真的学会了？" data-course="CT"><span class="capability-state">学生学习路径</span><strong>学生个性化学习路径</strong><small>根据作答证据制定阶段计划、复测任务和教师介入点</small></button>
+            <button type="button" data-capability="course_qa" data-intent="explain_concept" data-prompt="我在复习电路理论时总搞不清楚电容为什么不能突然改变电压。能不能结合一个简单的 RC 例子，从直观解释到公式推导讲一遍，也顺便说说刚接通电源的瞬间会发生什么？" data-course="CT"><span class="capability-state">课程知识问答</span><strong>知识点问答</strong><small>结合课程资料解释概念、推导关系，并明确适用条件和易错点</small></button>
             <button type="button" data-capability="academic_search" data-intent="academic_search" data-prompt="最近两三年低功耗边缘设备上跑神经网络有什么新进展？我主要想了解模型压缩、量化和编译器优化，能帮我找些靠谱论文吗？也请提醒我哪些结论有证据、哪些只是推测。" data-course="AUTO"><span class="capability-state">科研证据</span><strong>科研前沿检索与证据简报</strong><small>限定时间范围、筛选论文、保留 DOI/arXiv 和证据边界</small></button>
             <button type="button" data-capability="knowledge_governance" data-intent="summarize_knowledge" data-prompt="我们准备把 CT 的几份讲义和练习题放进学院知识库，可现在版本有点乱：讲义是 v3，练习题是 v2，还有一份教师修改说明。你能帮我看看发布前还缺什么确认、哪些地方可能对不上，以及以后出问题怎么回滚吗？" data-course="CT"><span class="capability-state">学院治理</span><strong>学院知识库治理与课程资产发布</strong><small>检查版本、来源、审批、权限、发布阻塞项和回滚追踪</small></button>
             <button type="button" data-capability="solve_problem" data-intent="solve_problem" data-course="AE" data-image-src="/debug-assets/question-bank/analog-opamp.jpg" data-image-name="模电测试集_图2.1.1_运算放大器电路.jpg" data-prompt="我看不太懂这张运放电路图：反相端接地，同相端那边有 R1 和 R2，输出还有负载。这个电路到底能不能按理想运放的虚短、虚断来算？我尤其想知道什么时候会饱和，以及为什么不能直接套同相放大器公式。"><span class="capability-state">学科诊断</span><strong>模拟电子技术 · 电路诊断与边界分析</strong><small>结合本地题图分析工作状态、关键假设、验证依据与输出边界</small></button>
+            <button type="button" data-capability="solve_problem" data-intent="solve_problem" data-course="CT" data-circuit-visualization="true" data-prompt="我想把一个简单的分压电路画出来看看：12 V 电压源接 R1=2 kΩ 和 R2=4 kΩ 串联，R2 下端接地，输出 Vout 取在 R2 两端。请先按这些信息生成电路图，再告诉我图里的连接是否完整。"><span class="capability-state">电路图展示</span><strong>电路图绘制与校验</strong><small>根据明确的元件、数值和连接关系生成可缩放电路图，并标出校验状态</small></button>
           </div>
         </div>
         <div id="messages" class="message-list" aria-live="polite"></div>
@@ -272,6 +274,6 @@
   </dialog>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
     <script src="/debug-assets/vendor/katex/katex.min.js"></script><script src="/debug-assets/ui-core.js?v=20260826-inline-latex-fence-v8"></script>
-    <script type="module" src="/debug-assets/workspace.js?v=20260827-answer-dedup-v1"></script>
+    <script type="module" src="/debug-assets/workspace.js?v=20260828-showcase-v1"></script>
 </body>
 </html>
